@@ -58,6 +58,19 @@ struct NotchExpandedView: View {
 
     @ViewBuilder
     private func sessionCard(_ session: SessionInfo) -> some View {
+        Button(action: {
+            if let pid = session.claudePid {
+                _ = TerminalLocator.activateTerminal(containingPid: pid)
+            }
+        }) {
+            sessionCardContent(session)
+        }
+        .buttonStyle(.plain)
+        .disabled(session.claudePid == nil)
+    }
+
+    @ViewBuilder
+    private func sessionCardContent(_ session: SessionInfo) -> some View {
         HStack(alignment: .top, spacing: 10) {
             // Avatar
             PixelAvatar(seed: session.id, size: 28)

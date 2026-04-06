@@ -93,6 +93,7 @@ public struct BridgeEvent: Codable, Sendable {
     public let transcriptPath: String?
     public let userPrompt: String?
     public let source: String?  // SessionStart "source" field
+    public let bridgePpid: Int?  // parent pid of the bridge (the claude process)
 
     public init(
         bridgeEvent: String,
@@ -104,7 +105,8 @@ public struct BridgeEvent: Codable, Sendable {
         permissionMode: String? = nil,
         transcriptPath: String? = nil,
         userPrompt: String? = nil,
-        source: String? = nil
+        source: String? = nil,
+        bridgePpid: Int? = nil
     ) {
         self.bridgeEvent = bridgeEvent
         self.sessionId = sessionId
@@ -116,6 +118,7 @@ public struct BridgeEvent: Codable, Sendable {
         self.transcriptPath = transcriptPath
         self.userPrompt = userPrompt
         self.source = source
+        self.bridgePpid = bridgePpid
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -129,6 +132,7 @@ public struct BridgeEvent: Codable, Sendable {
         case transcriptPath   = "transcript_path"
         case userPrompt       = "prompt"
         case source
+        case bridgePpid       = "_bridge_ppid"
     }
 }
 

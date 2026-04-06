@@ -24,6 +24,7 @@ public struct SessionInfo: Identifiable {
     public var toolCallCount: Int
     public var source: SessionSource = .live
     public var tasks: [TaskItem] = []
+    public var claudePid: Int?   // PID of the claude process (from bridge ppid)
 
     /// Display name — last path component of cwd, or first 8 chars of id
     public var displayName: String {
@@ -107,9 +108,21 @@ public final class SessionStore: ObservableObject {
             upgradeToLive(sessionId: sid)
         }
 
+        // Capture claude pid from bridge if available
+        if let ppid = event.bridgePpid, sessions[sid]?.claudePid == nil {
+            // Will be assigned inside the switch cases below via default fallback
+            // or we do it here directly:
+            if var existing = sessions[sid] {
+                existing.claudePid = ppid
+                sessions[sid] = existing
+            }
+        }
+
         switch event.bridgeEvent {
         case "SessionStart":
-            sessions[sid] = SessionInfo(id: sid, cwd: event.cwd)
+            var newSession = SessionInfo(id: sid, cwd: event.cwd)
+            newSession.claudePid = event.bridgePpid
+            sessions[sid] = newSession
 
         case "SessionEnd":
             sessions.removeValue(forKey: sid)

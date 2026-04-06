@@ -24,6 +24,8 @@ guard var jsonObject = try? JSONSerialization.jsonObject(with: inputData) as? [S
     exit(1)
 }
 jsonObject["_bridge_event"] = eventName
+// Pass parent PID (claude process) so the app can locate the terminal
+jsonObject["_bridge_ppid"] = Int(getppid())
 
 guard let enrichedData = try? JSONSerialization.data(withJSONObject: jsonObject) else {
     exit(1)
