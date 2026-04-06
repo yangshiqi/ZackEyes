@@ -31,7 +31,9 @@ public final class SessionStore: ObservableObject {
         case "PostToolUse":
             currentToolName = nil
         case "Stop":
-            state = .stopped
+            // Stop = Claude finished current turn, session still active.
+            // Keep sessionId/cwd (unlike SessionEnd which clears everything).
+            state = .idle
             currentToolName = nil
         default:
             break

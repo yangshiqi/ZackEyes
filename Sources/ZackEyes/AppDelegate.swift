@@ -88,7 +88,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if event.bridgeEvent == "SessionStart" {
                 windowController?.updatePanelState(.compact)
             }
-            if event.bridgeEvent == "SessionEnd" || event.bridgeEvent == "Stop" {
+            if event.bridgeEvent == "SessionEnd" {
                 windowController?.updatePanelState(.collapsed)
             }
         }

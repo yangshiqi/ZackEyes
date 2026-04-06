@@ -74,10 +74,13 @@ struct SessionStoreTests {
         #expect(store.cwd == nil)
     }
 
-    // 7. Stop sets stopped
-    @Test func stopSetsStopped() {
+    // 7. Stop sets idle but keeps session info
+    @Test func stopSetsIdleKeepsSession() {
         let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
         store.handleEvent(BridgeEvent(bridgeEvent: "Stop"))
-        #expect(store.state == .stopped)
+        #expect(store.state == .idle)
+        #expect(store.sessionId == "s1")  // session still active
+        #expect(store.cwd == "/tmp")
     }
 }
