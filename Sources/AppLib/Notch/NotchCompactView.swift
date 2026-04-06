@@ -45,7 +45,7 @@ struct NotchCompactView: View {
                 .font(.system(size: 11))
                 .foregroundColor(viewModel.statusColor)
 
-            if let tool = viewModel.toolBadge {
+            if let tool = viewModel.primarySession?.currentToolName {
                 Text(tool)
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)

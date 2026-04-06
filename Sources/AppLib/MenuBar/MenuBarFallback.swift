@@ -21,14 +21,14 @@ public class MenuBarFallback: NSObject {
         statusItem.button?.target = self
         self.statusItem = statusItem
 
-        updateIcon(for: viewModel.sessionStore.state)
+        updateIcon(for: viewModel.sessionStore.aggregateState)
 
         // Observe state changes to update icon
         iconCancellable = viewModel.sessionStore.objectWillChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 guard let self else { return }
-                self.updateIcon(for: self.viewModel.sessionStore.state)
+                self.updateIcon(for: self.viewModel.sessionStore.aggregateState)
             }
 
         let popover = NSPopover()

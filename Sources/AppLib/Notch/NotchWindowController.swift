@@ -173,7 +173,7 @@ public final class NotchWindowController {
 
         switch currentState {
         case .collapsed:
-            let sessionActive = viewModel.sessionStore.state != .idle
+            let sessionActive = viewModel.aggregateState != .idle
             if sessionActive && isMouseNear(mouse, rect: notchRect, threshold: notchActivationDistance) {
                 cancelCollapseWorkItem()
                 updatePanelState(.compact)

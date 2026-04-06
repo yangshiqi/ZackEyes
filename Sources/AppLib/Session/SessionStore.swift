@@ -1,71 +1,137 @@
 import Foundation
 import Shared
 
+/// Per-session state (one per Claude Code session).
+public struct SessionInfo: Identifiable {
+    public let id: String
+    public var cwd: String?
+    public var state: SessionState
+    public var currentToolName: String?
+    public var pendingPermission: PendingPermission?
+    public var startedAt: Date
+    public var lastActiveAt: Date
+    public var toolCallCount: Int
+
+    public init(
+        id: String,
+        cwd: String?,
+        state: SessionState = .working,
+        startedAt: Date = Date()
+    ) {
+        self.id = id
+        self.cwd = cwd
+        self.state = state
+        self.currentToolName = nil
+        self.pendingPermission = nil
+        self.startedAt = startedAt
+        self.lastActiveAt = startedAt
+        self.toolCallCount = 0
+    }
+}
+
 @MainActor
 public final class SessionStore: ObservableObject {
-    @Published public var state: SessionState = .idle
-    @Published public var sessionId: String?
-    @Published public var cwd: String?
-    @Published public var currentToolName: String?
-    @Published public var pendingPermission: PendingPermission?
-    @Published public var sessionStartedAt: Date?
-    @Published public var lastActiveAt: Date?
-    @Published public var toolCallCount: Int = 0
+    /// All active sessions, keyed by session_id.
+    @Published public var sessions: [String: SessionInfo] = [:]
 
     public init() {}
 
+    // MARK: - Computed views
+
+    /// The "primary" session shown in the UI. Priority:
+    /// 1. Session with pending permission
+    /// 2. Most recently active working/waiting session
+    /// 3. Most recently active session overall
+    public var primarySession: SessionInfo? {
+        if let pending = sessions.values.first(where: { $0.pendingPermission != nil }) {
+            return pending
+        }
+        let active = sessions.values.filter { $0.state == .working || $0.state == .waiting }
+        if let mostRecent = active.max(by: { $0.lastActiveAt < $1.lastActiveAt }) {
+            return mostRecent
+        }
+        return sessions.values.max(by: { $0.lastActiveAt < $1.lastActiveAt })
+    }
+
+    /// Aggregated state for menu bar icon.
+    public var aggregateState: SessionState {
+        if sessions.values.contains(where: { $0.pendingPermission != nil }) {
+            return .waiting
+        }
+        if sessions.values.contains(where: { $0.state == .working }) {
+            return .working
+        }
+        return .idle
+    }
+
+    /// All sessions sorted by most recent activity (for list display).
+    public var orderedSessions: [SessionInfo] {
+        sessions.values.sorted { $0.lastActiveAt > $1.lastActiveAt }
+    }
+
+    // MARK: - Event handling
+
     public func handleEvent(_ event: BridgeEvent) {
+        guard let sid = event.sessionId else { return }
+
         switch event.bridgeEvent {
         case "SessionStart":
-            state = .working
-            sessionId = event.sessionId
-            cwd = event.cwd
-            currentToolName = nil
-            pendingPermission = nil
-            sessionStartedAt = Date()
-            lastActiveAt = Date()
-            toolCallCount = 0
+            sessions[sid] = SessionInfo(id: sid, cwd: event.cwd)
+
         case "SessionEnd":
-            state = .idle
-            sessionId = nil
-            cwd = nil
-            currentToolName = nil
-            pendingPermission = nil
-            sessionStartedAt = nil
-            lastActiveAt = nil
-            toolCallCount = 0
+            sessions.removeValue(forKey: sid)
+
         case "PreToolUse":
-            currentToolName = event.toolName
-            toolCallCount += 1
-            lastActiveAt = Date()
-            if state == .idle { state = .working }
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
+            session.currentToolName = event.toolName
+            session.toolCallCount += 1
+            session.lastActiveAt = Date()
+            if session.state == .idle { session.state = .working }
+            sessions[sid] = session
+
         case "PostToolUse":
-            currentToolName = nil
-            lastActiveAt = Date()
+            guard var session = sessions[sid] else { return }
+            session.currentToolName = nil
+            session.lastActiveAt = Date()
+            sessions[sid] = session
+
         case "Stop":
             // Stop = Claude finished current turn, session still active.
-            // Keep sessionId/cwd (unlike SessionEnd which clears everything).
-            state = .idle
-            currentToolName = nil
-            lastActiveAt = Date()
+            guard var session = sessions[sid] else { return }
+            session.state = .idle
+            session.currentToolName = nil
+            session.lastActiveAt = Date()
+            sessions[sid] = session
+
         default:
             break
         }
     }
 
-    public func handlePermissionRequest(_ permission: PendingPermission) {
-        state = .waiting
-        pendingPermission = permission
+    public func handlePermissionRequest(sessionId: String, permission: PendingPermission) {
+        var session = sessions[sessionId] ?? SessionInfo(id: sessionId, cwd: permission.cwd)
+        session.state = .waiting
+        session.pendingPermission = permission
+        session.lastActiveAt = Date()
+        sessions[sessionId] = session
     }
 
-    public func resolvePermission(allow: Bool) {
-        guard let pending = pendingPermission else { return }
+    public func resolvePermission(sessionId: String, allow: Bool) {
+        guard var session = sessions[sessionId], let pending = session.pendingPermission else { return }
         let response: PermissionResponse = allow
             ? .allow(message: "User approved via ZackEyes")
             : .deny(message: "User denied via ZackEyes")
         pending.responder(response)
-        pendingPermission = nil
-        state = sessionId != nil ? .working : .idle
+        session.pendingPermission = nil
+        session.state = .working
+        session.lastActiveAt = Date()
+        sessions[sessionId] = session
+    }
+
+    /// Resolve the primary pending permission (convenience for single-session UI).
+    public func resolvePrimaryPermission(allow: Bool) {
+        guard let primary = primarySession, primary.pendingPermission != nil else { return }
+        resolvePermission(sessionId: primary.id, allow: allow)
     }
 }
 

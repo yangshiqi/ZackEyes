@@ -18,8 +18,16 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
+    public var aggregateState: SessionState {
+        sessionStore.aggregateState
+    }
+
+    public var primarySession: SessionInfo? {
+        sessionStore.primarySession
+    }
+
     public var statusColor: Color {
-        switch sessionStore.state {
+        switch aggregateState {
         case .idle, .stopped: return .gray
         case .working: return Color(red: 0.31, green: 0.80, blue: 0.77) // #4ecdc4
         case .waiting: return Color(red: 0.96, green: 0.65, blue: 0.14) // #f5a623
@@ -27,22 +35,24 @@ public final class NotchViewModel: ObservableObject {
     }
 
     public var statusText: String {
-        switch sessionStore.state {
-        case .idle, .stopped: return "idle"
-        case .working: return "working"
-        case .waiting: return "awaiting approval"
+        let count = sessionStore.sessions.count
+        switch aggregateState {
+        case .idle, .stopped:
+            return count == 0 ? "no sessions" : (count == 1 ? "idle" : "\(count) idle")
+        case .working:
+            let working = sessionStore.sessions.values.filter { $0.state == .working }.count
+            return working > 1 ? "\(working) working" : "working"
+        case .waiting:
+            let waiting = sessionStore.sessions.values.filter { $0.pendingPermission != nil }.count
+            return waiting > 1 ? "\(waiting) awaiting" : "awaiting approval"
         }
     }
 
-    public var toolBadge: String? {
-        sessionStore.currentToolName
-    }
-
     public func approve() {
-        sessionStore.resolvePermission(allow: true)
+        sessionStore.resolvePrimaryPermission(allow: true)
     }
 
     public func deny() {
-        sessionStore.resolvePermission(allow: false)
+        sessionStore.resolvePrimaryPermission(allow: false)
     }
 }

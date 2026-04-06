@@ -6,49 +6,53 @@ import Shared
 @MainActor
 struct SessionStoreTests {
 
-    // 1. Initial state is idle
-    @Test func initialStateIsIdle() {
+    // 1. Initial state is empty
+    @Test func initialStateIsEmpty() {
         let store = SessionStore()
-        #expect(store.state == .idle)
-        #expect(store.sessionId == nil)
-        #expect(store.currentToolName == nil)
-        #expect(store.pendingPermission == nil)
+        #expect(store.sessions.isEmpty)
+        #expect(store.primarySession == nil)
+        #expect(store.aggregateState == .idle)
     }
 
-    // 2. SessionStart sets working
-    @Test func sessionStartSetsWorking() {
+    // 2. SessionStart creates a session
+    @Test func sessionStartCreatesSession() {
         let store = SessionStore()
         let event = BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp")
         store.handleEvent(event)
-        #expect(store.state == .working)
-        #expect(store.sessionId == "s1")
-        #expect(store.cwd == "/tmp")
+        #expect(store.sessions.count == 1)
+        #expect(store.sessions["s1"]?.state == .working)
+        #expect(store.sessions["s1"]?.cwd == "/tmp")
+        #expect(store.aggregateState == .working)
     }
 
-    // 3. PreToolUse updates tool name
-    @Test func preToolUseUpdatesToolName() {
+    // 3. PreToolUse increments tool count
+    @Test func preToolUseIncrementsToolCount() {
         let store = SessionStore()
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
-        store.handleEvent(BridgeEvent(bridgeEvent: "PreToolUse", toolName: "Bash"))
-        #expect(store.currentToolName == "Bash")
-        #expect(store.state == .working)
+        store.handleEvent(BridgeEvent(bridgeEvent: "PreToolUse", sessionId: "s1", toolName: "Bash"))
+        #expect(store.sessions["s1"]?.currentToolName == "Bash")
+        #expect(store.sessions["s1"]?.toolCallCount == 1)
+        store.handleEvent(BridgeEvent(bridgeEvent: "PreToolUse", sessionId: "s1", toolName: "Write"))
+        #expect(store.sessions["s1"]?.toolCallCount == 2)
     }
 
-    // 4. PermissionRequest sets waiting
+    // 4. PermissionRequest sets waiting on the right session
     @Test func permissionRequestSetsWaiting() {
         let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
         let permission = PendingPermission(
             toolName: "Bash",
             toolInput: [:],
             cwd: "/tmp",
             responder: { _ in }
         )
-        store.handlePermissionRequest(permission)
-        #expect(store.state == .waiting)
-        #expect(store.pendingPermission != nil)
+        store.handlePermissionRequest(sessionId: "s1", permission: permission)
+        #expect(store.sessions["s1"]?.state == .waiting)
+        #expect(store.sessions["s1"]?.pendingPermission != nil)
+        #expect(store.aggregateState == .waiting)
     }
 
-    // 5. resolvePermission(allow: true) returns to working
+    // 5. resolvePrimaryPermission allow returns to working
     @Test func resolvePermissionAllowReturnsToWorking() {
         let store = SessionStore()
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
@@ -58,29 +62,66 @@ struct SessionStoreTests {
             cwd: "/tmp",
             responder: { _ in }
         )
-        store.handlePermissionRequest(permission)
-        store.resolvePermission(allow: true)
-        #expect(store.state == .working)
-        #expect(store.pendingPermission == nil)
+        store.handlePermissionRequest(sessionId: "s1", permission: permission)
+        store.resolvePrimaryPermission(allow: true)
+        #expect(store.sessions["s1"]?.state == .working)
+        #expect(store.sessions["s1"]?.pendingPermission == nil)
     }
 
-    // 6. SessionEnd resets to idle
-    @Test func sessionEndResetsToIdle() {
+    // 6. SessionEnd removes the session
+    @Test func sessionEndRemovesSession() {
         let store = SessionStore()
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
-        store.handleEvent(BridgeEvent(bridgeEvent: "SessionEnd"))
-        #expect(store.state == .idle)
-        #expect(store.sessionId == nil)
-        #expect(store.cwd == nil)
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionEnd", sessionId: "s1"))
+        #expect(store.sessions.isEmpty)
     }
 
-    // 7. Stop sets idle but keeps session info
+    // 7. Stop sets idle but keeps session
     @Test func stopSetsIdleKeepsSession() {
         let store = SessionStore()
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
-        store.handleEvent(BridgeEvent(bridgeEvent: "Stop"))
-        #expect(store.state == .idle)
-        #expect(store.sessionId == "s1")  // session still active
-        #expect(store.cwd == "/tmp")
+        store.handleEvent(BridgeEvent(bridgeEvent: "Stop", sessionId: "s1"))
+        #expect(store.sessions["s1"]?.state == .idle)
+        #expect(store.sessions.count == 1)  // session still exists
+    }
+
+    // 8. Multiple sessions tracked independently
+    @Test func multipleSessionsTrackedIndependently() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/project-a"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s2", cwd: "/project-b"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "PreToolUse", sessionId: "s1", toolName: "Bash"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "PreToolUse", sessionId: "s2", toolName: "Write"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "PreToolUse", sessionId: "s2", toolName: "Edit"))
+
+        #expect(store.sessions.count == 2)
+        #expect(store.sessions["s1"]?.toolCallCount == 1)
+        #expect(store.sessions["s2"]?.toolCallCount == 2)
+        #expect(store.sessions["s1"]?.currentToolName == "Bash")
+        #expect(store.sessions["s2"]?.currentToolName == "Edit")
+    }
+
+    // 9. Primary session prioritizes pending permission
+    @Test func primarySessionPrioritizesPending() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/a"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s2", cwd: "/b"))
+        // s2 is more recent (working), but s1 gets a pending permission
+        let permission = PendingPermission(toolName: "Bash", toolInput: [:], cwd: "/a", responder: { _ in })
+        store.handlePermissionRequest(sessionId: "s1", permission: permission)
+        #expect(store.primarySession?.id == "s1")
+    }
+
+    // 10. Aggregate state reflects worst status across sessions
+    @Test func aggregateStateReflectsWorstStatus() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/a"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "Stop", sessionId: "s1"))
+        #expect(store.aggregateState == .idle)
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s2", cwd: "/b"))
+        #expect(store.aggregateState == .working)
+        let permission = PendingPermission(toolName: "Bash", toolInput: [:], cwd: "/b", responder: { _ in })
+        store.handlePermissionRequest(sessionId: "s2", permission: permission)
+        #expect(store.aggregateState == .waiting)
     }
 }

@@ -84,6 +84,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("ZackEyes: PermissionRequest received but no responder")
                 return
             }
+            guard let sid = event.sessionId else {
+                NSLog("ZackEyes: PermissionRequest missing session_id")
+                return
+            }
             let toolInput = event.toolInput?.mapValues { $0.value } ?? [:]
             let pending = PendingPermission(
                 toolName: event.toolName ?? "Unknown",
@@ -92,7 +96,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 responder: responder
             )
             NSLog("ZackEyes: PermissionRequest for tool=%@", event.toolName ?? "?")
-            sessionStore.handlePermissionRequest(pending)
+            sessionStore.handlePermissionRequest(sessionId: sid, permission: pending)
             windowController?.forceExpand()
             menuBarFallback?.showPopover()
 
