@@ -71,29 +71,34 @@ struct NotchExpandedView: View {
 
     @ViewBuilder
     private func sessionCardContent(_ session: SessionInfo) -> some View {
+        let buddy = Buddy.from(sessionId: session.id)
+
         HStack(alignment: .top, spacing: 10) {
-            // Avatar
-            PixelAvatar(seed: session.id, size: 28)
-                .opacity(session.source == .detected ? 0.4 : 1.0)
+            // Animated buddy avatar
+            BuddyAvatar(
+                seed: session.id,
+                state: session.state,
+                isWaiting: session.pendingPermission != nil,
+                size: 32
+            )
+            .opacity(session.source == .detected ? 0.4 : 1.0)
 
             VStack(alignment: .leading, spacing: 6) {
-                // Row 1: display name + badges + elapsed
+                // Row 1: buddy name + project name + badges + elapsed
                 HStack(spacing: 6) {
-                    Text(session.displayName)
-                        .font(.system(size: 12, weight: .semibold))
+                    Text(buddy.name)
+                        .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.white)
+                    Text("·")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.4))
+                    Text(session.displayName)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
                         .lineLimit(1)
                         .truncationMode(.tail)
 
                     Spacer(minLength: 4)
-
-                    if session.source == .live && session.state == .working {
-                        // Active indicator
-                        Circle()
-                            .fill(statusColor(for: session))
-                            .frame(width: 6, height: 6)
-                            .shadow(color: statusColor(for: session).opacity(0.6), radius: 2)
-                    }
 
                     Text("Claude")
                         .font(.system(size: 9, weight: .medium))
@@ -107,6 +112,12 @@ struct NotchExpandedView: View {
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .foregroundColor(.white.opacity(0.5))
                 }
+
+                // Row 1.5: tagline (personality)
+                Text(buddy.tagline)
+                    .font(.system(size: 9, weight: .regular, design: .rounded))
+                    .foregroundColor(.white.opacity(0.5))
+                    .italic()
 
                 // Row 2: last user prompt (You: ...)
                 if let prompt = session.lastUserPrompt, !prompt.isEmpty {
