@@ -209,36 +209,107 @@ struct NotchExpandedView: View {
         let open = tasks.count - done - inProgress
 
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 4) {
+            // Header with progress bar
+            HStack(spacing: 6) {
                 Text("Tasks")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundColor(.white.opacity(0.8))
-                Text("(\(done) done, \(inProgress) in progress, \(open) open)")
-                    .font(.system(size: 9))
+                Text("\(done)/\(tasks.count)")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
                     .foregroundColor(.white.opacity(0.5))
+                if inProgress > 0 {
+                    Text("· \(inProgress) in progress")
+                        .font(.system(size: 9))
+                        .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                }
+                if open > 0 {
+                    Text("· \(open) open")
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                Spacer(minLength: 0)
             }
             .padding(.top, 4)
 
-            ForEach(tasks.prefix(5)) { task in
-                HStack(spacing: 6) {
-                    Image(systemName: task.isDone ? "checkmark.square.fill" : (task.isInProgress ? "arrow.triangle.2.circlepath" : "square"))
-                        .font(.system(size: 10))
-                        .foregroundColor(task.isDone ? .gray : (task.isInProgress ? Color(red: 0.31, green: 0.80, blue: 0.77) : .white.opacity(0.6)))
-                    Text(task.subject)
-                        .font(.system(size: 10))
-                        .foregroundColor(task.isDone ? .gray : .white.opacity(0.75))
-                        .strikethrough(task.isDone, color: .gray)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
+            // Progress bar
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Color.white.opacity(0.08))
+                        .frame(height: 3)
+                    if tasks.count > 0 {
+                        RoundedRectangle(cornerRadius: 1.5)
+                            .fill(Color(red: 0.31, green: 0.80, blue: 0.77))
+                            .frame(width: geo.size.width * CGFloat(done) / CGFloat(tasks.count), height: 3)
+                    }
                 }
             }
-            if tasks.count > 5 {
-                Text("+ \(tasks.count - 5) more")
-                    .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.4))
-                    .padding(.leading, 16)
+            .frame(height: 3)
+            .padding(.bottom, 2)
+
+            // Sort: in_progress first, then open, then done
+            let sorted = tasks.sorted { lhs, rhs in
+                let order: (TaskItem) -> Int = { t in
+                    if t.isInProgress { return 0 }
+                    if !t.isDone { return 1 }
+                    return 2
+                }
+                return order(lhs) < order(rhs)
+            }
+
+            ForEach(sorted) { task in
+                taskRow(task)
             }
         }
+    }
+
+    @ViewBuilder
+    private func taskRow(_ task: TaskItem) -> some View {
+        HStack(alignment: .center, spacing: 6) {
+            taskIcon(task)
+            Text(task.subject)
+                .font(.system(size: 10, weight: task.isInProgress ? .semibold : .regular))
+                .foregroundColor(taskTextColor(task))
+                .strikethrough(task.isDone, color: .gray.opacity(0.6))
+                .lineLimit(2)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.vertical, 1)
+    }
+
+    @ViewBuilder
+    private func taskIcon(_ task: TaskItem) -> some View {
+        if task.isDone {
+            Image(systemName: "checkmark.square.fill")
+                .font(.system(size: 10))
+                .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.6))
+        } else if task.isInProgress {
+            // Animated pulsing dot for in-progress
+            Circle()
+                .fill(Color(red: 0.31, green: 0.80, blue: 0.77))
+                .frame(width: 8, height: 8)
+                .shadow(color: Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.6), radius: 3)
+                .overlay(
+                    Circle()
+                        .stroke(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.4), lineWidth: 1)
+                        .scaleEffect(pulseOpacity * 1.5 + 1.0)
+                )
+        } else {
+            Image(systemName: "square")
+                .font(.system(size: 10))
+                .foregroundColor(.white.opacity(0.45))
+        }
+    }
+
+    private func taskTextColor(_ task: TaskItem) -> Color {
+        if task.isDone {
+            return .white.opacity(0.4)
+        }
+        if task.isInProgress {
+            return .white
+        }
+        return .white.opacity(0.75)
     }
 
     @ViewBuilder
