@@ -9,6 +9,8 @@ public class MenuBarFallback: NSObject {
     private var popover: NSPopover?
     private let viewModel: NotchViewModel
     private var iconCancellable: AnyCancellable?
+    private var globalClickMonitor: Any?
+    private var localClickMonitor: Any?
 
     public init(viewModel: NotchViewModel) {
         self.viewModel = viewModel
@@ -65,6 +67,7 @@ public class MenuBarFallback: NSObject {
 
     public func teardown() {
         iconCancellable = nil
+        stopClickMonitoring()
         if let statusItem = statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
@@ -76,6 +79,7 @@ public class MenuBarFallback: NSObject {
     public func showPopover() {
         guard let popover = popover, let button = statusItem?.button, !popover.isShown else { return }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        startClickMonitoring()
     }
 
     /// Toggle popover (called by global hotkey)
@@ -86,9 +90,69 @@ public class MenuBarFallback: NSObject {
     @objc private func togglePopover() {
         guard let popover = popover, let button = statusItem?.button else { return }
         if popover.isShown {
-            popover.performClose(nil)
+            closePopover()
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            startClickMonitoring()
+        }
+    }
+
+    private func closePopover() {
+        popover?.performClose(nil)
+        stopClickMonitoring()
+    }
+
+    // MARK: - Outside-click dismissal
+
+    /// Install global + local click monitors to dismiss the popover when the user
+    /// clicks anywhere outside it. .transient behavior alone doesn't cover clicks
+    /// into other apps or empty desktop areas for LSUIElement apps.
+    private func startClickMonitoring() {
+        stopClickMonitoring()  // just in case
+
+        // Global monitor: fires for clicks in OTHER applications.
+        // Any click → close.
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.closePopover()
+            }
+        }
+
+        // Local monitor: fires for clicks in THIS application's windows.
+        // We need to check if the click is inside the popover window; if not, close it.
+        // (Clicks inside the popover are passed through untouched.)
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            guard let self = self else { return event }
+            // If the click is in the popover's own window, let it through
+            if let popoverWindow = self.popover?.contentViewController?.view.window,
+               event.window === popoverWindow {
+                return event
+            }
+            // If the click is on the status item button, let it toggle normally
+            if let statusWindow = self.statusItem?.button?.window,
+               event.window === statusWindow {
+                return event
+            }
+            // Otherwise, close and swallow the event
+            Task { @MainActor in
+                self.closePopover()
+            }
+            return event
+        }
+    }
+
+    private func stopClickMonitoring() {
+        if let monitor = globalClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalClickMonitor = nil
+        }
+        if let monitor = localClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            localClickMonitor = nil
         }
     }
 }
