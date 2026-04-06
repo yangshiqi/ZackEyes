@@ -78,6 +78,11 @@ public class MenuBarFallback: NSObject {
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
 
+    /// Toggle popover (called by global hotkey)
+    public func toggle() {
+        togglePopover()
+    }
+
     @objc private func togglePopover() {
         guard let popover = popover, let button = statusItem?.button else { return }
         if popover.isShown {

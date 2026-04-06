@@ -9,6 +9,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var viewModel: NotchViewModel!
     private var windowController: NotchWindowController?
     private var menuBarFallback: MenuBarFallback?
+    private var hotKeyManager: HotKeyManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Prevent macOS from auto-terminating this LSUIElement app when no windows are visible
@@ -43,6 +44,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menuBarFallback = mb
         }
 
+        // 4.5 Global hotkey (Cmd+Shift+Z)
+        let hk = HotKeyManager()
+        hk.register { [weak self] in
+            self?.menuBarFallback?.toggle()
+            // TODO: notch mode — add NotchWindowController.toggleExpand() equivalent
+        }
+        hotKeyManager = hk
+
         // 5. Hook Installer (silent, best-effort)
         Task {
             do {
@@ -57,6 +66,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        hotKeyManager?.unregister()
         socketServer?.stop()
         windowController?.teardown()
         menuBarFallback?.teardown()
