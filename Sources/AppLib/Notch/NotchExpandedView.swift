@@ -81,7 +81,6 @@ struct NotchExpandedView: View {
                 isWaiting: session.pendingPermission != nil,
                 size: 32
             )
-            .opacity(session.source == .detected ? 0.4 : 1.0)
 
             VStack(alignment: .leading, spacing: 6) {
                 // Row 1: buddy name + project name + badges + elapsed
@@ -163,17 +162,6 @@ struct NotchExpandedView: View {
                     }
                 }
 
-                // Detected (read-only) hint
-                if session.source == .detected {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 9))
-                        Text("Restart session for live tracking")
-                            .font(.system(size: 10))
-                    }
-                    .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
-                    .padding(.top, 2)
-                }
             }
         }
         .padding(10)
@@ -369,9 +357,6 @@ struct NotchExpandedView: View {
     // MARK: - Helpers
 
     private func statusColor(for session: SessionInfo) -> Color {
-        if session.source == .detected {
-            return .gray.opacity(0.5)
-        }
         if session.pendingPermission != nil {
             return Color(red: 0.96, green: 0.65, blue: 0.14)
         }
