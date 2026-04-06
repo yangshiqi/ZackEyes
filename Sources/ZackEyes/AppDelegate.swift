@@ -11,6 +11,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarFallback: MenuBarFallback?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Prevent macOS from auto-terminating this LSUIElement app when no windows are visible
+        ProcessInfo.processInfo.disableAutomaticTermination("ZackEyes socket server must stay running")
+        ProcessInfo.processInfo.disableSuddenTermination()
+
         // 1. Session Store
         sessionStore = SessionStore()
 
