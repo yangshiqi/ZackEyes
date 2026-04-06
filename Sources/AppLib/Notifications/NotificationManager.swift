@@ -26,6 +26,32 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         }
     }
 
+    /// Post a critical notification when Claude hits an API error / rate limit.
+    public func notifyError(sessionId: String, projectName: String, errorLabel: String, detail: String?) {
+        let content = UNMutableNotificationContent()
+        content.title = "⚠️ \(projectName) — \(errorLabel)"
+        if let detail = detail, !detail.isEmpty {
+            let clipped = detail.count > 140 ? String(detail.prefix(140)) + "..." : detail
+            content.body = clipped
+        } else {
+            content.body = "Claude Code hit an API error. Click to jump to the terminal."
+        }
+        content.sound = .defaultCritical
+        content.interruptionLevel = .timeSensitive
+        content.userInfo = ["sessionId": sessionId]
+
+        let request = UNNotificationRequest(
+            identifier: "session-error-\(sessionId)-\(Int(Date().timeIntervalSince1970))",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                NSLog("ZackEyes: error notification post failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
     /// Post a notification when a session finishes its turn.
     public func notifySessionFinished(sessionId: String, projectName: String, lastPrompt: String?) {
         let content = UNMutableNotificationContent()

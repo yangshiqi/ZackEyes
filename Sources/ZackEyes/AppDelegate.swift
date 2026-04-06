@@ -127,6 +127,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             // Capture prior state BEFORE handling the event (for Stop detection)
             let priorState: SessionState? = event.sessionId.flatMap { sessionStore.sessions[$0]?.state }
+            let priorErrorAt: Date? = event.sessionId.flatMap { sessionStore.sessions[$0]?.errorAt }
             let hadToolActivity = event.sessionId.flatMap {
                 sessionStore.sessions[$0].map { $0.toolCallCount > 0 }
             } ?? false
@@ -140,11 +141,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 windowController?.updatePanelState(.collapsed)
             }
 
+            guard let sid = event.sessionId,
+                  let session = sessionStore.sessions[sid] else { return }
+
+            // Notify if an error was JUST detected on this session
+            if let errLabel = session.errorMessage,
+               session.errorAt != priorErrorAt {
+                NotificationManager.shared.notifyError(
+                    sessionId: sid,
+                    projectName: session.displayName,
+                    errorLabel: errLabel,
+                    detail: session.lastAssistantMessage
+                )
+                // Force-show the popover so the user sees the error immediately
+                menuBarFallback?.showPopover()
+                windowController?.forceExpand()
+            }
+
             // Notify on Stop only if the session was actually doing something
             if event.bridgeEvent == "Stop",
-               let sid = event.sessionId,
-               let session = sessionStore.sessions[sid],
                hadToolActivity,
+               session.errorMessage == nil,  // don't double-notify on errors
                priorState == .working || priorState == .waiting {
                 NotificationManager.shared.notifySessionFinished(
                     sessionId: sid,

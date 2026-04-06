@@ -171,6 +171,11 @@ struct NotchExpandedView: View {
                     }
                 }
 
+                // Error banner (rate limit / API error)
+                if let errMsg = session.errorMessage {
+                    errorBanner(errMsg, detail: session.lastAssistantMessage)
+                }
+
                 // Tasks section
                 if !session.tasks.isEmpty {
                     taskList(session.tasks)
@@ -200,6 +205,38 @@ struct NotchExpandedView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func errorBanner(_ label: String, detail: String?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(.red)
+                Text(label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.red)
+                Spacer(minLength: 0)
+            }
+            if let detail = detail, !detail.isEmpty {
+                Text(truncate(detail, length: 140))
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.8))
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.red.opacity(0.12))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.red.opacity(0.4), lineWidth: 1)
+                )
+        )
     }
 
     @ViewBuilder

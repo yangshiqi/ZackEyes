@@ -23,6 +23,7 @@ public struct HookInstaller {
         "SessionEnd",
         "Stop",
         "UserPromptSubmit",
+        "Notification",
     ]
 
     private var hookConfig: [String: Any] {

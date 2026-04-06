@@ -28,6 +28,8 @@ public struct SessionInfo: Identifiable {
     public var tasks: [TaskItem] = []
     public var claudePid: Int?   // PID of the claude process (from bridge ppid)
     public var transcriptPath: String?  // Path to the JSONL transcript file (for lsof lookup)
+    public var errorMessage: String?  // API error / rate limit / other failures
+    public var errorAt: Date?
 
     /// Display name — last path component of cwd, or first 8 chars of id
     public var displayName: String {
@@ -140,12 +142,6 @@ public final class SessionStore: ObservableObject {
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
 
-            // Intercept Task tool calls to track tasks
-            if let toolName = event.toolName,
-               let input = event.toolInput?.mapValues({ $0.value }) {
-                updateTasks(on: &session, toolName: toolName, input: input)
-            }
-
             sessions[sid] = session
 
         case "UserPromptSubmit":
@@ -154,6 +150,8 @@ public final class SessionStore: ObservableObject {
                 session.lastUserPrompt = prompt
                 session.lastAssistantMessage = nil  // clear stale reply on new prompt
             }
+            session.errorMessage = nil       // user is retrying
+            session.errorAt = nil
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
             sessions[sid] = session
@@ -164,6 +162,16 @@ public final class SessionStore: ObservableObject {
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
             session.isToolRunning = false
             session.lastActiveAt = Date()
+
+            // If a Task* tool just completed, refresh task list from transcript
+            // (TaskUpdate hook input lacks subject; transcript has the source of truth)
+            if let tool = event.toolName,
+               tool.hasPrefix("Task"),
+               let path = session.transcriptPath ?? event.transcriptPath {
+                session.transcriptPath = path
+                session.tasks = TaskExtractor.extractTasks(fromTranscriptAt: path)
+            }
+
             sessions[sid] = session
 
         case "Stop":
@@ -173,9 +181,26 @@ public final class SessionStore: ObservableObject {
             session.isToolRunning = false
             if let msg = event.lastAssistantMessage {
                 session.lastAssistantMessage = msg
+                // Detect API errors / rate limits in assistant output
+                if let errText = Self.detectError(in: msg) {
+                    session.errorMessage = errText
+                    session.errorAt = Date()
+                }
             }
             session.lastActiveAt = Date()
             sessions[sid] = session
+
+        case "Notification":
+            // Claude Code Notification hook — often carries rate limit warnings
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
+            // The notification text is in lastAssistantMessage or we can check tool_input
+            let notifText = event.lastAssistantMessage ?? ""
+            if let errText = Self.detectError(in: notifText) {
+                session.errorMessage = errText
+                session.errorAt = Date()
+                session.lastActiveAt = Date()
+                sessions[sid] = session
+            }
 
         default:
             break
@@ -240,6 +265,7 @@ public final class SessionStore: ObservableObject {
             session.lastActiveAt = d.lastModified
             session.lastUserPrompt = d.lastUserPrompt
             session.transcriptPath = d.transcriptPath
+            session.tasks = TaskExtractor.extractTasks(fromTranscriptAt: d.transcriptPath)
             session.source = .detected
             sessions[d.id] = session
         }
@@ -252,38 +278,41 @@ public final class SessionStore: ObservableObject {
         sessions[sessionId] = session
     }
 
-    /// Update the task list based on TaskCreate / TaskUpdate tool calls.
-    /// Claude Code's Task tool uses these as tool names in PreToolUse events.
-    private func updateTasks(on session: inout SessionInfo, toolName: String, input: [String: Any]) {
-        switch toolName {
-        case "TaskCreate":
-            // input: { subject, description, activeForm? }
-            guard let subject = input["subject"] as? String else { return }
-            // Generate a synthetic id since we don't have the real one until TaskList/TaskGet
-            let newId = "pending-\(UUID().uuidString.prefix(8))"
-            session.tasks.append(TaskItem(id: newId, subject: subject, status: "pending"))
-
-        case "TaskUpdate":
-            // input: { taskId, status?, subject?, ... }
-            guard let taskId = input["taskId"] as? String else { return }
-            if let idx = session.tasks.firstIndex(where: { $0.id == taskId }) {
-                if let newStatus = input["status"] as? String {
-                    session.tasks[idx].status = newStatus
-                }
-                if let newSubject = input["subject"] as? String {
-                    session.tasks[idx].subject = newSubject
-                }
-            } else {
-                // Task not tracked yet — create a stub
-                let subject = (input["subject"] as? String) ?? "Task \(taskId.prefix(6))"
-                let status = (input["status"] as? String) ?? "pending"
-                session.tasks.append(TaskItem(id: taskId, subject: subject, status: status))
-            }
-
-        default:
-            break
+    /// Detect Claude Code / Anthropic API error patterns in assistant output.
+    /// Returns a short user-facing error string, or nil if no error found.
+    private static func detectError(in text: String) -> String? {
+        let lower = text.lowercased()
+        let patterns: [(regex: String, label: String)] = [
+            // Rate limit / quota
+            ("429", "Rate limited (429)"),
+            ("rate limit", "Rate limited"),
+            ("rate_limit_error", "Rate limited"),
+            ("quota exceeded", "Quota exceeded"),
+            ("usage limit", "Usage limit reached"),
+            // Auth / credit
+            ("401", "Unauthorized (401)"),
+            ("403", "Forbidden (403)"),
+            ("credit balance", "Insufficient credits"),
+            ("billing", "Billing issue"),
+            // Server errors
+            ("500", "Server error (500)"),
+            ("502", "Bad gateway (502)"),
+            ("503", "Service unavailable (503)"),
+            ("504", "Gateway timeout (504)"),
+            ("overloaded", "API overloaded"),
+            // Generic
+            ("api error", "API error"),
+            ("request rejected", "Request rejected"),
+            ("connection error", "Connection error"),
+        ]
+        for (needle, label) in patterns where lower.contains(needle) {
+            return label
         }
+        return nil
     }
+
+    // Note: Task list changes are handled by re-extracting from the transcript JSONL
+    // on PostToolUse of Task* tools. See `handleEvent` above and `TaskExtractor`.
 }
 
 public struct PendingPermission {
