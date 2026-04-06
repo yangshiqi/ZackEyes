@@ -39,6 +39,12 @@ public class MenuBarFallback: NSObject {
         popover = nil
     }
 
+    /// Auto-open popover (called on PermissionRequest)
+    public func showPopover() {
+        guard let popover = popover, let button = statusItem?.button, !popover.isShown else { return }
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+    }
+
     @objc private func togglePopover() {
         guard let popover = popover, let button = statusItem?.button else { return }
         if popover.isShown {

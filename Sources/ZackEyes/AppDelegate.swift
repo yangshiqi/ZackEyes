@@ -66,7 +66,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     ) {
         switch event.bridgeEvent {
         case "PermissionRequest":
-            guard let responder = responder else { return }
+            guard let responder = responder else {
+                NSLog("ZackEyes: PermissionRequest received but no responder")
+                return
+            }
             let toolInput = event.toolInput?.mapValues { $0.value } ?? [:]
             let pending = PendingPermission(
                 toolName: event.toolName ?? "Unknown",
@@ -74,10 +77,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 cwd: event.cwd,
                 responder: responder
             )
+            NSLog("ZackEyes: PermissionRequest for tool=%@", event.toolName ?? "?")
             sessionStore.handlePermissionRequest(pending)
             windowController?.forceExpand()
+            menuBarFallback?.showPopover()
 
         default:
+            NSLog("ZackEyes: event=%@ tool=%@", event.bridgeEvent, event.toolName ?? "-")
             sessionStore.handleEvent(event)
             if event.bridgeEvent == "SessionStart" {
                 windowController?.updatePanelState(.compact)
