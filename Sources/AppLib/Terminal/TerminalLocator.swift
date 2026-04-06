@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import Darwin
 import Foundation
 
@@ -40,30 +41,36 @@ public enum TerminalLocator {
 
     /// Activate the terminal tab/window containing the given process.
     /// Uses terminal-specific AppleScript to focus the exact session where possible;
-    /// falls back to plain app activation for unsupported terminals.
+    /// falls back to Accessibility API window-title matching by cwd for others.
     @discardableResult
-    public static func activateTerminal(containingPid pid: Int) -> Bool {
+    public static func activateTerminal(containingPid pid: Int, cwd: String? = nil) -> Bool {
         guard let app = findTerminalApp(startingFromPid: pid) else {
             NSLog("ZackEyes: no terminal found for pid %d", pid)
             return false
         }
 
         let tty = ttyPath(of: Int32(pid))
-        NSLog("ZackEyes: activating terminal %@ (tty=%@) for pid %d",
-              app.bundleIdentifier ?? "?", tty ?? "nil", pid)
+        NSLog("ZackEyes: activating terminal %@ (tty=%@, cwd=%@) for pid %d",
+              app.bundleIdentifier ?? "?", tty ?? "nil", cwd ?? "nil", pid)
 
-        // Always activate the app first (quick feedback even if scripting fails)
+        // Always activate the app first (quick feedback)
         _ = app.activate(options: [])
 
         // Try terminal-specific tab focus
-        guard let tty = tty else { return true }
         switch app.bundleIdentifier {
         case "com.googlecode.iterm2":
-            return focusITerm2(tty: tty)
+            if let tty = tty { return focusITerm2(tty: tty) }
+            return true
         case "com.apple.Terminal":
-            return focusAppleTerminal(tty: tty)
+            if let tty = tty { return focusAppleTerminal(tty: tty) }
+            return true
+        case "com.mitchellh.ghostty",
+             "dev.warp.Warp-Stable", "dev.warp.Warp",
+             "io.alacritty",
+             "net.kovidgoyal.kitty":
+            // No AppleScript tab control — use Accessibility window-title matching
+            return focusByAccessibility(app: app, cwd: cwd)
         default:
-            // No specific handler — app activation is the best we can do
             return true
         }
     }
@@ -135,6 +142,64 @@ public enum TerminalLocator {
         end tell
         """
         return runAppleScript(script)
+    }
+
+    // MARK: - Accessibility API fallback (for Ghostty, Warp, Alacritty, Kitty)
+
+    /// Find a window of the given app whose title contains the cwd basename, then raise it.
+    /// Requires Accessibility permission (System Settings > Privacy > Accessibility).
+    private static func focusByAccessibility(app: NSRunningApplication, cwd: String?) -> Bool {
+        guard let cwd = cwd, !cwd.isEmpty else { return false }
+
+        // Prompt for Accessibility permission on first use
+        // Literal key avoids Swift 6 concurrency warning on the CFString global
+        let options = ["AXTrustedCheckOptionPrompt" as CFString: true] as CFDictionary
+        let trusted = AXIsProcessTrustedWithOptions(options)
+        guard trusted else {
+            NSLog("ZackEyes: accessibility permission not granted — tab focus unavailable")
+            return false
+        }
+
+        let appRef = AXUIElementCreateApplication(app.processIdentifier)
+
+        var windowsRef: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef)
+        guard result == .success, let windows = windowsRef as? [AXUIElement] else {
+            NSLog("ZackEyes: no windows accessible for %@", app.bundleIdentifier ?? "?")
+            return false
+        }
+
+        let basename = (cwd as NSString).lastPathComponent
+
+        // Find the best match: prefer exact cwd, then basename
+        var bestMatch: AXUIElement?
+        var bestScore = 0
+        for window in windows {
+            var titleRef: CFTypeRef?
+            AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
+            guard let title = titleRef as? String else { continue }
+
+            var score = 0
+            if title.contains(cwd) { score = 3 }
+            else if title.contains(basename) { score = 2 }
+            else if title.lowercased().contains("claude") { score = 1 }
+
+            if score > bestScore {
+                bestScore = score
+                bestMatch = window
+            }
+        }
+
+        guard let window = bestMatch else {
+            NSLog("ZackEyes: no window title matched cwd=%@", cwd)
+            return false
+        }
+
+        // Raise + make main + focused
+        AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+        AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, kCFBooleanTrue)
+        return true
     }
 
     private static func runAppleScript(_ source: String) -> Bool {

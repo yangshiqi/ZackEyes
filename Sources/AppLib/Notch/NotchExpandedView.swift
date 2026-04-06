@@ -60,7 +60,7 @@ struct NotchExpandedView: View {
     private func sessionCard(_ session: SessionInfo) -> some View {
         Button(action: {
             if let pid = session.claudePid {
-                _ = TerminalLocator.activateTerminal(containingPid: pid)
+                _ = TerminalLocator.activateTerminal(containingPid: pid, cwd: session.cwd)
             }
         }) {
             sessionCardContent(session)
