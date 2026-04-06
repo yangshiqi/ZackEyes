@@ -2,6 +2,15 @@ import Foundation
 import Shared
 
 /// Per-session state (one per Claude Code session).
+public struct TaskItem: Identifiable, Sendable {
+    public let id: String
+    public var subject: String
+    public var status: String  // "pending" | "in_progress" | "completed" | "deleted"
+
+    public var isDone: Bool { status == "completed" || status == "deleted" }
+    public var isInProgress: Bool { status == "in_progress" }
+}
+
 public struct SessionInfo: Identifiable {
     public let id: String
     public var cwd: String?
@@ -14,6 +23,7 @@ public struct SessionInfo: Identifiable {
     public var lastActiveAt: Date
     public var toolCallCount: Int
     public var source: SessionSource = .live
+    public var tasks: [TaskItem] = []
 
     /// Display name — last path component of cwd, or first 8 chars of id
     public var displayName: String {
@@ -111,6 +121,13 @@ public final class SessionStore: ObservableObject {
             session.toolCallCount += 1
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
+
+            // Intercept Task tool calls to track tasks
+            if let toolName = event.toolName,
+               let input = event.toolInput?.mapValues({ $0.value }) {
+                updateTasks(on: &session, toolName: toolName, input: input)
+            }
+
             sessions[sid] = session
 
         case "UserPromptSubmit":
@@ -208,6 +225,39 @@ public final class SessionStore: ObservableObject {
         guard var session = sessions[sessionId], session.source == .detected else { return }
         session.source = .live
         sessions[sessionId] = session
+    }
+
+    /// Update the task list based on TaskCreate / TaskUpdate tool calls.
+    /// Claude Code's Task tool uses these as tool names in PreToolUse events.
+    private func updateTasks(on session: inout SessionInfo, toolName: String, input: [String: Any]) {
+        switch toolName {
+        case "TaskCreate":
+            // input: { subject, description, activeForm? }
+            guard let subject = input["subject"] as? String else { return }
+            // Generate a synthetic id since we don't have the real one until TaskList/TaskGet
+            let newId = "pending-\(UUID().uuidString.prefix(8))"
+            session.tasks.append(TaskItem(id: newId, subject: subject, status: "pending"))
+
+        case "TaskUpdate":
+            // input: { taskId, status?, subject?, ... }
+            guard let taskId = input["taskId"] as? String else { return }
+            if let idx = session.tasks.firstIndex(where: { $0.id == taskId }) {
+                if let newStatus = input["status"] as? String {
+                    session.tasks[idx].status = newStatus
+                }
+                if let newSubject = input["subject"] as? String {
+                    session.tasks[idx].subject = newSubject
+                }
+            } else {
+                // Task not tracked yet — create a stub
+                let subject = (input["subject"] as? String) ?? "Task \(taskId.prefix(6))"
+                let status = (input["status"] as? String) ?? "pending"
+                session.tasks.append(TaskItem(id: taskId, subject: subject, status: status))
+            }
+
+        default:
+            break
+        }
     }
 }
 

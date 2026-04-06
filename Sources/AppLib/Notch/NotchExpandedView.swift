@@ -58,88 +58,98 @@ struct NotchExpandedView: View {
 
     @ViewBuilder
     private func sessionCard(_ session: SessionInfo) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // Row 1: status dot + display name + badges + elapsed
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(statusColor(for: session))
-                    .frame(width: 8, height: 8)
-                    .shadow(color: statusColor(for: session).opacity(0.6), radius: 3)
-                    .opacity(session.pendingPermission != nil ? pulseOpacity : 1.0)
+        HStack(alignment: .top, spacing: 10) {
+            // Avatar
+            PixelAvatar(seed: session.id, size: 28)
+                .opacity(session.source == .detected ? 0.4 : 1.0)
 
-                Text(session.displayName)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-
-                Spacer(minLength: 4)
-
-                Text("Claude")
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(4)
-
-                Text(elapsedString(since: session.lastActiveAt))
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.5))
-            }
-
-            // Row 2: last user prompt (You: ...)
-            if let prompt = session.lastUserPrompt, !prompt.isEmpty {
-                HStack(alignment: .top, spacing: 4) {
-                    Text("You:")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.6))
-                    Text(truncate(prompt, length: 80))
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.75))
+            VStack(alignment: .leading, spacing: 6) {
+                // Row 1: display name + badges + elapsed
+                HStack(spacing: 6) {
+                    Text(session.displayName)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
                         .lineLimit(1)
                         .truncationMode(.tail)
-                }
-                .padding(.leading, 16)
-            }
 
-            // Row 3: current tool action
-            if let tool = session.currentToolName {
-                HStack(spacing: 4) {
-                    Text(tool)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
-                    if let input = toolInputShortPreview(session.currentToolInput) {
-                        Text(input)
-                            .font(.system(size: 10, design: .monospaced))
+                    Spacer(minLength: 4)
+
+                    if session.source == .live && session.state == .working {
+                        // Active indicator
+                        Circle()
+                            .fill(statusColor(for: session))
+                            .frame(width: 6, height: 6)
+                            .shadow(color: statusColor(for: session).opacity(0.6), radius: 2)
+                    }
+
+                    Text("Claude")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(4)
+
+                    Text(elapsedString(since: session.lastActiveAt))
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+
+                // Row 2: last user prompt (You: ...)
+                if let prompt = session.lastUserPrompt, !prompt.isEmpty {
+                    HStack(alignment: .top, spacing: 4) {
+                        Text("You:")
+                            .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(.white.opacity(0.6))
+                        Text(truncate(prompt, length: 80))
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.75))
                             .lineLimit(1)
-                            .truncationMode(.middle)
+                            .truncationMode(.tail)
                     }
                 }
-                .padding(.leading, 16)
-            }
 
-            // Permission request details (shown inline under the session it belongs to)
-            if let pending = session.pendingPermission {
-                if pending.isAskUserQuestion {
-                    askUserQuestionBlock(session: session, pending: pending)
-                } else {
-                    permissionDetailBlock(pending)
+                // Row 3: current tool action (like "Edit Sources/...")
+                if let tool = session.currentToolName {
+                    HStack(spacing: 6) {
+                        Text(tool)
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                        if let input = toolInputShortPreview(session.currentToolInput) {
+                            Text(input)
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(.white.opacity(0.6))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                    }
                 }
-            }
 
-            // Detected (read-only) hint
-            if session.source == .detected {
-                HStack(spacing: 4) {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 9))
-                    Text("Restart session for live tracking")
-                        .font(.system(size: 10))
+                // Tasks section
+                if !session.tasks.isEmpty {
+                    taskList(session.tasks)
                 }
-                .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
-                .padding(.leading, 16)
-                .padding(.top, 2)
+
+                // Permission request details
+                if let pending = session.pendingPermission {
+                    if pending.isAskUserQuestion {
+                        askUserQuestionBlock(session: session, pending: pending)
+                    } else {
+                        permissionDetailBlock(pending)
+                    }
+                }
+
+                // Detected (read-only) hint
+                if session.source == .detected {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 9))
+                        Text("Restart session for live tracking")
+                            .font(.system(size: 10))
+                    }
+                    .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
+                    .padding(.top, 2)
+                }
             }
         }
         .padding(10)
@@ -153,6 +163,45 @@ struct NotchExpandedView: View {
                 withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
                     pulseOpacity = 0.3
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func taskList(_ tasks: [TaskItem]) -> some View {
+        let done = tasks.filter { $0.isDone }.count
+        let inProgress = tasks.filter { $0.isInProgress }.count
+        let open = tasks.count - done - inProgress
+
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Text("Tasks")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.8))
+                Text("(\(done) done, \(inProgress) in progress, \(open) open)")
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            .padding(.top, 4)
+
+            ForEach(tasks.prefix(5)) { task in
+                HStack(spacing: 6) {
+                    Image(systemName: task.isDone ? "checkmark.square.fill" : (task.isInProgress ? "arrow.triangle.2.circlepath" : "square"))
+                        .font(.system(size: 10))
+                        .foregroundColor(task.isDone ? .gray : (task.isInProgress ? Color(red: 0.31, green: 0.80, blue: 0.77) : .white.opacity(0.6)))
+                    Text(task.subject)
+                        .font(.system(size: 10))
+                        .foregroundColor(task.isDone ? .gray : .white.opacity(0.75))
+                        .strikethrough(task.isDone, color: .gray)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+            if tasks.count > 5 {
+                Text("+ \(tasks.count - 5) more")
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.4))
+                    .padding(.leading, 16)
             }
         }
     }
