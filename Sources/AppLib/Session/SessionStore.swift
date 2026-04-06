@@ -90,14 +90,14 @@ public final class SessionStore: ObservableObject {
             sessions[sid] = session
 
         case "PostToolUse":
-            guard var session = sessions[sid] else { return }
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
             session.currentToolName = nil
             session.lastActiveAt = Date()
             sessions[sid] = session
 
         case "Stop":
             // Stop = Claude finished current turn, session still active.
-            guard var session = sessions[sid] else { return }
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
             session.state = .idle
             session.currentToolName = nil
             session.lastActiveAt = Date()
