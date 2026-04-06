@@ -8,6 +8,8 @@ public final class SessionStore: ObservableObject {
     @Published public var cwd: String?
     @Published public var currentToolName: String?
     @Published public var pendingPermission: PendingPermission?
+    @Published public var sessionStartedAt: Date?
+    @Published public var toolCallCount: Int = 0
 
     public init() {}
 
@@ -19,14 +21,19 @@ public final class SessionStore: ObservableObject {
             cwd = event.cwd
             currentToolName = nil
             pendingPermission = nil
+            sessionStartedAt = Date()
+            toolCallCount = 0
         case "SessionEnd":
             state = .idle
             sessionId = nil
             cwd = nil
             currentToolName = nil
             pendingPermission = nil
+            sessionStartedAt = nil
+            toolCallCount = 0
         case "PreToolUse":
             currentToolName = event.toolName
+            toolCallCount += 1
             if state == .idle { state = .working }
         case "PostToolUse":
             currentToolName = nil

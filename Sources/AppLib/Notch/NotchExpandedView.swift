@@ -3,6 +3,9 @@ import SwiftUI
 struct NotchExpandedView: View {
     @ObservedObject var viewModel: NotchViewModel
     @State private var pulseOpacity: Double = 1.0
+    @State private var tick: Date = Date()
+
+    private let durationTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -44,6 +47,26 @@ struct NotchExpandedView: View {
                     .foregroundColor(.gray)
                     .lineLimit(1)
                     .truncationMode(.middle)
+            }
+
+            // Session stats (duration + tool count)
+            if viewModel.sessionStore.sessionId != nil {
+                HStack(spacing: 12) {
+                    if let startedAt = viewModel.sessionStore.sessionStartedAt {
+                        Label(durationString(from: startedAt, to: tick), systemImage: "clock")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.6))
+                            .labelStyle(.titleAndIcon)
+                    }
+
+                    Label("\(viewModel.sessionStore.toolCallCount) tools", systemImage: "wrench.adjustable")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.6))
+                        .labelStyle(.titleAndIcon)
+                }
+                .onReceive(durationTimer) { now in
+                    tick = now
+                }
             }
 
             // Permission request section
@@ -114,5 +137,16 @@ struct NotchExpandedView: View {
             return filePath
         }
         return nil
+    }
+
+    private func durationString(from start: Date, to now: Date) -> String {
+        let seconds = Int(now.timeIntervalSince(start))
+        if seconds < 60 {
+            return "\(seconds)s"
+        } else if seconds < 3600 {
+            return "\(seconds / 60)m \(seconds % 60)s"
+        } else {
+            return "\(seconds / 3600)h \(seconds / 60 % 60)m"
+        }
     }
 }
