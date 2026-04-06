@@ -91,6 +91,8 @@ public struct BridgeEvent: Codable, Sendable {
     public let toolInput: [String: AnyCodable]?
     public let permissionMode: String?
     public let transcriptPath: String?
+    public let userPrompt: String?
+    public let source: String?  // SessionStart "source" field
 
     public init(
         bridgeEvent: String,
@@ -100,7 +102,9 @@ public struct BridgeEvent: Codable, Sendable {
         toolName: String? = nil,
         toolInput: [String: AnyCodable]? = nil,
         permissionMode: String? = nil,
-        transcriptPath: String? = nil
+        transcriptPath: String? = nil,
+        userPrompt: String? = nil,
+        source: String? = nil
     ) {
         self.bridgeEvent = bridgeEvent
         self.sessionId = sessionId
@@ -110,6 +114,8 @@ public struct BridgeEvent: Codable, Sendable {
         self.toolInput = toolInput
         self.permissionMode = permissionMode
         self.transcriptPath = transcriptPath
+        self.userPrompt = userPrompt
+        self.source = source
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -121,6 +127,8 @@ public struct BridgeEvent: Codable, Sendable {
         case toolInput        = "tool_input"
         case permissionMode   = "permission_mode"
         case transcriptPath   = "transcript_path"
+        case userPrompt       = "prompt"
+        case source
     }
 }
 

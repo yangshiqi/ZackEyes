@@ -67,6 +67,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("ZackEyes: Hook installation failed: \(error)")
             }
         }
+
+        // 6. Discover already-running sessions from ~/.claude/projects/
+        let scanner = SessionScanner()
+        let detected = scanner.scan(recencyMinutes: 30)
+        sessionStore.importDetectedSessions(detected)
+        NSLog("ZackEyes: imported %d detected sessions", detected.count)
     }
 
     func applicationWillTerminate(_ notification: Notification) {

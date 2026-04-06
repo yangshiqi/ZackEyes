@@ -7,10 +7,21 @@ public struct SessionInfo: Identifiable {
     public var cwd: String?
     public var state: SessionState
     public var currentToolName: String?
+    public var currentToolInput: [String: Any]?
+    public var lastUserPrompt: String?
     public var pendingPermission: PendingPermission?
     public var startedAt: Date
     public var lastActiveAt: Date
     public var toolCallCount: Int
+    public var source: SessionSource = .live
+
+    /// Display name — last path component of cwd, or first 8 chars of id
+    public var displayName: String {
+        if let cwd = cwd, !cwd.isEmpty {
+            return (cwd as NSString).lastPathComponent
+        }
+        return String(id.prefix(8))
+    }
 
     public init(
         id: String,
@@ -22,11 +33,18 @@ public struct SessionInfo: Identifiable {
         self.cwd = cwd
         self.state = state
         self.currentToolName = nil
+        self.currentToolInput = nil
+        self.lastUserPrompt = nil
         self.pendingPermission = nil
         self.startedAt = startedAt
         self.lastActiveAt = startedAt
         self.toolCallCount = 0
     }
+}
+
+public enum SessionSource: Sendable {
+    case live        // tracked via hooks (real-time)
+    case detected    // discovered by scanning ~/.claude/projects/ (read-only)
 }
 
 @MainActor
@@ -74,6 +92,11 @@ public final class SessionStore: ObservableObject {
     public func handleEvent(_ event: BridgeEvent) {
         guard let sid = event.sessionId else { return }
 
+        // Any live hook event upgrades a detected session to live
+        if let existing = sessions[sid], existing.source == .detected {
+            upgradeToLive(sessionId: sid)
+        }
+
         switch event.bridgeEvent {
         case "SessionStart":
             sessions[sid] = SessionInfo(id: sid, cwd: event.cwd)
@@ -84,7 +107,17 @@ public final class SessionStore: ObservableObject {
         case "PreToolUse":
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
             session.currentToolName = event.toolName
+            session.currentToolInput = event.toolInput?.mapValues { $0.value }
             session.toolCallCount += 1
+            session.lastActiveAt = Date()
+            if session.state == .idle { session.state = .working }
+            sessions[sid] = session
+
+        case "UserPromptSubmit":
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
+            if let prompt = event.userPrompt {
+                session.lastUserPrompt = prompt
+            }
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
             sessions[sid] = session
@@ -141,6 +174,28 @@ public final class SessionStore: ObservableObject {
         session.pendingPermission = nil
         session.state = .working  // back to normal
         session.lastActiveAt = Date()
+        sessions[sessionId] = session
+    }
+
+    /// Import sessions discovered by SessionScanner. These are read-only and
+    /// marked as `.detected` — user needs to restart them for live tracking.
+    public func importDetectedSessions(_ detected: [SessionScanner.DetectedSession]) {
+        for d in detected {
+            // Don't overwrite live sessions if we already have them
+            if sessions[d.id]?.source == .live { continue }
+
+            var session = SessionInfo(id: d.id, cwd: d.cwd, state: .idle, startedAt: d.lastModified)
+            session.lastActiveAt = d.lastModified
+            session.lastUserPrompt = d.lastUserPrompt
+            session.source = .detected
+            sessions[d.id] = session
+        }
+    }
+
+    /// Upgrade a detected session to live when we receive our first hook event for it.
+    public func upgradeToLive(sessionId: String) {
+        guard var session = sessions[sessionId], session.source == .detected else { return }
+        session.source = .live
         sessions[sessionId] = session
     }
 }

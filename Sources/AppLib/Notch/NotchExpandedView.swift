@@ -9,60 +9,19 @@ struct NotchExpandedView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(viewModel.statusColor)
-                    .frame(width: 8, height: 8)
-                    .shadow(color: viewModel.statusColor, radius: 3)
-                    .opacity(viewModel.aggregateState == .waiting ? pulseOpacity : 1.0)
-                    .onAppear {
-                        withAnimation(
-                            .easeInOut(duration: 0.9)
-                            .repeatForever(autoreverses: true)
-                        ) {
-                            pulseOpacity = 0.3
-                        }
-                    }
-
-                Text("Claude Code")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white)
-
-                Spacer()
-
-                Text(viewModel.statusText)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(viewModel.statusColor)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 3)
-                    .background(viewModel.statusColor.opacity(0.15))
-                    .clipShape(Capsule())
-            }
-
             if viewModel.sessionStore.sessions.isEmpty {
-                Text("No active sessions")
-                    .font(.system(size: 11))
-                    .foregroundColor(.gray)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 20)
-            } else if let primary = viewModel.primarySession {
-                // Primary session detail
-                primarySessionView(primary)
-
-                // Other sessions list (if multiple)
-                let others = viewModel.sessionStore.orderedSessions.filter { $0.id != primary.id }
-                if !others.isEmpty {
-                    Divider().background(Color.white.opacity(0.1))
-                    Text("OTHER SESSIONS")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundColor(.gray)
-                        .kerning(0.5)
-                    VStack(spacing: 4) {
-                        ForEach(others, id: \.id) { session in
-                            otherSessionRow(session)
-                        }
+                emptyState
+            } else {
+                // List all sessions (most recent first)
+                VStack(spacing: 10) {
+                    ForEach(viewModel.sessionStore.orderedSessions, id: \.id) { session in
+                        sessionCard(session)
                     }
+                }
+
+                // If primary session has a permission request, show approval buttons at bottom
+                if let primary = viewModel.primarySession, primary.pendingPermission != nil {
+                    permissionApprovalButtons
                 }
             }
 
@@ -72,121 +31,186 @@ struct NotchExpandedView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+        .onReceive(durationTimer) { now in
+            tick = now
+        }
     }
 
-    @ViewBuilder
-    private func primarySessionView(_ session: SessionInfo) -> some View {
-        // CWD
-        if let cwd = session.cwd {
-            Text(cwd)
-                .font(.system(size: 10, design: .monospaced))
+    // MARK: - Empty state
+
+    private var emptyState: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 24))
+                .foregroundColor(.gray.opacity(0.5))
+            Text("No active sessions")
+                .font(.system(size: 11))
                 .foregroundColor(.gray)
-                .lineLimit(1)
-                .truncationMode(.middle)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 30)
+    }
 
-        // Session stats
-        HStack(spacing: 12) {
-            let endTime = (session.state == .working || session.state == .waiting)
-                ? tick
-                : session.lastActiveAt
-            Label(durationString(from: session.startedAt, to: endTime), systemImage: "clock")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundColor(.white.opacity(0.6))
-                .labelStyle(.titleAndIcon)
+    // MARK: - Session card
 
-            Label("\(session.toolCallCount) tools", systemImage: "wrench.adjustable")
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundColor(.white.opacity(0.6))
-                .labelStyle(.titleAndIcon)
+    @ViewBuilder
+    private func sessionCard(_ session: SessionInfo) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            // Row 1: status dot + display name + badges + elapsed
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(statusColor(for: session))
+                    .frame(width: 8, height: 8)
+                    .shadow(color: statusColor(for: session).opacity(0.6), radius: 3)
+                    .opacity(session.pendingPermission != nil ? pulseOpacity : 1.0)
 
-            if let tool = session.currentToolName {
-                Text(tool)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.white.opacity(0.8))
+                Text(session.displayName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Spacer(minLength: 4)
+
+                Text("Claude")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
-                    .background(Color.white.opacity(0.08))
+                    .background(Color.white.opacity(0.1))
                     .cornerRadius(4)
+
+                Text(elapsedString(since: session.lastActiveAt))
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.5))
             }
-        }
-        .onReceive(durationTimer) { now in
-            if session.state == .working || session.state == .waiting {
-                tick = now
-            }
-        }
 
-        // Permission request section
-        if let pending = session.pendingPermission {
-            Divider().background(Color.white.opacity(0.1))
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("PERMISSION REQUEST")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(.gray)
-                    .kerning(0.5)
-
-                Text(pending.toolName)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
-
-                if let preview = toolInputPreview(pending) {
-                    Text(preview)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.8))
-                        .lineLimit(3)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.white.opacity(0.05))
-                        .cornerRadius(6)
+            // Row 2: last user prompt (You: ...)
+            if let prompt = session.lastUserPrompt, !prompt.isEmpty {
+                HStack(alignment: .top, spacing: 4) {
+                    Text("You:")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.6))
+                    Text(truncate(prompt, length: 80))
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.75))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
+                .padding(.leading, 16)
+            }
 
-                HStack(spacing: 8) {
-                    Button(action: { viewModel.deny() }) {
-                        Text("Deny")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.red)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                            .background(Color.red.opacity(0.15))
-                            .cornerRadius(6)
+            // Row 3: current tool action
+            if let tool = session.currentToolName {
+                HStack(spacing: 4) {
+                    Text(tool)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                    if let input = toolInputShortPreview(session.currentToolInput) {
+                        Text(input)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.6))
+                            .lineLimit(1)
+                            .truncationMode(.middle)
                     }
-                    .buttonStyle(.plain)
+                }
+                .padding(.leading, 16)
+            }
 
-                    Button(action: { viewModel.approve() }) {
-                        Text("Allow Once")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 6)
-                            .background(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.15))
-                            .cornerRadius(6)
-                    }
-                    .buttonStyle(.plain)
+            // Permission request details (shown inline under the session it belongs to)
+            if let pending = session.pendingPermission {
+                permissionDetailBlock(pending)
+            }
+
+            // Detected (read-only) hint
+            if session.source == .detected {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 9))
+                    Text("Restart session for live tracking")
+                        .font(.system(size: 10))
+                }
+                .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
+                .padding(.leading, 16)
+                .padding(.top, 2)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white.opacity(session.pendingPermission != nil ? 0.06 : 0.03))
+        )
+        .onAppear {
+            if session.pendingPermission != nil {
+                withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                    pulseOpacity = 0.3
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func otherSessionRow(_ session: SessionInfo) -> some View {
+    private func permissionDetailBlock(_ pending: PendingPermission) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("PERMISSION REQUEST")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
+                .kerning(0.5)
+
+            Text(pending.toolName)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
+
+            if let preview = toolInputFullPreview(pending) {
+                Text(preview)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.8))
+                    .lineLimit(3)
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(6)
+            }
+        }
+        .padding(.top, 6)
+        .padding(.leading, 16)
+    }
+
+    // MARK: - Approval buttons (shared across all pending permissions)
+
+    private var permissionApprovalButtons: some View {
         HStack(spacing: 8) {
-            Circle()
-                .fill(statusColor(for: session))
-                .frame(width: 6, height: 6)
-            Text(session.cwd.map { ($0 as NSString).lastPathComponent } ?? String(session.id.prefix(8)))
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(.white.opacity(0.7))
-                .lineLimit(1)
-                .truncationMode(.middle)
-            Spacer()
-            Text("\(session.toolCallCount) tools")
-                .font(.system(size: 9))
-                .foregroundColor(.white.opacity(0.5))
+            Button(action: { viewModel.deny() }) {
+                Text("Deny")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.red)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color.red.opacity(0.15))
+                    .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+
+            Button(action: { viewModel.approve() }) {
+                Text("Allow Once")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.15))
+                    .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
         }
     }
 
+    // MARK: - Helpers
+
     private func statusColor(for session: SessionInfo) -> Color {
+        if session.source == .detected {
+            return .gray.opacity(0.5)
+        }
         if session.pendingPermission != nil {
             return Color(red: 0.96, green: 0.65, blue: 0.14)
         }
@@ -197,7 +221,21 @@ struct NotchExpandedView: View {
         }
     }
 
-    private func toolInputPreview(_ pending: PendingPermission) -> String? {
+    private func toolInputShortPreview(_ input: [String: Any]?) -> String? {
+        guard let input = input else { return nil }
+        if let filePath = input["file_path"] as? String {
+            return (filePath as NSString).lastPathComponent
+        }
+        if let command = input["command"] as? String {
+            return command
+        }
+        if let path = input["path"] as? String {
+            return (path as NSString).lastPathComponent
+        }
+        return nil
+    }
+
+    private func toolInputFullPreview(_ pending: PendingPermission) -> String? {
         if let command = pending.toolInput["command"] as? String {
             return command
         }
@@ -207,14 +245,21 @@ struct NotchExpandedView: View {
         return nil
     }
 
-    private func durationString(from start: Date, to now: Date) -> String {
-        let seconds = Int(now.timeIntervalSince(start))
+    private func elapsedString(since date: Date) -> String {
+        let seconds = Int(tick.timeIntervalSince(date))
         if seconds < 60 {
-            return "\(seconds)s"
+            return "<1m"
         } else if seconds < 3600 {
-            return "\(seconds / 60)m \(seconds % 60)s"
+            return "\(seconds / 60)m"
         } else {
-            return "\(seconds / 3600)h \(seconds / 60 % 60)m"
+            return "\(seconds / 3600)h"
         }
+    }
+
+    private func truncate(_ str: String, length: Int) -> String {
+        if str.count <= length {
+            return str
+        }
+        return String(str.prefix(length)) + "..."
     }
 }
