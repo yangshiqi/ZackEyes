@@ -133,6 +133,16 @@ public final class SessionStore: ObservableObject {
         guard let primary = primarySession, primary.pendingPermission != nil else { return }
         resolvePermission(sessionId: primary.id, allow: allow)
     }
+
+    /// Called when the bridge disconnects without the user responding via ZackEyes
+    /// (e.g., user answered in terminal, or bridge timed out). Clear the pending state.
+    public func abandonPermission(sessionId: String) {
+        guard var session = sessions[sessionId], session.pendingPermission != nil else { return }
+        session.pendingPermission = nil
+        session.state = .working  // back to normal
+        session.lastActiveAt = Date()
+        sessions[sessionId] = session
+    }
 }
 
 public struct PendingPermission {

@@ -27,6 +27,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         socketServer.setEventHandler { [weak self] event, responder in
             self?.handleEvent(event, responder: responder)
         }
+        socketServer.setPermissionAbandonedHandler { [weak self] sid in
+            NSLog("ZackEyes: permission abandoned for session %@", sid)
+            self?.sessionStore.abandonPermission(sessionId: sid)
+        }
         do {
             try socketServer.start()
         } catch {

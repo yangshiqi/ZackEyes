@@ -22,6 +22,7 @@ public final class SocketServer {
     private var serverFd: Int32 = -1
     private var isRunning = false
     private var onEvent: ((BridgeEvent, (@Sendable (PermissionResponse) -> Void)?) -> Void)?
+    private var onPermissionAbandoned: ((String) -> Void)?
 
     // MARK: - Init
 
@@ -35,6 +36,13 @@ public final class SocketServer {
         _ handler: @escaping @MainActor (BridgeEvent, (@Sendable (PermissionResponse) -> Void)?) -> Void
     ) {
         self.onEvent = handler
+    }
+
+    /// Called when the bridge disconnects without a response (user answered in terminal, bridge timed out, etc.).
+    public func setPermissionAbandonedHandler(
+        _ handler: @escaping @MainActor (String) -> Void
+    ) {
+        self.onPermissionAbandoned = handler
     }
 
     /// Unlink any stale socket, create AF_UNIX/SOCK_STREAM, bind, listen, then launch accept loop.
@@ -154,13 +162,28 @@ public final class SocketServer {
             await MainActor.run { [weak self] in
                 self?.onEvent?(event, responder)
             }
-            // Keep task alive while bridge waits (bridge timeout is 15s, we wait 20s max)
-            for _ in 0..<200 {
+            // Wait for either user response (tracker.completed) or bridge disconnect (POLLHUP)
+            var bridgeDisconnected = false
+            for _ in 0..<200 { // 20s max
                 if tracker.completed { break }
+                // Check if bridge closed the connection (happens on bridge timeout
+                // or if Claude Code killed the bridge because user responded in terminal)
+                var pfd = pollfd(fd: capturedFd, events: Int16(POLLHUP), revents: 0)
+                if poll(&pfd, 1, 0) > 0 && (pfd.revents & Int16(POLLHUP)) != 0 {
+                    bridgeDisconnected = true
+                    break
+                }
                 try? await Task.sleep(for: .milliseconds(100))
             }
             // If responder was never called, close the fd ourselves
             if !tracker.completed { close(capturedFd) }
+            // Notify that the permission was abandoned (user didn't click in ZackEyes)
+            if !tracker.completed, let sid = event.sessionId {
+                _ = bridgeDisconnected
+                await MainActor.run { [weak self] in
+                    self?.onPermissionAbandoned?(sid)
+                }
+            }
         } else {
             // Fire-and-forget: dispatch event, close immediately
             await MainActor.run { [weak self] in
