@@ -42,10 +42,24 @@ public class MenuBarFallback: NSObject {
     }
 
     private func updateIcon(for state: SessionState) {
-        if let image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "ZackEyes") {
-            image.isTemplate = true
-            statusItem?.button?.image = image
-            statusItem?.button?.title = ""
+        guard let image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "ZackEyes") else {
+            return
+        }
+        image.isTemplate = true
+        statusItem?.button?.image = image
+        statusItem?.button?.title = ""
+
+        // State-based tint
+        switch state {
+        case .waiting:
+            // Orange — attention grabbing
+            statusItem?.button?.contentTintColor = NSColor(red: 0.96, green: 0.65, blue: 0.14, alpha: 1.0)
+        case .working:
+            // Teal — active
+            statusItem?.button?.contentTintColor = NSColor(red: 0.31, green: 0.80, blue: 0.77, alpha: 1.0)
+        case .idle, .stopped:
+            // No tint — adapts to menu bar
+            statusItem?.button?.contentTintColor = nil
         }
     }
 
