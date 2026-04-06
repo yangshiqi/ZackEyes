@@ -53,7 +53,12 @@ struct NotchExpandedView: View {
             if viewModel.sessionStore.sessionId != nil {
                 HStack(spacing: 12) {
                     if let startedAt = viewModel.sessionStore.sessionStartedAt {
-                        Label(durationString(from: startedAt, to: tick), systemImage: "clock")
+                        // Freeze duration when not actively working
+                        let endTime = viewModel.sessionStore.state == .working
+                                   || viewModel.sessionStore.state == .waiting
+                            ? tick
+                            : (viewModel.sessionStore.lastActiveAt ?? tick)
+                        Label(durationString(from: startedAt, to: endTime), systemImage: "clock")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
                             .foregroundColor(.white.opacity(0.6))
                             .labelStyle(.titleAndIcon)
@@ -65,7 +70,11 @@ struct NotchExpandedView: View {
                         .labelStyle(.titleAndIcon)
                 }
                 .onReceive(durationTimer) { now in
-                    tick = now
+                    // Only tick when active
+                    if viewModel.sessionStore.state == .working
+                        || viewModel.sessionStore.state == .waiting {
+                        tick = now
+                    }
                 }
             }
 

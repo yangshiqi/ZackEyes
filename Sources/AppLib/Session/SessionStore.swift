@@ -9,6 +9,7 @@ public final class SessionStore: ObservableObject {
     @Published public var currentToolName: String?
     @Published public var pendingPermission: PendingPermission?
     @Published public var sessionStartedAt: Date?
+    @Published public var lastActiveAt: Date?
     @Published public var toolCallCount: Int = 0
 
     public init() {}
@@ -22,6 +23,7 @@ public final class SessionStore: ObservableObject {
             currentToolName = nil
             pendingPermission = nil
             sessionStartedAt = Date()
+            lastActiveAt = Date()
             toolCallCount = 0
         case "SessionEnd":
             state = .idle
@@ -30,18 +32,22 @@ public final class SessionStore: ObservableObject {
             currentToolName = nil
             pendingPermission = nil
             sessionStartedAt = nil
+            lastActiveAt = nil
             toolCallCount = 0
         case "PreToolUse":
             currentToolName = event.toolName
             toolCallCount += 1
+            lastActiveAt = Date()
             if state == .idle { state = .working }
         case "PostToolUse":
             currentToolName = nil
+            lastActiveAt = Date()
         case "Stop":
             // Stop = Claude finished current turn, session still active.
             // Keep sessionId/cwd (unlike SessionEnd which clears everything).
             state = .idle
             currentToolName = nil
+            lastActiveAt = Date()
         default:
             break
         }
