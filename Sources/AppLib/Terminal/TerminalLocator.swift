@@ -22,9 +22,10 @@ public enum TerminalLocator {
         "com.todesktop.230313mzl4w4u92",
     ]
 
-    /// Prompt the user ONCE at startup for Accessibility permission.
-    /// After this, we check silently via AXIsProcessTrusted() without nagging.
+    /// Prompt the user for Accessibility permission ONLY if not already trusted.
+    /// Once granted (under a stable code signature), we never prompt again.
     public static func promptAccessibilityIfNeeded() {
+        if AXIsProcessTrusted() { return }  // already authorized — no prompt
         let options = ["AXTrustedCheckOptionPrompt" as CFString: true] as CFDictionary
         _ = AXIsProcessTrustedWithOptions(options)
     }
@@ -33,12 +34,17 @@ public enum TerminalLocator {
     /// 1. Use `lsof` on the transcript file (most accurate — file has exactly one writer)
     /// 2. Scan running claude processes and match by cwd
     public static func findClaudePid(transcriptPath: String?, cwd: String?) -> Int? {
+        NSLog("ZackEyes: findClaudePid transcriptPath=%{public}@ cwd=%{public}@",
+              transcriptPath ?? "nil", cwd ?? "nil")
         if let path = transcriptPath, let pid = lsofPid(file: path) {
+            NSLog("ZackEyes: found via lsof pid=%d", pid)
             return pid
         }
         if let cwd = cwd, let pid = claudePidByCwd(cwd) {
+            NSLog("ZackEyes: found via cwd match pid=%d", pid)
             return pid
         }
+        NSLog("ZackEyes: no claude pid found")
         return nil
     }
 
@@ -81,8 +87,10 @@ public enum TerminalLocator {
 
     private static func claudePidByCwd(_ targetCwd: String) -> Int? {
         guard let out = runWithTimeout("/bin/ps", args: ["-ax", "-o", "pid=,comm="], timeoutSeconds: 3) else {
+            NSLog("ZackEyes: ps command failed or timed out")
             return nil
         }
+        var candidateCount = 0
         for line in out.split(separator: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
@@ -92,10 +100,15 @@ public enum TerminalLocator {
             guard base == "claude" || base == "node" else { continue }
             guard let pid = Int(parts[0]) else { continue }
 
-            if processCwd(pid: pid) == targetCwd {
+            candidateCount += 1
+            let pidCwd = processCwd(pid: pid)
+            NSLog("ZackEyes: candidate pid=%d comm=%{public}@ cwd=%{public}@ (target=%{public}@)",
+                  pid, comm, pidCwd ?? "nil", targetCwd)
+            if pidCwd == targetCwd {
                 return pid
             }
         }
+        NSLog("ZackEyes: scanned %d claude candidates, no cwd match", candidateCount)
         return nil
     }
 
@@ -139,7 +152,7 @@ public enum TerminalLocator {
         }
 
         let tty = ttyPath(of: Int32(pid))
-        NSLog("ZackEyes: activating terminal %@ (tty=%@, cwd=%@) for pid %d",
+        NSLog("ZackEyes: activating terminal %{public}@ (tty=%{public}@, cwd=%{public}@) for pid %d",
               app.bundleIdentifier ?? "?", tty ?? "nil", cwd ?? "nil", pid)
 
         // Always activate the app first (quick feedback)
@@ -244,7 +257,7 @@ public enum TerminalLocator {
         // we don't want to keep nagging them on every click.
         guard AXIsProcessTrusted() else {
             // Prompt ONCE per app launch via the promptIfNeeded() call at startup
-            NSLog("ZackEyes: accessibility permission not granted — tab focus unavailable for %@",
+            NSLog("ZackEyes: accessibility permission not granted — tab focus unavailable for %{public}@",
                   app.bundleIdentifier ?? "?")
             return false
         }
@@ -254,11 +267,13 @@ public enum TerminalLocator {
         var windowsRef: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(appRef, kAXWindowsAttribute as CFString, &windowsRef)
         guard result == .success, let windows = windowsRef as? [AXUIElement] else {
-            NSLog("ZackEyes: no windows accessible for %@", app.bundleIdentifier ?? "?")
+            NSLog("ZackEyes: no windows accessible for %{public}@", app.bundleIdentifier ?? "?")
             return false
         }
 
         let basename = (cwd as NSString).lastPathComponent
+        NSLog("ZackEyes: scanning %d windows for cwd=%{public}@ basename=%{public}@",
+              windows.count, cwd, basename)
 
         // Find the best match: prefer exact cwd, then basename
         var bestMatch: AXUIElement?
@@ -267,6 +282,7 @@ public enum TerminalLocator {
             var titleRef: CFTypeRef?
             AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleRef)
             guard let title = titleRef as? String else { continue }
+            NSLog("ZackEyes: window title=%{public}@", title)
 
             var score = 0
             if title.contains(cwd) { score = 3 }
@@ -280,9 +296,10 @@ public enum TerminalLocator {
         }
 
         guard let window = bestMatch else {
-            NSLog("ZackEyes: no window title matched cwd=%@", cwd)
+            NSLog("ZackEyes: no window title matched cwd=%{public}@", cwd)
             return false
         }
+        NSLog("ZackEyes: matched window with score=%d", bestScore)
 
         // Raise + make main + focused
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)

@@ -17,7 +17,9 @@ public struct SessionInfo: Identifiable {
     public var state: SessionState
     public var currentToolName: String?
     public var currentToolInput: [String: Any]?
+    public var isToolRunning: Bool = false
     public var lastUserPrompt: String?
+    public var lastAssistantMessage: String?
     public var pendingPermission: PendingPermission?
     public var startedAt: Date
     public var lastActiveAt: Date
@@ -133,6 +135,7 @@ public final class SessionStore: ObservableObject {
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
             session.currentToolName = event.toolName
             session.currentToolInput = event.toolInput?.mapValues { $0.value }
+            session.isToolRunning = true
             session.toolCallCount += 1
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
@@ -149,14 +152,17 @@ public final class SessionStore: ObservableObject {
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
             if let prompt = event.userPrompt {
                 session.lastUserPrompt = prompt
+                session.lastAssistantMessage = nil  // clear stale reply on new prompt
             }
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
             sessions[sid] = session
 
         case "PostToolUse":
+            // Don't clear currentToolName — keep it as "most recent action".
+            // Just mark that the tool is no longer running.
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
-            session.currentToolName = nil
+            session.isToolRunning = false
             session.lastActiveAt = Date()
             sessions[sid] = session
 
@@ -164,7 +170,10 @@ public final class SessionStore: ObservableObject {
             // Stop = Claude finished current turn, session still active.
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
             session.state = .idle
-            session.currentToolName = nil
+            session.isToolRunning = false
+            if let msg = event.lastAssistantMessage {
+                session.lastAssistantMessage = msg
+            }
             session.lastActiveAt = Date()
             sessions[sid] = session
 

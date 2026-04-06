@@ -121,20 +121,46 @@ struct NotchExpandedView: View {
                         Text("You:")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(.white.opacity(0.6))
-                        Text(truncate(prompt, length: 80))
+                        Text(truncate(prompt, length: 100))
                             .font(.system(size: 10))
                             .foregroundColor(.white.opacity(0.75))
-                            .lineLimit(1)
+                            .lineLimit(2)
                             .truncationMode(.tail)
                     }
                 }
 
-                // Row 3: current tool action (like "Edit Sources/...")
+                // Row 3: Claude's last reply (Claude: ...)
+                if let reply = session.lastAssistantMessage, !reply.isEmpty {
+                    HStack(alignment: .top, spacing: 4) {
+                        Text("Claude:")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.8))
+                        Text(truncate(reply, length: 100))
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.75))
+                            .lineLimit(2)
+                            .truncationMode(.tail)
+                    }
+                }
+
+                // Row 4: current/last tool action with running indicator
                 if let tool = session.currentToolName {
                     HStack(spacing: 6) {
+                        if session.isToolRunning {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .scaleEffect(0.4)
+                                .frame(width: 10, height: 10)
+                        } else {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.white.opacity(0.4))
+                        }
                         Text(tool)
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                            .foregroundColor(session.isToolRunning
+                                ? Color(red: 0.31, green: 0.80, blue: 0.77)
+                                : .white.opacity(0.55))
                         if let input = toolInputShortPreview(session.currentToolInput) {
                             Text(input)
                                 .font(.system(size: 10, design: .monospaced))
