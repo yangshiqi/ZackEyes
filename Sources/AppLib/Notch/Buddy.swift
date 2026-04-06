@@ -94,6 +94,14 @@ public struct Buddy {
         "Anthony from RHCP",
         "Flea from RHCP",
         "John from RHCP",
+        // Britpop
+        "Liam from Oasis",
+        "Noel from Oasis",
+        // Rap / rock crossover
+        "Zack from RATM",
+        "Tom from RATM",
+        "Tim from RATM",
+        "Brad from RATM",
     ]
 
     public static let taglines: [String] = [
