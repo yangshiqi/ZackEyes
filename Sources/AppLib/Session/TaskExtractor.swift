@@ -20,7 +20,7 @@ public enum TaskExtractor {
             return []
         }
 
-        var tasks: [String: TaskItem] = [:]   // keyed by real task id
+        var tasks: [String: TaskItem] = [:]   // keyed by real task id (current turn only)
         var order: [String] = []
         // Pending TaskCreate tool_use entries waiting for their tool_result
         // to reveal the real id. Keyed by tool_use_id.
@@ -35,6 +35,14 @@ public enum TaskExtractor {
                   let msg = obj["message"] as? [String: Any],
                   let content = msg["content"] as? [[String: Any]]
             else { continue }
+
+            // Turn boundary: a user message containing plain text (not a tool_result)
+            // marks the start of a new turn. Reset task state to show only current turn's tasks.
+            if type == "user" && isUserPromptMessage(content: content) {
+                tasks.removeAll()
+                order.removeAll()
+                pendingCreates.removeAll()
+            }
 
             if type == "assistant" {
                 // tool_use entries from Claude
@@ -91,6 +99,18 @@ public enum TaskExtractor {
     }
 
     // MARK: - Helpers
+
+    /// A user-role message is a real user prompt (not a tool_result) if it contains
+    /// at least one `text` block (and no `tool_result` blocks).
+    private static func isUserPromptMessage(content: [[String: Any]]) -> Bool {
+        var hasText = false
+        for item in content {
+            let kind = item["type"] as? String
+            if kind == "tool_result" { return false }
+            if kind == "text" { hasText = true }
+        }
+        return hasText
+    }
 
     /// Extract the text content from a tool_result block.
     /// The content can be a string, or an array of blocks with `text` fields.
