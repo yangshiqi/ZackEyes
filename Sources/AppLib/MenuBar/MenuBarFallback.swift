@@ -42,16 +42,7 @@ public class MenuBarFallback: NSObject {
     }
 
     private func updateIcon(for state: SessionState) {
-        let symbolName: String
-        switch state {
-        case .idle, .stopped:
-            symbolName = "eye"
-        case .working:
-            symbolName = "eye.fill"
-        case .waiting:
-            symbolName = "exclamationmark.circle.fill"
-        }
-        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "ZackEyes") {
+        if let image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "ZackEyes") {
             image.isTemplate = true
             statusItem?.button?.image = image
             statusItem?.button?.title = ""
