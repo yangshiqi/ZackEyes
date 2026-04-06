@@ -16,6 +16,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ProcessInfo.processInfo.disableAutomaticTermination("ZackEyes socket server must stay running")
         ProcessInfo.processInfo.disableSuddenTermination()
 
+        // 0. Notifications — request permission, set tap handler
+        NotificationManager.shared.requestAuthorization()
+        NotificationManager.shared.onSessionTap = { [weak self] sessionId in
+            guard let session = self?.sessionStore.sessions[sessionId],
+                  let pid = session.claudePid else { return }
+            _ = TerminalLocator.activateTerminal(containingPid: pid, cwd: session.cwd)
+        }
+
         // 1. Session Store
         sessionStore = SessionStore()
 
@@ -112,12 +120,33 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         default:
             NSLog("ZackEyes: event=%@ tool=%@", event.bridgeEvent, event.toolName ?? "-")
+
+            // Capture prior state BEFORE handling the event (for Stop detection)
+            let priorState: SessionState? = event.sessionId.flatMap { sessionStore.sessions[$0]?.state }
+            let hadToolActivity = event.sessionId.flatMap {
+                sessionStore.sessions[$0].map { $0.toolCallCount > 0 }
+            } ?? false
+
             sessionStore.handleEvent(event)
+
             if event.bridgeEvent == "SessionStart" {
                 windowController?.updatePanelState(.compact)
             }
             if event.bridgeEvent == "SessionEnd" {
                 windowController?.updatePanelState(.collapsed)
+            }
+
+            // Notify on Stop only if the session was actually doing something
+            if event.bridgeEvent == "Stop",
+               let sid = event.sessionId,
+               let session = sessionStore.sessions[sid],
+               hadToolActivity,
+               priorState == .working || priorState == .waiting {
+                NotificationManager.shared.notifySessionFinished(
+                    sessionId: sid,
+                    projectName: session.displayName,
+                    lastPrompt: session.lastUserPrompt
+                )
             }
         }
     }
