@@ -55,4 +55,8 @@ public final class NotchViewModel: ObservableObject {
     public func deny() {
         sessionStore.resolvePrimaryPermission(allow: false)
     }
+
+    public func answerQuestion(sessionId: String, selection: String) {
+        sessionStore.resolveQuestion(sessionId: sessionId, selections: [selection])
+    }
 }

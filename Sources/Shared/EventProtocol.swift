@@ -147,7 +147,14 @@ public struct PermissionResponse: Codable, Sendable {
 
     public struct Decision: Codable, Sendable {
         public let behavior: String
-        public let message: String
+        public let message: String?
+        public let updatedInput: [String: AnyCodable]?
+
+        public init(behavior: String, message: String? = nil, updatedInput: [String: AnyCodable]? = nil) {
+            self.behavior = behavior
+            self.message = message
+            self.updatedInput = updatedInput
+        }
     }
 
     public static func allow(message: String) -> PermissionResponse {
@@ -164,6 +171,20 @@ public struct PermissionResponse: Codable, Sendable {
             hookSpecificOutput: HookSpecificOutput(
                 hookEventName: "PermissionRequest",
                 decision: Decision(behavior: "deny", message: message)
+            )
+        )
+    }
+
+    /// Answer an AskUserQuestion with selected option labels (one per question).
+    public static func answer(selections: [String]) -> PermissionResponse {
+        let answersArr = selections.map { AnyCodable($0) }
+        let updatedInput: [String: AnyCodable] = [
+            "answers": AnyCodable(answersArr)
+        ]
+        return PermissionResponse(
+            hookSpecificOutput: HookSpecificOutput(
+                hookEventName: "PermissionRequest",
+                decision: Decision(behavior: "allow", updatedInput: updatedInput)
             )
         )
     }

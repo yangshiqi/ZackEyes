@@ -19,8 +19,11 @@ struct NotchExpandedView: View {
                     }
                 }
 
-                // If primary session has a permission request, show approval buttons at bottom
-                if let primary = viewModel.primarySession, primary.pendingPermission != nil {
+                // If primary session has a regular permission request (not AskUserQuestion),
+                // show approval buttons at bottom
+                if let primary = viewModel.primarySession,
+                   let pending = primary.pendingPermission,
+                   !pending.isAskUserQuestion {
                     permissionApprovalButtons
                 }
             }
@@ -119,7 +122,11 @@ struct NotchExpandedView: View {
 
             // Permission request details (shown inline under the session it belongs to)
             if let pending = session.pendingPermission {
-                permissionDetailBlock(pending)
+                if pending.isAskUserQuestion {
+                    askUserQuestionBlock(session: session, pending: pending)
+                } else {
+                    permissionDetailBlock(pending)
+                }
             }
 
             // Detected (read-only) hint
@@ -148,6 +155,87 @@ struct NotchExpandedView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func askUserQuestionBlock(session: SessionInfo, pending: PendingPermission) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Header
+            HStack(spacing: 6) {
+                Image(systemName: "bubble.left.and.bubble.right.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                Text("Claude's Question")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+            }
+
+            ForEach(Array(pending.questions.enumerated()), id: \.offset) { _, question in
+                VStack(alignment: .leading, spacing: 8) {
+                    // Question text with optional header
+                    HStack(alignment: .top, spacing: 4) {
+                        if let header = question.header {
+                            Text("[\(header)]")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                        }
+                        Text(question.text)
+                            .font(.system(size: 11))
+                            .foregroundColor(.white)
+                            .lineLimit(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    // Options as numbered cards
+                    VStack(spacing: 6) {
+                        ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
+                            Button(action: {
+                                viewModel.answerQuestion(sessionId: session.id, selection: option.label)
+                            }) {
+                                HStack(alignment: .top, spacing: 10) {
+                                    Text("\(index + 1)")
+                                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                        .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                                        .frame(width: 20, height: 20)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .fill(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.15))
+                                        )
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(option.label)
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundColor(.white)
+                                            .lineLimit(1)
+                                            .truncationMode(.tail)
+                                        if let desc = option.description {
+                                            Text(desc)
+                                                .font(.system(size: 10))
+                                                .foregroundColor(.white.opacity(0.6))
+                                                .lineLimit(2)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                        }
+                                    }
+                                    Spacer(minLength: 0)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.white.opacity(0.3))
+                                }
+                                .padding(10)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(Color.white.opacity(0.05))
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(.top, 6)
+        .padding(.leading, 16)
     }
 
     @ViewBuilder

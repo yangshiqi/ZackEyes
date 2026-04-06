@@ -167,6 +167,17 @@ public final class SessionStore: ObservableObject {
         resolvePermission(sessionId: primary.id, allow: allow)
     }
 
+    /// Answer an AskUserQuestion with the user's selected option labels.
+    public func resolveQuestion(sessionId: String, selections: [String]) {
+        guard var session = sessions[sessionId], let pending = session.pendingPermission else { return }
+        let response = PermissionResponse.answer(selections: selections)
+        pending.responder(response)
+        session.pendingPermission = nil
+        session.state = .working
+        session.lastActiveAt = Date()
+        sessions[sessionId] = session
+    }
+
     /// Called when the bridge disconnects without the user responding via ZackEyes
     /// (e.g., user answered in terminal, or bridge timed out). Clear the pending state.
     public func abandonPermission(sessionId: String) {
@@ -216,5 +227,41 @@ public struct PendingPermission {
         self.toolInput = toolInput
         self.cwd = cwd
         self.responder = responder
+    }
+
+    public var isAskUserQuestion: Bool {
+        toolName == "AskUserQuestion"
+    }
+
+    /// Parse the AskUserQuestion tool_input into structured questions.
+    public var questions: [Question] {
+        guard let raw = toolInput["questions"] as? [[String: Any]] else { return [] }
+        return raw.compactMap { dict -> Question? in
+            guard let text = dict["question"] as? String else { return nil }
+            let header = dict["header"] as? String
+            let multiSelect = (dict["multiSelect"] as? Bool) ?? false
+            let optionsRaw = dict["options"] as? [[String: Any]] ?? []
+            let options = optionsRaw.compactMap { opt -> QuestionOption? in
+                guard let label = opt["label"] as? String else { return nil }
+                return QuestionOption(
+                    label: label,
+                    description: opt["description"] as? String
+                )
+            }
+            return Question(text: text, header: header, multiSelect: multiSelect, options: options)
+        }
+    }
+
+    public struct Question: Sendable {
+        public let text: String
+        public let header: String?
+        public let multiSelect: Bool
+        public let options: [QuestionOption]
+    }
+
+    public struct QuestionOption: Sendable, Identifiable {
+        public let label: String
+        public let description: String?
+        public var id: String { label }
     }
 }
