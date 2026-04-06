@@ -2,6 +2,7 @@ import SwiftUI
 
 struct NotchExpandedView: View {
     @ObservedObject var viewModel: NotchViewModel
+    @State private var pulseOpacity: Double = 1.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -11,6 +12,15 @@ struct NotchExpandedView: View {
                     .fill(viewModel.statusColor)
                     .frame(width: 8, height: 8)
                     .shadow(color: viewModel.statusColor, radius: 3)
+                    .opacity(viewModel.sessionStore.state == .waiting ? pulseOpacity : 1.0)
+                    .onAppear {
+                        withAnimation(
+                            .easeInOut(duration: 0.9)
+                            .repeatForever(autoreverses: true)
+                        ) {
+                            pulseOpacity = 0.3
+                        }
+                    }
 
                 Text("Claude Code")
                     .font(.system(size: 12, weight: .semibold))
@@ -51,8 +61,8 @@ struct NotchExpandedView: View {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
 
-                    if let command = pending.toolInput["command"] as? String {
-                        Text(command)
+                    if let preview = toolInputPreview(pending) {
+                        Text(preview)
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(.white.opacity(0.8))
                             .lineLimit(3)
@@ -84,7 +94,6 @@ struct NotchExpandedView: View {
                                 .cornerRadius(6)
                         }
                         .buttonStyle(.plain)
-
                     }
                 }
             }
@@ -95,5 +104,15 @@ struct NotchExpandedView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
         .clipShape(RoundedRectangle(cornerRadius: 16))
+    }
+
+    private func toolInputPreview(_ pending: PendingPermission) -> String? {
+        if let command = pending.toolInput["command"] as? String {
+            return command
+        }
+        if let filePath = pending.toolInput["file_path"] as? String {
+            return filePath
+        }
+        return nil
     }
 }

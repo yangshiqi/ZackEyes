@@ -1,11 +1,14 @@
 import AppKit
 import SwiftUI
+import Combine
+import Shared
 
 @MainActor
 public class MenuBarFallback: NSObject {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private let viewModel: NotchViewModel
+    private var iconCancellable: AnyCancellable?
 
     public init(viewModel: NotchViewModel) {
         self.viewModel = viewModel
@@ -14,24 +17,49 @@ public class MenuBarFallback: NSObject {
 
     public func setup() {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.title = "Z"
         statusItem.button?.action = #selector(togglePopover)
         statusItem.button?.target = self
         self.statusItem = statusItem
 
+        updateIcon(for: viewModel.sessionStore.state)
+
+        // Observe state changes to update icon
+        iconCancellable = viewModel.sessionStore.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                self.updateIcon(for: self.viewModel.sessionStore.state)
+            }
+
         let popover = NSPopover()
-        popover.contentSize = NSSize(width: 360, height: 260)
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
             rootView: NotchExpandedView(viewModel: viewModel)
-                .padding()
                 .frame(width: 360)
                 .background(Color.black)
         )
         self.popover = popover
     }
 
+    private func updateIcon(for state: SessionState) {
+        let symbolName: String
+        switch state {
+        case .idle, .stopped:
+            symbolName = "eye"
+        case .working:
+            symbolName = "eye.fill"
+        case .waiting:
+            symbolName = "exclamationmark.circle.fill"
+        }
+        if let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "ZackEyes") {
+            image.isTemplate = true
+            statusItem?.button?.image = image
+            statusItem?.button?.title = ""
+        }
+    }
+
     public func teardown() {
+        iconCancellable = nil
         if let statusItem = statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
