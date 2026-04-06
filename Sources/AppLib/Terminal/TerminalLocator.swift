@@ -43,22 +43,8 @@ public enum TerminalLocator {
     }
 
     private static func lsofPid(file: String) -> Int? {
-        let task = Process()
-        task.launchPath = "/usr/sbin/lsof"
-        task.arguments = ["-t", file]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe()
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            return nil
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let raw = String(data: data, encoding: .utf8) else { return nil }
-        // lsof -t may return multiple PIDs (one per line). Take the first non-zero.
-        for line in raw.split(separator: "\n") {
+        guard let out = runWithTimeout("/usr/sbin/lsof", args: ["-t", file], timeoutSeconds: 3) else { return nil }
+        for line in out.split(separator: "\n") {
             if let pid = Int(line.trimmingCharacters(in: .whitespaces)), pid > 0 {
                 return pid
             }
@@ -66,29 +52,46 @@ public enum TerminalLocator {
         return nil
     }
 
-    private static func claudePidByCwd(_ targetCwd: String) -> Int? {
-        // List all processes with their command (look for "claude")
+    /// Run a subprocess with a timeout. Returns stdout or nil on error/timeout.
+    private static func runWithTimeout(_ path: String, args: [String], timeoutSeconds: Int) -> String? {
         let task = Process()
-        task.launchPath = "/bin/ps"
-        task.arguments = ["-ax", "-o", "pid=,comm="]
+        task.launchPath = path
+        task.arguments = args
         let pipe = Pipe()
         task.standardOutput = pipe
+        task.standardError = Pipe()
         do { try task.run() } catch { return nil }
-        task.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let out = String(data: data, encoding: .utf8) else { return nil }
 
+        // Poll for completion
+        let deadline = Date().addingTimeInterval(TimeInterval(timeoutSeconds))
+        while task.isRunning {
+            if Date() >= deadline {
+                task.terminate()
+                Thread.sleep(forTimeInterval: 0.05)
+                if task.isRunning {
+                    kill(task.processIdentifier, SIGKILL)
+                }
+                return nil
+            }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)
+    }
+
+    private static func claudePidByCwd(_ targetCwd: String) -> Int? {
+        guard let out = runWithTimeout("/bin/ps", args: ["-ax", "-o", "pid=,comm="], timeoutSeconds: 3) else {
+            return nil
+        }
         for line in out.split(separator: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
             guard parts.count == 2 else { continue }
             let comm = String(parts[1])
-            // Match "claude" or ".../claude" at path end
             let base = (comm as NSString).lastPathComponent
             guard base == "claude" || base == "node" else { continue }
             guard let pid = Int(parts[0]) else { continue }
 
-            // Check cwd via lsof -p PID -d cwd -Fn
             if processCwd(pid: pid) == targetCwd {
                 return pid
             }
@@ -97,17 +100,11 @@ public enum TerminalLocator {
     }
 
     private static func processCwd(pid: Int) -> String? {
-        let task = Process()
-        task.launchPath = "/usr/sbin/lsof"
-        task.arguments = ["-p", "\(pid)", "-a", "-d", "cwd", "-Fn"]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe()
-        do { try task.run() } catch { return nil }
-        task.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let out = String(data: data, encoding: .utf8) else { return nil }
-        // Format: "p<pid>\nn<cwd>\n"
+        guard let out = runWithTimeout(
+            "/usr/sbin/lsof",
+            args: ["-p", "\(pid)", "-a", "-d", "cwd", "-Fn"],
+            timeoutSeconds: 2
+        ) else { return nil }
         for line in out.split(separator: "\n") where line.hasPrefix("n") {
             return String(line.dropFirst())
         }

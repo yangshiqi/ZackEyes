@@ -61,20 +61,31 @@ public final class NotchViewModel: ObservableObject {
     }
 
     /// Click handler: jump to the terminal tab for this session.
-    /// If claudePid is unknown (e.g. scanned session), look it up via lsof/ps on the fly and cache.
+    /// Runs on a background task so subprocess + AppleScript calls don't block the UI.
     public func activateTerminal(for session: SessionInfo) {
-        var pid = session.claudePid
-        if pid == nil {
-            pid = TerminalLocator.findClaudePid(
-                transcriptPath: session.transcriptPath,
-                cwd: session.cwd
-            )
-            if let found = pid, var cached = sessionStore.sessions[session.id] {
-                cached.claudePid = found
-                sessionStore.sessions[session.id] = cached
+        let cachedPid = session.claudePid
+        let transcriptPath = session.transcriptPath
+        let cwd = session.cwd
+        let sessionId = session.id
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var pid = cachedPid
+            if pid == nil {
+                pid = TerminalLocator.findClaudePid(
+                    transcriptPath: transcriptPath,
+                    cwd: cwd
+                )
+                if let found = pid {
+                    await MainActor.run { [weak self] in
+                        if var cached = self?.sessionStore.sessions[sessionId] {
+                            cached.claudePid = found
+                            self?.sessionStore.sessions[sessionId] = cached
+                        }
+                    }
+                }
             }
+            guard let pid = pid else { return }
+            _ = TerminalLocator.activateTerminal(containingPid: pid, cwd: cwd)
         }
-        guard let pid = pid else { return }
-        _ = TerminalLocator.activateTerminal(containingPid: pid, cwd: session.cwd)
     }
 }
