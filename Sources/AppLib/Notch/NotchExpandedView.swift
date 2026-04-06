@@ -245,44 +245,18 @@ struct NotchExpandedView: View {
         let inProgress = tasks.filter { $0.isInProgress }.count
         let open = tasks.count - done - inProgress
 
-        VStack(alignment: .leading, spacing: 4) {
-            // Header with progress bar
+        VStack(alignment: .leading, spacing: 6) {
+            // Header — "Tasks (1 done, 1 in progress, 0 open)"
             HStack(spacing: 6) {
                 Text("Tasks")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.8))
-                Text("\(done)/\(tasks.count)")
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white)
+                Text("(\(done) done, \(inProgress) in progress, \(open) open)")
+                    .font(.system(size: 10))
                     .foregroundColor(.white.opacity(0.5))
-                if inProgress > 0 {
-                    Text("· \(inProgress) in progress")
-                        .font(.system(size: 9))
-                        .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
-                }
-                if open > 0 {
-                    Text("· \(open) open")
-                        .font(.system(size: 9))
-                        .foregroundColor(.white.opacity(0.5))
-                }
                 Spacer(minLength: 0)
             }
-            .padding(.top, 4)
-
-            // Progress bar
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 1.5)
-                        .fill(Color.white.opacity(0.08))
-                        .frame(height: 3)
-                    if tasks.count > 0 {
-                        RoundedRectangle(cornerRadius: 1.5)
-                            .fill(Color(red: 0.31, green: 0.80, blue: 0.77))
-                            .frame(width: geo.size.width * CGFloat(done) / CGFloat(tasks.count), height: 3)
-                    }
-                }
-            }
-            .frame(height: 3)
-            .padding(.bottom, 2)
+            .padding(.top, 6)
 
             // Sort: in_progress first, then open, then done
             let sorted = tasks.sorted { lhs, rhs in
