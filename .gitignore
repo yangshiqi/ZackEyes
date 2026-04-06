@@ -1,0 +1,21 @@
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode
+build/
+DerivedData/
+*.xcuserdata
+*.xcworkspace
+!*.xcworkspace/contents.xcworkspacedata
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# ZackEyes runtime
+/tmp/zackeyes.sock
+
+# Superpowers brainstorm sessions
+.superpowers/
