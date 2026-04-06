@@ -1,14 +1,21 @@
 import Foundation
 import SwiftUI
+import Combine
 import Shared
 
 @MainActor
 public final class NotchViewModel: ObservableObject {
     public let sessionStore: SessionStore
     @Published public var panelState: PanelState = .collapsed
+    private var cancellable: AnyCancellable?
 
     public init(sessionStore: SessionStore) {
         self.sessionStore = sessionStore
+        // Forward SessionStore changes to trigger SwiftUI re-renders.
+        // Nested ObservableObjects don't propagate automatically.
+        cancellable = sessionStore.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     public var statusColor: Color {
