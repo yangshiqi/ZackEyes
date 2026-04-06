@@ -64,17 +64,18 @@ bridge 连接 /tmp/zackeyes.sock 失败（App 未运行）
 
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| `SocketServer` | `ZackEyes/Socket/SocketServer.swift` | 监听 Unix Socket，accept 连接，解析 JSON，路由到 SessionStore，发送响应 |
-| `EventProtocol` | `ZackEyes/Socket/EventProtocol.swift` | Codable 结构体定义：BridgeEvent、PermissionResponse |
-| `SessionStore` | `ZackEyes/Session/SessionStore.swift` | ObservableObject，维护当前会话状态（idle/working/waiting/stopped） |
-| `NotchPanel` | `ZackEyes/Notch/NotchPanel.swift` | NSPanel 子类，刘海区域覆盖层 |
-| `NotchWindowController` | `ZackEyes/Notch/NotchWindowController.swift` | 位置锚定（notch 几何计算）、展开/收缩动画、鼠标追踪 |
-| `NotchViewModel` | `ZackEyes/Notch/NotchViewModel.swift` | ObservableObject，桥接 SessionStore → SwiftUI Views |
-| `NotchCompactView` | `ZackEyes/Notch/NotchCompactView.swift` | Compact 状态 SwiftUI 视图 |
-| `NotchExpandedView` | `ZackEyes/Notch/NotchExpandedView.swift` | Expanded 状态 SwiftUI 视图（含审批按钮） |
-| `MenuBarFallback` | `ZackEyes/MenuBar/MenuBarFallback.swift` | NSStatusItem + NSPopover，无刘海 Mac 的 fallback |
-| `HookInstaller` | `ZackEyes/Hooks/HookInstaller.swift` | 静默注入/移除 ~/.claude/settings.json 的 hooks 配置 |
-| `AppDelegate` | `ZackEyes/App/AppDelegate.swift` | 启动入口，初始化 SocketServer、HookInstaller、NotchPanel |
+| `EventProtocol` | `Sources/Shared/EventProtocol.swift` | Codable 结构体定义：BridgeEvent、PermissionResponse、AnyCodable |
+| `SocketClient` | `Sources/BridgeLib/SocketClient.swift` | Unix Socket 客户端，connect + send + 可选 wait response |
+| `SocketServer` | `Sources/AppLib/Socket/SocketServer.swift` | 监听 Unix Socket，accept 连接，解析 JSON，路由到 SessionStore，发送响应 |
+| `SessionStore` | `Sources/AppLib/Session/SessionStore.swift` | ObservableObject，维护当前会话状态（idle/working/waiting/stopped） |
+| `NotchPanel` | `Sources/AppLib/Notch/NotchPanel.swift` | NSPanel 子类，刘海区域覆盖层 |
+| `NotchWindowController` | `Sources/AppLib/Notch/NotchWindowController.swift` | 位置锚定（notch 几何计算）、展开/收缩动画、鼠标追踪 |
+| `NotchViewModel` | `Sources/AppLib/Notch/NotchViewModel.swift` | ObservableObject，桥接 SessionStore → SwiftUI Views |
+| `NotchCompactView` | `Sources/AppLib/Notch/NotchCompactView.swift` | Compact 状态 SwiftUI 视图 |
+| `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | Expanded 状态 SwiftUI 视图（含审批按钮） |
+| `MenuBarFallback` | `Sources/AppLib/MenuBar/MenuBarFallback.swift` | NSStatusItem + NSPopover，无刘海 Mac 的 fallback |
+| `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | 静默注入/移除 ~/.claude/settings.json 的 hooks 配置 |
+| `AppDelegate` | `Sources/ZackEyes/AppDelegate.swift` | 启动入口，初始化 SocketServer、HookInstaller、NotchPanel |
 
 ## 安全模型
 
@@ -118,22 +119,28 @@ bridge 连接 /tmp/zackeyes.sock 失败（App 未运行）
 
 ## 项目结构
 
+> **技术债**: MVP 使用 SPM + Makefile 替代了设计文档中原定的 Xcode project。正式版前应迁回 Xcode project（详见 `.claude/memory/`）。
+
 ```
-zackeyes/
-├── ZackEyes.xcodeproj          # 包含两个 target
-├── ZackEyes/                   # 主 App target
-│   ├── App/                    # 启动入口
-│   ├── Notch/                  # NotchPanel + Views
-│   ├── MenuBar/                # 菜单栏 fallback
-│   ├── Socket/                 # Unix Socket 服务端 + 协议定义
-│   ├── Session/                # 会话状态管理
-│   ├── Hooks/                  # Hook 自动安装/卸载
-│   └── Resources/              # Assets, Info.plist
-├── Bridge/                     # Bridge CLI target
-│   ├── main.swift
-│   └── SocketClient.swift
-└── Scripts/
-    └── install-bridge.sh       # 构建后部署 bridge
+ccisland/
+├── Package.swift               # SPM manifest (5 targets + 3 test targets)
+├── Makefile                    # .app bundle 手动组装
+├── Resources/Info.plist
+├── Sources/
+│   ├── Shared/                 # 共享类型 (BridgeEvent, PermissionResponse)
+│   ├── BridgeLib/              # Bridge 逻辑 (SocketClient)
+│   ├── Bridge/                 # Bridge CLI 入口 (main.swift)
+│   ├── AppLib/                 # App 逻辑 (Socket, Session, Hooks, Notch, MenuBar)
+│   │   ├── Socket/
+│   │   ├── Session/
+│   │   ├── Hooks/
+│   │   ├── Notch/
+│   │   └── MenuBar/
+│   └── ZackEyes/               # App 入口 (main.swift + AppDelegate)
+└── Tests/
+    ├── SharedTests/
+    ├── BridgeLibTests/
+    └── AppLibTests/
 ```
 
 **依赖**: 零外部依赖。纯 Foundation + AppKit + SwiftUI。
