@@ -11,15 +11,16 @@ struct BuddyAvatar: View {
     @State private var bounce: CGFloat = 0
     @State private var breathe: CGFloat = 1.0
     @State private var shake: CGFloat = 0
+    @State private var rockTilt: Double = 0      // headbang rotation
+    @State private var rockBounce: CGFloat = 0   // headbang vertical
     @State private var zOpacity: Double = 0.0
 
     var body: some View {
         ZStack {
             PixelAvatar(seed: seed, size: size)
-                .offset(y: bounce)
-                .offset(x: shake)
+                .offset(x: shake, y: bounce + rockBounce)
                 .scaleEffect(breathe)
-                .rotationEffect(.degrees(shake * 3))
+                .rotationEffect(.degrees(rockTilt + shake * 3))
 
             // Sleep "Z" indicator (shown only when idle)
             if state == .idle && !isWaiting {
@@ -36,23 +37,26 @@ struct BuddyAvatar: View {
     }
 
     private func applyAnimation() {
-        // Reset
+        // Reset — halt all ongoing animations
         withAnimation(.linear(duration: 0)) {
             bounce = 0
             shake = 0
+            rockTilt = 0
+            rockBounce = 0
             breathe = 1.0
             zOpacity = 0.0
         }
 
         if isWaiting {
-            // Worried shake — quick left/right
-            withAnimation(.easeInOut(duration: 0.15).repeatForever(autoreverses: true)) {
-                shake = 1.5
+            // Panic shake — quick left/right
+            withAnimation(.easeInOut(duration: 0.13).repeatForever(autoreverses: true)) {
+                shake = 1.8
             }
         } else if state == .working {
-            // Happy bounce
-            withAnimation(.easeInOut(duration: 0.35).repeatForever(autoreverses: true)) {
-                bounce = -2.5
+            // Rock out — fast headbang: tilt + drop
+            withAnimation(.easeInOut(duration: 0.22).repeatForever(autoreverses: true)) {
+                rockTilt = -14
+                rockBounce = 1.5
             }
         } else {
             // Sleeping — slow breathing + fading Z

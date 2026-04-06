@@ -35,7 +35,7 @@ public class MenuBarFallback: NSObject {
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
             rootView: NotchExpandedView(viewModel: viewModel)
-                .frame(width: 360)
+                .frame(width: 460)
                 .background(Color.black)
         )
         self.popover = popover
