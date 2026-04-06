@@ -1,0 +1,173 @@
+import Foundation
+
+public struct HookInstaller {
+
+    private let settingsPath: String
+    private let bridgePath: String
+
+    public init(
+        settingsPath: String = NSHomeDirectory() + "/.claude/settings.json",
+        bridgePath: String = "$HOME/.zackeyes/bin/bridge"
+    ) {
+        self.settingsPath = settingsPath
+        self.bridgePath = bridgePath
+    }
+
+    // MARK: - Hook Config
+
+    private static let hookEvents = [
+        "PreToolUse",
+        "PostToolUse",
+        "PermissionRequest",
+        "SessionStart",
+        "SessionEnd",
+        "Stop",
+    ]
+
+    private var hookConfig: [String: Any] {
+        var config: [String: Any] = [:]
+        for event in Self.hookEvents {
+            config[event] = [
+                [
+                    "hooks": [
+                        [
+                            "type": "command",
+                            "command": "\(bridgePath) --event \(event)",
+                        ]
+                    ]
+                ]
+            ]
+        }
+        return config
+    }
+
+    // MARK: - Install
+
+    public func installHooks() throws {
+        let claudeDir = (settingsPath as NSString).deletingLastPathComponent
+        guard FileManager.default.fileExists(atPath: claudeDir) else {
+            // Claude Code not installed — skip silently
+            return
+        }
+
+        let settingsURL = URL(fileURLWithPath: settingsPath)
+        var settings: [String: Any] = [:]
+
+        if FileManager.default.fileExists(atPath: settingsPath) {
+            guard let data = try? Data(contentsOf: settingsURL),
+                  let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else {
+                // JSON parse failure — don't touch the file
+                return
+            }
+            settings = parsed
+
+            // Create backup before any modification
+            let timestamp = Int(Date().timeIntervalSince1970)
+            let backupURL = settingsURL
+                .deletingLastPathComponent()
+                .appendingPathComponent("settings.json.backup.\(timestamp)")
+            try data.write(to: backupURL)
+        }
+
+        // Get or create hooks dict
+        var hooks = settings["hooks"] as? [String: Any] ?? [:]
+
+        // For each event: remove existing zackeyes entries, then append ours
+        for (event, newEntries) in hookConfig {
+            var existing = hooks[event] as? [[String: Any]] ?? []
+            existing.removeAll { isZackEyesEntry($0) }
+            let ourEntries = newEntries as! [[String: Any]]
+            existing.append(contentsOf: ourEntries)
+            hooks[event] = existing
+        }
+
+        settings["hooks"] = hooks
+        try writeSettings(settings, to: settingsURL)
+    }
+
+    // MARK: - Uninstall
+
+    public func uninstallHooks() throws {
+        let settingsURL = URL(fileURLWithPath: settingsPath)
+        guard FileManager.default.fileExists(atPath: settingsPath),
+              let data = try? Data(contentsOf: settingsURL),
+              var settings = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return
+        }
+
+        guard var hooks = settings["hooks"] as? [String: Any] else { return }
+
+        for event in Self.hookEvents {
+            guard var entries = hooks[event] as? [[String: Any]] else { continue }
+            entries.removeAll { isZackEyesEntry($0) }
+            if entries.isEmpty {
+                hooks.removeValue(forKey: event)
+            } else {
+                hooks[event] = entries
+            }
+        }
+
+        if hooks.isEmpty {
+            settings.removeValue(forKey: "hooks")
+        } else {
+            settings["hooks"] = hooks
+        }
+
+        try writeSettings(settings, to: settingsURL)
+    }
+
+    // MARK: - Deploy Launcher Script
+
+    public func deployLauncherScript(appPath: String) throws {
+        let binDir = NSHomeDirectory() + "/.zackeyes/bin"
+        try FileManager.default.createDirectory(
+            atPath: binDir,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+
+        let bridgeURL = URL(fileURLWithPath: binDir + "/bridge")
+        let helpersPath = appPath + "/Contents/Helpers/bridge"
+        let script = """
+            #!/bin/sh
+            exec "\(helpersPath)" "$@"
+            """
+        try script.write(to: bridgeURL, atomically: true, encoding: .utf8)
+
+        // chmod 755
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: bridgeURL.path
+        )
+
+        // Write app path marker
+        let appPathFile = NSHomeDirectory() + "/.zackeyes/.app-path"
+        try appPath.write(
+            toFile: appPathFile,
+            atomically: true,
+            encoding: .utf8
+        )
+    }
+
+    // MARK: - Helpers
+
+    /// Returns true if any hook command in this entry contains "zackeyes" or
+    /// matches the configured bridgePath (to support test paths lacking "zackeyes").
+    private func isZackEyesEntry(_ entry: [String: Any]) -> Bool {
+        guard let hooks = entry["hooks"] as? [[String: Any]] else { return false }
+        return hooks.contains { hook in
+            guard let command = hook["command"] as? String else { return false }
+            return command.lowercased().contains("zackeyes") || command.contains(bridgePath)
+        }
+    }
+
+    private func writeSettings(_ settings: [String: Any], to url: URL) throws {
+        let data = try JSONSerialization.data(
+            withJSONObject: settings,
+            options: [.prettyPrinted, .sortedKeys]
+        )
+        try data.write(to: url, options: .atomic)
+    }
+}
