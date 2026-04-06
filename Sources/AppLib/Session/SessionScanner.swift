@@ -11,6 +11,7 @@ public struct SessionScanner {
         public let lastModified: Date
         public let lastUserPrompt: String?
         public let messageCount: Int
+        public let transcriptPath: String
     }
 
     private let projectsDir: URL
@@ -106,7 +107,8 @@ public struct SessionScanner {
             cwd: cwd,
             lastModified: lastModified,
             lastUserPrompt: lastUserPrompt,
-            messageCount: messageCount
+            messageCount: messageCount,
+            transcriptPath: url.path
         )
     }
 }

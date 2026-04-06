@@ -29,6 +29,91 @@ public enum TerminalLocator {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
+    /// Find the claude process PID for a session. Tries multiple strategies:
+    /// 1. Use `lsof` on the transcript file (most accurate — file has exactly one writer)
+    /// 2. Scan running claude processes and match by cwd
+    public static func findClaudePid(transcriptPath: String?, cwd: String?) -> Int? {
+        if let path = transcriptPath, let pid = lsofPid(file: path) {
+            return pid
+        }
+        if let cwd = cwd, let pid = claudePidByCwd(cwd) {
+            return pid
+        }
+        return nil
+    }
+
+    private static func lsofPid(file: String) -> Int? {
+        let task = Process()
+        task.launchPath = "/usr/sbin/lsof"
+        task.arguments = ["-t", file]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        do {
+            try task.run()
+            task.waitUntilExit()
+        } catch {
+            return nil
+        }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let raw = String(data: data, encoding: .utf8) else { return nil }
+        // lsof -t may return multiple PIDs (one per line). Take the first non-zero.
+        for line in raw.split(separator: "\n") {
+            if let pid = Int(line.trimmingCharacters(in: .whitespaces)), pid > 0 {
+                return pid
+            }
+        }
+        return nil
+    }
+
+    private static func claudePidByCwd(_ targetCwd: String) -> Int? {
+        // List all processes with their command (look for "claude")
+        let task = Process()
+        task.launchPath = "/bin/ps"
+        task.arguments = ["-ax", "-o", "pid=,comm="]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        do { try task.run() } catch { return nil }
+        task.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let out = String(data: data, encoding: .utf8) else { return nil }
+
+        for line in out.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+            guard parts.count == 2 else { continue }
+            let comm = String(parts[1])
+            // Match "claude" or ".../claude" at path end
+            let base = (comm as NSString).lastPathComponent
+            guard base == "claude" || base == "node" else { continue }
+            guard let pid = Int(parts[0]) else { continue }
+
+            // Check cwd via lsof -p PID -d cwd -Fn
+            if processCwd(pid: pid) == targetCwd {
+                return pid
+            }
+        }
+        return nil
+    }
+
+    private static func processCwd(pid: Int) -> String? {
+        let task = Process()
+        task.launchPath = "/usr/sbin/lsof"
+        task.arguments = ["-p", "\(pid)", "-a", "-d", "cwd", "-Fn"]
+        let pipe = Pipe()
+        task.standardOutput = pipe
+        task.standardError = Pipe()
+        do { try task.run() } catch { return nil }
+        task.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard let out = String(data: data, encoding: .utf8) else { return nil }
+        // Format: "p<pid>\nn<cwd>\n"
+        for line in out.split(separator: "\n") where line.hasPrefix("n") {
+            return String(line.dropFirst())
+        }
+        return nil
+    }
+
     /// Walk up the process tree, return the first ancestor that is a known terminal app.
     public static func findTerminalApp(startingFromPid startingPid: Int) -> NSRunningApplication? {
         var currentPid = Int32(startingPid)

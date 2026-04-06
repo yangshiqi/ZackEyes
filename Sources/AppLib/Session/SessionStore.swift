@@ -25,6 +25,7 @@ public struct SessionInfo: Identifiable {
     public var source: SessionSource = .live
     public var tasks: [TaskItem] = []
     public var claudePid: Int?   // PID of the claude process (from bridge ppid)
+    public var transcriptPath: String?  // Path to the JSONL transcript file (for lsof lookup)
 
     /// Display name — last path component of cwd, or first 8 chars of id
     public var displayName: String {
@@ -108,14 +109,15 @@ public final class SessionStore: ObservableObject {
             upgradeToLive(sessionId: sid)
         }
 
-        // Capture claude pid from bridge if available
-        if let ppid = event.bridgePpid, sessions[sid]?.claudePid == nil {
-            // Will be assigned inside the switch cases below via default fallback
-            // or we do it here directly:
-            if var existing = sessions[sid] {
+        // Capture claude pid + transcript path from bridge if available
+        if var existing = sessions[sid] {
+            if let ppid = event.bridgePpid, existing.claudePid == nil {
                 existing.claudePid = ppid
-                sessions[sid] = existing
             }
+            if let tp = event.transcriptPath, existing.transcriptPath == nil {
+                existing.transcriptPath = tp
+            }
+            sessions[sid] = existing
         }
 
         switch event.bridgeEvent {
@@ -228,6 +230,7 @@ public final class SessionStore: ObservableObject {
             var session = SessionInfo(id: d.id, cwd: d.cwd, state: .idle, startedAt: d.lastModified)
             session.lastActiveAt = d.lastModified
             session.lastUserPrompt = d.lastUserPrompt
+            session.transcriptPath = d.transcriptPath
             session.source = .detected
             sessions[d.id] = session
         }

@@ -59,4 +59,22 @@ public final class NotchViewModel: ObservableObject {
     public func answerQuestion(sessionId: String, selection: String) {
         sessionStore.resolveQuestion(sessionId: sessionId, selections: [selection])
     }
+
+    /// Click handler: jump to the terminal tab for this session.
+    /// If claudePid is unknown (e.g. scanned session), look it up via lsof/ps on the fly and cache.
+    public func activateTerminal(for session: SessionInfo) {
+        var pid = session.claudePid
+        if pid == nil {
+            pid = TerminalLocator.findClaudePid(
+                transcriptPath: session.transcriptPath,
+                cwd: session.cwd
+            )
+            if let found = pid, var cached = sessionStore.sessions[session.id] {
+                cached.claudePid = found
+                sessionStore.sessions[session.id] = cached
+            }
+        }
+        guard let pid = pid else { return }
+        _ = TerminalLocator.activateTerminal(containingPid: pid, cwd: session.cwd)
+    }
 }
