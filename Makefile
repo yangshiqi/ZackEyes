@@ -19,6 +19,9 @@ app: build
 	cp $(BIN_PATH)/ZackEyes $(MACOS)/ZackEyes
 	cp $(BIN_PATH)/bridge $(HELPERS)/bridge
 	cp Resources/Info.plist $(CONTENTS)/Info.plist
+	@# Ad-hoc code signing — gives the app a stable identity so macOS
+	@# persists Accessibility / Apple Events grants across rebuilds.
+	codesign --force --deep --sign - $(APP_BUNDLE) 2>&1 | grep -v "replacing existing signature" || true
 	@echo "Built $(APP_BUNDLE)"
 
 app-release: build-release
@@ -27,6 +30,7 @@ app-release: build-release
 	cp $(BIN_PATH)/ZackEyes $(MACOS)/ZackEyes
 	cp $(BIN_PATH)/bridge $(HELPERS)/bridge
 	cp Resources/Info.plist $(CONTENTS)/Info.plist
+	codesign --force --deep --sign - $(APP_BUNDLE) 2>&1 | grep -v "replacing existing signature" || true
 	@echo "Built $(APP_BUNDLE) (release)"
 
 run: app

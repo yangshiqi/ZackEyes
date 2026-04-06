@@ -22,6 +22,13 @@ public enum TerminalLocator {
         "com.todesktop.230313mzl4w4u92",
     ]
 
+    /// Prompt the user ONCE at startup for Accessibility permission.
+    /// After this, we check silently via AXIsProcessTrusted() without nagging.
+    public static func promptAccessibilityIfNeeded() {
+        let options = ["AXTrustedCheckOptionPrompt" as CFString: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+    }
+
     /// Walk up the process tree, return the first ancestor that is a known terminal app.
     public static func findTerminalApp(startingFromPid startingPid: Int) -> NSRunningApplication? {
         var currentPid = Int32(startingPid)
@@ -151,12 +158,12 @@ public enum TerminalLocator {
     private static func focusByAccessibility(app: NSRunningApplication, cwd: String?) -> Bool {
         guard let cwd = cwd, !cwd.isEmpty else { return false }
 
-        // Prompt for Accessibility permission on first use
-        // Literal key avoids Swift 6 concurrency warning on the CFString global
-        let options = ["AXTrustedCheckOptionPrompt" as CFString: true] as CFDictionary
-        let trusted = AXIsProcessTrustedWithOptions(options)
-        guard trusted else {
-            NSLog("ZackEyes: accessibility permission not granted — tab focus unavailable")
+        // Check without prompting. If we've already requested once and the user denied,
+        // we don't want to keep nagging them on every click.
+        guard AXIsProcessTrusted() else {
+            // Prompt ONCE per app launch via the promptIfNeeded() call at startup
+            NSLog("ZackEyes: accessibility permission not granted — tab focus unavailable for %@",
+                  app.bundleIdentifier ?? "?")
             return false
         }
 

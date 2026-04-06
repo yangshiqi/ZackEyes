@@ -24,6 +24,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             _ = TerminalLocator.activateTerminal(containingPid: pid, cwd: session.cwd)
         }
 
+        // Prompt Accessibility permission ONCE at startup (for Ghostty/Warp/Kitty tab focus).
+        // After this, clicks just silently check without re-prompting.
+        TerminalLocator.promptAccessibilityIfNeeded()
+
         // 1. Session Store
         sessionStore = SessionStore()
 
