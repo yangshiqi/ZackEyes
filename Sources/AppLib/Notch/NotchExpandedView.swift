@@ -241,9 +241,18 @@ struct NotchExpandedView: View {
 
     @ViewBuilder
     private func taskList(_ tasks: [TaskItem]) -> some View {
-        let done = tasks.filter { $0.isDone }.count
-        let inProgress = tasks.filter { $0.isInProgress }.count
-        let open = tasks.count - done - inProgress
+        let doneTasks = tasks.filter { $0.isDone }
+        let inProgressTasks = tasks.filter { $0.isInProgress }
+        let openTasks = tasks.filter { !$0.isDone && !$0.isInProgress }
+
+        // Display policy:
+        // - Show all in_progress and open tasks (they're the current work)
+        // - If there are active tasks: show only the most recent 2 done tasks
+        // - If everything is done: show the most recent 5 done tasks
+        let hasActive = !inProgressTasks.isEmpty || !openTasks.isEmpty
+        let doneLimit = hasActive ? 2 : 5
+        let recentDone = Array(doneTasks.suffix(doneLimit))
+        let hiddenDoneCount = doneTasks.count - recentDone.count
 
         VStack(alignment: .leading, spacing: 6) {
             // Header — "Tasks (1 done, 1 in progress, 0 open)"
@@ -251,26 +260,25 @@ struct NotchExpandedView: View {
                 Text("Tasks")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(.white)
-                Text("(\(done) done, \(inProgress) in progress, \(open) open)")
+                Text("(\(doneTasks.count) done, \(inProgressTasks.count) in progress, \(openTasks.count) open)")
                     .font(.system(size: 10))
                     .foregroundColor(.white.opacity(0.5))
                 Spacer(minLength: 0)
             }
             .padding(.top, 6)
 
-            // Sort: in_progress first, then open, then done
-            let sorted = tasks.sorted { lhs, rhs in
-                let order: (TaskItem) -> Int = { t in
-                    if t.isInProgress { return 0 }
-                    if !t.isDone { return 1 }
-                    return 2
-                }
-                return order(lhs) < order(rhs)
+            // Order: in_progress first, then open, then recent done
+            ForEach(inProgressTasks) { task in taskRow(task) }
+            ForEach(openTasks) { task in taskRow(task) }
+
+            if hiddenDoneCount > 0 {
+                Text("+ \(hiddenDoneCount) more done")
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.4))
+                    .padding(.leading, 16)
             }
 
-            ForEach(sorted) { task in
-                taskRow(task)
-            }
+            ForEach(recentDone) { task in taskRow(task) }
         }
     }
 
