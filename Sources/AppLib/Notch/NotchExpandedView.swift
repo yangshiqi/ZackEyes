@@ -245,12 +245,12 @@ struct NotchExpandedView: View {
         let inProgressTasks = tasks.filter { $0.isInProgress }
         let openTasks = tasks.filter { !$0.isDone && !$0.isInProgress }
 
-        // Display policy:
-        // - Show all in_progress and open tasks (they're the current work)
-        // - If there are active tasks: show only the most recent 2 done tasks
-        // - If everything is done: show the most recent 5 done tasks
+        // Display policy: focus on current work.
+        // - Show all in_progress and open tasks
+        // - Show only 1 most recent done (just enough to show what just finished)
+        // - If everything is done: show 2 most recent
         let hasActive = !inProgressTasks.isEmpty || !openTasks.isEmpty
-        let doneLimit = hasActive ? 2 : 5
+        let doneLimit = hasActive ? 1 : 2
         let recentDone = Array(doneTasks.suffix(doneLimit))
         let hiddenDoneCount = doneTasks.count - recentDone.count
 
@@ -267,18 +267,17 @@ struct NotchExpandedView: View {
             }
             .padding(.top, 6)
 
-            // Order: in_progress first, then open, then recent done
+            // Order: in_progress → open → recent done → "+ N more done"
             ForEach(inProgressTasks) { task in taskRow(task) }
             ForEach(openTasks) { task in taskRow(task) }
+            ForEach(recentDone) { task in taskRow(task) }
 
             if hiddenDoneCount > 0 {
                 Text("+ \(hiddenDoneCount) more done")
                     .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(.white.opacity(0.35))
                     .padding(.leading, 16)
             }
-
-            ForEach(recentDone) { task in taskRow(task) }
         }
     }
 
