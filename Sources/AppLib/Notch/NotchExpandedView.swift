@@ -85,16 +85,6 @@ struct NotchExpandedView: View {
                         }
                         .buttonStyle(.plain)
 
-                        Button(action: { viewModel.approve() }) {
-                            Text("Always")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 6)
-                                .background(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.30))
-                                .cornerRadius(6)
-                        }
-                        .buttonStyle(.plain)
                     }
                 }
             }

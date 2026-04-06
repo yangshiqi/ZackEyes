@@ -12,6 +12,9 @@ public enum SessionState: String, Codable, Sendable {
 // MARK: - AnyCodable
 
 /// Type-erased JSON value wrapper. Handles all JSON primitives, arrays, and objects.
+// @unchecked Sendable is safe here because AnyCodable only stores JSON-compatible
+// value types (Bool, Int, Double, String, Array, Dictionary) and NSNull (immutable).
+// The JSONDecoder never produces mutable reference types.
 public struct AnyCodable: Codable, @unchecked Sendable {
     public let value: Any
 

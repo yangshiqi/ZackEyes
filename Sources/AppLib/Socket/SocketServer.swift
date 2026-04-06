@@ -108,14 +108,20 @@ public final class SocketServer {
     }
 
     private nonisolated func handleConnection(fd: Int32) async {
-        var buffer = [UInt8](repeating: 0, count: 65536)
-        let bytesRead = read(fd, &buffer, buffer.count)
-        guard bytesRead > 0 else {
+        var accumulated = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while accumulated.count < 65536 {
+            let bytesRead = read(fd, &buffer, buffer.count)
+            if bytesRead <= 0 { break }
+            accumulated.append(contentsOf: buffer[0..<bytesRead])
+            if accumulated.contains(UInt8(ascii: "\n")) { break }
+        }
+        guard !accumulated.isEmpty else {
             close(fd)
             return
         }
+        let data = accumulated
 
-        let data = Data(buffer[0..<bytesRead])
         let trimmedData = data.last == UInt8(ascii: "\n") ? data.dropLast() : data
 
         guard let event = try? JSONDecoder().decode(BridgeEvent.self, from: Data(trimmedData)) else {
@@ -126,7 +132,14 @@ public final class SocketServer {
         if event.bridgeEvent == "PermissionRequest" {
             // DO NOT close fd — the responder closure owns it
             let capturedFd = fd
+
+            final class ResponseTracker: @unchecked Sendable {
+                var completed = false
+            }
+            let tracker = ResponseTracker()
+
             let responder: @Sendable (PermissionResponse) -> Void = { response in
+                defer { tracker.completed = true }
                 guard let responseData = try? JSONEncoder().encode(response) else {
                     close(capturedFd)
                     return
@@ -143,10 +156,11 @@ public final class SocketServer {
             }
             // Keep task alive while bridge waits (bridge timeout is 15s, we wait 20s max)
             for _ in 0..<200 {
-                var pfd = pollfd(fd: fd, events: Int16(POLLHUP), revents: 0)
-                if poll(&pfd, 1, 0) > 0 && (pfd.revents & Int16(POLLHUP)) != 0 { break }
+                if tracker.completed { break }
                 try? await Task.sleep(for: .milliseconds(100))
             }
+            // If responder was never called, close the fd ourselves
+            if !tracker.completed { close(capturedFd) }
         } else {
             // Fire-and-forget: dispatch event, close immediately
             await MainActor.run { [weak self] in

@@ -50,7 +50,7 @@ case "PermissionRequest":
     exit(0)
 
 default:
-    // Fire-and-forget: best-effort, always exit(0)
-    client.sendFireAndForget(data: payloadData)
-    exit(0)
+    // Fire-and-forget: exit 0 on success, 1 on failure
+    let ok = client.sendFireAndForget(data: payloadData)
+    exit(ok ? 0 : 1)
 }
