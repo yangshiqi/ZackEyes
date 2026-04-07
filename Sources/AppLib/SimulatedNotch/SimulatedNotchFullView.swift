@@ -128,12 +128,12 @@ struct SimulatedNotchFullView: View {
     /// without picking).
     private var gearMenu: some View {
         Menu {
-            Button("About ZackEyes…") {
+            Button("About") {
                 modeStore.isMenuOpen = false
                 modeStore.isAboutShown = true
             }
             Divider()
-            Button("Quit ZackEyes") {
+            Button("Quit") {
                 NSApp.terminate(nil)
             }
             .keyboardShortcut("q", modifiers: .command)
