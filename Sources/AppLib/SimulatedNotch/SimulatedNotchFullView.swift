@@ -123,9 +123,10 @@ struct SimulatedNotchFullView: View {
     /// Tracks open state on `modeStore.isMenuOpen` so the controller's
     /// sticky-collapse logic doesn't kill the panel out from under the
     /// menu. SwiftUI's `Menu` doesn't expose an isPresented binding, so
-    /// we set the flag on label tap and clear it via either the Button
-    /// actions (common case) or a 4-second safety timer (user dismissed
-    /// without picking).
+    /// we set the flag on label tap (via `modeStore.markMenuOpen()`)
+    /// which also arms a single 4-second safety timer — any prior
+    /// pending close task is cancelled, so rapid-clicking the gear
+    /// never stacks up competing timers.
     private var gearMenu: some View {
         Menu {
             Button("About") {
@@ -146,11 +147,7 @@ struct SimulatedNotchFullView: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .onTapGesture {
-            modeStore.isMenuOpen = true
-            let store = modeStore
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4) {
-                store.isMenuOpen = false
-            }
+            modeStore.markMenuOpen()
         }
     }
 

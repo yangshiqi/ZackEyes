@@ -14,8 +14,8 @@ public enum NotchMode: Sendable {
 public final class NotchModeStore: ObservableObject {
     @Published public var mode: NotchMode = .compact
 
-    /// True while the gear-menu dropdown is currently visible. Set by the
-    /// SwiftUI Menu's `isPresented` binding.
+    /// True while the gear-menu dropdown is currently visible. Set via
+    /// `markMenuOpen()` which also schedules the safety-net close timer.
     @Published public var isMenuOpen: Bool = false
 
     /// True while the About overlay is shown over the session list.
@@ -26,6 +26,26 @@ public final class NotchModeStore: ObservableObject {
     /// auto-collapse on mouse-out and outside-click handlers.
     public var hasInteractiveOverlay: Bool {
         isMenuOpen || isAboutShown
+    }
+
+    /// Tracks the pending "auto-close the gear menu flag" task so that
+    /// rapid taps on the gear icon don't stack up multiple timers (an
+    /// earlier timer firing could clear `isMenuOpen` while a later
+    /// interaction is still active, prematurely collapsing the panel).
+    private var menuCloseTask: Task<Void, Never>?
+
+    /// Mark the gear menu as open and schedule a single 4-second safety
+    /// timer that will clear `isMenuOpen` if the user dismisses the menu
+    /// without picking an item. Any prior pending close task is cancelled,
+    /// so back-to-back taps always keep only the latest timer alive.
+    public func markMenuOpen() {
+        isMenuOpen = true
+        menuCloseTask?.cancel()
+        menuCloseTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(4))
+            guard let self, !Task.isCancelled else { return }
+            self.isMenuOpen = false
+        }
     }
 }
 
