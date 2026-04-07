@@ -177,8 +177,12 @@ struct NotchExpandedView: View {
                     errorBanner(errMsg, detail: session.lastAssistantMessage)
                 }
 
-                // Tasks section
-                if !session.tasks.isEmpty {
+                // Tasks section — hidden once the session goes idle/stopped
+                // (and there's no pending permission to act on). At that
+                // point the task list is just stale clutter; the context
+                // progress bar above is enough to convey "this session
+                // exists, it's resting".
+                if !session.tasks.isEmpty && !isResting(session) {
                     taskList(session.tasks)
                 }
 
@@ -519,6 +523,13 @@ struct NotchExpandedView: View {
     }
 
     // MARK: - Helpers
+
+    /// Mirrors `BuddyAvatar.isIdle`: a session is "resting" when it's idle
+    /// or stopped AND there's nothing waiting on the user. Used to hide
+    /// stale UI like the completed task list.
+    private func isResting(_ session: SessionInfo) -> Bool {
+        (session.state == .idle || session.state == .stopped) && session.pendingPermission == nil
+    }
 
     private func statusColor(for session: SessionInfo) -> Color {
         if session.pendingPermission != nil {
