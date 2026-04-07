@@ -115,6 +115,13 @@ struct NotchExpandedView: View {
                     .foregroundColor(.white.opacity(0.5))
                     .italic()
 
+                // Row 1.6: context window usage bar (per-session, from statusLine)
+                if let used = session.contextUsedPct {
+                    contextBar(usedPct: used,
+                               windowSize: session.contextWindowSize,
+                               cost: session.totalCostUSD)
+                }
+
                 // Row 2: last user prompt (You: ...)
                 if let prompt = session.lastUserPrompt, !prompt.isEmpty {
                     HStack(alignment: .top, spacing: 4) {
@@ -205,6 +212,57 @@ struct NotchExpandedView: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private func contextBar(usedPct: Double, windowSize: Int?, cost: Double?) -> some View {
+        let color = contextColor(for: usedPct)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                Text("Context")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.55))
+                Text(String(format: "%.0f%%", usedPct))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(color)
+                if let size = windowSize {
+                    Text(formatWindowSize(size))
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.4))
+                }
+                Spacer(minLength: 0)
+                if let cost = cost, cost > 0 {
+                    Text(String(format: "$%.2f", cost))
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Color.white.opacity(0.08))
+                        .frame(height: 3)
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(color)
+                        .frame(width: geo.size.width * CGFloat(min(usedPct, 100)) / 100, height: 3)
+                }
+            }
+            .frame(height: 3)
+        }
+    }
+
+    private func contextColor(for usedPct: Double) -> Color {
+        switch usedPct {
+        case ..<60: return Color(red: 0.31, green: 0.80, blue: 0.77)  // teal
+        case ..<85: return Color(red: 0.96, green: 0.65, blue: 0.14)  // orange
+        default:    return Color(red: 0.95, green: 0.30, blue: 0.30)  // red
+        }
+    }
+
+    private func formatWindowSize(_ size: Int) -> String {
+        if size >= 1_000_000 { return String(format: "%.0fM", Double(size) / 1_000_000) }
+        if size >= 1_000 { return String(format: "%.0fk", Double(size) / 1_000) }
+        return "\(size)"
     }
 
     @ViewBuilder

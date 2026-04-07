@@ -92,10 +92,13 @@ public struct BridgeEvent: Codable, Sendable {
     public let permissionMode: String?
     public let transcriptPath: String?
     public let userPrompt: String?
-    public let source: String?  // SessionStart "source" field
-    public let bridgePpid: Int?  // parent pid of the bridge (the claude process)
-    public let lastAssistantMessage: String?  // from Stop events
-    public let rateLimits: [String: AnyCodable]?  // subscriber rate limits (five_hour, seven_day, ...)
+    public let source: String?
+    public let bridgePpid: Int?
+    public let lastAssistantMessage: String?
+    public let rateLimits: [String: AnyCodable]?
+    public let contextWindow: [String: AnyCodable]?  // per-session context usage (statusLine only)
+    public let model: [String: AnyCodable]?           // {id, display_name}
+    public let cost: [String: AnyCodable]?            // {total_cost_usd, total_duration_ms, ...}
 
     public init(
         bridgeEvent: String,
@@ -110,7 +113,10 @@ public struct BridgeEvent: Codable, Sendable {
         source: String? = nil,
         bridgePpid: Int? = nil,
         lastAssistantMessage: String? = nil,
-        rateLimits: [String: AnyCodable]? = nil
+        rateLimits: [String: AnyCodable]? = nil,
+        contextWindow: [String: AnyCodable]? = nil,
+        model: [String: AnyCodable]? = nil,
+        cost: [String: AnyCodable]? = nil
     ) {
         self.bridgeEvent = bridgeEvent
         self.sessionId = sessionId
@@ -125,6 +131,9 @@ public struct BridgeEvent: Codable, Sendable {
         self.bridgePpid = bridgePpid
         self.lastAssistantMessage = lastAssistantMessage
         self.rateLimits = rateLimits
+        self.contextWindow = contextWindow
+        self.model = model
+        self.cost = cost
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -141,6 +150,9 @@ public struct BridgeEvent: Codable, Sendable {
         case bridgePpid           = "_bridge_ppid"
         case lastAssistantMessage = "last_assistant_message"
         case rateLimits           = "rate_limits"
+        case contextWindow        = "context_window"
+        case model
+        case cost
     }
 }
 

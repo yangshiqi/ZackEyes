@@ -28,8 +28,14 @@ public struct SessionInfo: Identifiable {
     public var tasks: [TaskItem] = []
     public var claudePid: Int?   // PID of the claude process (from bridge ppid)
     public var transcriptPath: String?  // Path to the JSONL transcript file (for lsof lookup)
-    public var errorMessage: String?  // API error / rate limit / other failures
+    public var errorMessage: String?
     public var errorAt: Date?
+
+    // Per-session context window data (from statusLine)
+    public var contextUsedPct: Double?
+    public var contextWindowSize: Int?
+    public var modelDisplayName: String?
+    public var totalCostUSD: Double?
 
     /// Display name — last path component of cwd, or first 8 chars of id
     public var displayName: String {
@@ -112,6 +118,9 @@ public final class SessionStore: ObservableObject {
         if let existing = sessions[sid], existing.source == .detected {
             upgradeToLive(sessionId: sid)
         }
+
+        // statusLine carries per-session context window + model + cost
+        applyStatusLineFields(event: event, sid: sid)
 
         // Capture claude pid + transcript path from bridge if available
         if var existing = sessions[sid] {
@@ -276,6 +285,45 @@ public final class SessionStore: ObservableObject {
         guard var session = sessions[sessionId], session.source == .detected else { return }
         session.source = .live
         sessions[sessionId] = session
+    }
+
+    /// Apply per-session statusLine fields (context window, model, cost) to the
+    /// session if present in the event. Creates the session if it doesn't exist.
+    private func applyStatusLineFields(event: BridgeEvent, sid: String) {
+        let hasAny = event.contextWindow != nil || event.model != nil || event.cost != nil
+        guard hasAny else { return }
+
+        var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
+
+        if let cw = event.contextWindow {
+            if let used = (cw["used_percentage"]?.value as? Double)
+                ?? (cw["used_percentage"]?.value as? Int).map(Double.init) {
+                session.contextUsedPct = used
+            }
+            if let size = (cw["context_window_size"]?.value as? Int)
+                ?? (cw["context_window_size"]?.value as? Double).map(Int.init) {
+                session.contextWindowSize = size
+            }
+        }
+
+        if let model = event.model {
+            if let name = model["display_name"]?.value as? String {
+                session.modelDisplayName = name
+            }
+        }
+
+        if let cost = event.cost {
+            if let usd = (cost["total_cost_usd"]?.value as? Double)
+                ?? (cost["total_cost_usd"]?.value as? Int).map(Double.init) {
+                session.totalCostUSD = usd
+            }
+        }
+
+        if let cwd = event.cwd, session.cwd == nil {
+            session.cwd = cwd
+        }
+        session.lastActiveAt = Date()
+        sessions[sid] = session
     }
 
     /// Detect Claude Code / Anthropic API error patterns in assistant output.
