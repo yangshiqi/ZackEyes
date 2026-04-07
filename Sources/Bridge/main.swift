@@ -51,6 +51,14 @@ case "PermissionRequest":
     FileHandle.standardOutput.write(responseData)
     exit(0)
 
+case "StatusLine":
+    // Claude Code statusLine command: receives rich metadata (including rate_limits)
+    // via stdin, expects status text on stdout. We forward to the app and return
+    // an empty status line (or could return a tiny indicator).
+    let _ = client.sendFireAndForget(data: payloadData)
+    // Return nothing so the user's status line stays clean
+    exit(0)
+
 default:
     // Fire-and-forget: exit 0 on success, 1 on failure
     let ok = client.sendFireAndForget(data: payloadData)

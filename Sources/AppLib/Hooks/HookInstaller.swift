@@ -85,6 +85,20 @@ public struct HookInstaller {
         }
 
         settings["hooks"] = hooks
+
+        // statusLine: install ourselves only if no other tool has claimed it
+        // (don't break Vibe Island or other status-line consumers).
+        if let existingStatusLine = settings["statusLine"] as? [String: Any],
+           let cmd = existingStatusLine["command"] as? String,
+           !cmd.contains("zackeyes") {
+            // Someone else owns it — leave alone
+        } else {
+            settings["statusLine"] = [
+                "type": "command",
+                "command": "\(bridgePath) --event StatusLine",
+            ]
+        }
+
         try writeSettings(settings, to: settingsURL)
     }
 
@@ -115,6 +129,13 @@ public struct HookInstaller {
             settings.removeValue(forKey: "hooks")
         } else {
             settings["hooks"] = hooks
+        }
+
+        // Remove statusLine if we own it
+        if let sl = settings["statusLine"] as? [String: Any],
+           let cmd = sl["command"] as? String,
+           cmd.contains("zackeyes") {
+            settings.removeValue(forKey: "statusLine")
         }
 
         try writeSettings(settings, to: settingsURL)
