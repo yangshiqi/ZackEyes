@@ -162,12 +162,20 @@ public final class SocketServer {
             await MainActor.run { [weak self] in
                 self?.onEvent?(event, responder)
             }
-            // Wait for either user response (tracker.completed) or bridge disconnect (POLLHUP)
+            // Wait forever for either:
+            //   1. User responded via ZackEyes (tracker.completed == true)
+            //   2. The bridge disconnected — this happens either because the
+            //      bridge timed out, OR because Claude Code killed the bridge
+            //      when the user answered in the terminal instead of ZackEyes.
+            //
+            // No wall-clock ceiling: a permission prompt may legitimately sit
+            // on screen for minutes while the user thinks. The bridge side
+            // now also has no timeout (see BridgeLib/SocketClient.swift),
+            // so both ends will wait as long as the user needs. If the task
+            // itself is cancelled (app shutdown), Task.isCancelled breaks us
+            // out cleanly.
             var bridgeDisconnected = false
-            for _ in 0..<200 { // 20s max
-                if tracker.completed { break }
-                // Check if bridge closed the connection (happens on bridge timeout
-                // or if Claude Code killed the bridge because user responded in terminal)
+            while !tracker.completed && !Task.isCancelled {
                 var pfd = pollfd(fd: capturedFd, events: Int16(POLLHUP), revents: 0)
                 if poll(&pfd, 1, 0) > 0 && (pfd.revents & Int16(POLLHUP)) != 0 {
                     bridgeDisconnected = true

@@ -202,6 +202,13 @@ public final class SimulatedNotchController {
         setMode(.full)
     }
 
+    /// Tear down the About overlay if it's currently shown. Used by the
+    /// PermissionRequest path so a question can claim the panel even
+    /// when the user is reading the About card.
+    public func dismissAboutOverlay() {
+        modeStore.isAboutShown = false
+    }
+
     // MARK: - Mouse hover (compact ↔ full)
 
     private func observeMouseMovement() {
@@ -233,11 +240,10 @@ public final class SimulatedNotchController {
                 setMode(.full)
             }
         } else {
-            // Mouse left the area. STICKY EXCEPTION: don't collapse while a
-            // session has a pending permission — the user needs to keep the
-            // question on screen until they answer it, regardless of where
-            // their mouse is.
-            if hasPendingPermission {
+            // Mouse left the area. STICKY EXCEPTION: don't collapse while
+            // any interactive overlay is on the panel — pending permission,
+            // open gear menu, or About card.
+            if stickyOpen {
                 collapseWorkItem?.cancel()
                 return
             }
@@ -263,6 +269,13 @@ public final class SimulatedNotchController {
         viewModel.sessionStore.sessions.values.contains { $0.pendingPermission != nil }
     }
 
+    /// True when ANY interactive UI is on the panel and the panel must
+    /// not auto-collapse: a pending permission, the gear menu being open,
+    /// or the About overlay being shown.
+    private var stickyOpen: Bool {
+        hasPendingPermission || modeStore.hasInteractiveOverlay
+    }
+
     // MARK: - Outside-click dismissal (full mode)
 
     private func startOutsideClickMonitoring() {
@@ -273,8 +286,8 @@ public final class SimulatedNotchController {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
-                // Sticky: don't dismiss while a permission is pending.
-                if self.hasPendingPermission { return }
+                // Sticky: don't dismiss while a permission/menu/about overlay is interacting.
+                if self.stickyOpen { return }
                 self.setMode(.compact)
             }
         }
@@ -288,7 +301,7 @@ public final class SimulatedNotchController {
                 return event
             }
             Task { @MainActor in
-                if self.hasPendingPermission { return }
+                if self.stickyOpen { return }
                 self.setMode(.compact)
             }
             return event
