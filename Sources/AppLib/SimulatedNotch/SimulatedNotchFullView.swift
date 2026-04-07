@@ -24,10 +24,7 @@ struct SimulatedNotchFullView: View {
                     .background(Color.clear)
             }
         }
-        .background(
-            NotchShape(cornerRadius: cornerRadius)
-                .fill(Color.black)
-        )
+        .background(NotchShape(cornerRadius: cornerRadius).fill(Color.black))
         .clipShape(NotchShape(cornerRadius: cornerRadius))
     }
 

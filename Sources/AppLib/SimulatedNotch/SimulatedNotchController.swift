@@ -1,43 +1,56 @@
 import AppKit
 import SwiftUI
-import Combine
 
-/// Manages a floating simulated-notch panel that can morph between three states:
-/// - **compact**: narrow pill with status icon + 5h/7d remaining
-/// - **hoverWide**: same height, wider pill (more details on hover)
-/// - **full**: large panel containing the full session list, expanding downward
+/// Manages a floating simulated-notch panel that morphs between two states:
+/// - **compact**: narrow pill (220×32) with status icon + 5h/7d remaining
+/// - **full**: large panel (520×fullHeight) with the full session list
 ///
-/// Transitions are animated as a single morphing shape so it always feels like
-/// the same notch — never a separate popover.
+/// Both the NSPanel frame and the SwiftUI content are animated together
+/// using a single matched timing curve. There is no `preferredContentSize`
+/// feedback loop — the controller is the single source of truth for panel
+/// geometry, so the position is rock-solid (always top-center of the
+/// primary screen) and the morph is one continuous Apple-style motion.
 @MainActor
 public final class SimulatedNotchController {
     private let viewModel: NotchViewModel
     private let usageTracker: UsageTracker
     public var onTap: (() -> Void)?
 
-    public var anchorView: NSView? { hostingController?.view }
+    public var anchorView: NSView? { hostingView }
 
     private var panel: SimulatedNotchPanel?
-    private var hostingController: NSHostingController<AnyView>?
-    private var preferredSizeObservation: NSKeyValueObservation?
+    private var hostingView: NSHostingView<SimulatedNotchRoot>?
+    private var modeStore = NotchModeStore()
     private var mouseMonitor: Any?
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var screenObserver: NSObjectProtocol?
-    private var sessionStoreCancellable: AnyCancellable?
 
-    private enum Mode { case compact, hoverWide, full }
-    private var mode: Mode = .compact
+    private var mode: NotchMode {
+        get { modeStore.mode }
+        set { modeStore.mode = newValue }
+    }
     private var collapseWorkItem: DispatchWorkItem?
 
     // Real MacBook Pro Dynamic Island is roughly 220pt wide × 32pt tall
     private let compactWidth: CGFloat = 220
-    private let hoverWideWidth: CGFloat = 340
     private let fullWidth: CGFloat = 520
     private let notchHeight: CGFloat = 32
-    private let fullMinHeight: CGFloat = 200
-    /// Computed dynamically from session count + content
-    private var fullCurrentHeight: CGFloat = 200
+    /// Computed once at panel-creation time from the screen height (capped
+    /// to leave a small margin). Fixed for the lifetime of the panel — the
+    /// full content uses an internal ScrollView to handle overflow, so we
+    /// never need to resize the panel based on session count.
+    private var fullHeight: CGFloat = 480
+
+    // ─── Animation timing ────────────────────────────────────────────────
+    // Apple's Dynamic Island uses a snappy ease-out curve. We use the same
+    // control points for the NSPanel resize (NSAnimationContext) and the
+    // SwiftUI content morph (withAnimation) so they progress in lock-step.
+    private let animationDuration: TimeInterval = 0.45
+    private let curveC1x: Double = 0.32
+    private let curveC1y: Double = 0.72
+    private let curveC2x: Double = 0.40
+    private let curveC2y: Double = 1.00
 
     public init(viewModel: NotchViewModel, usageTracker: UsageTracker) {
         self.viewModel = viewModel
@@ -55,12 +68,10 @@ public final class SimulatedNotchController {
         usageTracker.stop()
         if let mon = mouseMonitor { NSEvent.removeMonitor(mon) }
         stopOutsideClickMonitoring()
-        preferredSizeObservation?.invalidate()
-        preferredSizeObservation = nil
         if let observer = screenObserver { NotificationCenter.default.removeObserver(observer) }
         panel?.orderOut(nil)
         panel = nil
-        hostingController = nil
+        hostingView = nil
     }
 
     // MARK: - Panel creation
@@ -75,53 +86,47 @@ public final class SimulatedNotchController {
 
     private func createPanel() {
         guard let screen = primaryScreen() else { return }
+
+        // Pre-compute the full panel height once. The full content has its
+        // own ScrollView, so this can be a fixed value capped to fit the
+        // screen with a small margin.
+        fullHeight = min(480, screen.visibleFrame.height - 60)
+
         let frame = compactFrame(on: screen)
         let panel = SimulatedNotchPanel(contentRect: frame)
 
-        let controller = NSHostingController(rootView: AnyView(makeView(for: .compact)))
-        // Auto-report SwiftUI's intrinsic content size via preferredContentSize
-        controller.sizingOptions = [.preferredContentSize]
-        panel.contentViewController = controller
-
-        // KVO preferredContentSize so we can resize the panel when content grows
-        preferredSizeObservation = controller.observe(\.preferredContentSize, options: [.new]) { [weak self] _, _ in
-            Task { @MainActor in self?.handlePreferredSizeChange() }
-        }
+        let root = SimulatedNotchRoot(
+            viewModel: viewModel,
+            usageTracker: usageTracker,
+            modeStore: modeStore,
+            compactWidth: compactWidth,
+            fullWidth: fullWidth,
+            notchHeight: notchHeight,
+            fullHeight: fullHeight,
+            onTap: { [weak self] in self?.toggleFull() }
+        )
+        let hostingView = FlexibleHostingView(rootView: root)
+        // CRITICAL: NSHostingView's default `sizingOptions` is `.standardBounds`,
+        // which makes the view auto-resize itself (and via Auto Layout, the
+        // enclosing window) to match SwiftUI's natural content size whenever
+        // the SwiftUI layout changes. Our SwiftUI root contains a 520×fullHeight
+        // child for the full panel content, so the natural size is 520×fullHeight
+        // even in compact mode — and the moment SwiftUI re-lays out (e.g. after
+        // sessions are imported), the panel jumps to that size.
+        //
+        // Setting sizingOptions to [] disables all auto-sizing. The hosting
+        // view's frame is then controlled entirely by us via autoresizingMask
+        // + parent's frame, and the panel size is the single source of truth.
+        hostingView.sizingOptions = []
+        hostingView.frame = NSRect(origin: .zero, size: frame.size)
+        hostingView.autoresizingMask = [.width, .height]
+        panel.contentView = hostingView
 
         panel.orderFrontRegardless()
         self.panel = panel
-        self.hostingController = controller
+        self.hostingView = hostingView
 
         Task { await usageTracker.refresh() }
-    }
-
-    private func handlePreferredSizeChange() {
-        // For compact / hoverWide modes, force the panel back to its fixed
-        // dimensions — preferredContentSize would otherwise shrink it to whatever
-        // the SwiftUI content reports, which is smaller than our notch geometry.
-        guard let panel = panel, let screen = primaryScreen() else { return }
-
-        switch mode {
-        case .compact, .hoverWide:
-            let target = currentFrame(on: screen)
-            if panel.frame != target {
-                panel.setFrame(target, display: false)
-            }
-        case .full:
-            guard let controller = hostingController else { return }
-            let preferred = controller.preferredContentSize
-            guard preferred.height > 0 else { return }
-            let maxHeight = screen.visibleFrame.height - 40
-            let height = min(preferred.height, maxHeight)
-            guard abs(height - fullCurrentHeight) > 1 else { return }
-            fullCurrentHeight = height
-            let target = fullFrame(on: screen)
-            NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.15
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                panel.animator().setFrame(target, display: true)
-            }
-        }
     }
 
     // MARK: - Geometry
@@ -132,164 +137,65 @@ public final class SimulatedNotchController {
         return CGRect(x: x, y: y, width: compactWidth, height: notchHeight)
     }
 
-    private func hoverWideFrame(on screen: NSScreen) -> CGRect {
-        let x = screen.frame.midX - hoverWideWidth / 2
-        let y = screen.frame.maxY - notchHeight
-        return CGRect(x: x, y: y, width: hoverWideWidth, height: notchHeight)
-    }
-
     private func fullFrame(on screen: NSScreen) -> CGRect {
-        let height = fullCurrentHeight
         let x = screen.frame.midX - fullWidth / 2
-        let y = screen.frame.maxY - height
-        return CGRect(x: x, y: y, width: fullWidth, height: height)
-    }
-
-    /// Heuristic: header (5h+7d bars) + per-session estimate. Capped at screen height.
-    private func computeFullHeight() -> CGFloat {
-        let headerHeight: CGFloat = 100  // 5h + 7d bars + paddings + divider
-        let perSessionBase: CGFloat = 90  // avatar row + prompt + reply + tool action
-        let sessions = viewModel.sessionStore.sessions.values
-        var sum: CGFloat = headerHeight + 24  // bottom padding
-
-        if sessions.isEmpty {
-            sum += 80  // empty state
-        } else {
-            for session in sessions {
-                var rowHeight = perSessionBase
-                if session.lastUserPrompt != nil { rowHeight += 18 }
-                if session.lastAssistantMessage != nil { rowHeight += 18 }
-                if session.currentToolName != nil { rowHeight += 18 }
-                if session.errorMessage != nil { rowHeight += 60 }
-                if !session.tasks.isEmpty {
-                    let visible = min(6, session.tasks.count)
-                    rowHeight += 26 + CGFloat(visible) * 18
-                }
-                if let pending = session.pendingPermission {
-                    rowHeight += pending.isAskUserQuestion ? 200 : 130
-                }
-                sum += rowHeight + 14  // inter-session spacing
-            }
-        }
-
-        let maxHeight = (primaryScreen()?.visibleFrame.height ?? 800) - 40
-        return max(fullMinHeight, min(sum, maxHeight))
+        let y = screen.frame.maxY - fullHeight
+        return CGRect(x: x, y: y, width: fullWidth, height: fullHeight)
     }
 
     private func currentFrame(on screen: NSScreen) -> CGRect {
         switch mode {
-        case .compact: return compactFrame(on: screen)
-        case .hoverWide: return hoverWideFrame(on: screen)
+        case .compact, .hoverWide: return compactFrame(on: screen)
         case .full: return fullFrame(on: screen)
-        }
-    }
-
-    // MARK: - View building
-
-    @ViewBuilder
-    private func makeView(for mode: Mode) -> some View {
-        switch mode {
-        case .compact:
-            SimulatedNotchView(
-                viewModel: viewModel,
-                usageTracker: usageTracker,
-                isExpanded: false,
-                onTap: { [weak self] in self?.toggleFull() }
-            )
-            .frame(width: compactWidth, height: notchHeight)
-        case .hoverWide:
-            SimulatedNotchView(
-                viewModel: viewModel,
-                usageTracker: usageTracker,
-                isExpanded: true,
-                onTap: { [weak self] in self?.toggleFull() }
-            )
-            .frame(width: hoverWideWidth, height: notchHeight)
-        case .full:
-            // Force fixed width — height comes from SwiftUI's natural fit
-            SimulatedNotchFullView(
-                viewModel: viewModel,
-                usageTracker: usageTracker,
-                cornerRadius: 22
-            )
-            .frame(width: fullWidth)
         }
     }
 
     // MARK: - State transitions
 
-    private func setMode(_ newMode: Mode) {
+    /// Drive the mode change. The NSPanel frame and the SwiftUI content
+    /// animate together using a single matched timing curve so the morph
+    /// is one continuous motion — no two-clock drift, no jitter.
+    private func setMode(_ newMode: NotchMode) {
         guard mode != newMode else { return }
-        mode = newMode
-
-        // Initial guess for full mode — will be replaced by the real
-        // preferredContentSize via KVO once SwiftUI lays out.
-        if newMode == .full {
-            fullCurrentHeight = computeFullHeight()
+        guard let panel = panel, let screen = primaryScreen() else {
+            modeStore.mode = newMode
+            return
         }
 
-        guard let panel = panel, let screen = primaryScreen() else { return }
-        let target = currentFrame(on: screen)
+        let target = (newMode == .full) ? fullFrame(on: screen) : compactFrame(on: screen)
+        let curve = CAMediaTimingFunction(
+            controlPoints: Float(curveC1x), Float(curveC1y),
+            Float(curveC2x), Float(curveC2y)
+        )
 
-        // Swap content
-        hostingController?.rootView = AnyView(makeView(for: newMode))
-
+        // Animate the NSPanel frame on the AppKit clock.
         NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = newMode == .full ? 0.30 : 0.22
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            ctx.duration = animationDuration
+            ctx.timingFunction = curve
+            ctx.allowsImplicitAnimation = true
             panel.animator().setFrame(target, display: true)
         }
 
-        // When entering full mode, install outside-click dismissal
-        // and watch session changes to keep height fitting.
+        // Animate the SwiftUI content (opacity, scaleEffect, cornerRadius)
+        // with the same curve and duration. They start at the same instant
+        // and finish at the same instant, so the morph reads as one motion.
+        withAnimation(.timingCurve(curveC1x, curveC1y, curveC2x, curveC2y, duration: animationDuration)) {
+            modeStore.mode = newMode
+        }
+
         if newMode == .full {
             startOutsideClickMonitoring()
-            startObservingSessionChanges()
         } else {
             stopOutsideClickMonitoring()
-            stopObservingSessionChanges()
-        }
-    }
-
-    /// While the full panel is open, refresh its height when sessions change.
-    private func startObservingSessionChanges() {
-        sessionStoreCancellable?.cancel()
-        sessionStoreCancellable = viewModel.sessionStore.objectWillChange
-            .receive(on: RunLoop.main)
-            .debounce(for: .milliseconds(120), scheduler: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.refitHeightIfFull()
-            }
-    }
-
-    private func stopObservingSessionChanges() {
-        sessionStoreCancellable?.cancel()
-        sessionStoreCancellable = nil
-    }
-
-    private func refitHeightIfFull() {
-        guard mode == .full, let panel = panel, let screen = primaryScreen() else { return }
-        let newHeight = computeFullHeight()
-        guard abs(newHeight - fullCurrentHeight) > 4 else { return }
-        fullCurrentHeight = newHeight
-        let target = fullFrame(on: screen)
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.18
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrame(target, display: true)
         }
     }
 
     /// Click handler from the compact view — morphs into the full panel.
     public func toggleFull() {
-        if mode == .full {
-            setMode(.compact)
-        } else {
-            setMode(.full)
-        }
+        setMode(mode == .full ? .compact : .full)
     }
 
-    // MARK: - Mouse hover (compact ↔ hoverWide)
+    // MARK: - Mouse hover (compact ↔ full)
 
     private func observeMouseMovement() {
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
@@ -379,9 +285,31 @@ public final class SimulatedNotchController {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self = self, let screen = self.primaryScreen(), let panel = self.panel else { return }
+                guard let self = self,
+                      let panel = self.panel,
+                      let screen = self.primaryScreen() else { return }
+                // Recompute fullHeight in case the screen size changed.
+                self.fullHeight = min(480, screen.visibleFrame.height - 60)
                 panel.setFrame(self.currentFrame(on: screen), display: true)
             }
         }
+    }
+}
+
+/// `NSHostingView` subclass that reports no intrinsic content size, so
+/// AppKit's Auto Layout never tries to grow the panel to fit the SwiftUI
+/// content's natural size. The view fills whatever frame we give it via
+/// `autoresizingMask`, and SwiftUI lays out within those bounds.
+private final class FlexibleHostingView<Content: View>: NSHostingView<Content> {
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: NSView.noIntrinsicMetric, height: NSView.noIntrinsicMetric)
+    }
+
+    required init(rootView: Content) {
+        super.init(rootView: rootView)
+    }
+
+    @objc required dynamic init?(coder: NSCoder) {
+        fatalError("FlexibleHostingView does not support init(coder:)")
     }
 }

@@ -30,4 +30,12 @@ class SimulatedNotchPanel: NSPanel {
 
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
+
+    /// AppKit's default `constrainFrameRect(_:to:)` pushes any window whose
+    /// top edge sits above the menu bar down by 30pt so it's clear of the
+    /// menu bar. We *want* the panel to live in the menu bar area — that's
+    /// the whole point of a simulated notch — so return the frame unchanged.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        return frameRect
+    }
 }

@@ -26,10 +26,7 @@ struct SimulatedNotchView: View {
         }
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            NotchShape(cornerRadius: 14)
-                .fill(Color.black)
-        )
+        .background(NotchShape(cornerRadius: 14).fill(Color.black))
         .contentShape(NotchShape(cornerRadius: 14))
         .onTapGesture {
             onTap?()
