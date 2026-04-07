@@ -61,8 +61,16 @@ public final class SimulatedNotchController {
 
     // MARK: - Panel creation
 
+    /// Always use the *primary* screen (the one with origin at 0,0 — i.e. the
+    /// display marked as primary in System Settings, which holds the menu bar).
+    /// `NSScreen.main` follows the key window / focus, so on multi-monitor
+    /// setups it would jump between displays. We anchor to a stable screen.
+    private func primaryScreen() -> NSScreen? {
+        NSScreen.screens.first { $0.frame.origin == .zero } ?? NSScreen.screens.first
+    }
+
     private func createPanel() {
-        guard let screen = NSScreen.main else { return }
+        guard let screen = primaryScreen() else { return }
         let frame = compactFrame(on: screen)
         let panel = SimulatedNotchPanel(contentRect: frame)
 
@@ -126,7 +134,7 @@ public final class SimulatedNotchController {
             }
         }
 
-        let maxHeight = (NSScreen.main?.visibleFrame.height ?? 800) - 40
+        let maxHeight = (primaryScreen()?.visibleFrame.height ?? 800) - 40
         return max(fullMinHeight, min(sum, maxHeight))
     }
 
@@ -177,7 +185,7 @@ public final class SimulatedNotchController {
             fullCurrentHeight = computeFullHeight()
         }
 
-        guard let panel = panel, let screen = NSScreen.main else { return }
+        guard let panel = panel, let screen = primaryScreen() else { return }
         let target = currentFrame(on: screen)
 
         // Swap content first so the new view is laid out as the frame grows
@@ -217,7 +225,7 @@ public final class SimulatedNotchController {
     }
 
     private func refitHeightIfFull() {
-        guard mode == .full, let panel = panel, let screen = NSScreen.main else { return }
+        guard mode == .full, let panel = panel, let screen = primaryScreen() else { return }
         let newHeight = computeFullHeight()
         guard abs(newHeight - fullCurrentHeight) > 4 else { return }
         fullCurrentHeight = newHeight
@@ -328,7 +336,7 @@ public final class SimulatedNotchController {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                guard let self = self, let screen = NSScreen.main, let panel = self.panel else { return }
+                guard let self = self, let screen = self.primaryScreen(), let panel = self.panel else { return }
                 panel.setFrame(self.currentFrame(on: screen), display: true)
             }
         }
