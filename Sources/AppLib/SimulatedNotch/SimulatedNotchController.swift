@@ -23,6 +23,7 @@ public final class SimulatedNotchController {
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
     private var screenObserver: NSObjectProtocol?
+    private var sessionStoreCancellable: AnyCancellable?
 
     private enum Mode { case compact, hoverWide, full }
     private var mode: Mode = .compact
@@ -31,8 +32,10 @@ public final class SimulatedNotchController {
     private let compactWidth: CGFloat = 170
     private let hoverWideWidth: CGFloat = 300
     private let fullWidth: CGFloat = 480
-    private let fullHeight: CGFloat = 560
     private let notchHeight: CGFloat = 26
+    private let fullMinHeight: CGFloat = 200
+    /// Computed dynamically from session count + content
+    private var fullCurrentHeight: CGFloat = 200
 
     public init(viewModel: NotchViewModel, usageTracker: UsageTracker) {
         self.viewModel = viewModel
@@ -90,9 +93,41 @@ public final class SimulatedNotchController {
     }
 
     private func fullFrame(on screen: NSScreen) -> CGRect {
+        let height = fullCurrentHeight
         let x = screen.frame.midX - fullWidth / 2
-        let y = screen.frame.maxY - fullHeight
-        return CGRect(x: x, y: y, width: fullWidth, height: fullHeight)
+        let y = screen.frame.maxY - height
+        return CGRect(x: x, y: y, width: fullWidth, height: height)
+    }
+
+    /// Heuristic: header (5h+7d bars) + per-session estimate. Capped at screen height.
+    private func computeFullHeight() -> CGFloat {
+        let headerHeight: CGFloat = 100  // 5h + 7d bars + paddings + divider
+        let perSessionBase: CGFloat = 90  // avatar row + prompt + reply + tool action
+        let sessions = viewModel.sessionStore.sessions.values
+        var sum: CGFloat = headerHeight + 24  // bottom padding
+
+        if sessions.isEmpty {
+            sum += 80  // empty state
+        } else {
+            for session in sessions {
+                var rowHeight = perSessionBase
+                if session.lastUserPrompt != nil { rowHeight += 18 }
+                if session.lastAssistantMessage != nil { rowHeight += 18 }
+                if session.currentToolName != nil { rowHeight += 18 }
+                if session.errorMessage != nil { rowHeight += 60 }
+                if !session.tasks.isEmpty {
+                    let visible = min(6, session.tasks.count)
+                    rowHeight += 26 + CGFloat(visible) * 18
+                }
+                if let pending = session.pendingPermission {
+                    rowHeight += pending.isAskUserQuestion ? 200 : 130
+                }
+                sum += rowHeight + 14  // inter-session spacing
+            }
+        }
+
+        let maxHeight = (NSScreen.main?.visibleFrame.height ?? 800) - 40
+        return max(fullMinHeight, min(sum, maxHeight))
     }
 
     private func currentFrame(on screen: NSScreen) -> CGRect {
@@ -137,6 +172,11 @@ public final class SimulatedNotchController {
         guard mode != newMode else { return }
         mode = newMode
 
+        // If entering full mode, recompute height from current session content
+        if newMode == .full {
+            fullCurrentHeight = computeFullHeight()
+        }
+
         guard let panel = panel, let screen = NSScreen.main else { return }
         let target = currentFrame(on: screen)
 
@@ -150,10 +190,42 @@ public final class SimulatedNotchController {
         }
 
         // When entering full mode, install outside-click dismissal
+        // and watch session changes to keep height fitting.
         if newMode == .full {
             startOutsideClickMonitoring()
+            startObservingSessionChanges()
         } else {
             stopOutsideClickMonitoring()
+            stopObservingSessionChanges()
+        }
+    }
+
+    /// While the full panel is open, refresh its height when sessions change.
+    private func startObservingSessionChanges() {
+        sessionStoreCancellable?.cancel()
+        sessionStoreCancellable = viewModel.sessionStore.objectWillChange
+            .receive(on: RunLoop.main)
+            .debounce(for: .milliseconds(120), scheduler: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.refitHeightIfFull()
+            }
+    }
+
+    private func stopObservingSessionChanges() {
+        sessionStoreCancellable?.cancel()
+        sessionStoreCancellable = nil
+    }
+
+    private func refitHeightIfFull() {
+        guard mode == .full, let panel = panel, let screen = NSScreen.main else { return }
+        let newHeight = computeFullHeight()
+        guard abs(newHeight - fullCurrentHeight) > 4 else { return }
+        fullCurrentHeight = newHeight
+        let target = fullFrame(on: screen)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.18
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(target, display: true)
         }
     }
 
