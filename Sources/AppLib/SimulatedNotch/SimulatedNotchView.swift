@@ -68,7 +68,7 @@ struct SimulatedNotchView: View {
         let snap = usageTracker.snapshot
         percentageChip(label: "5h", usedPct: snap.fiveHourUsedPct, fallbackTokens: snap.tokens5h, scale: .fiveHour)
         Text("·")
-            .font(.system(size: 9))
+            .font(.system(size: 12))
             .foregroundColor(.white.opacity(0.3))
         percentageChip(label: "7d", usedPct: snap.sevenDayUsedPct, fallbackTokens: snap.tokens7d, scale: .sevenDay)
     }
@@ -77,10 +77,10 @@ struct SimulatedNotchView: View {
     private func percentageChip(label: String, usedPct: Double?, fallbackTokens: Int, scale: TokenScale) -> some View {
         HStack(spacing: 3) {
             Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(.white.opacity(0.5))
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(.white.opacity(0.55))
             Text(remainingString(usedPct: usedPct, fallbackTokens: fallbackTokens, scale: scale))
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
                 .foregroundColor(remainingColor(usedPct: usedPct, fallbackTokens: fallbackTokens, scale: scale))
         }
     }
