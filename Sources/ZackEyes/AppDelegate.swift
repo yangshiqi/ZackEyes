@@ -72,12 +72,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             sn.setup()
             simulatedNotch = sn
-
-            sn.onTap = { [weak self] in
-                guard let self = self,
-                      let anchor = self.simulatedNotch?.anchorView else { return }
-                self.menuBarFallback?.toggleAnchored(to: anchor)
-            }
+            // Tap handling lives inside the controller — it morphs the notch
+            // panel itself into the full view (no separate NSPopover).
         }
 
         // 4.5 Global hotkey (Cmd+Shift+Z)
