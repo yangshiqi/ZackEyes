@@ -9,6 +9,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var viewModel: NotchViewModel!
     private var windowController: NotchWindowController?
     private var menuBarFallback: MenuBarFallback?
+    private var simulatedNotch: SimulatedNotchController?
+    private var usageTracker: UsageTracker!
     private var hotKeyManager: HotKeyManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -49,15 +51,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("ZackEyes: Failed to start socket server: \(error)")
         }
 
-        // 4. UI — Notch or Menu Bar
+        // 3.5 Usage tracker (reads JSONL transcripts, aggregates 5h/7d tokens)
+        usageTracker = UsageTracker()
+
+        // 4. UI — Notch or Menu Bar (+ simulated notch on notchless Macs)
         if NSScreen.main?.hasNotch == true {
             let wc = NotchWindowController(viewModel: viewModel)
             wc.setup()
             windowController = wc
         } else {
+            // Menu bar button (click target for popover)
             let mb = MenuBarFallback(viewModel: viewModel)
             mb.setup()
             menuBarFallback = mb
+
+            // Simulated Dynamic Island at top center (visual indicator)
+            let sn = SimulatedNotchController(
+                viewModel: viewModel,
+                usageTracker: usageTracker
+            )
+            sn.setup()
+            simulatedNotch = sn
         }
 
         // 4.5 Global hotkey (Cmd+Shift+Z)
@@ -92,6 +106,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         socketServer?.stop()
         windowController?.teardown()
         menuBarFallback?.teardown()
+        simulatedNotch?.teardown()
     }
 
     // MARK: - Event Routing
