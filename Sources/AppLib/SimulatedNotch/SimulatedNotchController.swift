@@ -195,6 +195,13 @@ public final class SimulatedNotchController {
         setMode(mode == .full ? .compact : .full)
     }
 
+    /// Force the panel into full mode regardless of current state. Used
+    /// by event-driven triggers (permission requests, errors) where the
+    /// caller wants the panel open, not toggled.
+    public func forceExpand() {
+        setMode(.full)
+    }
+
     // MARK: - Mouse hover (compact ↔ full)
 
     private func observeMouseMovement() {
@@ -226,7 +233,15 @@ public final class SimulatedNotchController {
                 setMode(.full)
             }
         } else {
-            // Mouse left the area → schedule collapse back to compact
+            // Mouse left the area. STICKY EXCEPTION: don't collapse while a
+            // session has a pending permission — the user needs to keep the
+            // question on screen until they answer it, regardless of where
+            // their mouse is.
+            if hasPendingPermission {
+                collapseWorkItem?.cancel()
+                return
+            }
+            // Otherwise schedule a collapse back to compact.
             collapseWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 Task { @MainActor in
@@ -241,6 +256,13 @@ public final class SimulatedNotchController {
         }
     }
 
+    /// True when any session is currently waiting on a user answer. While
+    /// this holds, the panel must stay open — neither hover-out nor an
+    /// outside click should collapse it.
+    private var hasPendingPermission: Bool {
+        viewModel.sessionStore.sessions.values.contains { $0.pendingPermission != nil }
+    }
+
     // MARK: - Outside-click dismissal (full mode)
 
     private func startOutsideClickMonitoring() {
@@ -249,7 +271,12 @@ public final class SimulatedNotchController {
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
             matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
         ) { [weak self] _ in
-            Task { @MainActor in self?.setMode(.compact) }
+            Task { @MainActor in
+                guard let self = self else { return }
+                // Sticky: don't dismiss while a permission is pending.
+                if self.hasPendingPermission { return }
+                self.setMode(.compact)
+            }
         }
 
         localClickMonitor = NSEvent.addLocalMonitorForEvents(
@@ -260,7 +287,10 @@ public final class SimulatedNotchController {
             if let panelWin = self.panel, event.window === panelWin {
                 return event
             }
-            Task { @MainActor in self.setMode(.compact) }
+            Task { @MainActor in
+                if self.hasPendingPermission { return }
+                self.setMode(.compact)
+            }
             return event
         }
     }

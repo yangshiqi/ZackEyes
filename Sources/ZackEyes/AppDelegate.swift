@@ -146,8 +146,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             NSLog("ZackEyes: PermissionRequest for tool=%@", event.toolName ?? "?")
             sessionStore.handlePermissionRequest(sessionId: sid, permission: pending)
-            windowController?.forceExpand()
-            menuBarFallback?.showPopover()
+            forceUiExpand()
 
         default:
             NSLog("ZackEyes: event=%@ tool=%@", event.bridgeEvent, event.toolName ?? "-")
@@ -180,9 +179,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     errorLabel: errLabel,
                     detail: session.lastAssistantMessage
                 )
-                // Force-show the popover so the user sees the error immediately
-                menuBarFallback?.showPopover()
-                windowController?.forceExpand()
+                // Force the active UI to expand so the user sees the error
+                forceUiExpand()
             }
 
             // Notify on Stop only if the session was actually doing something
@@ -197,5 +195,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             }
         }
+    }
+
+    /// Force the active UI surface to expand so the user can see/respond to
+    /// a permission request or an error. Prefers the simulated notch (the
+    /// Dynamic Island morph) when it exists; falls back to the real-notch
+    /// window controller; falls back to the legacy menu bar popover only
+    /// when neither richer surface is in play.
+    private func forceUiExpand() {
+        if let sn = simulatedNotch {
+            sn.forceExpand()
+            return
+        }
+        if let wc = windowController {
+            wc.forceExpand()
+            return
+        }
+        menuBarFallback?.showPopover()
     }
 }

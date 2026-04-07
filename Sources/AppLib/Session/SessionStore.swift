@@ -104,9 +104,36 @@ public final class SessionStore: ObservableObject {
         return .idle
     }
 
-    /// All sessions sorted by most recent activity (for list display).
+    /// All sessions sorted for the list display.
+    ///
+    /// Tiered ordering — sort by urgency first, then recency within a tier.
+    /// A pure `lastActiveAt` sort caused working and idle sessions to
+    /// constantly swap places (any idle session that got a status-line
+    /// update would briefly leapfrog a working one between its tool calls).
+    ///
+    /// Tiers, top to bottom:
+    ///   0. pendingPermission != nil  — user action needed (most urgent)
+    ///   1. state == .working          — actively running
+    ///   2. state == .waiting          — waiting on something
+    ///   3. state == .idle             — at rest
+    ///   4. state == .stopped          — finished
     public var orderedSessions: [SessionInfo] {
-        sessions.values.sorted { $0.lastActiveAt > $1.lastActiveAt }
+        sessions.values.sorted { lhs, rhs in
+            let lp = sortPriority(lhs)
+            let rp = sortPriority(rhs)
+            if lp != rp { return lp < rp }
+            return lhs.lastActiveAt > rhs.lastActiveAt
+        }
+    }
+
+    private func sortPriority(_ session: SessionInfo) -> Int {
+        if session.pendingPermission != nil { return 0 }
+        switch session.state {
+        case .working: return 1
+        case .waiting: return 2
+        case .idle:    return 3
+        case .stopped: return 4
+        }
     }
 
     // MARK: - Event handling

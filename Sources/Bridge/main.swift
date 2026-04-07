@@ -43,9 +43,13 @@ let client = BridgeSocketClient(path: "/tmp/zackeyes.sock")
 
 switch eventName {
 case "PermissionRequest":
-    // Blocking: send and wait for a response from the app
-    guard let responseData = client.sendAndWaitForResponse(data: payloadData, timeoutSeconds: 15) else {
-        // Timeout or connection error — non-blocking failure
+    // Blocking: send and wait for a response from the app. Pass 0 so the
+    // read has no timeout — the user may take as long as they want to
+    // answer the question, and we shouldn't abandon the prompt out from
+    // under them. If the user kills Claude Code (SIGINT), the bridge dies
+    // with it and the socket closes cleanly on the app side.
+    guard let responseData = client.sendAndWaitForResponse(data: payloadData, timeoutSeconds: 0) else {
+        // Connection error — non-blocking failure
         exit(1)
     }
     FileHandle.standardOutput.write(responseData)

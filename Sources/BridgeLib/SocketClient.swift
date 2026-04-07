@@ -73,14 +73,20 @@ public struct BridgeSocketClient: Sendable {
 
     /// Connect, set SO_RCVTIMEO, write data, read response, close.
     /// Returns the response Data, or nil on any error or timeout.
+    /// Pass `timeoutSeconds <= 0` to wait without a timeout (read blocks
+    /// until the server responds or the socket closes).
     public func sendAndWaitForResponse(data: Data, timeoutSeconds: Int) -> Data? {
         let fd = connect()
         guard fd >= 0 else { return nil }
         defer { close(fd) }
 
-        // Set receive timeout
-        var tv = timeval(tv_sec: timeoutSeconds, tv_usec: 0)
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        // Skip the SO_RCVTIMEO option when timeoutSeconds <= 0 so read()
+        // blocks until the server responds — permission prompts need this
+        // because the user takes as long as they take to pick an option.
+        if timeoutSeconds > 0 {
+            var tv = timeval(tv_sec: timeoutSeconds, tv_usec: 0)
+            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        }
 
         // Write all data
         var totalWritten = 0

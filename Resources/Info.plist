@@ -6,6 +6,10 @@
     <string>ZackEyes</string>
     <key>CFBundleExecutable</key>
     <string>ZackEyes</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>app.zackeyes.macos</string>
     <key>CFBundleName</key>

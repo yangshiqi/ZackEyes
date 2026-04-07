@@ -1,4 +1,4 @@
-.PHONY: build build-release run clean app test
+.PHONY: build build-release run clean app test test-permission
 
 APP_NAME = ZackEyes
 APP_BUNDLE = .build/$(APP_NAME).app
@@ -19,6 +19,7 @@ app: build
 	cp $(BIN_PATH)/ZackEyes $(MACOS)/ZackEyes
 	cp $(BIN_PATH)/bridge $(HELPERS)/bridge
 	cp Resources/Info.plist $(CONTENTS)/Info.plist
+	cp Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
 	@# Ad-hoc code signing — gives the app a stable identity so macOS
 	@# persists Accessibility / Apple Events grants across rebuilds.
 	codesign --force --deep --sign - $(APP_BUNDLE) 2>&1 | grep -v "replacing existing signature" || true
@@ -30,6 +31,7 @@ app-release: build-release
 	cp $(BIN_PATH)/ZackEyes $(MACOS)/ZackEyes
 	cp $(BIN_PATH)/bridge $(HELPERS)/bridge
 	cp Resources/Info.plist $(CONTENTS)/Info.plist
+	cp Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
 	codesign --force --deep --sign - $(APP_BUNDLE) 2>&1 | grep -v "replacing existing signature" || true
 	@echo "Built $(APP_BUNDLE) (release)"
 
@@ -38,6 +40,15 @@ run: app
 
 test:
 	swift test
+
+# Manual test for the PermissionRequest → simulated notch flow.
+# Restarts the app, fires a fake AskUserQuestion via the bridge, blocks
+# 15s for you to click an option in the notch. See Scripts/test-permission.sh.
+#
+# Modes:  make test-permission                 (default: AskUserQuestion)
+#         make test-permission ARGS=tool       (plain tool permission)
+test-permission:
+	./Scripts/test-permission.sh $(ARGS)
 
 clean:
 	swift package clean
