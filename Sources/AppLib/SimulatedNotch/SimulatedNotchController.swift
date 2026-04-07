@@ -96,25 +96,31 @@ public final class SimulatedNotchController {
     }
 
     private func handlePreferredSizeChange() {
-        // Only auto-resize when in full mode — compact/hoverWide use fixed dimensions
-        guard mode == .full,
-              let panel = panel,
-              let controller = hostingController,
-              let screen = primaryScreen() else { return }
+        // For compact / hoverWide modes, force the panel back to its fixed
+        // dimensions — preferredContentSize would otherwise shrink it to whatever
+        // the SwiftUI content reports, which is smaller than our notch geometry.
+        guard let panel = panel, let screen = primaryScreen() else { return }
 
-        let preferred = controller.preferredContentSize
-        guard preferred.height > 0 else { return }
-
-        let maxHeight = screen.visibleFrame.height - 40
-        let height = min(preferred.height, maxHeight)
-        guard abs(height - fullCurrentHeight) > 1 else { return }
-
-        fullCurrentHeight = height
-        let target = fullFrame(on: screen)
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.15
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel.animator().setFrame(target, display: true)
+        switch mode {
+        case .compact, .hoverWide:
+            let target = currentFrame(on: screen)
+            if panel.frame != target {
+                panel.setFrame(target, display: false)
+            }
+        case .full:
+            guard let controller = hostingController else { return }
+            let preferred = controller.preferredContentSize
+            guard preferred.height > 0 else { return }
+            let maxHeight = screen.visibleFrame.height - 40
+            let height = min(preferred.height, maxHeight)
+            guard abs(height - fullCurrentHeight) > 1 else { return }
+            fullCurrentHeight = height
+            let target = fullFrame(on: screen)
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.15
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().setFrame(target, display: true)
+            }
         }
     }
 
@@ -190,6 +196,7 @@ public final class SimulatedNotchController {
                 isExpanded: false,
                 onTap: { [weak self] in self?.toggleFull() }
             )
+            .frame(width: compactWidth, height: notchHeight)
         case .hoverWide:
             SimulatedNotchView(
                 viewModel: viewModel,
@@ -197,12 +204,15 @@ public final class SimulatedNotchController {
                 isExpanded: true,
                 onTap: { [weak self] in self?.toggleFull() }
             )
+            .frame(width: hoverWideWidth, height: notchHeight)
         case .full:
+            // Force fixed width — height comes from SwiftUI's natural fit
             SimulatedNotchFullView(
                 viewModel: viewModel,
                 usageTracker: usageTracker,
                 cornerRadius: 22
             )
+            .frame(width: fullWidth)
         }
     }
 
