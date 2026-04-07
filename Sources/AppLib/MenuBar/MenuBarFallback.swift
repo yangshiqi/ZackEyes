@@ -84,7 +84,7 @@ public class MenuBarFallback: NSObject {
 
     /// Show popover anchored to an arbitrary view (e.g. simulated notch).
     /// If already shown, close it.
-    public func togglePopover(anchoredTo view: NSView) {
+    public func toggleAnchored(to view: NSView) {
         guard let popover = popover else { return }
         if popover.isShown {
             closePopover()

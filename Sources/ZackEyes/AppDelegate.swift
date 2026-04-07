@@ -76,7 +76,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             sn.onTap = { [weak self] in
                 guard let self = self,
                       let anchor = self.simulatedNotch?.anchorView else { return }
-                self.menuBarFallback?.togglePopover(anchoredTo: anchor)
+                self.menuBarFallback?.toggleAnchored(to: anchor)
             }
         }
 
