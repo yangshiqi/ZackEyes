@@ -60,22 +60,105 @@ bridge 连接 /tmp/zackeyes.sock 失败（App 未运行）
   → Claude Code 正常继续，回退到终端审批
 ```
 
+### Rate-limit 数据流
+
+```
+Claude Code 周期性触发 statusLine command（每隔几秒）
+  → bridge --event StatusLine
+    → bridge 读 stdin（含 .rate_limits.{five_hour,seven_day}.{used_percentage,resets_at}）
+    → bridge fire-and-forget 转发到 socket
+    → bridge stdout 返回空（不污染 statusline）
+  → SocketServer 路由到 AppDelegate.handleEvent
+    → UsageTracker.updateFromHook(rateLimits:) 解析并保存
+    → SwiftUI 视图响应式更新（进度条 + 剩余百分比 + reset 倒计时）
+```
+
+⚠️ 与其他 statusLine 工具（如 Vibe Island）冲突时，HookInstaller 会**保留对方的安装**，不强占。
+
+### Simulated Notch 状态机
+
+```
+                      hover (mouse near notch)
+        compact ─────────────────────────────────► full
+          ▲                                          │
+          │                              mouse leave (350ms grace)
+          │                                          │
+          │           tap (alternative)              │
+          └──────────────────────────────────────────┘
+```
+
+`hoverWide` 是中间过渡态（保留代码以便未来按需使用）。当前主路径是 `compact ⇄ full`。
+Full 模式下：
+- 高度按 session 数量 + 内容（prompt / reply / tool / tasks / errors / permission）启发式估算
+- 内容变化时 debounced 120ms 重新计算高度并平滑动画
+- 上限为 `screen.visibleFrame.height - 40`，超过则内部 ScrollView 滚动
+
 ## 模块职责
 
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| `EventProtocol` | `Sources/Shared/EventProtocol.swift` | Codable 结构体定义：BridgeEvent、PermissionResponse、AnyCodable |
-| `SocketClient` | `Sources/BridgeLib/SocketClient.swift` | Unix Socket 客户端，connect + send + 可选 wait response |
-| `SocketServer` | `Sources/AppLib/Socket/SocketServer.swift` | 监听 Unix Socket，accept 连接，解析 JSON，路由到 SessionStore，发送响应 |
-| `SessionStore` | `Sources/AppLib/Session/SessionStore.swift` | ObservableObject，维护当前会话状态（idle/working/waiting/stopped） |
+**共享层**
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| `EventProtocol` | `Sources/Shared/EventProtocol.swift` | `BridgeEvent`（含 `rate_limits` / `lastAssistantMessage` / `bridgePpid` / `userPrompt` 透传）、`PermissionResponse`（`allow` / `deny` / `answer`）、`AnyCodable` |
+
+**Bridge**
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| `SocketClient` | `Sources/BridgeLib/SocketClient.swift` | Unix Socket 客户端，`sendFireAndForget` / `sendAndWaitForResponse` |
+| `Bridge main` | `Sources/Bridge/main.swift` | CLI 入口。读 stdin、注入 `_bridge_event` + `_bridge_ppid`、按事件类型阻塞或非阻塞 |
+
+**Socket / Session 核心**
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| `SocketServer` | `Sources/AppLib/Socket/SocketServer.swift` | 监听 `/tmp/zackeyes.sock`，`PermissionRequest` 连接保持到用户决策 / POLLHUP / 超时 |
+| `SessionStore` | `Sources/AppLib/Session/SessionStore.swift` | 按 `session_id` 索引的多 session 状态机，含 `aggregateState` / `primarySession` / 错误检测 |
+| `SessionScanner` | `Sources/AppLib/Session/SessionScanner.swift` | 扫描 `~/.claude/projects/*.jsonl` 导入既有会话 |
+| `TaskExtractor` | `Sources/AppLib/Session/TaskExtractor.swift` | 解析 transcript 重建任务列表，按用户 prompt 边界重置（只显示当前 turn） |
+
+**Hook 安装**
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | 静默安装/卸载 `hooks` + `statusLine`，备份保护，附加合并，所有变更含 `zackeyes` 标识 |
+
+**Notch UI（真刘海机型）**
+| 模块 | 文件 | 职责 |
+|------|------|------|
 | `NotchPanel` | `Sources/AppLib/Notch/NotchPanel.swift` | NSPanel 子类，刘海区域覆盖层 |
-| `NotchWindowController` | `Sources/AppLib/Notch/NotchWindowController.swift` | 位置锚定（notch 几何计算）、展开/收缩动画、鼠标追踪 |
-| `NotchViewModel` | `Sources/AppLib/Notch/NotchViewModel.swift` | ObservableObject，桥接 SessionStore → SwiftUI Views |
-| `NotchCompactView` | `Sources/AppLib/Notch/NotchCompactView.swift` | Compact 状态 SwiftUI 视图 |
-| `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | Expanded 状态 SwiftUI 视图（含审批按钮） |
-| `MenuBarFallback` | `Sources/AppLib/MenuBar/MenuBarFallback.swift` | NSStatusItem + NSPopover，无刘海 Mac 的 fallback |
-| `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | 静默注入/移除 ~/.claude/settings.json 的 hooks 配置 |
-| `AppDelegate` | `Sources/ZackEyes/AppDelegate.swift` | 启动入口，初始化 SocketServer、HookInstaller、NotchPanel |
+| `NotchWindowController` | `Sources/AppLib/Notch/NotchWindowController.swift` | 位置锚定、展开/收缩动画、鼠标追踪 |
+| `NotchViewModel` | `Sources/AppLib/Notch/NotchViewModel.swift` | 桥接 `SessionStore` → SwiftUI；转发嵌套 `objectWillChange` |
+| `NotchCompactView` | `Sources/AppLib/Notch/NotchCompactView.swift` | 折叠 / 紧凑状态视图 |
+| `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | 完整 popover：会话卡片、tasks、permission 审批、错误横幅、AskUserQuestion 选项卡 |
+| `BuddyAvatar` | `Sources/AppLib/Notch/BuddyAvatar.swift` | 动画化 buddy（headbang / 睡觉 / 惊慌） |
+| `Buddy` | `Sources/AppLib/Notch/Buddy.swift` | 摇滚传奇命名池（66 个）+ 性格标语池 |
+| `PixelAvatar` | `Sources/AppLib/Notch/PixelAvatar.swift` | 9 种 8×8 像素图案 + 8 色摇滚配色 |
+
+**Simulated Notch（无刘海机型）**
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| `SimulatedNotchPanel` | `Sources/AppLib/SimulatedNotch/SimulatedNotchPanel.swift` | 顶部居中 NSPanel，`.screenSaver` 层级 |
+| `SimulatedNotchView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchView.swift` | Compact / hoverWide 内容（5h/7d 剩余 + NotchShape） |
+| `SimulatedNotchFullView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchFullView.swift` | Full 模式：5h/7d 进度条 header + 滚动 session 列表 |
+| `SimulatedNotchController` | `Sources/AppLib/SimulatedNotch/SimulatedNotchController.swift` | 三态形变控制器，hover 进入 full，外部点击退出，内容自适应高度 |
+
+**菜单栏 fallback**
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| `MenuBarFallback` | `Sources/AppLib/MenuBar/MenuBarFallback.swift` | sparkles 状态栏图标 + NSPopover；外部点击监听器自动关闭 |
+
+**全局功能**
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| `HotKeyManager` | `Sources/AppLib/HotKey/HotKeyManager.swift` | Carbon `RegisterEventHotKey` 注册 `Cmd+Shift+Z` 全局快捷键 |
+| `NotificationManager` | `Sources/AppLib/Notifications/NotificationManager.swift` | 时间敏感通知（session 完成 / API 错误），点击跳转终端 |
+| `TerminalLocator` | `Sources/AppLib/Terminal/TerminalLocator.swift` | 进程树遍历 + iTerm2/Terminal AppleScript + Ghostty/Warp/Kitty Accessibility |
+| `UsageTracker` | `Sources/AppLib/Usage/UsageTracker.swift` | hook stdin 的真实 `rate_limits` 优先，transcript token fallback |
+
+**App 入口**
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| `AppDelegate` | `Sources/ZackEyes/AppDelegate.swift` | 启动 / 路由 / 通知 / 禁用 macOS auto-termination |
+| `main.swift` | `Sources/ZackEyes/main.swift` | NSApplication 启动 |
 
 ## 安全模型
 
@@ -124,19 +207,24 @@ bridge 连接 /tmp/zackeyes.sock 失败（App 未运行）
 ```
 ccisland/
 ├── Package.swift               # SPM manifest (5 targets + 3 test targets)
-├── Makefile                    # .app bundle 手动组装
-├── Resources/Info.plist
+├── Makefile                    # .app bundle 组装 + ad-hoc 签名
+├── Resources/Info.plist        # LSUIElement, NSSupportsAutomaticTermination=false
 ├── Sources/
-│   ├── Shared/                 # 共享类型 (BridgeEvent, PermissionResponse)
-│   ├── BridgeLib/              # Bridge 逻辑 (SocketClient)
-│   ├── Bridge/                 # Bridge CLI 入口 (main.swift)
-│   ├── AppLib/                 # App 逻辑 (Socket, Session, Hooks, Notch, MenuBar)
-│   │   ├── Socket/
-│   │   ├── Session/
-│   │   ├── Hooks/
-│   │   ├── Notch/
-│   │   └── MenuBar/
-│   └── ZackEyes/               # App 入口 (main.swift + AppDelegate)
+│   ├── Shared/                 # BridgeEvent, PermissionResponse, AnyCodable
+│   ├── BridgeLib/              # SocketClient
+│   ├── Bridge/                 # Bridge CLI 入口
+│   ├── AppLib/
+│   │   ├── Socket/             # SocketServer
+│   │   ├── Session/            # SessionStore, SessionScanner, TaskExtractor
+│   │   ├── Hooks/              # HookInstaller
+│   │   ├── Notch/              # NotchPanel, Buddy, PixelAvatar, NotchExpandedView
+│   │   ├── SimulatedNotch/     # 无刘海机型的灵动岛
+│   │   ├── MenuBar/            # MenuBarFallback
+│   │   ├── HotKey/             # HotKeyManager (Cmd+Shift+Z)
+│   │   ├── Notifications/      # NotificationManager
+│   │   ├── Terminal/           # TerminalLocator (tab 跳转)
+│   │   └── Usage/              # UsageTracker (5h/7d 限额)
+│   └── ZackEyes/               # main.swift + AppDelegate
 └── Tests/
     ├── SharedTests/
     ├── BridgeLibTests/
