@@ -76,11 +76,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // panel itself into the full view (no separate NSPopover).
         }
 
-        // 4.5 Global hotkey (Cmd+Shift+Z)
+        // 4.5 Global hotkey (Cmd+Shift+Z) — toggles the simulated notch on
+        // notchless Macs, falls back to the menu bar popover if neither exists.
         let hk = HotKeyManager()
         hk.register { [weak self] in
-            self?.menuBarFallback?.toggle()
-            // TODO: notch mode — add NotchWindowController.toggleExpand() equivalent
+            guard let self = self else { return }
+            if let sn = self.simulatedNotch {
+                sn.toggleFull()
+            } else {
+                self.menuBarFallback?.toggle()
+            }
         }
         hotKeyManager = hk
 
