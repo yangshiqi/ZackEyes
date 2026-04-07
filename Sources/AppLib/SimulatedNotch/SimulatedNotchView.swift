@@ -10,6 +10,7 @@ struct SimulatedNotchView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
     let isExpanded: Bool
+    var onTap: (() -> Void)? = nil
 
     @State private var workingPulse: Double = 1.0
 
@@ -26,10 +27,13 @@ struct SimulatedNotchView: View {
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
-            // Notch-like shape: rounded bottom corners, flat top (merges with menu bar)
             NotchShape(cornerRadius: 14)
                 .fill(Color.black)
         )
+        .contentShape(NotchShape(cornerRadius: 14))
+        .onTapGesture {
+            onTap?()
+        }
     }
 
     // MARK: - Status icon (animated sparkles / dot)

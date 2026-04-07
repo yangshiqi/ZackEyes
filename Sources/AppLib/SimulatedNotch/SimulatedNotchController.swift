@@ -8,6 +8,7 @@ import Combine
 public final class SimulatedNotchController {
     private let viewModel: NotchViewModel
     private let usageTracker: UsageTracker
+    public var onTap: (() -> Void)?
     private var panel: SimulatedNotchPanel?
     private var hostingView: NSHostingView<SimulatedNotchView>?
     private var mouseMonitor: Any?
@@ -54,7 +55,8 @@ public final class SimulatedNotchController {
         let view = SimulatedNotchView(
             viewModel: viewModel,
             usageTracker: usageTracker,
-            isExpanded: false
+            isExpanded: false,
+            onTap: { [weak self] in self?.onTap?() }
         )
         let hosting = NSHostingView(rootView: view)
         hosting.frame = panel.contentView?.bounds ?? .zero
@@ -102,7 +104,8 @@ public final class SimulatedNotchController {
         let newView = SimulatedNotchView(
             viewModel: viewModel,
             usageTracker: usageTracker,
-            isExpanded: expanded
+            isExpanded: expanded,
+            onTap: { [weak self] in self?.onTap?() }
         )
         hostingView?.rootView = newView
     }

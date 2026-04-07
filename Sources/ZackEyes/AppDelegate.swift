@@ -70,6 +70,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 viewModel: viewModel,
                 usageTracker: usageTracker
             )
+            sn.onTap = { [weak self] in
+                self?.menuBarFallback?.toggle()
+            }
             sn.setup()
             simulatedNotch = sn
         }
