@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Full-content view shown when the simulated notch is morphed into the
 /// expanded panel. Layout:
@@ -37,7 +38,8 @@ struct SimulatedNotchFullView: View {
             usageBar(
                 label: "5h",
                 usedPct: snap.fiveHourUsedPct,
-                resetsAt: snap.fiveHourResetsAt
+                resetsAt: snap.fiveHourResetsAt,
+                trailing: { gearMenu }
             )
             usageBar(
                 label: "7d",
@@ -47,8 +49,35 @@ struct SimulatedNotchFullView: View {
         }
     }
 
+    /// Settings dropdown menu — anchored to the gear icon at the right
+    /// of the 5h row in the header. Two items: About and Quit.
+    private var gearMenu: some View {
+        Menu {
+            Button("About ZackEyes…") {
+                modeStore.isAboutShown = true
+            }
+            Divider()
+            Button("Quit ZackEyes") {
+                NSApp.terminate(nil)
+            }
+            .keyboardShortcut("q", modifiers: .command)
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.55))
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
     @ViewBuilder
-    private func usageBar(label: String, usedPct: Double?, resetsAt: Date?) -> some View {
+    private func usageBar<Trailing: View>(
+        label: String,
+        usedPct: Double?,
+        resetsAt: Date?,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) -> some View {
         let used = usedPct ?? 0
         let remaining = max(0, 100 - used)
         let color = barColor(for: used)
@@ -78,6 +107,8 @@ struct SimulatedNotchFullView: View {
                         .font(.system(size: 10))
                         .foregroundColor(.white.opacity(0.45))
                 }
+
+                trailing()
             }
 
             // Progress bar
