@@ -64,13 +64,54 @@ struct SimulatedNotchView: View {
 
     @ViewBuilder
     private var compactContent: some View {
-        // Usage mini-indicator: 5h tokens formatted k/M
-        Text(formatTokens(usageTracker.snapshot.tokens5h))
-            .font(.system(size: 10, weight: .medium, design: .monospaced))
-            .foregroundColor(tokenColor(usageTracker.snapshot.tokens5h, scale: .fiveHour))
-        Text("5h")
+        // Show remaining percentage for both windows — 5h and 7d
+        percentageChip(label: "5h",
+                        tokens: usageTracker.snapshot.tokens5h,
+                        scale: .fiveHour)
+        Text("·")
             .font(.system(size: 9))
-            .foregroundColor(.white.opacity(0.5))
+            .foregroundColor(.white.opacity(0.3))
+        percentageChip(label: "7d",
+                        tokens: usageTracker.snapshot.tokens7d,
+                        scale: .sevenDay)
+    }
+
+    @ViewBuilder
+    private func percentageChip(label: String, tokens: Int, scale: TokenScale) -> some View {
+        HStack(spacing: 3) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(.white.opacity(0.5))
+            Text("\(remainingPercentString(tokens, scale: scale))")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(remainingColor(tokens, scale: scale))
+        }
+    }
+
+    private func remainingPercentString(_ tokens: Int, scale: TokenScale) -> String {
+        let limit: Double
+        switch scale {
+        case .fiveHour: limit = 3_000_000
+        case .sevenDay: limit = 30_000_000
+        }
+        let used = min(1.0, Double(tokens) / limit)
+        let remaining = max(0, 1.0 - used)
+        return String(format: "%.0f%%", remaining * 100)
+    }
+
+    /// Green when plenty remaining, orange when low, red when very low.
+    private func remainingColor(_ tokens: Int, scale: TokenScale) -> Color {
+        let limit: Double
+        switch scale {
+        case .fiveHour: limit = 3_000_000
+        case .sevenDay: limit = 30_000_000
+        }
+        let used = min(1.0, Double(tokens) / limit)
+        switch used {
+        case ..<0.5: return Color(red: 0.31, green: 0.80, blue: 0.77)  // teal
+        case ..<0.85: return Color(red: 0.96, green: 0.65, blue: 0.14) // orange
+        default: return Color(red: 0.95, green: 0.30, blue: 0.30)      // red
+        }
     }
 
     // MARK: - Expanded content (shown on hover)

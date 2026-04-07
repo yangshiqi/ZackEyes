@@ -15,8 +15,8 @@ public final class SimulatedNotchController {
     @Published private var isExpanded: Bool = false
     private var collapseWorkItem: DispatchWorkItem?
 
-    private let compactWidth: CGFloat = 120
-    private let expandedWidth: CGFloat = 260
+    private let compactWidth: CGFloat = 170
+    private let expandedWidth: CGFloat = 300
     private let notchHeight: CGFloat = 26
 
     public init(viewModel: NotchViewModel, usageTracker: UsageTracker) {
