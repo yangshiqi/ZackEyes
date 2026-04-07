@@ -7,6 +7,7 @@ import SwiftUI
 struct SimulatedNotchFullView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
+    @ObservedObject var modeStore: NotchModeStore
     var cornerRadius: CGFloat = 22
 
     var body: some View {

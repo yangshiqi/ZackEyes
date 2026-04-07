@@ -81,6 +81,7 @@ struct SimulatedNotchRoot: View {
             SimulatedNotchFullView(
                 viewModel: viewModel,
                 usageTracker: usageTracker,
+                modeStore: modeStore,
                 cornerRadius: 22
             )
             .frame(width: fullWidth, height: fullHeight)
