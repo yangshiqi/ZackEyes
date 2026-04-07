@@ -12,7 +12,7 @@ import Shared
 @MainActor
 public final class UsageTracker: ObservableObject {
 
-    public struct Snapshot: Sendable {
+    public struct Snapshot: Sendable, Codable {
         // Real subscriber data from hook rate_limits (preferred)
         public var fiveHourUsedPct: Double?
         public var fiveHourResetsAt: Date?
@@ -25,6 +25,9 @@ public final class UsageTracker: ObservableObject {
         public var messages5h: Int
         public var messages7d: Int
 
+        // Last time we received fresh rate_limits data from a hook
+        public var lastUpdated: Date?
+
         public static let empty = Snapshot(
             fiveHourUsedPct: nil,
             fiveHourResetsAt: nil,
@@ -33,7 +36,8 @@ public final class UsageTracker: ObservableObject {
             tokens5h: 0,
             tokens7d: 0,
             messages5h: 0,
-            messages7d: 0
+            messages7d: 0,
+            lastUpdated: nil
         )
 
         public var hasRealData: Bool {
@@ -43,10 +47,17 @@ public final class UsageTracker: ObservableObject {
 
     @Published public private(set) var snapshot: Snapshot = .empty
 
+    /// Path where we persist the last received rate_limits snapshot so the UI
+    /// can show meaningful data immediately on next launch instead of "no data".
+    private let cacheURL: URL = {
+        URL(fileURLWithPath: NSHomeDirectory() + "/.zackeyes/usage-cache.json")
+    }()
+
     /// Update real subscriber rate limit data from a hook event.
     /// Call whenever a `BridgeEvent` arrives with non-nil `rateLimits`.
     public func updateFromHook(rateLimits: [String: AnyCodable]) {
         var s = snapshot
+        s.lastUpdated = Date()
 
         if let fh = rateLimits["five_hour"]?.value as? [String: Any] {
             if let used = fh["used_percentage"] as? Double {
@@ -77,6 +88,7 @@ public final class UsageTracker: ObservableObject {
         }
 
         snapshot = s
+        saveToCache()
     }
 
     private let projectsDir: URL
@@ -87,7 +99,10 @@ public final class UsageTracker: ObservableObject {
     }
 
     /// Start periodic refresh every N seconds.
+    /// Restores the cached snapshot from disk first (so the UI doesn't show
+    /// "no data" while waiting for the first live event).
     public func start(intervalSeconds: Int = 30) {
+        loadFromCache()
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -95,6 +110,23 @@ public final class UsageTracker: ObservableObject {
                 try? await Task.sleep(for: .seconds(intervalSeconds))
             }
         }
+    }
+
+    /// Load the last persisted rate_limits snapshot.
+    private func loadFromCache() {
+        guard let data = try? Data(contentsOf: cacheURL),
+              let cached = try? JSONDecoder().decode(Snapshot.self, from: data) else {
+            return
+        }
+        snapshot = cached
+    }
+
+    /// Persist the snapshot's rate_limits fields so we can restore them on next launch.
+    private func saveToCache() {
+        let dir = cacheURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        try? data.write(to: cacheURL, options: .atomic)
     }
 
     public func stop() {
