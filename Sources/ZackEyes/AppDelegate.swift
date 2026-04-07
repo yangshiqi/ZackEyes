@@ -115,6 +115,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         _ event: BridgeEvent,
         responder: (@Sendable (PermissionResponse) -> Void)?
     ) {
+        // Capture real subscriber rate limits if Claude Code provided them
+        if let rl = event.rateLimits {
+            usageTracker.updateFromHook(rateLimits: rl)
+        }
+
         switch event.bridgeEvent {
         case "PermissionRequest":
             guard let responder = responder else {

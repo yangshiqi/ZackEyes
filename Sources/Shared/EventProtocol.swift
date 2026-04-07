@@ -95,6 +95,7 @@ public struct BridgeEvent: Codable, Sendable {
     public let source: String?  // SessionStart "source" field
     public let bridgePpid: Int?  // parent pid of the bridge (the claude process)
     public let lastAssistantMessage: String?  // from Stop events
+    public let rateLimits: [String: AnyCodable]?  // subscriber rate limits (five_hour, seven_day, ...)
 
     public init(
         bridgeEvent: String,
@@ -108,7 +109,8 @@ public struct BridgeEvent: Codable, Sendable {
         userPrompt: String? = nil,
         source: String? = nil,
         bridgePpid: Int? = nil,
-        lastAssistantMessage: String? = nil
+        lastAssistantMessage: String? = nil,
+        rateLimits: [String: AnyCodable]? = nil
     ) {
         self.bridgeEvent = bridgeEvent
         self.sessionId = sessionId
@@ -122,6 +124,7 @@ public struct BridgeEvent: Codable, Sendable {
         self.source = source
         self.bridgePpid = bridgePpid
         self.lastAssistantMessage = lastAssistantMessage
+        self.rateLimits = rateLimits
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -137,6 +140,7 @@ public struct BridgeEvent: Codable, Sendable {
         case source
         case bridgePpid           = "_bridge_ppid"
         case lastAssistantMessage = "last_assistant_message"
+        case rateLimits           = "rate_limits"
     }
 }
 

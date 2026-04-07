@@ -1,26 +1,83 @@
 import Foundation
+import Shared
 
-/// Aggregates Claude Code token usage across recent sessions by time window.
+/// Tracks Claude Code subscriber rate limits + token usage.
 ///
-/// Reads all JSONL transcripts in `~/.claude/projects/`, sums `message.usage`
-/// fields (input + output + cache tokens) within 5h and 7d sliding windows.
+/// **Primary source**: hook event JSON contains a `rate_limits` field with
+/// real `used_percentage` and `resets_at` values for `five_hour` / `seven_day`
+/// windows. We capture these whenever any session reports them.
 ///
-/// Note: we don't have subscriber quota limits from Claude Code directly,
-/// so we show raw token counts rather than percentages. If Claude Code later
-/// exposes quota info via hook metadata, we can layer that on top.
+/// **Fallback**: when no live rate_limits data is available yet, we estimate
+/// from transcript token counts (rough — only used as a placeholder).
 @MainActor
 public final class UsageTracker: ObservableObject {
 
     public struct Snapshot: Sendable {
+        // Real subscriber data from hook rate_limits (preferred)
+        public var fiveHourUsedPct: Double?
+        public var fiveHourResetsAt: Date?
+        public var sevenDayUsedPct: Double?
+        public var sevenDayResetsAt: Date?
+
+        // Fallback estimates from transcript scanning
         public var tokens5h: Int
         public var tokens7d: Int
         public var messages5h: Int
         public var messages7d: Int
 
-        public static let empty = Snapshot(tokens5h: 0, tokens7d: 0, messages5h: 0, messages7d: 0)
+        public static let empty = Snapshot(
+            fiveHourUsedPct: nil,
+            fiveHourResetsAt: nil,
+            sevenDayUsedPct: nil,
+            sevenDayResetsAt: nil,
+            tokens5h: 0,
+            tokens7d: 0,
+            messages5h: 0,
+            messages7d: 0
+        )
+
+        public var hasRealData: Bool {
+            fiveHourUsedPct != nil || sevenDayUsedPct != nil
+        }
     }
 
     @Published public private(set) var snapshot: Snapshot = .empty
+
+    /// Update real subscriber rate limit data from a hook event.
+    /// Call whenever a `BridgeEvent` arrives with non-nil `rateLimits`.
+    public func updateFromHook(rateLimits: [String: AnyCodable]) {
+        var s = snapshot
+
+        if let fh = rateLimits["five_hour"]?.value as? [String: Any] {
+            if let used = fh["used_percentage"] as? Double {
+                s.fiveHourUsedPct = used
+            } else if let used = fh["used_percentage"] as? Int {
+                s.fiveHourUsedPct = Double(used)
+            }
+            if let resets = fh["resets_at"] as? Double {
+                s.fiveHourResetsAt = Date(timeIntervalSince1970: resets > 1e12 ? resets / 1000 : resets)
+            } else if let resets = fh["resets_at"] as? Int {
+                let secs = resets > 1_000_000_000_000 ? Double(resets) / 1000 : Double(resets)
+                s.fiveHourResetsAt = Date(timeIntervalSince1970: secs)
+            }
+        }
+
+        if let sd = rateLimits["seven_day"]?.value as? [String: Any] {
+            if let used = sd["used_percentage"] as? Double {
+                s.sevenDayUsedPct = used
+            } else if let used = sd["used_percentage"] as? Int {
+                s.sevenDayUsedPct = Double(used)
+            }
+            if let resets = sd["resets_at"] as? Double {
+                s.sevenDayResetsAt = Date(timeIntervalSince1970: resets > 1e12 ? resets / 1000 : resets)
+            } else if let resets = sd["resets_at"] as? Int {
+                let secs = resets > 1_000_000_000_000 ? Double(resets) / 1000 : Double(resets)
+                s.sevenDayResetsAt = Date(timeIntervalSince1970: secs)
+            }
+        }
+
+        snapshot = s
+    }
 
     private let projectsDir: URL
     private var refreshTask: Task<Void, Never>?
@@ -46,12 +103,18 @@ public final class UsageTracker: ObservableObject {
     }
 
     /// Rescan all recent JSONL files and update the snapshot.
+    /// Preserves real rate-limit data captured from hook events.
     public func refresh() async {
         let dir = projectsDir
-        let newSnapshot = await Task.detached(priority: .utility) {
+        let estimated = await Task.detached(priority: .utility) {
             Self.computeSnapshot(projectsDir: dir)
         }.value
-        self.snapshot = newSnapshot
+        var merged = snapshot
+        merged.tokens5h = estimated.tokens5h
+        merged.tokens7d = estimated.tokens7d
+        merged.messages5h = estimated.messages5h
+        merged.messages7d = estimated.messages7d
+        self.snapshot = merged
     }
 
     // MARK: - Computation
@@ -89,8 +152,16 @@ public final class UsageTracker: ObservableObject {
             }
         }
 
-        return Snapshot(tokens5h: tokens5h, tokens7d: tokens7d,
-                        messages5h: msgs5h, messages7d: msgs7d)
+        return Snapshot(
+            fiveHourUsedPct: nil,
+            fiveHourResetsAt: nil,
+            sevenDayUsedPct: nil,
+            sevenDayResetsAt: nil,
+            tokens5h: tokens5h,
+            tokens7d: tokens7d,
+            messages5h: msgs5h,
+            messages7d: msgs7d
+        )
     }
 
     private nonisolated static func parseFile(

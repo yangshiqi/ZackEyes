@@ -64,53 +64,62 @@ struct SimulatedNotchView: View {
 
     @ViewBuilder
     private var compactContent: some View {
-        // Show remaining percentage for both windows — 5h and 7d
-        percentageChip(label: "5h",
-                        tokens: usageTracker.snapshot.tokens5h,
-                        scale: .fiveHour)
+        let snap = usageTracker.snapshot
+        percentageChip(label: "5h", usedPct: snap.fiveHourUsedPct, fallbackTokens: snap.tokens5h, scale: .fiveHour)
         Text("·")
             .font(.system(size: 9))
             .foregroundColor(.white.opacity(0.3))
-        percentageChip(label: "7d",
-                        tokens: usageTracker.snapshot.tokens7d,
-                        scale: .sevenDay)
+        percentageChip(label: "7d", usedPct: snap.sevenDayUsedPct, fallbackTokens: snap.tokens7d, scale: .sevenDay)
     }
 
     @ViewBuilder
-    private func percentageChip(label: String, tokens: Int, scale: TokenScale) -> some View {
+    private func percentageChip(label: String, usedPct: Double?, fallbackTokens: Int, scale: TokenScale) -> some View {
         HStack(spacing: 3) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundColor(.white.opacity(0.5))
-            Text("\(remainingPercentString(tokens, scale: scale))")
+            Text(remainingString(usedPct: usedPct, fallbackTokens: fallbackTokens, scale: scale))
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundColor(remainingColor(tokens, scale: scale))
+                .foregroundColor(remainingColor(usedPct: usedPct, fallbackTokens: fallbackTokens, scale: scale))
         }
     }
 
-    private func remainingPercentString(_ tokens: Int, scale: TokenScale) -> String {
-        let limit: Double
-        switch scale {
-        case .fiveHour: limit = 3_000_000
-        case .sevenDay: limit = 30_000_000
+    /// "82%" if real data exists, otherwise "—" or estimated value.
+    private func remainingString(usedPct: Double?, fallbackTokens: Int, scale: TokenScale) -> String {
+        if let used = usedPct {
+            let remaining = max(0, 100.0 - used)
+            return String(format: "%.0f%%", remaining)
         }
-        let used = min(1.0, Double(tokens) / limit)
-        let remaining = max(0, 1.0 - used)
-        return String(format: "%.0f%%", remaining * 100)
+        // No real data — show em-dash to make it clear we're guessing
+        return "—"
     }
 
-    /// Green when plenty remaining, orange when low, red when very low.
-    private func remainingColor(_ tokens: Int, scale: TokenScale) -> Color {
-        let limit: Double
-        switch scale {
-        case .fiveHour: limit = 3_000_000
-        case .sevenDay: limit = 30_000_000
+    private func remainingColor(usedPct: Double?, fallbackTokens: Int, scale: TokenScale) -> Color {
+        let usedRatio: Double
+        if let used = usedPct {
+            usedRatio = used / 100.0
+        } else {
+            return .white.opacity(0.4)  // gray when no data
         }
-        let used = min(1.0, Double(tokens) / limit)
-        switch used {
+        switch usedRatio {
         case ..<0.5: return Color(red: 0.31, green: 0.80, blue: 0.77)  // teal
         case ..<0.85: return Color(red: 0.96, green: 0.65, blue: 0.14) // orange
         default: return Color(red: 0.95, green: 0.30, blue: 0.30)      // red
+        }
+    }
+
+    private func relativeReset(_ date: Date?) -> String? {
+        guard let date = date else { return nil }
+        let interval = date.timeIntervalSinceNow
+        if interval <= 0 { return "now" }
+        let hours = Int(interval) / 3600
+        let mins = (Int(interval) % 3600) / 60
+        if hours >= 24 {
+            return "\(hours / 24)d"
+        } else if hours > 0 {
+            return "\(hours)h \(mins)m"
+        } else {
+            return "\(mins)m"
         }
     }
 
@@ -118,11 +127,12 @@ struct SimulatedNotchView: View {
 
     @ViewBuilder
     private var expandedContent: some View {
-        // 5h window
+        let snap = usageTracker.snapshot
+
         usageStat(
             label: "5h",
-            tokens: usageTracker.snapshot.tokens5h,
-            messages: usageTracker.snapshot.messages5h,
+            usedPct: snap.fiveHourUsedPct,
+            resetsAt: snap.fiveHourResetsAt,
             scale: .fiveHour
         )
 
@@ -130,17 +140,15 @@ struct SimulatedNotchView: View {
             .fill(Color.white.opacity(0.15))
             .frame(width: 1, height: 14)
 
-        // 7d window
         usageStat(
             label: "7d",
-            tokens: usageTracker.snapshot.tokens7d,
-            messages: usageTracker.snapshot.messages7d,
+            usedPct: snap.sevenDayUsedPct,
+            resetsAt: snap.sevenDayResetsAt,
             scale: .sevenDay
         )
 
         Spacer(minLength: 4)
 
-        // Active session count
         if viewModel.sessionStore.sessions.count > 0 {
             Text("\(viewModel.sessionStore.sessions.count)")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
@@ -152,48 +160,26 @@ struct SimulatedNotchView: View {
     }
 
     @ViewBuilder
-    private func usageStat(label: String, tokens: Int, messages: Int, scale: TokenScale) -> some View {
+    private func usageStat(label: String, usedPct: Double?, resetsAt: Date?, scale: TokenScale) -> some View {
         HStack(spacing: 4) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundColor(.white.opacity(0.55))
-            Text(formatTokens(tokens))
+            Text(remainingString(usedPct: usedPct, fallbackTokens: 0, scale: scale))
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundColor(tokenColor(tokens, scale: scale))
-            Text("· \(messages)m")
-                .font(.system(size: 9))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(remainingColor(usedPct: usedPct, fallbackTokens: 0, scale: scale))
+            if let reset = relativeReset(resetsAt) {
+                Text(reset)
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.4))
+            }
         }
     }
 
-    // MARK: - Formatting
-
-    private func formatTokens(_ n: Int) -> String {
-        switch n {
-        case ..<1_000: return "\(n)"
-        case ..<1_000_000: return String(format: "%.1fk", Double(n) / 1_000)
-        default: return String(format: "%.2fM", Double(n) / 1_000_000)
-        }
-    }
+    // MARK: - Types
 
     private enum TokenScale {
         case fiveHour, sevenDay
-    }
-
-    /// Approximate color thresholds — no subscriber quota data, so we pick
-    /// sane defaults. Adjust as Claude Code exposes real limits later.
-    private func tokenColor(_ tokens: Int, scale: TokenScale) -> Color {
-        let limit: Int
-        switch scale {
-        case .fiveHour: limit = 3_000_000   // rough target
-        case .sevenDay: limit = 30_000_000
-        }
-        let ratio = Double(tokens) / Double(limit)
-        switch ratio {
-        case ..<0.5: return Color(red: 0.31, green: 0.80, blue: 0.77)  // teal
-        case ..<0.85: return Color(red: 0.96, green: 0.65, blue: 0.14) // orange
-        default: return Color(red: 0.95, green: 0.30, blue: 0.30)      // red
-        }
     }
 }
 
