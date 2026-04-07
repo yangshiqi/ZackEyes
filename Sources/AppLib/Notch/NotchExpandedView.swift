@@ -80,21 +80,23 @@ struct NotchExpandedView: View {
             )
 
             VStack(alignment: .leading, spacing: 6) {
-                // Row 1: buddy name + project name + badges + elapsed
+                // Row 1: buddy name (left) ... project name pill + elapsed (right)
                 HStack(spacing: 6) {
                     Text(buddy.name)
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.white)
-                    Text("·")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.4))
-                    Text(session.displayName)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white.opacity(0.8))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
 
                     Spacer(minLength: 4)
+
+                    Text(session.displayName)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.8))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(4)
 
                     Text(elapsedString(since: session.lastActiveAt))
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
