@@ -249,24 +249,38 @@ public final class SimulatedNotchController {
     }
 
     private func handleMouseMove(_ location: NSPoint) {
-        // Hover behavior is suspended in full mode
-        guard mode != .full, let panel = panel else { return }
+        guard let panel = panel else { return }
 
+        // Hover area depends on current mode — for compact pill it's a small
+        // box near the notch; for full panel it's the entire panel rect.
         let panelFrame = panel.frame
-        let hoverArea = panelFrame.insetBy(dx: -16, dy: -8)
+        let hoverArea: CGRect
+        switch mode {
+        case .compact, .hoverWide:
+            hoverArea = panelFrame.insetBy(dx: -20, dy: -12)
+        case .full:
+            hoverArea = panelFrame.insetBy(dx: -16, dy: -16)
+        }
 
         if hoverArea.contains(location) {
             collapseWorkItem?.cancel()
-            setMode(.hoverWide)
-        } else if mode == .hoverWide {
+            // Hover anywhere over the notch → expand to full
+            if mode != .full {
+                setMode(.full)
+            }
+        } else {
+            // Mouse left the area → schedule collapse back to compact
             collapseWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 Task { @MainActor in
-                    if self?.mode == .hoverWide { self?.setMode(.compact) }
+                    guard let self = self else { return }
+                    if self.mode != .compact {
+                        self.setMode(.compact)
+                    }
                 }
             }
             collapseWorkItem = work
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
         }
     }
 
