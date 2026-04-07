@@ -12,9 +12,16 @@ class SimulatedNotchPanel: NSPanel {
             backing: .buffered,
             defer: false
         )
-        level = .screenSaver
         isFloatingPanel = true
         becomesKeyOnlyIfNeeded = true
+        // CRITICAL: set `level` AFTER `isFloatingPanel`. Setting
+        // `isFloatingPanel = true` clobbers `level` back to `.floating`
+        // (raw value 3), which sits below third-party menu-bar items
+        // (iStat Menus, Stats, Bartender, etc.) — they bleed through
+        // the panel's notch shape at the top of the screen.
+        // CGShieldingWindowLevel() (the level the system uses for the
+        // login shield) sits above anything a user app can draw.
+        level = NSWindow.Level(rawValue: Int(CGShieldingWindowLevel()))
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
