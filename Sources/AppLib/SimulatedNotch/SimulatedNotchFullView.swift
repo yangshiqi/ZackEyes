@@ -28,6 +28,74 @@ struct SimulatedNotchFullView: View {
         }
         .background(NotchShape(cornerRadius: cornerRadius).fill(Color.black))
         .clipShape(NotchShape(cornerRadius: cornerRadius))
+        .overlay(aboutOverlay)
+    }
+
+    /// About card overlay — semi-transparent backdrop + centered card
+    /// with app icon, name, version, and OK button. Shown when
+    /// `modeStore.isAboutShown == true`.
+    @ViewBuilder
+    private var aboutOverlay: some View {
+        if modeStore.isAboutShown {
+            ZStack {
+                // Backdrop — tap to dismiss.
+                Color.black.opacity(0.6)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        modeStore.isAboutShown = false
+                    }
+
+                // Card — opaque, centered, fixed 280×200.
+                VStack(spacing: 14) {
+                    aboutIcon
+                        .frame(width: 64, height: 64)
+
+                    Text("ZackEyes")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(.white)
+
+                    Text("Version \(appVersion)")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.6))
+
+                    Button("OK") {
+                        modeStore.isAboutShown = false
+                    }
+                    .buttonStyle(.bordered)
+                    .keyboardShortcut(.defaultAction)
+                }
+                .padding(20)
+                .frame(width: 280, height: 200)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color(white: 0.12))
+                )
+                .contentShape(Rectangle())
+                .onTapGesture { /* no-op: prevent backdrop dismiss when tapping card */ }
+            }
+            .transition(.opacity)
+        }
+    }
+
+    /// Icon for the About card. Tries to load the bundle's AppIcon image;
+    /// falls back to a SF Symbol if it isn't found.
+    @ViewBuilder
+    private var aboutIcon: some View {
+        if let nsImage = NSImage(named: "AppIcon") {
+            Image(nsImage: nsImage)
+                .resizable()
+                .scaledToFit()
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+        } else {
+            Image(systemName: "sparkles")
+                .font(.system(size: 36))
+                .foregroundColor(.white.opacity(0.7))
+        }
+    }
+
+    /// Version string from Info.plist's CFBundleShortVersionString.
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
     }
 
     // MARK: - Usage header
