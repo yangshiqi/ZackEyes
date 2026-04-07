@@ -30,10 +30,11 @@ public final class SimulatedNotchController {
     private var mode: Mode = .compact
     private var collapseWorkItem: DispatchWorkItem?
 
-    private let compactWidth: CGFloat = 170
-    private let hoverWideWidth: CGFloat = 300
-    private let fullWidth: CGFloat = 480
-    private let notchHeight: CGFloat = 26
+    // Real MacBook Pro Dynamic Island is roughly 220pt wide × 32pt tall
+    private let compactWidth: CGFloat = 220
+    private let hoverWideWidth: CGFloat = 340
+    private let fullWidth: CGFloat = 520
+    private let notchHeight: CGFloat = 32
     private let fullMinHeight: CGFloat = 200
     /// Computed dynamically from session count + content
     private var fullCurrentHeight: CGFloat = 200
