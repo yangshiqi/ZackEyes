@@ -13,6 +13,20 @@ public enum NotchMode: Sendable {
 @MainActor
 public final class NotchModeStore: ObservableObject {
     @Published public var mode: NotchMode = .compact
+
+    /// True while the gear-menu dropdown is currently visible. Set by the
+    /// SwiftUI Menu's `isPresented` binding.
+    @Published public var isMenuOpen: Bool = false
+
+    /// True while the About overlay is shown over the session list.
+    @Published public var isAboutShown: Bool = false
+
+    /// Convenience: any interactive overlay that should keep the panel
+    /// open. Used by `SimulatedNotchController` to suppress the
+    /// auto-collapse on mouse-out and outside-click handlers.
+    public var hasInteractiveOverlay: Bool {
+        isMenuOpen || isAboutShown
+    }
 }
 
 /// Persistent SwiftUI root for the simulated notch panel.
