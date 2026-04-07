@@ -15,10 +15,11 @@ public final class SimulatedNotchController {
     private let usageTracker: UsageTracker
     public var onTap: (() -> Void)?
 
-    public var anchorView: NSView? { hostingView }
+    public var anchorView: NSView? { hostingController?.view }
 
     private var panel: SimulatedNotchPanel?
-    private var hostingView: NSHostingView<AnyView>?
+    private var hostingController: NSHostingController<AnyView>?
+    private var preferredSizeObservation: NSKeyValueObservation?
     private var mouseMonitor: Any?
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
@@ -53,10 +54,12 @@ public final class SimulatedNotchController {
         usageTracker.stop()
         if let mon = mouseMonitor { NSEvent.removeMonitor(mon) }
         stopOutsideClickMonitoring()
+        preferredSizeObservation?.invalidate()
+        preferredSizeObservation = nil
         if let observer = screenObserver { NotificationCenter.default.removeObserver(observer) }
         panel?.orderOut(nil)
         panel = nil
-        hostingView = nil
+        hostingController = nil
     }
 
     // MARK: - Panel creation
@@ -74,16 +77,44 @@ public final class SimulatedNotchController {
         let frame = compactFrame(on: screen)
         let panel = SimulatedNotchPanel(contentRect: frame)
 
-        let hosting = NSHostingView(rootView: AnyView(makeView(for: .compact)))
-        hosting.frame = panel.contentView?.bounds ?? .zero
-        hosting.autoresizingMask = [.width, .height]
-        panel.contentView?.addSubview(hosting)
+        let controller = NSHostingController(rootView: AnyView(makeView(for: .compact)))
+        // Auto-report SwiftUI's intrinsic content size via preferredContentSize
+        controller.sizingOptions = [.preferredContentSize]
+        panel.contentViewController = controller
+
+        // KVO preferredContentSize so we can resize the panel when content grows
+        preferredSizeObservation = controller.observe(\.preferredContentSize, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor in self?.handlePreferredSizeChange() }
+        }
 
         panel.orderFrontRegardless()
         self.panel = panel
-        self.hostingView = hosting
+        self.hostingController = controller
 
         Task { await usageTracker.refresh() }
+    }
+
+    private func handlePreferredSizeChange() {
+        // Only auto-resize when in full mode — compact/hoverWide use fixed dimensions
+        guard mode == .full,
+              let panel = panel,
+              let controller = hostingController,
+              let screen = primaryScreen() else { return }
+
+        let preferred = controller.preferredContentSize
+        guard preferred.height > 0 else { return }
+
+        let maxHeight = screen.visibleFrame.height - 40
+        let height = min(preferred.height, maxHeight)
+        guard abs(height - fullCurrentHeight) > 1 else { return }
+
+        fullCurrentHeight = height
+        let target = fullFrame(on: screen)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.15
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            panel.animator().setFrame(target, display: true)
+        }
     }
 
     // MARK: - Geometry
@@ -180,7 +211,8 @@ public final class SimulatedNotchController {
         guard mode != newMode else { return }
         mode = newMode
 
-        // If entering full mode, recompute height from current session content
+        // Initial guess for full mode — will be replaced by the real
+        // preferredContentSize via KVO once SwiftUI lays out.
         if newMode == .full {
             fullCurrentHeight = computeFullHeight()
         }
@@ -188,8 +220,8 @@ public final class SimulatedNotchController {
         guard let panel = panel, let screen = primaryScreen() else { return }
         let target = currentFrame(on: screen)
 
-        // Swap content first so the new view is laid out as the frame grows
-        hostingView?.rootView = AnyView(makeView(for: newMode))
+        // Swap content
+        hostingController?.rootView = AnyView(makeView(for: newMode))
 
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = newMode == .full ? 0.30 : 0.22

@@ -96,14 +96,6 @@ struct NotchExpandedView: View {
 
                     Spacer(minLength: 4)
 
-                    Text("Claude")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.white.opacity(0.7))
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(4)
-
                     Text(elapsedString(since: session.lastActiveAt))
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .foregroundColor(.white.opacity(0.5))
