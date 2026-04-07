@@ -146,6 +146,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             NSLog("ZackEyes: PermissionRequest for tool=%@", event.toolName ?? "?")
             sessionStore.handlePermissionRequest(sessionId: sid, permission: pending)
+            simulatedNotch?.dismissAboutOverlay()
             forceUiExpand()
 
         default:

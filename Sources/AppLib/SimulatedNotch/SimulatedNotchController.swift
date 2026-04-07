@@ -202,6 +202,13 @@ public final class SimulatedNotchController {
         setMode(.full)
     }
 
+    /// Tear down the About overlay if it's currently shown. Used by the
+    /// PermissionRequest path so a question can claim the panel even
+    /// when the user is reading the About card.
+    public func dismissAboutOverlay() {
+        modeStore.isAboutShown = false
+    }
+
     // MARK: - Mouse hover (compact ↔ full)
 
     private func observeMouseMovement() {
