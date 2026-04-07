@@ -82,6 +82,18 @@ public class MenuBarFallback: NSObject {
         startClickMonitoring()
     }
 
+    /// Show popover anchored to an arbitrary view (e.g. simulated notch).
+    /// If already shown, close it.
+    public func togglePopover(anchoredTo view: NSView) {
+        guard let popover = popover else { return }
+        if popover.isShown {
+            closePopover()
+        } else {
+            popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+            startClickMonitoring()
+        }
+    }
+
     /// Toggle popover (called by global hotkey)
     public func toggle() {
         togglePopover()

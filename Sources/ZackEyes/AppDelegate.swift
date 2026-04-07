@@ -70,11 +70,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 viewModel: viewModel,
                 usageTracker: usageTracker
             )
-            sn.onTap = { [weak self] in
-                self?.menuBarFallback?.toggle()
-            }
             sn.setup()
             simulatedNotch = sn
+
+            sn.onTap = { [weak self] in
+                guard let self = self,
+                      let anchor = self.simulatedNotch?.anchorView else { return }
+                self.menuBarFallback?.togglePopover(anchoredTo: anchor)
+            }
         }
 
         // 4.5 Global hotkey (Cmd+Shift+Z)

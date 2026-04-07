@@ -9,6 +9,10 @@ public final class SimulatedNotchController {
     private let viewModel: NotchViewModel
     private let usageTracker: UsageTracker
     public var onTap: (() -> Void)?
+
+    /// Public so the popover can anchor itself to the notch.
+    public var anchorView: NSView? { hostingView }
+
     private var panel: SimulatedNotchPanel?
     private var hostingView: NSHostingView<SimulatedNotchView>?
     private var mouseMonitor: Any?
