@@ -158,7 +158,7 @@ public struct BridgeEvent: Codable, Sendable {
 
 // MARK: - PermissionResponse
 
-/// Response sent back to Claude Code after a permission request hook.
+/// Response sent back to Claude Code after a PermissionRequest hook.
 /// Encodes to the exact structure Claude Code expects:
 /// {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","message":"..."}}}
 public struct PermissionResponse: Codable, Sendable {
@@ -195,20 +195,6 @@ public struct PermissionResponse: Codable, Sendable {
             hookSpecificOutput: HookSpecificOutput(
                 hookEventName: "PermissionRequest",
                 decision: Decision(behavior: "deny", message: message)
-            )
-        )
-    }
-
-    /// Answer an AskUserQuestion with selected option labels (one per question).
-    public static func answer(selections: [String]) -> PermissionResponse {
-        let answersArr = selections.map { AnyCodable($0) }
-        let updatedInput: [String: AnyCodable] = [
-            "answers": AnyCodable(answersArr)
-        ]
-        return PermissionResponse(
-            hookSpecificOutput: HookSpecificOutput(
-                hookEventName: "PermissionRequest",
-                decision: Decision(behavior: "allow", updatedInput: updatedInput)
             )
         )
     }

@@ -269,17 +269,6 @@ public final class SessionStore: ObservableObject {
         resolvePermission(sessionId: primary.id, allow: allow)
     }
 
-    /// Answer an AskUserQuestion with the user's selected option labels.
-    public func resolveQuestion(sessionId: String, selections: [String]) {
-        guard var session = sessions[sessionId], let pending = session.pendingPermission else { return }
-        let response = PermissionResponse.answer(selections: selections)
-        pending.responder(response)
-        session.pendingPermission = nil
-        session.state = .working
-        session.lastActiveAt = Date()
-        sessions[sessionId] = session
-    }
-
     /// Called when the bridge disconnects without the user responding via ZackEyes
     /// (e.g., user answered in terminal, or bridge timed out). Clear the pending state.
     public func abandonPermission(sessionId: String) {
