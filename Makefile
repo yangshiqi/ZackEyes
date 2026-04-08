@@ -1,4 +1,4 @@
-.PHONY: build build-release run clean app test test-permission
+.PHONY: build build-release run clean app test test-permission dmg
 
 APP_NAME = ZackEyes
 APP_BUNDLE = .build/$(APP_NAME).app
@@ -11,7 +11,7 @@ build:
 	swift build
 
 build-release:
-	swift build -c release
+	swift build -c release --arch arm64 --arch x86_64
 
 app: build
 	$(eval BIN_PATH := $(shell swift build --show-bin-path))
@@ -26,7 +26,7 @@ app: build
 	@echo "Built $(APP_BUNDLE)"
 
 app-release: build-release
-	$(eval BIN_PATH := $(shell swift build -c release --show-bin-path))
+	$(eval BIN_PATH := $(shell swift build -c release --arch arm64 --arch x86_64 --show-bin-path))
 	mkdir -p $(MACOS) $(HELPERS) $(RESOURCES)
 	cp $(BIN_PATH)/ZackEyes $(MACOS)/ZackEyes
 	cp $(BIN_PATH)/bridge $(HELPERS)/bridge
@@ -50,6 +50,36 @@ test:
 test-permission:
 	./Scripts/test-permission.sh $(ARGS)
 
+DMG_DIR = .build/dmg
+DMG_VERSION = $(shell /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Resources/Info.plist 2>/dev/null || echo "dev")
+DMG_NAME = $(APP_NAME)-$(DMG_VERSION).dmg
+DMG_PATH = .build/$(DMG_NAME)
+
+# Build a release .app and wrap it in a drag-to-Applications .dmg.
+# Ad-hoc signed — recipients must run the quarantine-strip command in
+# the DMG's README before first launch (Gatekeeper will otherwise block).
+dmg: app-release
+	rm -rf $(DMG_DIR) $(DMG_PATH)
+	mkdir -p $(DMG_DIR)
+	cp -R $(APP_BUNDLE) $(DMG_DIR)/
+	ln -s /Applications $(DMG_DIR)/Applications
+	printf '%s\n' \
+	  "ZackEyes — 内部测试版" \
+	  "" \
+	  "安装：把 ZackEyes.app 拖到 Applications。" \
+	  "" \
+	  "首次运行前，因为没有 Developer ID 签名，需要在终端执行一次：" \
+	  "  xattr -dr com.apple.quarantine /Applications/ZackEyes.app" \
+	  "" \
+	  "然后直接打开 Applications 里的 ZackEyes 即可。" \
+	  > $(DMG_DIR)/README.txt
+	hdiutil create -volname "$(APP_NAME)" -srcfolder $(DMG_DIR) \
+	  -ov -format UDZO $(DMG_PATH)
+	rm -rf $(DMG_DIR)
+	@echo ""
+	@echo "✅ $(DMG_PATH)"
+	@du -h $(DMG_PATH) | cut -f1 | xargs -I{} echo "   size: {}"
+
 clean:
 	swift package clean
-	rm -rf $(APP_BUNDLE)
+	rm -rf $(APP_BUNDLE) .build/dmg .build/*.dmg
