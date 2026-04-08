@@ -123,11 +123,6 @@ struct SimulatedNotchFullView: View {
         }
     }
 
-    /// Settings dropdown — gear icon → About / Quit. Uses SwiftUI `Menu`
-    /// with the default style; the previous `.borderlessButton` combo
-    /// with a custom Image label rendered as a zero-sized invisible label
-    /// on current macOS SwiftUI (gear literally disappeared). Wrapping in
-    /// a Color frame gives the menu a stable hit area.
     /// Settings gear — plain SwiftUI Button that pops a native NSMenu
     /// positioned just below the gear's screen frame. We bypass SwiftUI
     /// `Menu` entirely because in a `nonactivatingPanel` with a black

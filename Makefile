@@ -1,4 +1,4 @@
-.PHONY: build build-release run clean app test test-permission dmg
+.PHONY: build build-release run clean app test test-permission dmg app-release
 
 APP_NAME = ZackEyes
 APP_BUNDLE = .build/$(APP_NAME).app
