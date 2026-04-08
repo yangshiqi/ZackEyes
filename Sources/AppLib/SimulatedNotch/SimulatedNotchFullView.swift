@@ -11,6 +11,12 @@ struct SimulatedNotchFullView: View {
     @ObservedObject var modeStore: NotchModeStore
     var cornerRadius: CGFloat = 22
 
+    /// Weak handle to the actual NSView backing the gear button. Set by
+    /// `HostViewProbe` when SwiftUI mounts the gear. We use it to find
+    /// the panel's NSWindow + the gear's bounds for menu anchoring,
+    /// which is multi-monitor safe (no screen coordinate conversion).
+    @State private var gearHost = HostViewBox()
+
     var body: some View {
         VStack(spacing: 0) {
             usageHeader
@@ -117,37 +123,71 @@ struct SimulatedNotchFullView: View {
         }
     }
 
-    /// Settings dropdown menu — anchored to the gear icon at the right
-    /// of the 5h row in the header. Two items: About and Quit.
-    ///
-    /// Tracks open state on `modeStore.isMenuOpen` so the controller's
-    /// sticky-collapse logic doesn't kill the panel out from under the
-    /// menu. SwiftUI's `Menu` doesn't expose an isPresented binding, so
-    /// we set the flag on label tap (via `modeStore.markMenuOpen()`)
-    /// which also arms a single 4-second safety timer — any prior
-    /// pending close task is cancelled, so rapid-clicking the gear
-    /// never stacks up competing timers.
+    /// Settings gear — plain SwiftUI Button that pops a native NSMenu
+    /// positioned just below the gear's screen frame. We bypass SwiftUI
+    /// `Menu` entirely because in a `nonactivatingPanel` with a black
+    /// background, the custom Image label renders with a window-chrome
+    /// tint that's effectively invisible (verified — a Color.red bg
+    /// makes the gear instantly show up). NSMenu via `popUp(positioning:
+    /// at:in:)` sidesteps the rendering problem AND lets us anchor the
+    /// menu to the gear's screen rect instead of the cursor location
+    /// (which on the menubar gets visually covered by status items).
     private var gearMenu: some View {
-        Menu {
-            Button("About") {
-                modeStore.isMenuOpen = false
-                modeStore.isAboutShown = true
-            }
-            Divider()
-            Button("Quit") {
-                NSApp.terminate(nil)
-            }
-            .keyboardShortcut("q", modifiers: .command)
-        } label: {
-            Image(systemName: "gearshape")
-                .font(.system(size: 12))
-                .foregroundColor(.white.opacity(0.55))
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .onTapGesture {
+        Button {
             modeStore.markMenuOpen()
+            popGearMenu()
+        } label: {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.85))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(HostViewProbe(box: gearHost))
+    }
+
+    /// Build and show an NSMenu anchored just below the gear button.
+    /// Uses the gear's NSView + parent NSWindow directly so coordinates
+    /// stay window-local — no screen conversion, multi-monitor safe.
+    private func popGearMenu() {
+        let menu = NSMenu()
+
+        let about = NSMenuItem(
+            title: "About",
+            action: #selector(GearMenuTarget.aboutClicked(_:)),
+            keyEquivalent: ""
+        )
+        about.target = GearMenuTarget.shared
+        menu.addItem(about)
+
+        menu.addItem(.separator())
+
+        let quit = NSMenuItem(
+            title: "Quit ZackEyes",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
+        quit.target = NSApp
+        menu.addItem(quit)
+
+        GearMenuTarget.shared.modeStore = modeStore
+
+        // Anchor in window coordinates, relative to the gear's NSView.
+        // popUp(positioning:at:in:) interprets `at` in the coordinate
+        // space of `in:` — passing the gear view itself means we don't
+        // need to know which screen / window we're on.
+        if let view = gearHost.view {
+            let bounds = view.bounds
+            // Below the gear, left edge aligned. NSView default coords
+            // are flipped on macOS only if isFlipped — for SwiftUI's
+            // hosting view, AppKit origin is bottom-left, so "below"
+            // means y = bounds.minY - small gap.
+            let anchor = NSPoint(x: bounds.minX, y: bounds.minY - 2)
+            menu.popUp(positioning: nil, at: anchor, in: view)
+        } else {
+            // Fallback: pop at mouse location.
+            menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
         }
     }
 

@@ -56,11 +56,7 @@ public final class NotchViewModel: ObservableObject {
         sessionStore.resolvePrimaryPermission(allow: false)
     }
 
-    public func answerQuestion(sessionId: String, selection: String) {
-        sessionStore.resolveQuestion(sessionId: sessionId, selections: [selection])
-    }
-
-    /// Click handler: jump to the terminal tab for this session.
+/// Click handler: jump to the terminal tab for this session.
     /// Runs on a background task so subprocess + AppleScript calls don't block the UI.
     public func activateTerminal(for session: SessionInfo) {
         let cachedPid = session.claudePid
