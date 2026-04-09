@@ -1,8 +1,21 @@
 # Ghostty Tab & Split-Pane Click-to-Jump — Design
 
 **Date**: 2026-04-09
-**Status**: Draft — awaiting implementation plan
+**Status**: Revised post-verification — implementation in progress
 **Scope**: Bridge OSC2 title injection + TerminalLocator Ghostty-specific jump path
+
+## Revision history
+
+- **2026-04-09 v1**: initial design assuming Ghostty exposes per-pane
+  `AXUIElement` children with distinct titles (Layer A = AX tree walk)
+- **2026-04-09 v2**: post-verification rewrite. AX dump confirmed
+  Ghostty uses a **single top-level AXWindow** containing an
+  `AXTabGroup` with one `AXTabButton` per tab; panes exist
+  (`AXGroup > AXScrollArea > AXTextArea`) but have **no titles**.
+  Layer A rewritten to enumerate AXTabButtons directly. Added
+  Layer A' (brute-force tab + pane cycling via CGEvent) to cover
+  the split-pane + non-focused case. Layer B (Window menu AXPress)
+  removed as redundant with Layer A.
 
 ## Problem
 
@@ -178,14 +191,12 @@ focusGhosttySession(app, session):
   marker = String(session.id.prefix(8))                  // raw 8 hex chars of UUID
   appRef = AXUIElementCreateApplication(app.pid)
 
-  // Layer A — AX tree walk
-  if (window, element) = axFindElementMatching(appRef, marker: marker):
-    AXRaise(window)
-    if element != window: AXSetFocused(element)
+  // Layer A — AXTabButton title match (fast path)
+  if focusGhosttyTabByMarker(appRef, marker: marker):
     return true
 
-  // Layer B — Window menu AXPress
-  if pressWindowMenuItemMatching(appRef, marker: marker, cwd: session.cwd):
+  // Layer A' — brute-force tab + pane cycling (bounded)
+  if focusGhosttyByCycling(appRef, marker: marker):
     return true
 
   return false
@@ -227,175 +238,196 @@ Examples (real sessions from the screenshot that prompted this work):
 - **Permissions**: default (600 / user-only); Bridge writes under the
   user's own permissions
 
-## Layer A — AX tree walk (primary jump path)
+## Verified Ghostty AX structure (2026-04-09)
+
+Dump of a 3-tab Ghostty instance with one tab containing a horizontal
+split (`Sources/AppLib/Diagnostics/GhosttyAXDumper.swift` temporary
+tool, now removed):
+
+```
+Ghostty has 1 top-level AX windows
+=== window 0 ===
+[AXWindow/AXStandardWindow] title="<focused pane's title>" children=8
+  [AXGroup/AXHostingView] children=1
+    [AXGroup] desc="Horizontal split view" children=3
+      [AXGroup] desc="Left pane" children=1
+        [AXScrollArea] children=2
+          [AXTextArea] title="" children=0         ← no title
+          [AXScrollBar] children=5
+      [AXGroup] desc="Right pane" children=1
+        [AXScrollArea] children=2
+          [AXTextArea] title="" children=0         ← no title
+          [AXScrollBar] children=5
+      [AXButton] desc="Horizontal split divider"
+  [AXTabGroup] desc="Tab bar, 3 tabs." children=4
+    [AXRadioButton/AXTabButton] title="<tab 1 focused pane title>" children=3
+    [AXRadioButton/AXTabButton] title="<tab 2 focused pane title>" children=3
+    [AXRadioButton/AXTabButton] title="<tab 3 focused pane title>" children=3
+    [AXButton] title="" desc="new tab" children=0
+  ...
+```
+
+**Key findings**:
+
+1. Ghostty has exactly **one** top-level `AXWindow` regardless of tab
+   count. Its `kAXTitleAttribute` reflects the currently focused
+   pane's title (the one visible in the window title bar).
+2. The window contains an `AXTabGroup` child whose children are one
+   `AXTabButton` per tab (plus one trailing `AXButton` for "new tab").
+3. **Each `AXTabButton` has its own `kAXTitleAttribute`**, and that
+   title reflects **the focused pane of that specific tab** (not of
+   the whole app). So three tabs → three independent titles, one per
+   tab's focused surface.
+4. Panes within a tab appear as `AXGroup > AXScrollArea > AXTextArea`
+   but none of these elements expose a `kAXTitleAttribute`. There is
+   **no way to identify a non-focused pane's session via AX** — the
+   pane's title (set by OSC 2) lives only in the terminal emulator's
+   internal state, not in the AX tree.
+
+## Layer A — AXTabButton title match (primary, fast path)
+
+Enumerate each top-level AX window, find its `AXTabGroup` child, scan
+each `AXTabButton` for a title containing the sid marker, and
+`AXPress` the match.
 
 ```swift
-private static func axFindElementMatching(
-    _ appRef: AXUIElement,
+/// Primary Ghostty fast path. Returns true on success.
+static func focusGhosttyTabByMarker(
+    appRef: AXUIElement,
     marker: String
-) -> (window: AXUIElement, element: AXUIElement)? {
+) -> Bool {
     var windowsRef: CFTypeRef?
     guard AXUIElementCopyAttributeValue(
         appRef, kAXWindowsAttribute as CFString, &windowsRef
     ) == .success,
-          let windows = windowsRef as? [AXUIElement] else { return nil }
-
-    let deadline = Date().addingTimeInterval(0.05)  // 50ms budget
-    var visited = 0
+          let windows = windowsRef as? [AXUIElement] else { return false }
 
     for window in windows {
-        if let match = walk(
-            element: window, marker: marker,
-            depth: 0, maxDepth: 6,
-            visited: &visited, maxVisited: 1000,
-            deadline: deadline
-        ) {
-            return (window, match)
+        guard let tabGroup = firstChild(of: window, whereRole: "AXTabGroup") else {
+            continue
         }
-        if Date() >= deadline || visited >= 1000 { break }
-    }
-    return nil
-}
+        guard let buttons = children(of: tabGroup) else { continue }
 
-private static func walk(
-    element: AXUIElement, marker: String,
-    depth: Int, maxDepth: Int,
-    visited: inout Int, maxVisited: Int,
-    deadline: Date
-) -> AXUIElement? {
-    if depth > maxDepth || visited >= maxVisited || Date() >= deadline {
-        return nil
-    }
-    visited += 1
+        for button in buttons {
+            guard let subrole = stringAttr(button, kAXSubroleAttribute as String),
+                  subrole == "AXTabButton",
+                  let title = stringAttr(button, kAXTitleAttribute as String),
+                  title.contains(marker) else { continue }
 
-    var titleRef: CFTypeRef?
-    if AXUIElementCopyAttributeValue(
-        element, kAXTitleAttribute as CFString, &titleRef
-    ) == .success,
-       let title = titleRef as? String,
-       title.contains(marker) {
-        return element
-    }
-
-    var childrenRef: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(
-        element, kAXChildrenAttribute as CFString, &childrenRef
-    ) == .success,
-          let children = childrenRef as? [AXUIElement] else {
-        return nil
-    }
-    for child in children {
-        if let m = walk(
-            element: child, marker: marker,
-            depth: depth + 1, maxDepth: maxDepth,
-            visited: &visited, maxVisited: maxVisited,
-            deadline: deadline
-        ) {
-            return m
+            if AXUIElementPerformAction(button, kAXPressAction as CFString) == .success {
+                return true
+            }
         }
     }
-    return nil
+    return false
 }
 ```
 
-**Precondition assumption** (to be verified): Ghostty exposes each pane
-(surface) as a child `AXUIElement` of its `AXWindow`, and each pane has
-its own `kAXTitleAttribute` reflecting whatever OSC 2 wrote to that
-pane's tty. This assumption is verified by the AX dump tool before
-production implementation (see Implementation Plan Prelude below).
+Helpers `firstChild(of:whereRole:)`, `children(of:)`, `stringAttr(_:_:)`
+are thin wrappers around `AXUIElementCopyAttributeValue`.
 
-**If the assumption holds** — Layer A succeeds in the common split-pane
-case; Layer A' (pane cycling) is not needed.
+**Covers**: any tab whose focused pane's title contains the sid marker.
+This includes non-split tabs (trivially) and split tabs where the
+claude pane happens to be focused.
 
-**If the assumption does not hold** — Layer A degrades to "find the
-matching tab window", which still succeeds when the claude pane is the
-focused pane of its tab; split-pane case requires Layer A' (pane
-cycling) as an additional layer.
+**Does not cover**: split tabs where the claude pane is **not**
+currently focused. In that case the AXTabButton title reflects the
+other pane (e.g. a plain shell) and the marker is nowhere to be found
+at the AX layer. Handled by Layer A'.
 
-## Layer B — Window menu AXPress (secondary)
+## Layer A' — Brute-force tab + pane cycling (split-pane fallback)
+
+Only invoked when Layer A misses. Iterates over each AXTabButton,
+pressing each in turn to make that tab active; after each press, cycles
+through the tab's panes via synthetic `Cmd+Option+Right` keystrokes
+(Ghostty's default `goto_split:next` keybinding) until the window
+title contains the marker or the budget is exhausted.
 
 ```swift
-private static func pressWindowMenuItemMatching(
-    _ appRef: AXUIElement,
+/// Slow-path fallback. Bounded: at most N_tabs × N_panes iterations.
+static func focusGhosttyByCycling(
+    appRef: AXUIElement,
     marker: String,
-    cwd: String?
+    maxPanesPerTab: Int = 4
 ) -> Bool {
-    var barRef: CFTypeRef?
+    var windowsRef: CFTypeRef?
     guard AXUIElementCopyAttributeValue(
-        appRef, kAXMenuBarAttribute as CFString, &barRef
+        appRef, kAXWindowsAttribute as CFString, &windowsRef
     ) == .success,
-          let menuBar = barRef, CFGetTypeID(menuBar) == AXUIElementGetTypeID()
-    else { return false }
-    let menuBarEl = menuBar as! AXUIElement
+          let windows = windowsRef as? [AXUIElement],
+          let window = windows.first else { return false }
 
-    // Find the "Window" top-level menu (localized: English "Window", Chinese "窗口")
-    var topItemsRef: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(
-        menuBarEl, kAXChildrenAttribute as CFString, &topItemsRef
-    ) == .success,
-          let topItems = topItemsRef as? [AXUIElement] else { return false }
+    guard let tabGroup = firstChild(of: window, whereRole: "AXTabGroup"),
+          let buttons = children(of: tabGroup) else { return false }
 
-    let windowMenuTitles: Set<String> = ["Window", "窗口", "ウインドウ", "창"]
-    var windowBarItem: AXUIElement?
-    for item in topItems {
-        var t: CFTypeRef?
-        if AXUIElementCopyAttributeValue(
-            item, kAXTitleAttribute as CFString, &t
-        ) == .success,
-           let title = t as? String, windowMenuTitles.contains(title) {
-            windowBarItem = item
-            break
-        }
-    }
-    guard let barItem = windowBarItem else { return false }
-
-    // Descend into the actual menu
-    var menuRef: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(
-        barItem, kAXChildrenAttribute as CFString, &menuRef
-    ) == .success,
-          let menuArr = menuRef as? [AXUIElement],
-          let menu = menuArr.first else { return false }
-
-    var itemsRef: CFTypeRef?
-    guard AXUIElementCopyAttributeValue(
-        menu, kAXChildrenAttribute as CFString, &itemsRef
-    ) == .success,
-          let items = itemsRef as? [AXUIElement] else { return false }
-
-    // Known fixed items to skip (English only for MVP; extend if needed)
-    let skipTitles: Set<String> = [
-        "Minimize", "Zoom", "Move Tab to New Window",
-        "Merge All Windows", "Show Previous Tab", "Show Next Tab",
-        "Move Tab Left", "Move Tab Right", "Bring All to Front",
-        "Close Tab", "Close Window",
-    ]
-
-    // Pick the best match; prefer marker over basename
-    let basename = (cwd as NSString?)?.lastPathComponent ?? ""
-    var best: (el: AXUIElement, score: Int)?
-    for item in items {
-        var t: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            item, kAXTitleAttribute as CFString, &t
-        ) == .success,
-              let title = t as? String, !title.isEmpty,
-              !skipTitles.contains(title) else { continue }
-
-        var score = 0
-        if title.contains(marker) { score = 5 }
-        else if !basename.isEmpty, title.contains(basename) { score = 2 }
-        else { continue }
-
-        if score > (best?.score ?? 0) {
-            best = (item, score)
-        }
+    let tabButtons = buttons.filter { el in
+        stringAttr(el, kAXSubroleAttribute as String) == "AXTabButton"
     }
 
-    guard let target = best?.el, (best?.score ?? 0) >= 3 else { return false }
-    return AXUIElementPerformAction(target, kAXPressAction as CFString) == .success
+    let deadline = Date().addingTimeInterval(0.6)  // 600 ms hard budget
+
+    for button in tabButtons {
+        if Date() >= deadline { return false }
+        _ = AXUIElementPerformAction(button, kAXPressAction as CFString)
+        Thread.sleep(forTimeInterval: 0.02)  // let Ghostty repaint
+
+        // Check the title after tab switch
+        if let title = stringAttr(window, kAXTitleAttribute as String),
+           title.contains(marker) {
+            return true
+        }
+
+        // Cycle panes within this tab
+        for _ in 0..<maxPanesPerTab {
+            if Date() >= deadline { return false }
+            postCmdOptionRight()
+            Thread.sleep(forTimeInterval: 0.02)
+
+            if let title = stringAttr(window, kAXTitleAttribute as String),
+               title.contains(marker) {
+                return true
+            }
+        }
+    }
+    return false
+}
+
+/// Post a Cmd+Option+Right key sequence via CGEvent.
+/// Ghostty default keybinding for `goto_split:next`.
+private static func postCmdOptionRight() {
+    let src = CGEventSource(stateID: .hidSystemState)
+    let flags: CGEventFlags = [.maskCommand, .maskAlternate]
+    if let down = CGEvent(
+        keyboardEventSource: src, virtualKey: 0x7C /* rightArrow */, keyDown: true
+    ) {
+        down.flags = flags
+        down.post(tap: .cghidEventTap)
+    }
+    if let up = CGEvent(
+        keyboardEventSource: src, virtualKey: 0x7C, keyDown: false
+    ) {
+        up.flags = flags
+        up.post(tap: .cghidEventTap)
+    }
 }
 ```
+
+**Performance model**:
+
+| Scenario | Iterations | Worst-case time |
+|---|---|---|
+| Layer A hits | 1 AXPress | < 20 ms |
+| Layer A' hits in current tab's other pane | 1 AXPress (redundant) + 1-2 key posts | < 100 ms |
+| Layer A' finds after switching to other tab | 1-2 AXPress + 1-2 key posts | < 150 ms |
+| Layer A' exhausts all tabs + panes | 3 × (1 AXPress + 4 key posts) = 15 steps | < 600 ms |
+
+**Budget**: 600 ms hard deadline in Layer A'. Exceeds → return false →
+fall through to Layer C. The user sees visible tab/pane transitions
+during the fallback path; acceptable for a <5% code path.
+
+**User-controlled caveat**: Layer A' depends on Ghostty's default
+`goto_split:next = cmd+alt+right` keybinding. Users who've remapped
+this will get a silent no-op fallback. Documented in Risks.
 
 ## Invariants
 
@@ -414,8 +446,10 @@ Enforced by code review and spec:
    checked, `AXIsProcessTrustedWithOptions()` (the prompting variant)
    is only called from `promptAccessibilityIfNeeded()` at app startup.
    Click-time code never re-prompts.
-5. **AX tree walk is bounded.** Depth ≤ 6, nodes ≤ 1000, wall clock
-   ≤ 50ms. Deadline enforced in the recursion.
+5. **AX enumeration and cycling are bounded.** Layer A is a single
+   pass over AXTabButton children (O(tab count)). Layer A' is bounded
+   by tab count × `maxPanesPerTab` (default 4) and a 600ms wall-clock
+   deadline. All loops honor the deadline check.
 6. **No long-lived `AXObserver`.** We only call AX APIs synchronously
    inside the click handler (wrapped in `Task.detached`). No observer
    registration, no retained AX callbacks.
@@ -430,9 +464,10 @@ Enforced by code review and spec:
 |---|---|---|
 | Cached prompt | 30 UTF-8 characters | Keep titles short, prevent filesystem abuse |
 | Cache file write | per session, single write | Avoid write storms |
-| AX tree walk depth | 6 | Defensive ceiling; real Ghostty subtree depth to be measured by the verification tool |
-| AX tree walk nodes | 1000 | Defensive ceiling against pathological trees |
-| AX tree walk wall time | 50ms | VI completes full jump in 116-172ms; 50ms for walk is generous |
+| Layer A AXTabButton enumeration | up to ~8 buttons | Trivial, O(tab count) |
+| Layer A' tab cycles | max 3 (observed Ghostty tab count ceiling) | bounded explicit |
+| Layer A' pane cycles per tab | max 4 | covers typical 2x2 split layouts |
+| Layer A' wall-clock budget | 600 ms | hard deadline; exceeds → fall through |
 | Bridge OSC2 write | < 10ms | Matches existing Bridge single-call budget |
 
 ## Testing
@@ -453,10 +488,11 @@ Enforced by code review and spec:
 
 ### Unit tests — AppLibTests
 
-- `TerminalLocator.walk` — can be tested with a pure-Swift fake AX tree
-  (parametric over "get attribute" closure), validating: depth limit,
-  visit count limit, deadline honored, match found, match not found.
-  No real AX calls.
+No new unit tests for Layer A / A'. Both are thin glue over real AX
+APIs and `CGEvent`, which do not mock meaningfully. Existing
+`TerminalLocator` tests continue to pass (regression coverage for the
+parts untouched by this work). Correctness of the new paths is
+validated by the manual integration tests below.
 
 ### Manual integration tests (checked during implementation)
 
@@ -464,9 +500,12 @@ Enforced by code review and spec:
    start claude in each; click each session card in the notch popup;
    verify precise tab switch.
 2. **Split-pane case** (the case that motivated this spec): tab 1 has
-   a split — pane A is a plain shell, pane B has claude; click pane
-   B's session card; verify that tab 1 becomes active **and** pane B
-   receives focus.
+   a split — pane A is a plain shell, pane B has claude; **focus the
+   shell pane first** (so the marker is hidden from the tab button
+   title, forcing Layer A miss → Layer A' invocation); click pane B's
+   session card; verify that tab 1 becomes active, Layer A' cycles
+   panes, and pane B ends up focused. Elapsed time should be well
+   under 300 ms; a visible pane transition is expected.
 3. **Cold start**: quit ZackEyes mid-session, restart; click a session
    card; after the first hook fires (which rewrites the title) the
    click should precisely jump.
@@ -478,21 +517,28 @@ Enforced by code review and spec:
 
 ### Observability (NSLog)
 
-New log lines, to be grep-able:
+New log lines, to be grep-able. All format strings use `%{public}@`
+so they are not redacted in unified logging.
 
-- `ZackEyes: TitleWriter tty=%@ sid=%@ bytes=%d ok=%d`
-- `ZackEyes: TitleCache op=%@ sid=%@ path=%@ ok=%d`
-- `ZackEyes: focusGhostty layer=A sid=%@ hit=%d elapsed=%dms`
-- `ZackEyes: focusGhostty layer=B sid=%@ hit=%d`
-- `ZackEyes: focusGhostty final=%@` (one of `A`, `B`, `legacy`, `activate-only`)
+- `ZackEyes: TitleWriter tty=%{public}@ sid=%{public}@ bytes=%d ok=%d`
+- `ZackEyes: TitleCache op=%{public}@ sid=%{public}@ path=%{public}@ ok=%d`
+- `ZackEyes: focusGhostty layer=A sid=%{public}@ hit=%d elapsed=%dms`
+- `ZackEyes: focusGhostty layerA-cycling sid=%{public}@ hit=%d steps=%d elapsed=%dms`
+- `ZackEyes: focusGhostty final=%{public}@` (one of `A`, `A-cycling`, `legacy`, `activate-only`)
 
 ## Risks
 
-1. **Ghostty may not expose panes as AX children with distinct titles.**
-   Layer A then degrades to tab-level matching; split panes with
-   non-focused claude become unreachable without Layer A' (pane
-   cycling). *Mitigation*: AX dump verification before implementation;
-   add Layer A' if needed.
+1. **Ghostty does not expose panes as AX children with distinct
+   titles** — **confirmed** by the AX dump on 2026-04-09. Layer A
+   covers only tabs whose focused pane already shows the marker.
+   Split tabs with claude in a non-focused pane are handled by
+   Layer A' (brute-force cycling). *Status*: addressed by design v2.
+1a. **Layer A' depends on user keeping Ghostty's default
+   `goto_split:next = cmd+alt+right` keybinding.** Users who remapped
+   it will see Layer A' fail silently for the split-unfocused case
+   (no harm, just fallback behavior). *Mitigation*: document in the
+   feature's user-facing notes; could be made configurable in a later
+   pass.
 2. **Title write-to-click race.** If the user clicks before the first
    hook fires (SessionStart), no marker exists in the tab title yet,
    matching fails. *Mitigation*: SessionStart is the very first hook
@@ -529,43 +575,47 @@ New log lines, to be grep-able:
 3. Measured latency of Layer A on a realistic Ghostty tree → measured
    during manual tests
 
-## Implementation plan prelude
+## Implementation plan prelude — resolved
 
-Before any production code is written, run this verification:
+**Status (2026-04-09)**: verification complete. A temporary
+`Sources/AppLib/Diagnostics/GhosttyAXDumper.swift` was added and called
+from `AppDelegate.applicationDidFinishLaunching` to dump Ghostty's AX
+tree to `/tmp/ghostty-ax-dump.txt` using ZackEyes's existing AX grant
+(the `Tools/verify-ghostty-ax.swift` standalone approach failed due to
+AX grant friction — standalone binaries and `swift` script interpreters
+can't reliably inherit accessibility permissions).
 
-1. Write `Tools/verify-ghostty-ax.swift` — a single-file Swift script
-   (not in `Package.swift`), invoked as `swift Tools/verify-ghostty-ax.swift`
-2. The script:
-   - Waits 3 seconds (giving the user time to raise Ghostty with a tab
-     containing a split)
-   - Looks up the Ghostty PID via `NSRunningApplication`
-   - Creates an `AXUIElementCreateApplication` reference
-   - Recursively walks `kAXWindowsAttribute` → each window's subtree,
-     printing `[role] [subrole] title="..." ident="..." childCount=N`
-   - Writes the full dump to `/tmp/ghostty-ax-dump.txt`
-3. Examine the dump:
-   - If each pane appears as a distinct child element with its own
-     non-empty title → Layer A is viable as specified
-   - Otherwise → add Layer A' (pane cycling via
-     `next_split` keyboard shortcut, bounded loop, read current focused
-     title each iteration)
-4. Proceed with production code based on the finding
+The dump confirmed:
+- Ghostty uses a single top-level `AXWindow`
+- Tabs are exposed as `AXTabButton` children of an `AXTabGroup`, each
+  with its own `kAXTitleAttribute`
+- Panes exist structurally but **have no titles** — `AXGroup > AXScrollArea > AXTextArea`
 
-The production `focusGhosttySession` should not ship until the AX tree
-assumption is confirmed one way or the other.
+The dumper code was reverted before production implementation; the
+dump file is preserved at `/tmp/ghostty-ax-dump.txt` for reference if
+needed. The committed `Tools/verify-ghostty-ax.swift` script remains
+in the repo as a future diagnostic (useful if a user ever figures out
+the AX grant for standalone swift binaries).
+
+Proceed directly with production implementation using Layer A
+(AXTabButton match) + Layer A' (brute-force cycling) as specified.
 
 ## File map (change summary)
 
 | File | Change |
 |---|---|
-| `Sources/Shared/TTYUtil.swift` | **New** — `ttyPath(pid:)` |
+| `Sources/Shared/TTYUtil.swift` | **New** — `ttyPath(pid:)` + pure `parseTTYOutput` |
 | `Sources/BridgeLib/TerminalTitleWriter.swift` | **New** — `formatTitle`, `oscEscape`, `writeIfPossible`, `TitleCache` |
 | `Sources/Bridge/main.swift` | **Modified** — call `TerminalTitleWriter.writeIfPossible(...)` after socket send |
-| `Sources/AppLib/Terminal/TerminalLocator.swift` | **Modified** — new `focusGhosttySession`, new `axFindElementMatching`, new `pressWindowMenuItemMatching`, `ttyPath` inline call removed in favor of `TTYUtil` |
-| `Sources/AppLib/Notch/NotchViewModel.swift` | **Modified** — `activateTerminal(for:)` passes `SessionInfo` through to a new `TerminalLocator.activateTerminal(containingPid:cwd:session:)` overload |
+| `Sources/AppLib/Terminal/TerminalLocator.swift` | **Modified** — new `focusGhosttySession`, `focusGhosttyTabByMarker` (Layer A), `focusGhosttyByCycling` (Layer A'), small AX helpers; `ttyPath` inline code removed in favor of `TTYUtil` |
+| `Sources/AppLib/Notch/NotchViewModel.swift` | **Modified** — `activateTerminal(for:)` passes the session id through to a new `TerminalLocator.activateTerminal(containingPid:cwd:sessionId:)` overload |
+| `Tests/SharedTests/TTYUtilTests.swift` | **New** — pure parser tests |
 | `Tests/BridgeLibTests/TerminalTitleWriterTests.swift` | **New** — format + OSC + cache unit tests |
-| `Tests/AppLibTests/TerminalLocatorTests.swift` | **Modified or new** — `walk` tree-traversal unit tests |
-| `Tools/verify-ghostty-ax.swift` | **New** (not in `Package.swift`) — verification tool |
+| `Tools/verify-ghostty-ax.swift` | **Already committed** (chore/da72825) — standalone diagnostic; not used for Task 0 due to AX grant friction |
+
+No `AppLib` unit tests for Layer A / A': the logic is thin glue over
+real AX APIs and CGEvent, which are not meaningfully mockable. Layer
+correctness is validated via manual integration tests (see Testing).
 
 ## Performance targets
 

@@ -51,15 +51,43 @@ No other files are touched.
 
 ---
 
-## Task 0: Verify Ghostty AX tree assumption
+## Task 0: Verify Ghostty AX tree assumption — **DONE (2026-04-09)**
 
-Before writing any production code, confirm whether Ghostty exposes per-pane `AXUIElement`s with their own `kAXTitleAttribute`. This decides whether Layer A (AX tree walk) is viable as specified or whether the plan needs a Layer A' pane-cycling extension.
+**Status**: completed before production implementation. This task
+section is preserved for historical context.
+
+**Result**: Ghostty uses a **single top-level `AXWindow`** per
+Ghostty app instance (not one per tab). Tabs are exposed as
+`AXTabButton` children of an `AXTabGroup`, each with its own
+`kAXTitleAttribute` reflecting the focused pane of that tab. Panes
+exist structurally (`AXGroup > AXScrollArea > AXTextArea`) but have
+**no titles** — there is no way to find a non-focused pane via AX.
+
+**Implication for the rest of the plan**: the original bounded AX
+tree walker is unnecessary. Tasks 5–7 are rewritten to:
+- Task 5: small AX attribute-reading helpers
+- Task 6: Layer A — `focusGhosttyTabByMarker` (AXTabButton title
+  match → AXPress) + new `activateTerminal` overload wiring
+- Task 7: Layer A' — `focusGhosttyByCycling` (brute-force tab and
+  pane cycling bounded by a 600 ms wall-clock deadline)
+
+**Dump file** preserved at `/tmp/ghostty-ax-dump.txt` during the
+verification; no longer needed. The standalone
+`Tools/verify-ghostty-ax.swift` script remains in the repo
+(committed as `da72825`) as a future diagnostic, though the actual
+Task 0 dump was obtained via a short-lived
+`Sources/AppLib/Diagnostics/GhosttyAXDumper.swift` embedded in the
+app (reverted after use).
+
+---
+
+### Task 0 historical content (original script-based approach)
 
 **Files:**
 - Create: `Tools/verify-ghostty-ax.swift` (not added to `Package.swift`)
 - Write-only artifact: `/tmp/ghostty-ax-dump.txt`
 
-- [ ] **Step 1: Create the verification script**
+- [x] **Step 1: Create the verification script**
 
 Create `Tools/verify-ghostty-ax.swift` with this exact content:
 
@@ -834,362 +862,170 @@ all IO error paths; socket forwarding is unaffected.
 
 ---
 
-## Task 5: TerminalLocator — testable `walk` function
+## Task 5: TerminalLocator — AX attribute-reading helpers
 
-Add the bounded AX tree walker as a pure function parameterized over attribute getters, so we can exhaustively unit-test depth/visit/deadline limits without touching the real AX API.
+Small shared helpers used by Layer A and Layer A'. These are thin
+wrappers around `AXUIElementCopyAttributeValue` to make the
+subsequent code readable. No unit tests — the helpers are glue over
+real AX APIs and gain no value from mocking.
 
 **Files:**
 - Modify: `Sources/AppLib/Terminal/TerminalLocator.swift`
-- Create: `Tests/AppLibTests/TerminalLocatorWalkTests.swift`
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Append helpers to the TerminalLocator enum**
 
-Create `Tests/AppLibTests/TerminalLocatorWalkTests.swift`:
-
-```swift
-import XCTest
-@testable import AppLib
-
-/// Fake AX tree for testing the walker without AX.
-/// Node identity is by reference (`ObjectIdentifier`) so the closures
-/// can answer `title(for:)` / `children(for:)` by lookup.
-final class FakeAXNode {
-    let title: String?
-    let children: [FakeAXNode]
-    init(title: String?, children: [FakeAXNode] = []) {
-        self.title = title
-        self.children = children
-    }
-}
-
-final class TerminalLocatorWalkTests: XCTestCase {
-
-    /// Helper: build a FakeNodeFinder-style walk context closure pair.
-    private func ctx(for root: FakeAXNode) -> (
-        titleOf: (FakeAXNode) -> String?,
-        childrenOf: (FakeAXNode) -> [FakeAXNode]
-    ) {
-        return ({ $0.title }, { $0.children })
-    }
-
-    func test_walk_findsDirectChildMatch() {
-        let target = FakeAXNode(title: "ccisland · ze:3e0a4419")
-        let root = FakeAXNode(title: "window", children: [
-            FakeAXNode(title: "other", children: []),
-            target,
-        ])
-        let (titleOf, childrenOf) = ctx(for: root)
-
-        var visited = 0
-        let result = TerminalLocator.walk(
-            node: root,
-            marker: "3e0a4419",
-            depth: 0,
-            maxDepth: 6,
-            visited: &visited,
-            maxVisited: 1000,
-            deadline: Date.distantFuture,
-            titleOf: titleOf,
-            childrenOf: childrenOf
-        )
-        XCTAssertNotNil(result)
-        XCTAssertTrue(result === target)
-    }
-
-    func test_walk_findsDeepDescendantMatch() {
-        let target = FakeAXNode(title: "leaf · 3e0a4419 deep")
-        let tree = FakeAXNode(title: "w", children: [
-            FakeAXNode(title: "a", children: [
-                FakeAXNode(title: "b", children: [
-                    FakeAXNode(title: "c", children: [target]),
-                ]),
-            ]),
-        ])
-        let (titleOf, childrenOf) = ctx(for: tree)
-        var visited = 0
-        let result = TerminalLocator.walk(
-            node: tree,
-            marker: "3e0a4419",
-            depth: 0,
-            maxDepth: 6,
-            visited: &visited,
-            maxVisited: 1000,
-            deadline: Date.distantFuture,
-            titleOf: titleOf, childrenOf: childrenOf
-        )
-        XCTAssertTrue(result === target)
-    }
-
-    func test_walk_depthLimitRespected() {
-        // Target is 7 levels deep; maxDepth 6 means we must NOT find it.
-        func chain(depth: Int) -> FakeAXNode {
-            if depth == 0 { return FakeAXNode(title: "3e0a4419") }
-            return FakeAXNode(title: "n\(depth)", children: [chain(depth: depth - 1)])
-        }
-        let root = chain(depth: 7)
-        var visited = 0
-        let result = TerminalLocator.walk(
-            node: root,
-            marker: "3e0a4419",
-            depth: 0,
-            maxDepth: 6,
-            visited: &visited,
-            maxVisited: 1000,
-            deadline: Date.distantFuture,
-            titleOf: { $0.title },
-            childrenOf: { $0.children }
-        )
-        XCTAssertNil(result, "should not reach depth 7 with maxDepth 6")
-    }
-
-    func test_walk_visitLimitRespected() {
-        // Wide tree, 100 children each with no match. maxVisited=5 → stop early.
-        let wide = FakeAXNode(
-            title: "root",
-            children: (0..<100).map { FakeAXNode(title: "x\($0)") }
-        )
-        var visited = 0
-        _ = TerminalLocator.walk(
-            node: wide,
-            marker: "no-such-marker",
-            depth: 0,
-            maxDepth: 6,
-            visited: &visited,
-            maxVisited: 5,
-            deadline: Date.distantFuture,
-            titleOf: { $0.title },
-            childrenOf: { $0.children }
-        )
-        XCTAssertLessThanOrEqual(visited, 5)
-    }
-
-    func test_walk_deadlineRespected() {
-        let wide = FakeAXNode(
-            title: "root",
-            children: (0..<100).map { FakeAXNode(title: "x\($0)") }
-        )
-        var visited = 0
-        _ = TerminalLocator.walk(
-            node: wide,
-            marker: "no-such-marker",
-            depth: 0,
-            maxDepth: 6,
-            visited: &visited,
-            maxVisited: 1000,
-            deadline: Date().addingTimeInterval(-1),  // already expired
-            titleOf: { $0.title },
-            childrenOf: { $0.children }
-        )
-        XCTAssertEqual(visited, 0, "deadline already expired; walk must return immediately")
-    }
-
-    func test_walk_returnsNilWhenNothingMatches() {
-        let tree = FakeAXNode(title: "w", children: [
-            FakeAXNode(title: "a", children: [
-                FakeAXNode(title: "b"),
-            ]),
-        ])
-        var visited = 0
-        let result = TerminalLocator.walk(
-            node: tree,
-            marker: "nope",
-            depth: 0,
-            maxDepth: 6,
-            visited: &visited,
-            maxVisited: 1000,
-            deadline: Date.distantFuture,
-            titleOf: { $0.title },
-            childrenOf: { $0.children }
-        )
-        XCTAssertNil(result)
-    }
-}
-```
-
-- [ ] **Step 2: Run the tests to verify they fail**
-
-```bash
-swift test --filter AppLibTests.TerminalLocatorWalkTests 2>&1 | tail -20
-```
-
-Expected: compilation error — `walk` not defined.
-
-- [ ] **Step 3: Add the generic walker to TerminalLocator**
-
-Append to the `TerminalLocator` enum in `Sources/AppLib/Terminal/TerminalLocator.swift` (before the closing `}` of the enum):
+At the end of the `TerminalLocator` enum in
+`Sources/AppLib/Terminal/TerminalLocator.swift` (just before the
+closing `}`), add:
 
 ```swift
-    // MARK: - Bounded AX tree walk
-    //
-    // Generic over the node type so it can be unit-tested with a fake
-    // tree. Production callers pass `AXUIElement` nodes plus AX-backed
-    // closures; tests pass `FakeAXNode` plus in-memory closures.
+    // MARK: - AX attribute helpers (used by Ghostty Layer A / A')
 
-    /// Visit `node` and its descendants depth-first, returning the first
-    /// node whose title contains `marker`. Bounded by depth, visit count,
-    /// and wall-clock deadline.
-    static func walk<Node: AnyObject>(
-        node: Node,
-        marker: String,
-        depth: Int,
-        maxDepth: Int,
-        visited: inout Int,
-        maxVisited: Int,
-        deadline: Date,
-        titleOf: (Node) -> String?,
-        childrenOf: (Node) -> [Node]
-    ) -> Node? {
-        if depth > maxDepth || visited >= maxVisited || Date() >= deadline {
-            return nil
-        }
-        visited += 1
+    /// Read a string-valued AX attribute. Returns nil if the attribute
+    /// is missing or not a String.
+    static func axStringAttr(_ el: AXUIElement, _ attr: String) -> String? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &ref) == .success
+        else { return nil }
+        return ref as? String
+    }
 
-        if let title = titleOf(node), title.contains(marker) {
-            return node
-        }
+    /// Read the children of an AX element. Returns an empty array if
+    /// the attribute is missing or not an array.
+    static func axChildren(of el: AXUIElement) -> [AXUIElement] {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            el, kAXChildrenAttribute as CFString, &ref
+        ) == .success else { return [] }
+        return (ref as? [AXUIElement]) ?? []
+    }
 
-        for child in childrenOf(node) {
-            if let found = walk(
-                node: child,
-                marker: marker,
-                depth: depth + 1,
-                maxDepth: maxDepth,
-                visited: &visited,
-                maxVisited: maxVisited,
-                deadline: deadline,
-                titleOf: titleOf,
-                childrenOf: childrenOf
-            ) {
-                return found
+    /// Find the first direct child of `el` whose `AXRole` equals `role`.
+    static func axFirstChild(of el: AXUIElement, whereRole role: String) -> AXUIElement? {
+        for child in axChildren(of: el) {
+            if axStringAttr(child, kAXRoleAttribute as String) == role {
+                return child
             }
         }
         return nil
     }
 ```
 
-`walk` is the generic bounded tree walker. Production code in Task 6 calls it with `AXUIElement` as `Node`; tests call it with `FakeAXNode`. No name clash with anything else in `TerminalLocator`.
-
-- [ ] **Step 4: Run the tests to verify they pass**
+- [ ] **Step 2: Build**
 
 ```bash
-swift test --filter AppLibTests.TerminalLocatorWalkTests 2>&1 | tail -20
+swift build 2>&1 | tail -5
 ```
 
-Expected: all 6 walk tests pass.
+Expected: clean build. (New helpers are `static`, scope-internal,
+unused so far — Swift won't complain because the enum itself is
+public.)
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 3: Run full test suite**
 
 ```bash
-git add Sources/AppLib/Terminal/TerminalLocator.swift Tests/AppLibTests/TerminalLocatorWalkTests.swift
-git commit -m "feat(terminal): bounded AX tree walker with unit tests
+swift test 2>&1 | tail -20
+```
 
-Generic walker over any node type with (title, children) closures.
-Enforces depth, visit, and deadline limits. Tested with a fake tree
-so the logic is exercised without touching AX.
+Expected: all existing tests still pass.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add Sources/AppLib/Terminal/TerminalLocator.swift
+git commit -m "feat(terminal): AX attribute-reading helpers for Ghostty paths
+
+Three small wrappers around AXUIElementCopyAttributeValue used by
+the upcoming Layer A (AXTabButton match) and Layer A' (brute-force
+cycling) Ghostty focus paths. No behavior change yet.
 "
 ```
 
 ---
 
-## Task 6: focusGhosttySession — Layer A (AX tree walk)
+## Task 6: focusGhosttySession — Layer A (AXTabButton title match)
 
-Wrap the generic walker with AX-backed closures and build `focusGhosttySession`. Wire it into the Ghostty case of `activateTerminal`.
+The fast path: enumerate each top-level AX window, find its
+`AXTabGroup` child, scan the `AXTabButton`s for a title containing
+the sid marker, and `AXPress` the match. Wire it into a new
+`activateTerminal(containingPid:cwd:sessionId:)` overload.
 
 **Files:**
 - Modify: `Sources/AppLib/Terminal/TerminalLocator.swift`
 
-- [ ] **Step 1: Add `axFindElementMatching` and `focusGhosttySession` to TerminalLocator**
+- [ ] **Step 1: Append Layer A implementation to TerminalLocator**
 
-Append to the `TerminalLocator` enum, **just below** the `walk` function added in Task 5:
+At the end of the `TerminalLocator` enum (just after the helpers
+added in Task 5), add:
 
 ```swift
-    /// AX-backed adapter over `walk`. Searches the windows of `appRef`
-    /// for an element whose title contains `marker`. Returns the matching
-    /// element along with its ancestor AX window (the tab it lives in).
-    static func axFindElementMatching(
+    // MARK: - Ghostty Layer A: AXTabButton title match
+
+    /// Primary Ghostty fast path. Enumerates AXTabGroup children, finds
+    /// the AXTabButton whose title contains `marker`, AXPresses it.
+    /// Returns true on success.
+    static func focusGhosttyTabByMarker(
         appRef: AXUIElement,
         marker: String
-    ) -> (window: AXUIElement, element: AXUIElement)? {
+    ) -> Bool {
         var windowsRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             appRef, kAXWindowsAttribute as CFString, &windowsRef
         ) == .success,
-              let windows = windowsRef as? [AXUIElement], !windows.isEmpty
-        else { return nil }
-
-        let deadline = Date().addingTimeInterval(0.05)  // 50 ms budget
-        var visited = 0
-
-        let titleOf: (AXUIElement) -> String? = { el in
-            var v: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(
-                el, kAXTitleAttribute as CFString, &v
-            ) == .success else { return nil }
-            return v as? String
-        }
-        let childrenOf: (AXUIElement) -> [AXUIElement] = { el in
-            var v: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(
-                el, kAXChildrenAttribute as CFString, &v
-            ) == .success else { return [] }
-            return (v as? [AXUIElement]) ?? []
-        }
+              let windows = windowsRef as? [AXUIElement] else { return false }
 
         for window in windows {
-            if let match = walk(
-                node: window,
-                marker: marker,
-                depth: 0,
-                maxDepth: 6,
-                visited: &visited,
-                maxVisited: 1000,
-                deadline: deadline,
-                titleOf: titleOf,
-                childrenOf: childrenOf
-            ) {
-                return (window, match)
+            guard let tabGroup = axFirstChild(of: window, whereRole: kAXTabGroupRole as String)
+            else { continue }
+
+            for button in axChildren(of: tabGroup) {
+                guard axStringAttr(button, kAXSubroleAttribute as String) == "AXTabButton",
+                      let title = axStringAttr(button, kAXTitleAttribute as String),
+                      title.contains(marker) else { continue }
+
+                if AXUIElementPerformAction(button, kAXPressAction as CFString) == .success {
+                    return true
+                }
             }
-            if Date() >= deadline || visited >= 1000 { break }
         }
-        return nil
+        return false
     }
 
-    /// High-level Ghostty (and similar AX-only terminals) tab+pane focus.
-    /// Returns true on success; caller should fall back to
-    /// `focusByAccessibility` on false.
+    /// Entry point called from `activateTerminal` for Ghostty. Calls
+    /// Layer A first (fast match on AXTabButton titles); on miss, calls
+    /// Layer A' (brute-force cycling — added in Task 7). Returns true on
+    /// any successful focus; false → caller falls back to `focusByAccessibility`.
     static func focusGhosttySession(
         app: NSRunningApplication,
         sessionId: String
     ) -> Bool {
         guard AXIsProcessTrusted() else {
-            NSLog("ZackEyes: focusGhostty layer=A skip=noPermission sid=%@", sessionId)
+            NSLog("ZackEyes: focusGhostty skip=noPermission sid=%{public}@", sessionId)
             return false
         }
         let marker = String(sessionId.prefix(8))
         let appRef = AXUIElementCreateApplication(app.processIdentifier)
         let start = Date()
 
-        if let (window, element) = axFindElementMatching(appRef: appRef, marker: marker) {
-            AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-            if CFEqual(window, element) == false {
-                AXUIElementSetAttributeValue(
-                    element, kAXFocusedAttribute as CFString, kCFBooleanTrue
-                )
-            }
+        if focusGhosttyTabByMarker(appRef: appRef, marker: marker) {
             let ms = Int(Date().timeIntervalSince(start) * 1000)
-            NSLog("ZackEyes: focusGhostty layer=A sid=%@ hit=1 elapsed=%dms", sessionId, ms)
+            NSLog("ZackEyes: focusGhostty layer=A sid=%{public}@ hit=1 elapsed=%dms", sessionId, ms)
             return true
         }
 
         let ms = Int(Date().timeIntervalSince(start) * 1000)
-        NSLog("ZackEyes: focusGhostty layer=A sid=%@ hit=0 elapsed=%dms", sessionId, ms)
+        NSLog("ZackEyes: focusGhostty layer=A sid=%{public}@ hit=0 elapsed=%dms", sessionId, ms)
+
+        // Layer A' added in Task 7. Stub for now: always returns false.
         return false
     }
 ```
 
-- [ ] **Step 2: Wire `focusGhosttySession` into `activateTerminal`**
+- [ ] **Step 2: Add the new `activateTerminal` overload**
 
-Find the existing switch case in `activateTerminal(containingPid:cwd:)` for Ghostty/Warp/Kitty/Alacritty (around line 169–177 of the original file). Add a **new overload** just above the existing function, keeping the old one intact for non-session callers:
+Add a **new overload** to the `TerminalLocator` enum, near the
+existing `activateTerminal(containingPid:cwd:)`. Keep the old one
+intact — other callers (e.g. `AppDelegate` notification tap) use it:
 
 ```swift
     /// Variant that knows the session id — enables Ghostty Layer A matching.
@@ -1221,7 +1057,7 @@ Find the existing switch case in `activateTerminal(containingPid:cwd:)` for Ghos
             return true
         case "com.mitchellh.ghostty":
             if focusGhosttySession(app: app, sessionId: sessionId) { return true }
-            // Layer C fallback
+            // Final fallback: existing AX window-title raise
             return focusByAccessibility(app: app, cwd: cwd)
         case "dev.warp.Warp-Stable", "dev.warp.Warp",
              "io.alacritty",
@@ -1233,7 +1069,8 @@ Find the existing switch case in `activateTerminal(containingPid:cwd:)` for Ghos
     }
 ```
 
-**Do not modify** the existing `activateTerminal(containingPid:cwd:)` method — it stays in place for callers that don't have a session id (notification tap, etc.).
+**Do not modify** the existing `activateTerminal(containingPid:cwd:)`
+method — it stays in place for non-session callers.
 
 - [ ] **Step 3: Build**
 
@@ -1243,164 +1080,162 @@ swift build 2>&1 | tail -10
 
 Expected: clean build.
 
-- [ ] **Step 4: Full test suite**
+- [ ] **Step 4: Run full test suite**
 
 ```bash
 swift test 2>&1 | tail -20
 ```
 
-Expected: all tests pass. No AX calls are exercised at unit-test time.
+Expected: all existing tests still pass. No unit tests for Layer A
+(thin glue over real AX); Task 9 covers it manually.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add Sources/AppLib/Terminal/TerminalLocator.swift
-git commit -m "feat(terminal): Ghostty Layer A — AX tree walk tab+pane focus
+git commit -m "feat(terminal): Ghostty Layer A — AXTabButton title match
 
-New overload activateTerminal(containingPid:cwd:sessionId:) routes
-Ghostty through focusGhosttySession, which walks the AX subtree of
-each Ghostty window looking for an element whose title contains
-the sid marker. On hit: AXRaise the ancestor window and set
-kAXFocusedAttribute on the matched element. Falls back to the
-existing focusByAccessibility on miss. iTerm2/Terminal paths
-untouched.
+New focusGhosttySession + focusGhosttyTabByMarker. Enumerates
+Ghostty's AXTabGroup children, finds the AXTabButton whose title
+contains the sid marker (written via Bridge OSC2), and AXPresses
+it to switch tabs. Also adds
+activateTerminal(containingPid:cwd:sessionId:) overload so the
+notch click path can pass the session id through. iTerm2 and
+Apple Terminal paths untouched.
 "
 ```
 
 ---
 
-## Task 7: focusGhosttySession — Layer B (Window menu AXPress)
+## Task 7: focusGhosttySession — Layer A' (brute-force cycling)
 
-Add the Window-menu fallback between Layer A and Layer C.
+The slow-path fallback when Layer A misses — i.e. the claude pane
+is in a split tab and isn't currently focused, so the AXTabButton
+title reflects the other pane and doesn't contain the sid marker.
+
+Iterates each AXTabButton, pressing it to switch tabs, and after
+each switch cycles the tab's panes via synthetic `Cmd+Option+Right`
+keystrokes (Ghostty's default `goto_split:next` keybinding),
+reading the window title after each step until the marker appears
+or the 600 ms deadline is hit.
 
 **Files:**
 - Modify: `Sources/AppLib/Terminal/TerminalLocator.swift`
 
-- [ ] **Step 1: Add `pressWindowMenuItemMatching` to TerminalLocator**
+- [ ] **Step 1: Add `focusGhosttyByCycling` to TerminalLocator**
 
-Append to the `TerminalLocator` enum, below `focusGhosttySession`:
+At the end of the `TerminalLocator` enum (after the Layer A code from
+Task 6), add:
 
 ```swift
-    /// Layer B fallback: press the matching item in the app's Window menu.
-    /// Works whenever the target tab's focused pane has a title containing
-    /// our marker — macOS auto-populates the Window menu with tab titles.
-    static func pressWindowMenuItemMatching(
+    // MARK: - Ghostty Layer A': brute-force tab + pane cycling
+
+    /// Post a Cmd+Option+Right keystroke via CGEvent. This is Ghostty's
+    /// default `goto_split:next` keybinding. Users who remapped it
+    /// will see Layer A' fall through silently.
+    private static func postCmdOptionRight() {
+        let src = CGEventSource(stateID: .hidSystemState)
+        let flags: CGEventFlags = [.maskCommand, .maskAlternate]
+        let keyRightArrow: CGKeyCode = 0x7C
+        if let down = CGEvent(
+            keyboardEventSource: src, virtualKey: keyRightArrow, keyDown: true
+        ) {
+            down.flags = flags
+            down.post(tap: .cghidEventTap)
+        }
+        if let up = CGEvent(
+            keyboardEventSource: src, virtualKey: keyRightArrow, keyDown: false
+        ) {
+            up.flags = flags
+            up.post(tap: .cghidEventTap)
+        }
+    }
+
+    /// Slow-path fallback for Ghostty. Iterates tabs, within each tab
+    /// cycles panes via Cmd+Option+Right, checking the window title
+    /// against the marker after each step. Bounded by a 600 ms deadline
+    /// and `maxPanesPerTab` iterations per tab.
+    static func focusGhosttyByCycling(
         appRef: AXUIElement,
         marker: String,
-        cwd: String?
+        maxPanesPerTab: Int = 4
     ) -> Bool {
-        // Step 1: get menu bar
-        var barRef: CFTypeRef?
+        var windowsRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
-            appRef, kAXMenuBarAttribute as CFString, &barRef
-        ) == .success, let menuBar = barRef else { return false }
-        // Runtime-cast via CF type check
-        guard CFGetTypeID(menuBar) == AXUIElementGetTypeID() else { return false }
-        let menuBarEl = menuBar as! AXUIElement
-
-        // Step 2: find "Window" top-level item (localized)
-        var topItemsRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            menuBarEl, kAXChildrenAttribute as CFString, &topItemsRef
+            appRef, kAXWindowsAttribute as CFString, &windowsRef
         ) == .success,
-              let topItems = topItemsRef as? [AXUIElement] else { return false }
+              let windows = windowsRef as? [AXUIElement],
+              let window = windows.first else { return false }
 
-        let windowMenuTitles: Set<String> = ["Window", "窗口", "ウインドウ", "창"]
-        var windowBarItem: AXUIElement?
-        for item in topItems {
-            var t: CFTypeRef?
-            if AXUIElementCopyAttributeValue(
-                item, kAXTitleAttribute as CFString, &t
-            ) == .success,
-               let title = t as? String,
-               windowMenuTitles.contains(title) {
-                windowBarItem = item
-                break
+        guard let tabGroup = axFirstChild(of: window, whereRole: kAXTabGroupRole as String)
+        else { return false }
+
+        let tabButtons = axChildren(of: tabGroup).filter { el in
+            axStringAttr(el, kAXSubroleAttribute as String) == "AXTabButton"
+        }
+        guard !tabButtons.isEmpty else { return false }
+
+        let deadline = Date().addingTimeInterval(0.6)  // 600 ms hard budget
+
+        for button in tabButtons {
+            if Date() >= deadline { return false }
+
+            _ = AXUIElementPerformAction(button, kAXPressAction as CFString)
+            Thread.sleep(forTimeInterval: 0.02)
+
+            if let title = axStringAttr(window, kAXTitleAttribute as String),
+               title.contains(marker) {
+                return true
+            }
+
+            for _ in 0..<maxPanesPerTab {
+                if Date() >= deadline { return false }
+                postCmdOptionRight()
+                Thread.sleep(forTimeInterval: 0.02)
+
+                if let title = axStringAttr(window, kAXTitleAttribute as String),
+                   title.contains(marker) {
+                    return true
+                }
             }
         }
-        guard let barItem = windowBarItem else { return false }
-
-        // Step 3: descend into the AXMenu
-        var menuRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            barItem, kAXChildrenAttribute as CFString, &menuRef
-        ) == .success,
-              let menuArr = menuRef as? [AXUIElement],
-              let menu = menuArr.first else { return false }
-
-        var itemsRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(
-            menu, kAXChildrenAttribute as CFString, &itemsRef
-        ) == .success,
-              let items = itemsRef as? [AXUIElement] else { return false }
-
-        // Fixed items to skip — static English list for MVP
-        let skipTitles: Set<String> = [
-            "Minimize", "Zoom", "Move Tab to New Window",
-            "Merge All Windows", "Show Previous Tab", "Show Next Tab",
-            "Move Tab Left", "Move Tab Right", "Bring All to Front",
-            "Close Tab", "Close Window",
-        ]
-
-        let basename = (cwd as NSString?)?.lastPathComponent ?? ""
-        var best: (el: AXUIElement, score: Int)?
-
-        for item in items {
-            var t: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(
-                item, kAXTitleAttribute as CFString, &t
-            ) == .success,
-                  let title = t as? String,
-                  !title.isEmpty,
-                  !skipTitles.contains(title) else { continue }
-
-            var score = 0
-            if title.contains(marker) { score = 5 }
-            else if !basename.isEmpty, title.contains(basename) { score = 2 }
-            else { continue }
-
-            if score > (best?.score ?? 0) {
-                best = (item, score)
-            }
-        }
-
-        guard let target = best, target.score >= 3 else { return false }
-        let result = AXUIElementPerformAction(target.el, kAXPressAction as CFString)
-        NSLog("ZackEyes: focusGhostty layer=B hit=%d score=%d", result == .success ? 1 : 0, target.score)
-        return result == .success
+        return false
     }
 ```
 
-- [ ] **Step 2: Call Layer B from `focusGhosttySession`**
+- [ ] **Step 2: Invoke Layer A' from `focusGhosttySession`**
 
-Edit `focusGhosttySession` (added in Task 6). After the Layer A block returns false (before `return false`), insert Layer B:
+Replace the Layer A' stub in `focusGhosttySession` (added in Task 6).
 
-Replace:
+Find this block:
 
 ```swift
         let ms = Int(Date().timeIntervalSince(start) * 1000)
-        NSLog("ZackEyes: focusGhostty layer=A sid=%@ hit=0 elapsed=%dms", sessionId, ms)
+        NSLog("ZackEyes: focusGhostty layer=A sid=%{public}@ hit=0 elapsed=%dms", sessionId, ms)
+
+        // Layer A' added in Task 7. Stub for now: always returns false.
         return false
 ```
 
-With:
+And replace with:
 
 ```swift
         let ms = Int(Date().timeIntervalSince(start) * 1000)
-        NSLog("ZackEyes: focusGhostty layer=A sid=%@ hit=0 elapsed=%dms", sessionId, ms)
+        NSLog("ZackEyes: focusGhostty layer=A sid=%{public}@ hit=0 elapsed=%dms", sessionId, ms)
 
-        // Layer B — Window menu press
-        if pressWindowMenuItemMatching(
-            appRef: appRef,
-            marker: marker,
-            cwd: nil  // basename not available here; marker-only match in Layer B
-        ) {
+        // Layer A' — brute-force tab + pane cycling
+        let cycleStart = Date()
+        if focusGhosttyByCycling(appRef: appRef, marker: marker) {
+            let cycleMs = Int(Date().timeIntervalSince(cycleStart) * 1000)
+            NSLog("ZackEyes: focusGhostty layer=A-cycling sid=%{public}@ hit=1 elapsed=%dms",
+                  sessionId, cycleMs)
             return true
         }
+        let cycleMs = Int(Date().timeIntervalSince(cycleStart) * 1000)
+        NSLog("ZackEyes: focusGhostty layer=A-cycling sid=%{public}@ hit=0 elapsed=%dms",
+              sessionId, cycleMs)
         return false
 ```
-
-Note: we intentionally pass `cwd: nil` so Layer B only matches on the marker (score 5). Basename matching is left to Layer C (`focusByAccessibility`). This keeps Layer B's failure mode strict — if the marker is missing, fall through to Layer C rather than guess wrong in Layer B.
 
 - [ ] **Step 3: Build**
 
@@ -1410,7 +1245,7 @@ swift build 2>&1 | tail -10
 
 Expected: clean build.
 
-- [ ] **Step 4: Full test suite**
+- [ ] **Step 4: Run full test suite**
 
 ```bash
 swift test 2>&1 | tail -20
@@ -1422,18 +1257,23 @@ Expected: all existing tests still pass.
 
 ```bash
 git add Sources/AppLib/Terminal/TerminalLocator.swift
-git commit -m "feat(terminal): Ghostty Layer B — Window menu AXPress fallback
+git commit -m "feat(terminal): Ghostty Layer A' — brute-force tab + pane cycling
 
-When Layer A can't find a matching AX element (e.g. Ghostty doesn't
-expose non-focused pane titles), try pressing the matching item in
-the app's Window menu. macOS auto-populates Window menu with the
-title of each tab's focused pane, so this catches tab-level matches
-when the claude pane is the focused one. Marker-only match — no
-basename guessing, that stays in Layer C.
+Slow-path fallback when Layer A can't find the sid marker in any
+AXTabButton title (split tab with non-focused claude pane case).
+Iterates tabs via AXPress and within each tab cycles panes via
+synthetic Cmd+Option+Right keystrokes (Ghostty's default
+goto_split:next), reading the window title after each step.
+Bounded by 600 ms wall-clock deadline and 4 pane cycles per tab.
+
+Depends on Ghostty's default split-navigation keybinding; users
+who remapped it will see this layer silently fall through to
+Layer C (focusByAccessibility).
 "
 ```
 
 ---
+
 
 ## Task 8: NotchViewModel wiring — call the new overload
 
@@ -1549,15 +1389,35 @@ log stream --predicate 'process == "ZackEyes"' --info 2>&1 | grep focusGhostty
 
 Expected: `layer=A sid=... hit=1 elapsed=Xms` on successful precision hits.
 
-- [ ] **Step 4: Split-pane test**
+- [ ] **Step 4: Split-pane test (Layer A' code path)**
 
-In one Ghostty tab: create a vertical split (Cmd+D by default). One pane runs a plain shell, the other pane runs claude. Submit an initial prompt in the claude pane.
+In one Ghostty tab: create a vertical split (Cmd+D by default). One
+pane runs a plain shell, the other pane runs claude. Submit an
+initial prompt in the claude pane so Bridge writes the OSC 2 title.
 
-Switch focus to the plain shell pane (so the tab title shows the shell's title, not claude's). Click the claude session card in ZackEyes.
+**Switch focus to the plain shell pane** (so that tab's AXTabButton
+title now reflects the shell, NOT claude — this is what forces
+Layer A to miss and Layer A' to kick in). Click the claude session
+card in ZackEyes.
 
 **Expected**:
-- If Layer A is viable (Task 0 result): the claude pane receives focus — cursor should land inside it, tab title flips to the claude pane's title.
-- If Layer A is not viable: at minimum the correct tab becomes active; pane may still be the plain shell. (This is the degraded case documented in the spec.)
+- Ghostty comes forward
+- Brief visible pane switch inside the split tab (Layer A' cycles
+  via Cmd+Option+Right) — ~100 ms
+- Final state: focus lands on the **claude pane**, tab title
+  flips to the claude pane's title (`{basename} · {prompt} · ze:{sid[:8]}`)
+- Log line `ZackEyes: focusGhostty layer=A-cycling sid=... hit=1 elapsed=Xms`
+
+If the focus lands on a different pane or no transition happens,
+double-check that Ghostty's `goto_split:next` is still bound to
+`Cmd+Option+Right` (it's the default). If the user remapped it,
+Layer A' fails silently and we fall through to Layer C.
+
+Verify with:
+
+```bash
+/bin/bash -c 'log show --last 2m --predicate "process == \"ZackEyes\"" --info 2>&1 | grep focusGhostty'
+```
 
 - [ ] **Step 5: iTerm2 regression test**
 
@@ -1589,10 +1449,13 @@ Append an entry under the current unreleased section:
 
 ```markdown
 - **Ghostty**: precise tab + split-pane click-to-jump. ZackEyes now
-  embeds the session id in each tab title via an OSC 2 escape (written
-  by Bridge on every hook event) and uses a bounded AX tree walk to
-  focus the exact pane on click. Layered fallbacks (Window menu
-  AXPress, existing AX raise) keep less-common cases reasonable.
+  embeds the session id in each tab title via an OSC 2 escape
+  (written by Bridge on every hook event). On click, Layer A
+  enumerates Ghostty's AX tab buttons and presses the one whose
+  title contains the session id marker. When the claude pane is in
+  a split and another pane is focused, Layer A' cycles tabs and
+  panes via synthetic Cmd+Option+Right keystrokes (bounded 600 ms)
+  until the marker is found.
 ```
 
 - [ ] **Step 9: Commit the changelog**
