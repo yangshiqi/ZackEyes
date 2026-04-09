@@ -65,3 +65,49 @@ public enum TerminalTitleWriter {
         "\u{001B}]2;\(title)\u{0007}"
     }
 }
+
+/// Disk cache of the first user prompt per session, used by
+/// `TerminalTitleWriter` to keep tab titles stable once set.
+///
+/// - Directory: `~/.zackeyes/osc2-titles/` by default
+/// - Filename: first 16 ASCII chars of the session UUID
+/// - Content: UTF-8 plain text, the (sanitized, truncated) first prompt
+public struct TitleCache {
+    public let directory: String
+
+    public static let defaultDirectory: String = {
+        let home = NSHomeDirectory()
+        return (home as NSString).appendingPathComponent(".zackeyes/osc2-titles")
+    }()
+
+    public init(directory: String = TitleCache.defaultDirectory) {
+        self.directory = directory
+    }
+
+    public func read(sessionId: String) -> String? {
+        let path = filePath(for: sessionId)
+        guard FileManager.default.fileExists(atPath: path) else { return nil }
+        return try? String(contentsOfFile: path, encoding: .utf8)
+    }
+
+    /// Atomic first-write-wins: write only if the file does not yet exist.
+    /// Silent on all errors (the title feature is fire-and-forget).
+    public func writeIfMissing(sessionId: String, content: String) {
+        let path = filePath(for: sessionId)
+        if FileManager.default.fileExists(atPath: path) { return }
+
+        // Ensure parent dir exists
+        try? FileManager.default.createDirectory(
+            atPath: directory,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+
+        try? content.write(toFile: path, atomically: true, encoding: .utf8)
+    }
+
+    private func filePath(for sessionId: String) -> String {
+        let safe = String(sessionId.prefix(16))
+        return (directory as NSString).appendingPathComponent(safe)
+    }
+}
