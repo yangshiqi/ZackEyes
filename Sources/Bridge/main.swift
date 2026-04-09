@@ -37,6 +37,15 @@ if payloadData.last != UInt8(ascii: "\n") {
     payloadData.append(UInt8(ascii: "\n"))
 }
 
+// MARK: - Step 3.5: Refresh terminal tab title (OSC 2)
+// Best-effort; any failure is silent and does not affect the socket path.
+TerminalTitleWriter.writeIfPossible(
+    sessionId: jsonObject["session_id"] as? String,
+    cwd: jsonObject["cwd"] as? String,
+    prompt: jsonObject["prompt"] as? String,
+    ppid: getppid()
+)
+
 // MARK: - Step 4 & 5: Create client and route by event
 
 let client = BridgeSocketClient(path: "/tmp/zackeyes.sock")

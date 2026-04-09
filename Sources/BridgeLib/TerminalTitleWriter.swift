@@ -64,6 +64,54 @@ public enum TerminalTitleWriter {
     public static func oscEscape(title: String) -> String {
         "\u{001B}]2;\(title)\u{0007}"
     }
+
+    /// Fire-and-forget OSC 2 write. Silent on every failure path.
+    /// Sequence of operations:
+    ///   1. Resolve tty from `ppid` (Bridge's parent = claude PID). nil → return.
+    ///   2. If `prompt` given and cache file missing → write cache (first wins).
+    ///   3. Read cached prompt (may be nil).
+    ///   4. Compose title + OSC 2.
+    ///   5. Open /dev/ttys… for write, write bytes, close. Silent on error.
+    public static func writeIfPossible(
+        sessionId: String?,
+        cwd: String?,
+        prompt: String?,
+        ppid: Int32,
+        cache: TitleCache = TitleCache()
+    ) {
+        guard let sid = sessionId, !sid.isEmpty,
+              let cwd = cwd, !cwd.isEmpty,
+              let tty = TTYUtil.ttyPath(pid: ppid) else {
+            return
+        }
+
+        // Cache the first prompt if we have one and none is stored yet
+        if let p = prompt, !p.isEmpty {
+            let sanitized = sanitizePrompt(p)
+            let clipped = truncateToChars(sanitized, max: 30)
+            if !clipped.isEmpty {
+                cache.writeIfMissing(sessionId: sid, content: clipped)
+            }
+        }
+
+        let cachedPrompt = cache.read(sessionId: sid)
+        let title = formatTitle(cwd: cwd, sessionId: sid, prompt: cachedPrompt)
+        let osc   = oscEscape(title: title)
+        guard let data = osc.data(using: .utf8) else { return }
+
+        // Open tty, write, close. Every error path is silent.
+        guard let fh = FileHandle(forWritingAtPath: tty) else {
+            NSLog("ZackEyes: TitleWriter open-fail tty=%{public}@ sid=%{public}@", tty, sid)
+            return
+        }
+        do {
+            try fh.write(contentsOf: data)
+            try fh.close()
+            NSLog("ZackEyes: TitleWriter tty=%{public}@ sid=%{public}@ bytes=%d ok=1", tty, sid, data.count)
+        } catch {
+            NSLog("ZackEyes: TitleWriter write-fail tty=%{public}@ sid=%{public}@ err=%{public}@", tty, sid, "\(error)")
+        }
+    }
 }
 
 /// Disk cache of the first user prompt per session, used by
