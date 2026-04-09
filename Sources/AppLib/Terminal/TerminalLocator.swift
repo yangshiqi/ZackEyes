@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import Darwin
 import Foundation
+import Shared
 
 /// Walks the process tree from a given PID to find the containing terminal app,
 /// then activates the correct tab/window via terminal-specific AppleScript.
@@ -151,7 +152,7 @@ public enum TerminalLocator {
             return false
         }
 
-        let tty = ttyPath(of: Int32(pid))
+        let tty = TTYUtil.ttyPath(pid: Int32(pid))
         NSLog("ZackEyes: activating terminal %{public}@ (tty=%{public}@, cwd=%{public}@) for pid %d",
               app.bundleIdentifier ?? "?", tty ?? "nil", cwd ?? "nil", pid)
 
@@ -175,32 +176,6 @@ public enum TerminalLocator {
         default:
             return true
         }
-    }
-
-    // MARK: - tty lookup (via sysctl + ps fallback)
-
-    /// Get the tty path of a process, e.g. "/dev/ttys003"
-    static func ttyPath(of pid: Int32) -> String? {
-        // Use `ps -p PID -o tty=` to get the tty name
-        let task = Process()
-        task.launchPath = "/bin/ps"
-        task.arguments = ["-p", "\(pid)", "-o", "tty="]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe()
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            return nil
-        }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let raw = String(data: data, encoding: .utf8) else { return nil }
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != "?" else { return nil }
-        // `ps` returns e.g. "ttys003" — prepend /dev/
-        if trimmed.hasPrefix("/dev/") { return trimmed }
-        return "/dev/\(trimmed)"
     }
 
     // MARK: - AppleScript focus handlers
