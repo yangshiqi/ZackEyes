@@ -305,4 +305,35 @@ public enum TerminalLocator {
         guard result == 0 else { return nil }
         return info.kp_eproc.e_ppid
     }
+
+    // MARK: - AX attribute helpers (used by Ghostty Layer A / A')
+
+    /// Read a string-valued AX attribute. Returns nil if the attribute
+    /// is missing or not a String.
+    static func axStringAttr(_ el: AXUIElement, _ attr: String) -> String? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &ref) == .success
+        else { return nil }
+        return ref as? String
+    }
+
+    /// Read the children of an AX element. Returns an empty array if
+    /// the attribute is missing or not an array.
+    static func axChildren(of el: AXUIElement) -> [AXUIElement] {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            el, kAXChildrenAttribute as CFString, &ref
+        ) == .success else { return [] }
+        return (ref as? [AXUIElement]) ?? []
+    }
+
+    /// Find the first direct child of `el` whose `AXRole` equals `role`.
+    static func axFirstChild(of el: AXUIElement, whereRole role: String) -> AXUIElement? {
+        for child in axChildren(of: el) {
+            if axStringAttr(child, kAXRoleAttribute as String) == role {
+                return child
+            }
+        }
+        return nil
+    }
 }
