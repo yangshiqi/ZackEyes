@@ -456,43 +456,36 @@ public enum TerminalLocator {
         return false
     }
 
-    // MARK: - Ghostty Layer A': brute-force tab + pane cycling
+    // MARK: - Ghostty Layer A': targeted tab + AX pane focus
 
-    /// Post a Cmd+Option+Right keystroke via CGEvent. This is Ghostty's
-    /// default `goto_split:next` keybinding. Users who remapped it
-    /// will see Layer A' fall through silently.
-    private static func postCmdOptionRight() {
-        let src = CGEventSource(stateID: .hidSystemState)
-        let flags: CGEventFlags = [.maskCommand, .maskAlternate]
-        let keyRightArrow: CGKeyCode = 0x7C
-        if let down = CGEvent(
-            keyboardEventSource: src, virtualKey: keyRightArrow, keyDown: true
-        ) {
-            down.flags = flags
-            down.post(tap: .cghidEventTap)
+    /// Recursively collect all AXTextArea elements within `element`.
+    /// Each Ghostty pane contains one AXTextArea (the terminal surface).
+    private static func findAllTextAreas(
+        in element: AXUIElement,
+        depth: Int = 0,
+        maxDepth: Int = 6
+    ) -> [AXUIElement] {
+        if depth > maxDepth { return [] }
+        var results: [AXUIElement] = []
+        if axStringAttr(element, kAXRoleAttribute as String) == "AXTextArea" {
+            results.append(element)
         }
-        if let up = CGEvent(
-            keyboardEventSource: src, virtualKey: keyRightArrow, keyDown: false
-        ) {
-            up.flags = flags
-            up.post(tap: .cghidEventTap)
+        for child in axChildren(of: element) {
+            results.append(contentsOf: findAllTextAreas(in: child, depth: depth + 1, maxDepth: maxDepth))
         }
+        return results
     }
 
-    /// Targeted Layer A' fallback. Instead of cycling ALL tabs, finds the
-    /// ONE tab whose title contains the `cwd` basename (even when the sid
-    /// marker is missing — e.g. a split tab where the shell pane is focused
-    /// and the tab title shows the shell's CWD). Switches to that tab,
-    /// then cycles panes via Cmd+Option+Right until the sid marker appears
-    /// in the window title or the budget is exhausted.
+    /// Targeted Layer A' fallback. Finds the ONE tab whose title contains
+    /// the `cwd` basename, switches to it, then focuses each AXTextArea
+    /// (pane) in turn via `kAXFocusedAttribute` until the window title
+    /// contains the sid marker.
     ///
-    /// Visual effect: at most 1 tab switch + up to `maxPanesPerTab` pane
-    /// toggles — much less disruptive than scanning all tabs.
+    /// Pure AX — no synthetic keystrokes, no menu bar flash.
     static func focusGhosttyByCwdThenCyclePanes(
         appRef: AXUIElement,
         marker: String,
-        cwd: String,
-        maxPanesPerTab: Int = 4
+        cwd: String
     ) -> Bool {
         let basename = (cwd as NSString).lastPathComponent
         guard !basename.isEmpty else { return false }
@@ -523,15 +516,18 @@ public enum TerminalLocator {
         _ = AXUIElementPerformAction(button, kAXPressAction as CFString)
         Thread.sleep(forTimeInterval: 0.03)
 
-        // Check if the window title already has the marker (maybe pane is now focused)
+        // Check if the window title already has the marker
         if let title = axStringAttr(window, kAXTitleAttribute as String),
            title.contains(marker) {
             return true
         }
 
-        // Cycle panes within this tab looking for the marker
-        for _ in 0..<maxPanesPerTab {
-            postCmdOptionRight()
+        // Cycle panes by focusing each AXTextArea in turn
+        let textAreas = findAllTextAreas(in: window)
+        for textArea in textAreas {
+            AXUIElementSetAttributeValue(
+                textArea, kAXFocusedAttribute as CFString, kCFBooleanTrue
+            )
             Thread.sleep(forTimeInterval: 0.03)
 
             if let title = axStringAttr(window, kAXTitleAttribute as String),
