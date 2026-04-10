@@ -103,7 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 6. Discover already-running sessions from ~/.claude/projects/
         let scanner = SessionScanner()
-        let detected = scanner.scan(recencyMinutes: 30)
+        let detected = scanner.scan(recencyMinutes: 480)  // 8h — covers a full work day
         sessionStore.importDetectedSessions(detected)
         NSLog("ZackEyes: imported %d detected sessions", detected.count)
     }
