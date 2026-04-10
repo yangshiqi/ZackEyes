@@ -206,7 +206,7 @@ public enum TerminalLocator {
             if let tty = tty { return focusAppleTerminal(tty: tty) }
             return true
         case "com.mitchellh.ghostty":
-            if focusGhosttySession(app: app, sessionId: sessionId) { return true }
+            if focusGhosttySession(app: app, sessionId: sessionId, cwd: cwd) { return true }
             // Final fallback: existing AX window-title raise
             return focusByAccessibility(app: app, cwd: cwd)
         case "dev.warp.Warp-Stable", "dev.warp.Warp",
@@ -415,7 +415,8 @@ public enum TerminalLocator {
     /// now, Layer A miss returns false immediately.
     static func focusGhosttySession(
         app: NSRunningApplication,
-        sessionId: String
+        sessionId: String,
+        cwd: String?
     ) -> Bool {
         guard AXIsProcessTrusted() else {
             NSLog("ZackEyes: focusGhostty skip=noPermission sid=%{public}@", sessionId)
@@ -425,6 +426,7 @@ public enum TerminalLocator {
         let appRef = AXUIElementCreateApplication(app.processIdentifier)
         let start = Date()
 
+        // Layer A — fast path: AXTabButton title contains sid marker
         if focusGhosttyTabByMarker(appRef: appRef, marker: marker) {
             let ms = Int(Date().timeIntervalSince(start) * 1000)
             NSLog("ZackEyes: focusGhostty layer=A sid=%{public}@ hit=1 elapsed=%dms", sessionId, ms)
@@ -434,17 +436,23 @@ public enum TerminalLocator {
         let ms = Int(Date().timeIntervalSince(start) * 1000)
         NSLog("ZackEyes: focusGhostty layer=A sid=%{public}@ hit=0 elapsed=%dms", sessionId, ms)
 
-        // Layer A' — brute-force tab + pane cycling
-        let cycleStart = Date()
-        if focusGhosttyByCycling(appRef: appRef, marker: marker) {
+        // Layer A' — targeted: find the ONE tab matching cwd basename,
+        // switch to it, then cycle panes looking for the sid marker.
+        // Only 1 tab switch + up to 4 pane cycles — no "乱跳".
+        if let cwd = cwd {
+            let cycleStart = Date()
+            if focusGhosttyByCwdThenCyclePanes(
+                appRef: appRef, marker: marker, cwd: cwd
+            ) {
+                let cycleMs = Int(Date().timeIntervalSince(cycleStart) * 1000)
+                NSLog("ZackEyes: focusGhostty layer=A' sid=%{public}@ hit=1 elapsed=%dms",
+                      sessionId, cycleMs)
+                return true
+            }
             let cycleMs = Int(Date().timeIntervalSince(cycleStart) * 1000)
-            NSLog("ZackEyes: focusGhostty layer=A-cycling sid=%{public}@ hit=1 elapsed=%dms",
+            NSLog("ZackEyes: focusGhostty layer=A' sid=%{public}@ hit=0 elapsed=%dms",
                   sessionId, cycleMs)
-            return true
         }
-        let cycleMs = Int(Date().timeIntervalSince(cycleStart) * 1000)
-        NSLog("ZackEyes: focusGhostty layer=A-cycling sid=%{public}@ hit=0 elapsed=%dms",
-              sessionId, cycleMs)
         return false
     }
 
@@ -471,15 +479,24 @@ public enum TerminalLocator {
         }
     }
 
-    /// Slow-path fallback for Ghostty. Iterates tabs, within each tab
-    /// cycles panes via Cmd+Option+Right, checking the window title
-    /// against the marker after each step. Bounded by a 600 ms deadline
-    /// and `maxPanesPerTab` iterations per tab.
-    static func focusGhosttyByCycling(
+    /// Targeted Layer A' fallback. Instead of cycling ALL tabs, finds the
+    /// ONE tab whose title contains the `cwd` basename (even when the sid
+    /// marker is missing — e.g. a split tab where the shell pane is focused
+    /// and the tab title shows the shell's CWD). Switches to that tab,
+    /// then cycles panes via Cmd+Option+Right until the sid marker appears
+    /// in the window title or the budget is exhausted.
+    ///
+    /// Visual effect: at most 1 tab switch + up to `maxPanesPerTab` pane
+    /// toggles — much less disruptive than scanning all tabs.
+    static func focusGhosttyByCwdThenCyclePanes(
         appRef: AXUIElement,
         marker: String,
+        cwd: String,
         maxPanesPerTab: Int = 4
     ) -> Bool {
+        let basename = (cwd as NSString).lastPathComponent
+        guard !basename.isEmpty else { return false }
+
         var windowsRef: CFTypeRef?
         guard AXUIElementCopyAttributeValue(
             appRef, kAXWindowsAttribute as CFString, &windowsRef
@@ -490,33 +507,36 @@ public enum TerminalLocator {
         guard let tabGroup = axFirstChild(of: window, whereRole: "AXTabGroup")
         else { return false }
 
-        let tabButtons = axChildren(of: tabGroup).filter { el in
-            axStringAttr(el, kAXSubroleAttribute as String) == "AXTabButton"
+        // Find the tab whose title contains the cwd basename
+        var targetButton: AXUIElement?
+        for button in axChildren(of: tabGroup) {
+            guard axStringAttr(button, kAXSubroleAttribute as String) == "AXTabButton",
+                  let title = axStringAttr(button, kAXTitleAttribute as String),
+                  title.contains(basename) else { continue }
+            targetButton = button
+            break
         }
-        guard !tabButtons.isEmpty else { return false }
 
-        let deadline = Date().addingTimeInterval(0.6)  // 600 ms hard budget
+        guard let button = targetButton else { return false }
 
-        for button in tabButtons {
-            if Date() >= deadline { return false }
+        // Switch to that tab
+        _ = AXUIElementPerformAction(button, kAXPressAction as CFString)
+        Thread.sleep(forTimeInterval: 0.03)
 
-            _ = AXUIElementPerformAction(button, kAXPressAction as CFString)
-            Thread.sleep(forTimeInterval: 0.02)
+        // Check if the window title already has the marker (maybe pane is now focused)
+        if let title = axStringAttr(window, kAXTitleAttribute as String),
+           title.contains(marker) {
+            return true
+        }
+
+        // Cycle panes within this tab looking for the marker
+        for _ in 0..<maxPanesPerTab {
+            postCmdOptionRight()
+            Thread.sleep(forTimeInterval: 0.03)
 
             if let title = axStringAttr(window, kAXTitleAttribute as String),
                title.contains(marker) {
                 return true
-            }
-
-            for _ in 0..<maxPanesPerTab {
-                if Date() >= deadline { return false }
-                postCmdOptionRight()
-                Thread.sleep(forTimeInterval: 0.02)
-
-                if let title = axStringAttr(window, kAXTitleAttribute as String),
-                   title.contains(marker) {
-                    return true
-                }
             }
         }
         return false
