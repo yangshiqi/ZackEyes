@@ -434,7 +434,91 @@ public enum TerminalLocator {
         let ms = Int(Date().timeIntervalSince(start) * 1000)
         NSLog("ZackEyes: focusGhostty layer=A sid=%{public}@ hit=0 elapsed=%dms", sessionId, ms)
 
-        // Layer A' added in Task 7. Stub for now: always returns false.
+        // Layer A' — brute-force tab + pane cycling
+        let cycleStart = Date()
+        if focusGhosttyByCycling(appRef: appRef, marker: marker) {
+            let cycleMs = Int(Date().timeIntervalSince(cycleStart) * 1000)
+            NSLog("ZackEyes: focusGhostty layer=A-cycling sid=%{public}@ hit=1 elapsed=%dms",
+                  sessionId, cycleMs)
+            return true
+        }
+        let cycleMs = Int(Date().timeIntervalSince(cycleStart) * 1000)
+        NSLog("ZackEyes: focusGhostty layer=A-cycling sid=%{public}@ hit=0 elapsed=%dms",
+              sessionId, cycleMs)
+        return false
+    }
+
+    // MARK: - Ghostty Layer A': brute-force tab + pane cycling
+
+    /// Post a Cmd+Option+Right keystroke via CGEvent. This is Ghostty's
+    /// default `goto_split:next` keybinding. Users who remapped it
+    /// will see Layer A' fall through silently.
+    private static func postCmdOptionRight() {
+        let src = CGEventSource(stateID: .hidSystemState)
+        let flags: CGEventFlags = [.maskCommand, .maskAlternate]
+        let keyRightArrow: CGKeyCode = 0x7C
+        if let down = CGEvent(
+            keyboardEventSource: src, virtualKey: keyRightArrow, keyDown: true
+        ) {
+            down.flags = flags
+            down.post(tap: .cghidEventTap)
+        }
+        if let up = CGEvent(
+            keyboardEventSource: src, virtualKey: keyRightArrow, keyDown: false
+        ) {
+            up.flags = flags
+            up.post(tap: .cghidEventTap)
+        }
+    }
+
+    /// Slow-path fallback for Ghostty. Iterates tabs, within each tab
+    /// cycles panes via Cmd+Option+Right, checking the window title
+    /// against the marker after each step. Bounded by a 600 ms deadline
+    /// and `maxPanesPerTab` iterations per tab.
+    static func focusGhosttyByCycling(
+        appRef: AXUIElement,
+        marker: String,
+        maxPanesPerTab: Int = 4
+    ) -> Bool {
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            appRef, kAXWindowsAttribute as CFString, &windowsRef
+        ) == .success,
+              let windows = windowsRef as? [AXUIElement],
+              let window = windows.first else { return false }
+
+        guard let tabGroup = axFirstChild(of: window, whereRole: "AXTabGroup")
+        else { return false }
+
+        let tabButtons = axChildren(of: tabGroup).filter { el in
+            axStringAttr(el, kAXSubroleAttribute as String) == "AXTabButton"
+        }
+        guard !tabButtons.isEmpty else { return false }
+
+        let deadline = Date().addingTimeInterval(0.6)  // 600 ms hard budget
+
+        for button in tabButtons {
+            if Date() >= deadline { return false }
+
+            _ = AXUIElementPerformAction(button, kAXPressAction as CFString)
+            Thread.sleep(forTimeInterval: 0.02)
+
+            if let title = axStringAttr(window, kAXTitleAttribute as String),
+               title.contains(marker) {
+                return true
+            }
+
+            for _ in 0..<maxPanesPerTab {
+                if Date() >= deadline { return false }
+                postCmdOptionRight()
+                Thread.sleep(forTimeInterval: 0.02)
+
+                if let title = axStringAttr(window, kAXTitleAttribute as String),
+                   title.contains(marker) {
+                    return true
+                }
+            }
+        }
         return false
     }
 }
