@@ -180,27 +180,6 @@ public enum TerminalLocator {
 
     /// Variant that knows the session id — enables Ghostty Layer A matching.
     /// Non-Ghostty terminals behave identically to
-    /// Direct session-based jump without a PID. Used for detected/idle sessions
-    /// where the claude process PID is unknown. Tries known terminal emulators
-    /// by bundle ID and delegates to their session-based focus paths.
-    @discardableResult
-    public static func activateTerminalBySessionId(
-        sessionId: String,
-        cwd: String?
-    ) -> Bool {
-        // Try Ghostty first (it's the only terminal with session-based focus)
-        if let app = NSRunningApplication.runningApplications(
-            withBundleIdentifier: "com.mitchellh.ghostty"
-        ).first {
-            _ = app.activate(options: [])
-            if focusGhosttySession(app: app, sessionId: sessionId, cwd: cwd) {
-                return true
-            }
-            return focusByAccessibility(app: app, cwd: cwd)
-        }
-        return false
-    }
-
     /// `activateTerminal(containingPid:cwd:)`.
     @discardableResult
     public static func activateTerminal(
@@ -533,18 +512,17 @@ public enum TerminalLocator {
 
         guard let button = targetButton else { return false }
 
-        // Switch to that tab — this alone is the main goal (especially for
-        // idle/detected sessions whose titles have no sid marker at all).
+        // Switch to that tab
         _ = AXUIElementPerformAction(button, kAXPressAction as CFString)
         Thread.sleep(forTimeInterval: 0.03)
 
-        // Best-effort: if the marker IS present, we're already on the right pane
+        // Check if the window title already has the marker
         if let title = axStringAttr(window, kAXTitleAttribute as String),
            title.contains(marker) {
             return true
         }
 
-        // Best-effort: cycle panes looking for the marker (split-pane case)
+        // Cycle panes by focusing each AXTextArea in turn
         let textAreas = findAllTextAreas(in: window)
         for textArea in textAreas {
             AXUIElementSetAttributeValue(
@@ -557,9 +535,6 @@ public enum TerminalLocator {
                 return true
             }
         }
-
-        // Even without marker match, we DID switch to the right tab by basename.
-        // For idle sessions this is the best we can do.
-        return true
+        return false
     }
 }
