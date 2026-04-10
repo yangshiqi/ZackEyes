@@ -186,20 +186,13 @@ public enum TerminalLocator {
         sessionId: String,
         cwd: String?
     ) -> Bool {
-        debugLog("activateGhosttyDirectly: sid=\(sessionId) cwd=\(cwd ?? "nil")")
         guard let app = NSRunningApplication.runningApplications(
             withBundleIdentifier: "com.mitchellh.ghostty"
-        ).first else {
-            debugLog("activateGhosttyDirectly: Ghostty not running")
-            return false
-        }
+        ).first else { return false }
         _ = app.activate(options: [])
-        debugLog("activateGhosttyDirectly: Ghostty activated, calling focusGhosttySession")
         if focusGhosttySession(app: app, sessionId: sessionId, cwd: cwd) {
-            debugLog("activateGhosttyDirectly: focusGhosttySession → true")
             return true
         }
-        debugLog("activateGhosttyDirectly: focusGhosttySession → false, trying focusByAccessibility")
         return focusByAccessibility(app: app, cwd: cwd)
     }
 
@@ -369,19 +362,6 @@ public enum TerminalLocator {
         let result = sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0)
         guard result == 0 else { return nil }
         return info.kp_eproc.e_ppid
-    }
-
-    // MARK: - Debug (TEMPORARY — remove after idle-session debugging)
-
-    static func debugLog(_ msg: String) {
-        let line = "\(Date()) \(msg)\n"
-        if let fh = FileHandle(forWritingAtPath: "/tmp/ze-ghostty-debug.txt") {
-            fh.seekToEndOfFile()
-            fh.write(line.data(using: .utf8) ?? Data())
-            try? fh.close()
-        } else {
-            FileManager.default.createFile(atPath: "/tmp/ze-ghostty-debug.txt", contents: line.data(using: .utf8))
-        }
     }
 
     // MARK: - AX attribute helpers (used by Ghostty Layer A / A')
