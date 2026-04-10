@@ -106,6 +106,54 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let detected = scanner.scan(recencyMinutes: 480)  // 8h — covers a full work day
         sessionStore.importDetectedSessions(detected)
         NSLog("ZackEyes: imported %d detected sessions", detected.count)
+
+        // 7. Activate detected sessions: find their PIDs and write OSC2
+        //    titles so Layer A tab-jump works on click. Runs in background
+        //    to avoid blocking startup (~200ms per session for lsof/ps).
+        //    Capture value-type snapshots to satisfy Swift 6 Sendable rules.
+        let snapshots: [(id: String, cwd: String, transcript: String?, prompt: String?)] =
+            sessionStore.sessions.values
+                .filter { $0.source == .detected }
+                .compactMap { s in
+                    guard let cwd = s.cwd else { return nil }
+                    return (s.id, cwd, s.transcriptPath, s.lastUserPrompt)
+                }
+        let store = sessionStore!
+        Task.detached(priority: .utility) {
+            var pidCache: [(String, Int)] = []
+            for s in snapshots {
+                guard let pid = TerminalLocator.findClaudePid(
+                    transcriptPath: s.transcript, cwd: s.cwd
+                ) else { continue }
+                guard let tty = TTYUtil.ttyPath(pid: Int32(pid)) else { continue }
+
+                // Write OSC2 title with sid marker
+                let basename = (s.cwd as NSString).lastPathComponent
+                let sidShort = String(s.id.prefix(8))
+                let prompt = String((s.prompt ?? "").prefix(30))
+                    .replacingOccurrences(of: "\n", with: " ")
+                let title = prompt.isEmpty
+                    ? "\(basename) · ze:\(sidShort)"
+                    : "\(basename) · \(prompt) · ze:\(sidShort)"
+                let osc = "\u{001B}]2;\(title)\u{0007}"
+                if let data = osc.data(using: .utf8),
+                   let fh = FileHandle(forWritingAtPath: tty) {
+                    try? fh.write(contentsOf: data)
+                    try? fh.close()
+                }
+                pidCache.append((s.id, pid))
+            }
+            // Cache PIDs on MainActor so click handler skips re-discovery
+            await MainActor.run {
+                for (sid, pid) in pidCache {
+                    if var session = store.sessions[sid] {
+                        session.claudePid = pid
+                        store.sessions[sid] = session
+                    }
+                }
+                NSLog("ZackEyes: activated %d detected sessions with OSC2 titles", pidCache.count)
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
