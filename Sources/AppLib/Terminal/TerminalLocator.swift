@@ -533,17 +533,18 @@ public enum TerminalLocator {
 
         guard let button = targetButton else { return false }
 
-        // Switch to that tab
+        // Switch to that tab — this alone is the main goal (especially for
+        // idle/detected sessions whose titles have no sid marker at all).
         _ = AXUIElementPerformAction(button, kAXPressAction as CFString)
         Thread.sleep(forTimeInterval: 0.03)
 
-        // Check if the window title already has the marker
+        // Best-effort: if the marker IS present, we're already on the right pane
         if let title = axStringAttr(window, kAXTitleAttribute as String),
            title.contains(marker) {
             return true
         }
 
-        // Cycle panes by focusing each AXTextArea in turn
+        // Best-effort: cycle panes looking for the marker (split-pane case)
         let textAreas = findAllTextAreas(in: window)
         for textArea in textAreas {
             AXUIElementSetAttributeValue(
@@ -556,6 +557,9 @@ public enum TerminalLocator {
                 return true
             }
         }
-        return false
+
+        // Even without marker match, we DID switch to the right tab by basename.
+        // For idle sessions this is the best we can do.
+        return true
     }
 }
