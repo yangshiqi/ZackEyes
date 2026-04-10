@@ -81,7 +81,11 @@ public final class NotchViewModel: ObservableObject {
                 }
             }
             guard let pid = pid else { return }
-            _ = TerminalLocator.activateTerminal(containingPid: pid, cwd: cwd)
+            _ = TerminalLocator.activateTerminal(
+                containingPid: pid,
+                cwd: cwd,
+                sessionId: sessionId
+            )
         }
     }
 }
