@@ -178,6 +178,46 @@ public enum TerminalLocator {
         }
     }
 
+    /// Variant that knows the session id — enables Ghostty Layer A matching.
+    /// Non-Ghostty terminals behave identically to
+    /// `activateTerminal(containingPid:cwd:)`.
+    @discardableResult
+    public static func activateTerminal(
+        containingPid pid: Int,
+        cwd: String? = nil,
+        sessionId: String
+    ) -> Bool {
+        guard let app = findTerminalApp(startingFromPid: pid) else {
+            NSLog("ZackEyes: no terminal found for pid %d", pid)
+            return false
+        }
+
+        let tty = TTYUtil.ttyPath(pid: Int32(pid))
+        NSLog("ZackEyes: activating terminal %{public}@ (tty=%{public}@, cwd=%{public}@, sid=%{public}@) for pid %d",
+              app.bundleIdentifier ?? "?", tty ?? "nil", cwd ?? "nil", sessionId, pid)
+
+        _ = app.activate(options: [])
+
+        switch app.bundleIdentifier {
+        case "com.googlecode.iterm2":
+            if let tty = tty { return focusITerm2(tty: tty) }
+            return true
+        case "com.apple.Terminal":
+            if let tty = tty { return focusAppleTerminal(tty: tty) }
+            return true
+        case "com.mitchellh.ghostty":
+            if focusGhosttySession(app: app, sessionId: sessionId) { return true }
+            // Final fallback: existing AX window-title raise
+            return focusByAccessibility(app: app, cwd: cwd)
+        case "dev.warp.Warp-Stable", "dev.warp.Warp",
+             "io.alacritty",
+             "net.kovidgoyal.kitty":
+            return focusByAccessibility(app: app, cwd: cwd)
+        default:
+            return true
+        }
+    }
+
     // MARK: - AppleScript focus handlers
 
     private static func focusITerm2(tty: String) -> Bool {
@@ -335,5 +375,66 @@ public enum TerminalLocator {
             }
         }
         return nil
+    }
+
+    // MARK: - Ghostty Layer A: AXTabButton title match
+
+    /// Primary Ghostty fast path. Enumerates AXTabGroup children, finds
+    /// the AXTabButton whose title contains `marker`, AXPresses it.
+    /// Returns true on success.
+    static func focusGhosttyTabByMarker(
+        appRef: AXUIElement,
+        marker: String
+    ) -> Bool {
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            appRef, kAXWindowsAttribute as CFString, &windowsRef
+        ) == .success,
+              let windows = windowsRef as? [AXUIElement] else { return false }
+
+        for window in windows {
+            guard let tabGroup = axFirstChild(of: window, whereRole: "AXTabGroup")
+            else { continue }
+
+            for button in axChildren(of: tabGroup) {
+                guard axStringAttr(button, kAXSubroleAttribute as String) == "AXTabButton",
+                      let title = axStringAttr(button, kAXTitleAttribute as String),
+                      title.contains(marker) else { continue }
+
+                if AXUIElementPerformAction(button, kAXPressAction as CFString) == .success {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /// Entry point called from `activateTerminal` for Ghostty. Calls
+    /// Layer A first (fast match on AXTabButton titles); on miss, falls
+    /// through. Layer A' (brute-force cycling) is added in Task 7 — for
+    /// now, Layer A miss returns false immediately.
+    static func focusGhosttySession(
+        app: NSRunningApplication,
+        sessionId: String
+    ) -> Bool {
+        guard AXIsProcessTrusted() else {
+            NSLog("ZackEyes: focusGhostty skip=noPermission sid=%{public}@", sessionId)
+            return false
+        }
+        let marker = String(sessionId.prefix(8))
+        let appRef = AXUIElementCreateApplication(app.processIdentifier)
+        let start = Date()
+
+        if focusGhosttyTabByMarker(appRef: appRef, marker: marker) {
+            let ms = Int(Date().timeIntervalSince(start) * 1000)
+            NSLog("ZackEyes: focusGhostty layer=A sid=%{public}@ hit=1 elapsed=%dms", sessionId, ms)
+            return true
+        }
+
+        let ms = Int(Date().timeIntervalSince(start) * 1000)
+        NSLog("ZackEyes: focusGhostty layer=A sid=%{public}@ hit=0 elapsed=%dms", sessionId, ms)
+
+        // Layer A' added in Task 7. Stub for now: always returns false.
+        return false
     }
 }
