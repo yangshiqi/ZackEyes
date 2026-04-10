@@ -178,6 +178,24 @@ public enum TerminalLocator {
         }
     }
 
+    /// PID-less Ghostty jump for idle/detected sessions. Finds Ghostty
+    /// by bundle ID and runs Layer A (sid marker) → Layer A' (cwd basename).
+    /// Does nothing if Ghostty isn't running.
+    @discardableResult
+    public static func activateGhosttyDirectly(
+        sessionId: String,
+        cwd: String?
+    ) -> Bool {
+        guard let app = NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.mitchellh.ghostty"
+        ).first else { return false }
+        _ = app.activate(options: [])
+        if focusGhosttySession(app: app, sessionId: sessionId, cwd: cwd) {
+            return true
+        }
+        return focusByAccessibility(app: app, cwd: cwd)
+    }
+
     /// Variant that knows the session id — enables Ghostty Layer A matching.
     /// Non-Ghostty terminals behave identically to
     /// `activateTerminal(containingPid:cwd:)`.
@@ -535,6 +553,10 @@ public enum TerminalLocator {
                 return true
             }
         }
-        return false
+
+        // Tab was matched by basename and switched to — good enough for
+        // idle sessions that have no sid marker. Precise pane matching
+        // only works when the marker is present (live sessions).
+        return true
     }
 }

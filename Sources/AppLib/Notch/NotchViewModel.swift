@@ -80,12 +80,21 @@ public final class NotchViewModel: ObservableObject {
                     }
                 }
             }
-            guard let pid = pid else { return }
-            _ = TerminalLocator.activateTerminal(
-                containingPid: pid,
-                cwd: cwd,
-                sessionId: sessionId
-            )
+            if let pid = pid {
+                _ = TerminalLocator.activateTerminal(
+                    containingPid: pid,
+                    cwd: cwd,
+                    sessionId: sessionId
+                )
+            } else {
+                // No PID discoverable (idle/detected session, or CWD mismatch).
+                // Try Ghostty directly — Layer A/A' only needs session ID + cwd,
+                // not a PID. Other terminals (iTerm2/Terminal) need PID for
+                // AppleScript tab matching, so we can't help them here.
+                TerminalLocator.activateGhosttyDirectly(
+                    sessionId: sessionId, cwd: cwd
+                )
+            }
         }
     }
 }
