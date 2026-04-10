@@ -111,9 +111,8 @@ struct NotchExpandedView: View {
                         ?? buddy.tagline,
                     length: 50
                 ))
-                    .font(.system(size: 9, weight: .regular, design: .rounded))
-                    .foregroundColor(.white.opacity(0.5))
-                    .italic()
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(.white.opacity(0.6))
                     .lineLimit(1)
                     .truncationMode(.tail)
 
