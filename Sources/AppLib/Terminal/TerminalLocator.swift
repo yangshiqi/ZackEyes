@@ -180,6 +180,27 @@ public enum TerminalLocator {
 
     /// Variant that knows the session id — enables Ghostty Layer A matching.
     /// Non-Ghostty terminals behave identically to
+    /// Direct session-based jump without a PID. Used for detected/idle sessions
+    /// where the claude process PID is unknown. Tries known terminal emulators
+    /// by bundle ID and delegates to their session-based focus paths.
+    @discardableResult
+    public static func activateTerminalBySessionId(
+        sessionId: String,
+        cwd: String?
+    ) -> Bool {
+        // Try Ghostty first (it's the only terminal with session-based focus)
+        if let app = NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.mitchellh.ghostty"
+        ).first {
+            _ = app.activate(options: [])
+            if focusGhosttySession(app: app, sessionId: sessionId, cwd: cwd) {
+                return true
+            }
+            return focusByAccessibility(app: app, cwd: cwd)
+        }
+        return false
+    }
+
     /// `activateTerminal(containingPid:cwd:)`.
     @discardableResult
     public static func activateTerminal(

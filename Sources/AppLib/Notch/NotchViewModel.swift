@@ -80,12 +80,20 @@ public final class NotchViewModel: ObservableObject {
                     }
                 }
             }
-            guard let pid = pid else { return }
-            _ = TerminalLocator.activateTerminal(
-                containingPid: pid,
-                cwd: cwd,
-                sessionId: sessionId
-            )
+            if let pid = pid {
+                _ = TerminalLocator.activateTerminal(
+                    containingPid: pid,
+                    cwd: cwd,
+                    sessionId: sessionId
+                )
+            } else {
+                // No PID (detected/idle session) — try direct Ghostty focus
+                // by session ID without process-tree walk.
+                _ = TerminalLocator.activateTerminalBySessionId(
+                    sessionId: sessionId,
+                    cwd: cwd
+                )
+            }
         }
     }
 }
