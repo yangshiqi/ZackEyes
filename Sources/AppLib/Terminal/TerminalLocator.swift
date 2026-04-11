@@ -118,7 +118,15 @@ public enum TerminalLocator {
         let stdoutPipe = Pipe()
         task.standardOutput = stdoutPipe
         task.standardError = FileHandle.nullDevice
-        do { try task.run() } catch { return nil }
+        do {
+            try task.run()
+            // Close the parent's copy of the pipe's write end. The child's
+            // copy is duplicated into its stdout via posix_spawn before this
+            // line runs. Without closing the parent copy, the read end never
+            // sees EOF after the child exits → drain blocks until our 1s
+            // timeout and we lose tail data on long outputs.
+            try? stdoutPipe.fileHandleForWriting.close()
+        } catch { return nil }
 
         // Drain stdout on a background queue so the subprocess can flush
         // freely. Without this, large outputs deadlock the wait below.
