@@ -16,4 +16,9 @@ final class GearMenuTarget: NSObject {
         modeStore?.isMenuOpen = false
         modeStore?.isAboutShown = true
     }
+
+    @objc func hotkeyClicked(_ sender: Any?) {
+        modeStore?.isMenuOpen = false
+        modeStore?.isHotkeyRecorderShown = true
+    }
 }

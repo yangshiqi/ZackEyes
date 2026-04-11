@@ -161,6 +161,14 @@ struct SimulatedNotchFullView: View {
         about.target = GearMenuTarget.shared
         menu.addItem(about)
 
+        let hotkey = NSMenuItem(
+            title: "Change Hotkey…",
+            action: #selector(GearMenuTarget.hotkeyClicked(_:)),
+            keyEquivalent: ""
+        )
+        hotkey.target = GearMenuTarget.shared
+        menu.addItem(hotkey)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(
