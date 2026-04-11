@@ -57,4 +57,27 @@ struct TerminalLocatorTests {
         #expect(!TerminalLocator.isClaudeProcess(args: "/usr/bin/python3 script.py"))
         #expect(!TerminalLocator.isClaudeProcess(args: ""))
     }
+
+    @Test func userNamedClaudeDoesNotFalseMatch() {
+        // A user whose UNIX home dir is /Users/claude running a node script
+        // must NOT be counted as a claude process. This was a real concern
+        // with the loose `/claude` substring rule we had earlier.
+        #expect(!TerminalLocator.isClaudeProcess(args: "node /Users/claude/server.js"))
+        #expect(!TerminalLocator.isClaudeProcess(args: "node /home/claude/projects/api/dist/index.js"))
+    }
+
+    @Test func projectsNamedClaudeDoNotFalseMatch() {
+        // Projects with `claude` in their directory name (but not the
+        // official `claude-code/` package) must NOT match.
+        #expect(!TerminalLocator.isClaudeProcess(args: "node /Users/foo/claude-wrapper/index.js"))
+        #expect(!TerminalLocator.isClaudeProcess(args: "node /Users/foo/my-claude-app/server.js"))
+        #expect(!TerminalLocator.isClaudeProcess(args: "node /tmp/claude-test.js"))
+    }
+
+    @Test func hypotheticalClaudeJsEntryPointMatches() {
+        // /claude.js exact filename and /…/claude (no extension) — these
+        // are explicit entry-point shapes the matcher accepts.
+        #expect(TerminalLocator.isClaudeProcess(args: "node /usr/local/lib/claude.js"))
+        #expect(TerminalLocator.isClaudeProcess(args: "node /opt/anthropic/bin/claude"))
+    }
 }

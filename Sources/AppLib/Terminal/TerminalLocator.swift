@@ -109,11 +109,19 @@ public enum TerminalLocator {
     ///
     /// Rules:
     /// - `argv[0]` basename is `claude` → native binary install. Match.
-    /// - `argv[0]` basename is `node` **and** any subsequent token contains
-    ///   `/claude` → npm install (covers `…/claude-code/cli.js`,
-    ///   `…/claude.js`, etc.). The "any subsequent token" rule survives
-    ///   node interpreter flags like `--inspect`, `--max-old-space-size`,
-    ///   etc., which would otherwise push the script path past `argv[1]`.
+    /// - `argv[0]` basename is `node` **and** any subsequent token names
+    ///   a recognized Claude Code entry point. We check for three specific
+    ///   shapes (rather than a loose `/claude` substring) to avoid
+    ///   false-positive matches on users named `claude`, project dirs
+    ///   like `claude-wrapper`, or stray `claude-something.js` scripts:
+    ///     - `/claude-code/` — the official npm package directory; covers
+    ///       all Anthropic-published install paths (global, local, volta,
+    ///       nvm, asdf, etc.).
+    ///     - `/claude.js` — a hypothetical future entry-point filename.
+    ///     - trailing `/claude` — a script with no extension named `claude`.
+    ///   The "any subsequent token" sweep survives node interpreter flags
+    ///   like `--inspect`, `--max-old-space-size`, etc., which would
+    ///   otherwise push the script path past `argv[1]`.
     /// - Anything else → skip. A `node` process running vue-cli-service,
     ///   vite, jest, webpack, etc. is not Claude Code.
     static func isClaudeProcess(args: String) -> Bool {
@@ -122,7 +130,11 @@ public enum TerminalLocator {
         let argv0Base = (first as NSString).lastPathComponent
         if argv0Base == "claude" { return true }
         if argv0Base == "node" {
-            return argv.dropFirst().contains { $0.contains("/claude") }
+            return argv.dropFirst().contains { token in
+                token.contains("/claude-code/")
+                    || token.contains("/claude.js")
+                    || token.hasSuffix("/claude")
+            }
         }
         return false
     }
