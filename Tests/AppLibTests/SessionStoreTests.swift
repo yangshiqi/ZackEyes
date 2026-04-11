@@ -112,6 +112,41 @@ struct SessionStoreTests {
         #expect(store.primarySession?.id == "s1")
     }
 
+    // 10a. detectError must NOT false-match on standalone numbers in prose.
+    //       The old contains("500") check fired on any assistant message that
+    //       mentioned the number 500 (e.g. "<500=low, <3000=mid, >3000=high")
+    //       and showed a red "Server error (500)" banner in the notch.
+    @Test func detectErrorIgnoresNumbersInProse() {
+        // Regression — the exact string that triggered the original bug report
+        #expect(SessionStore.detectError(in: "length <500=low, <3000=mid, >3000=high") == nil)
+        #expect(SessionStore.detectError(in: "this server handles 500 concurrent users") == nil)
+        #expect(SessionStore.detectError(in: "I have 500 unread messages") == nil)
+        #expect(SessionStore.detectError(in: "the 403 area code") == nil)
+        #expect(SessionStore.detectError(in: "5000 requests per second") == nil)
+    }
+
+    @Test func detectErrorMatchesRealErrorPhrases() {
+        // These are the phrasings Claude Code actually emits when the API fails
+        #expect(SessionStore.detectError(
+            in: "Sorry, I encountered a 503 Service Unavailable error from the API."
+        ) == "Service unavailable (503)")
+        #expect(SessionStore.detectError(
+            in: "500 Internal Server Error"
+        ) == "Server error (500)")
+        #expect(SessionStore.detectError(
+            in: "Got a 429 Too Many Requests response"
+        ) == "Rate limited (429)")
+        #expect(SessionStore.detectError(
+            in: "You have hit the rate limit"
+        ) == "Rate limited")
+        #expect(SessionStore.detectError(
+            in: "{\"type\":\"overloaded_error\"}"
+        ) == "API overloaded")
+        #expect(SessionStore.detectError(
+            in: "Your credit balance is too low"
+        ) == "Insufficient credits")
+    }
+
     // 10b. removeSessions deletes the requested ids, but refuses to clear
     //       a session that has an active pendingPermission, and silently
     //       ignores ids that don't exist in the store.
