@@ -116,6 +116,12 @@ Full 模式下：
 | `SessionScanner` | `Sources/AppLib/Session/SessionScanner.swift` | 扫描 `~/.claude/projects/*.jsonl` 导入既有会话 |
 | `TaskExtractor` | `Sources/AppLib/Session/TaskExtractor.swift` | 解析 transcript 重建任务列表，按用户 prompt 边界重置（只显示当前 turn） |
 
+**配置**
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| `HotKeyConfig` | `Sources/AppLib/Config/HotKeyConfig.swift` | 快捷键配置模型 + `HotKeyModifiers` OptionSet（Carbon/NSEvent flag 互转、Codable 字符串数组、显示符号） |
+| `ConfigStore` | `Sources/AppLib/Config/ConfigStore.swift` | 读写 `~/.zackeyes/config.json`，原子写入，解析失败回退默认值 |
+
 **Hook 安装**
 | 模块 | 文件 | 职责 |
 |------|------|------|
@@ -132,6 +138,7 @@ Full 模式下：
 | `BuddyAvatar` | `Sources/AppLib/Notch/BuddyAvatar.swift` | 动画化 buddy（headbang / 睡觉 / 惊慌） |
 | `Buddy` | `Sources/AppLib/Notch/Buddy.swift` | 摇滚传奇命名池（66 个）+ 性格标语池 |
 | `PixelAvatar` | `Sources/AppLib/Notch/PixelAvatar.swift` | 9 种 8×8 像素图案 + 8 色摇滚配色 |
+| `HotkeyRecorderView` | `Sources/AppLib/Notch/HotkeyRecorderView.swift` | SwiftUI 快捷键录入 overlay，NSEvent local monitor 捕获按键，验证 modifier |
 
 **Simulated Notch（无刘海机型）**
 | 模块 | 文件 | 职责 |
@@ -149,7 +156,7 @@ Full 模式下：
 **全局功能**
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| `HotKeyManager` | `Sources/AppLib/HotKey/HotKeyManager.swift` | Carbon `RegisterEventHotKey` 注册 `Cmd+Shift+Z` 全局快捷键 |
+| `HotKeyManager` | `Sources/AppLib/HotKey/HotKeyManager.swift` | Carbon `RegisterEventHotKey` 注册全局快捷键（可配置，默认 `Cmd+Shift+Z`），支持运行时 `reregister` 热更新 |
 | `NotificationManager` | `Sources/AppLib/Notifications/NotificationManager.swift` | 时间敏感通知（session 完成 / API 错误），点击跳转终端 |
 | `TerminalLocator` | `Sources/AppLib/Terminal/TerminalLocator.swift` | 进程树遍历 + iTerm2/Terminal AppleScript + Ghostty/Warp/Kitty Accessibility |
 | `UsageTracker` | `Sources/AppLib/Usage/UsageTracker.swift` | hook stdin 的真实 `rate_limits` 优先，transcript token fallback |
@@ -216,11 +223,12 @@ ccisland/
 │   ├── AppLib/
 │   │   ├── Socket/             # SocketServer
 │   │   ├── Session/            # SessionStore, SessionScanner, TaskExtractor
+│   │   ├── Config/             # HotKeyConfig, ConfigStore (~/.zackeyes/config.json)
 │   │   ├── Hooks/              # HookInstaller
-│   │   ├── Notch/              # NotchPanel, Buddy, PixelAvatar, NotchExpandedView
+│   │   ├── Notch/              # NotchPanel, Buddy, PixelAvatar, HotkeyRecorderView
 │   │   ├── SimulatedNotch/     # 无刘海机型的灵动岛
 │   │   ├── MenuBar/            # MenuBarFallback
-│   │   ├── HotKey/             # HotKeyManager (Cmd+Shift+Z)
+│   │   ├── HotKey/             # HotKeyManager（可配置快捷键）
 │   │   ├── Notifications/      # NotificationManager
 │   │   ├── Terminal/           # TerminalLocator (tab 跳转)
 │   │   └── Usage/              # UsageTracker (5h/7d 限额)
