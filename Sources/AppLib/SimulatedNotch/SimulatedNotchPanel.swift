@@ -35,7 +35,10 @@ class SimulatedNotchPanel: NSPanel {
         ]
     }
 
-    override var canBecomeKey: Bool { false }
+    /// Normally false (nonActivatingPanel must not steal focus). Set to true
+    /// temporarily when the hotkey recorder overlay needs keyboard input.
+    var allowsKeyStatus = false
+    override var canBecomeKey: Bool { allowsKeyStatus }
     override var canBecomeMain: Bool { false }
 
     /// AppKit's default `constrainFrameRect(_:to:)` pushes any window whose

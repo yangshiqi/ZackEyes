@@ -67,8 +67,8 @@ struct HotkeyRecorderView: View {
             .contentShape(Rectangle())
             .onTapGesture { /* prevent backdrop dismiss */ }
         }
-        .onAppear { startMonitor() }
-        .onDisappear { stopMonitor() }
+        .onAppear { activatePanel(); startMonitor() }
+        .onDisappear { stopMonitor(); deactivatePanel() }
     }
 
     private var displayText: String {
@@ -102,6 +102,20 @@ struct HotkeyRecorderView: View {
             NSEvent.removeMonitor(mon)
             monitor = nil
         }
+    }
+
+    /// Temporarily allow the SimulatedNotchPanel to become key window
+    /// so it can receive keyboard events for the recorder.
+    private func activatePanel() {
+        guard let panel = NSApp.windows.first(where: { $0 is SimulatedNotchPanel }) as? SimulatedNotchPanel else { return }
+        panel.allowsKeyStatus = true
+        panel.makeKey()
+    }
+
+    /// Revert the panel to its normal non-activating state.
+    private func deactivatePanel() {
+        guard let panel = NSApp.windows.first(where: { $0 is SimulatedNotchPanel }) as? SimulatedNotchPanel else { return }
+        panel.allowsKeyStatus = false
     }
 
     private func save() {
