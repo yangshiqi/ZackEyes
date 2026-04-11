@@ -11,6 +11,9 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
     /// Called when the user taps a notification. Payload is the session ID.
     public var onSessionTap: ((String) -> Void)?
 
+    /// Called when the user taps an update notification. Payload is the release URL.
+    public var onUpdateTap: ((URL) -> Void)?
+
     private override init() {
         super.init()
         UNUserNotificationCenter.current().delegate = self
@@ -77,6 +80,32 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         }
     }
 
+    /// Post a notification for a new app version. Only sends once per version
+    /// (tracked via UserDefaults).
+    public func notifyUpdateAvailable(version: String, releaseURL: URL) {
+        let lastNotified = UserDefaults.standard.string(forKey: "lastNotifiedVersion")
+        guard lastNotified != version else { return }
+
+        let content = UNMutableNotificationContent()
+        content.title = "ZackEyes Update Available"
+        content.body = "Version \(version) is available. Click to download."
+        content.sound = .default
+        content.categoryIdentifier = "update"
+        content.userInfo = ["releaseURL": releaseURL.absoluteString]
+
+        let request = UNNotificationRequest(
+            identifier: "update-\(version)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                NSLog("ZackEyes: update notification failed: %@", error.localizedDescription)
+            }
+        }
+        UserDefaults.standard.set(version, forKey: "lastNotifiedVersion")
+    }
+
     // MARK: - UNUserNotificationCenterDelegate
 
     nonisolated public func userNotificationCenter(
@@ -93,11 +122,14 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         didReceive response: UNNotificationResponse,
         withCompletionHandler completionHandler: @escaping () -> Void
     ) {
-        let sessionId = response.notification.request.content.userInfo["sessionId"] as? String
-        // Call completion immediately — we don't need to block the framework
+        let userInfo = response.notification.request.content.userInfo
+        let sessionId = userInfo["sessionId"] as? String
+        let releaseURLString = userInfo["releaseURL"] as? String
         completionHandler()
         Task { @MainActor [weak self] in
-            if let sessionId = sessionId {
+            if let releaseURLString, let url = URL(string: releaseURLString) {
+                self?.onUpdateTap?(url)
+            } else if let sessionId {
                 self?.onSessionTap?(sessionId)
             }
         }
