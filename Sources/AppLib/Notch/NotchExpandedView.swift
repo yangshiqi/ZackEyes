@@ -103,11 +103,18 @@ struct NotchExpandedView: View {
                         .foregroundColor(.white.opacity(0.5))
                 }
 
-                // Row 1.5: tagline (personality)
-                Text(buddy.tagline)
-                    .font(.system(size: 9, weight: .regular, design: .rounded))
-                    .foregroundColor(.white.opacity(0.5))
-                    .italic()
+                // Row 1.5: session context — user prompt (identifies the session)
+                // Falls back to reading the Bridge's title cache, then buddy tagline.
+                Text(truncate(
+                    session.lastUserPrompt
+                        ?? Self.readCachedPrompt(sessionId: session.id)
+                        ?? buddy.tagline,
+                    length: 50
+                ))
+                    .font(.system(size: 11, weight: .regular))
+                    .foregroundColor(.white.opacity(0.6))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 // Row 1.6: context window usage bar (per-session, from statusLine)
                 if let used = session.contextUsedPct {
@@ -116,19 +123,7 @@ struct NotchExpandedView: View {
                                cost: session.totalCostUSD)
                 }
 
-                // Row 2: last user prompt (You: ...)
-                if let prompt = session.lastUserPrompt, !prompt.isEmpty {
-                    HStack(alignment: .top, spacing: 4) {
-                        Text("You:")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.6))
-                        Text(truncate(prompt, length: 100))
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.75))
-                            .lineLimit(2)
-                            .truncationMode(.tail)
-                    }
-                }
+                // (User prompt now shown in Row 1.5 above)
 
                 // Row 3: Claude's last reply (Claude: ...)
                 if let reply = session.lastAssistantMessage, !reply.isEmpty {
@@ -604,5 +599,16 @@ struct NotchExpandedView: View {
             return str
         }
         return String(str.prefix(length)) + "..."
+    }
+
+    /// Read the first-prompt cache written by Bridge's TerminalTitleWriter.
+    /// Returns nil if the file doesn't exist or can't be read.
+    private static func readCachedPrompt(sessionId: String) -> String? {
+        let prefix = String(sessionId.prefix(16))
+        let path = (NSHomeDirectory() as NSString)
+            .appendingPathComponent(".zackeyes/osc2-titles/\(prefix)")
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8),
+              !text.isEmpty else { return nil }
+        return text
     }
 }

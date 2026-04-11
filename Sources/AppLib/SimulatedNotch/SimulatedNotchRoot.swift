@@ -21,11 +21,14 @@ public final class NotchModeStore: ObservableObject {
     /// True while the About overlay is shown over the session list.
     @Published public var isAboutShown: Bool = false
 
+    /// True while the hotkey recorder overlay is shown.
+    @Published public var isHotkeyRecorderShown: Bool = false
+
     /// Convenience: any interactive overlay that should keep the panel
     /// open. Used by `SimulatedNotchController` to suppress the
     /// auto-collapse on mouse-out and outside-click handlers.
     public var hasInteractiveOverlay: Bool {
-        isMenuOpen || isAboutShown
+        isMenuOpen || isAboutShown || isHotkeyRecorderShown
     }
 
     /// Tracks the pending "auto-close the gear menu flag" task so that
@@ -71,6 +74,7 @@ struct SimulatedNotchRoot: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
     @ObservedObject var modeStore: NotchModeStore
+    @ObservedObject var updateChecker: UpdateChecker
     let compactWidth: CGFloat
     let fullWidth: CGFloat
     let notchHeight: CGFloat
@@ -102,6 +106,7 @@ struct SimulatedNotchRoot: View {
                 viewModel: viewModel,
                 usageTracker: usageTracker,
                 modeStore: modeStore,
+                updateChecker: updateChecker,
                 cornerRadius: 22
             )
             .frame(width: fullWidth, height: fullHeight)

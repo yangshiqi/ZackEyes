@@ -11,9 +11,21 @@ import AppKit
 final class GearMenuTarget: NSObject {
     static let shared = GearMenuTarget()
     weak var modeStore: NotchModeStore?
+    var releaseURL: URL?
 
     @objc func aboutClicked(_ sender: Any?) {
         modeStore?.isMenuOpen = false
         modeStore?.isAboutShown = true
+    }
+
+    @objc func hotkeyClicked(_ sender: Any?) {
+        modeStore?.isMenuOpen = false
+        modeStore?.isHotkeyRecorderShown = true
+    }
+
+    @objc func updateClicked(_ sender: Any?) {
+        modeStore?.isMenuOpen = false
+        guard let url = releaseURL else { return }
+        NSWorkspace.shared.open(url)
     }
 }

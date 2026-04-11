@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var simulatedNotch: SimulatedNotchController?
     private var usageTracker: UsageTracker!
     private var hotKeyManager: HotKeyManager?
+    private var updateChecker: UpdateChecker?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Prevent macOS from auto-terminating this LSUIElement app when no windows are visible
@@ -24,6 +25,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let session = self?.sessionStore.sessions[sessionId],
                   let pid = session.claudePid else { return }
             _ = TerminalLocator.activateTerminal(containingPid: pid, cwd: session.cwd)
+        }
+        NotificationManager.shared.onUpdateTap = { url in
+            NSWorkspace.shared.open(url)
         }
 
         // Prompt Accessibility permission ONCE at startup (for Ghostty/Warp/Kitty tab focus).
@@ -66,20 +70,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menuBarFallback = mb
 
             // Simulated Dynamic Island at top center (visual indicator)
+            let uc = UpdateChecker()
             let sn = SimulatedNotchController(
                 viewModel: viewModel,
-                usageTracker: usageTracker
+                usageTracker: usageTracker,
+                updateChecker: uc
             )
             sn.setup()
             simulatedNotch = sn
+            updateChecker = uc
             // Tap handling lives inside the controller — it morphs the notch
             // panel itself into the full view (no separate NSPopover).
         }
 
-        // 4.5 Global hotkey (Cmd+Shift+Z) — toggles the simulated notch on
-        // notchless Macs, falls back to the menu bar popover if neither exists.
+        // 4.5 Global hotkey — toggles the simulated notch on notchless Macs,
+        // falls back to the menu bar popover if neither exists.
+        // Reads user-configured key from ~/.zackeyes/config.json (default: Cmd+Shift+Z).
+        let hotkeyConfig = ConfigStore().load()
         let hk = HotKeyManager()
-        hk.register { [weak self] in
+        hk.register(
+            keyCode: hotkeyConfig.keyCode,
+            modifiers: hotkeyConfig.modifiers.carbonFlags
+        ) { [weak self] in
             guard let self = self else { return }
             if let sn = self.simulatedNotch {
                 sn.toggleFull()
@@ -88,6 +100,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         hotKeyManager = hk
+
+        // Listen for hotkey config changes from the recorder UI
+        NotificationCenter.default.addObserver(
+            forName: .hotkeyConfigChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let config = notification.userInfo?["config"] as? HotKeyConfig
+            Task { @MainActor in
+                guard let self, let config else { return }
+                self.hotKeyManager?.reregister(
+                    keyCode: config.keyCode,
+                    modifiers: config.modifiers.carbonFlags
+                )
+            }
+        }
 
         // 5. Hook Installer (silent, best-effort)
         Task {
@@ -101,14 +129,80 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // 6.5 Update checker — polls GitHub Releases every 6h
+        updateChecker?.onNewVersion = { version, url in
+            NotificationManager.shared.notifyUpdateAvailable(version: version, releaseURL: url)
+        }
+        updateChecker?.start()
+
         // 6. Discover already-running sessions from ~/.claude/projects/
         let scanner = SessionScanner()
-        let detected = scanner.scan(recencyMinutes: 30)
+        let detected = scanner.scan(recencyMinutes: 480)  // 8h — covers a full work day
         sessionStore.importDetectedSessions(detected)
         NSLog("ZackEyes: imported %d detected sessions", detected.count)
+
+        // 7. Activate detected sessions: find their PIDs and write OSC2
+        //    titles so Layer A tab-jump works on click. Runs in background
+        //    to avoid blocking startup (~200ms per session for lsof/ps).
+        //    Capture value-type snapshots to satisfy Swift 6 Sendable rules.
+        let snapshots: [(id: String, cwd: String, transcript: String?, prompt: String?)] =
+            sessionStore.sessions.values
+                .filter { $0.source == .detected }
+                .compactMap { s in
+                    guard let cwd = s.cwd else { return nil }
+                    return (s.id, cwd, s.transcriptPath, s.lastUserPrompt)
+                }
+        let store = sessionStore!
+        Task.detached(priority: .utility) {
+            var pidCache: [(String, Int)] = []
+            for s in snapshots {
+                guard let pid = TerminalLocator.findClaudePid(
+                    transcriptPath: s.transcript, cwd: s.cwd
+                ) else { continue }
+                guard let tty = TTYUtil.ttyPath(pid: Int32(pid)) else { continue }
+
+                // Write OSC2 title with sid marker
+                let basename = (s.cwd as NSString).lastPathComponent
+                let sidShort = String(s.id.prefix(8))
+                // Sanitize: replace \n\r\t with space, strip C0 control chars + DEL
+                let rawPrompt = s.prompt ?? ""
+                var sanitized = ""
+                for scalar in rawPrompt.unicodeScalars {
+                    if scalar == "\n" || scalar == "\r" || scalar == "\t" {
+                        sanitized.append(" ")
+                    } else if scalar.value < 0x20 || scalar.value == 0x7F {
+                        continue
+                    } else {
+                        sanitized.append(Character(scalar))
+                    }
+                }
+                let prompt = String(sanitized.prefix(30))
+                let title = prompt.isEmpty
+                    ? "\(basename) · ze:\(sidShort)"
+                    : "\(basename) · \(prompt) · ze:\(sidShort)"
+                let osc = "\u{001B}]2;\(title)\u{0007}"
+                if let data = osc.data(using: .utf8),
+                   let fh = FileHandle(forWritingAtPath: tty) {
+                    try? fh.write(contentsOf: data)
+                    try? fh.close()
+                }
+                pidCache.append((s.id, pid))
+            }
+            // Cache PIDs on MainActor so click handler skips re-discovery
+            await MainActor.run {
+                for (sid, pid) in pidCache {
+                    if var session = store.sessions[sid] {
+                        session.claudePid = pid
+                        store.sessions[sid] = session
+                    }
+                }
+                NSLog("ZackEyes: activated %d detected sessions with OSC2 titles", pidCache.count)
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        updateChecker?.stop()
         hotKeyManager?.unregister()
         socketServer?.stop()
         windowController?.teardown()

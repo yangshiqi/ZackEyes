@@ -2,6 +2,7 @@ import AppKit
 import ApplicationServices
 import Darwin
 import Foundation
+import Shared
 
 /// Walks the process tree from a given PID to find the containing terminal app,
 /// then activates the correct tab/window via terminal-specific AppleScript.
@@ -151,7 +152,7 @@ public enum TerminalLocator {
             return false
         }
 
-        let tty = ttyPath(of: Int32(pid))
+        let tty = TTYUtil.ttyPath(pid: Int32(pid))
         NSLog("ZackEyes: activating terminal %{public}@ (tty=%{public}@, cwd=%{public}@) for pid %d",
               app.bundleIdentifier ?? "?", tty ?? "nil", cwd ?? "nil", pid)
 
@@ -177,30 +178,62 @@ public enum TerminalLocator {
         }
     }
 
-    // MARK: - tty lookup (via sysctl + ps fallback)
-
-    /// Get the tty path of a process, e.g. "/dev/ttys003"
-    static func ttyPath(of pid: Int32) -> String? {
-        // Use `ps -p PID -o tty=` to get the tty name
-        let task = Process()
-        task.launchPath = "/bin/ps"
-        task.arguments = ["-p", "\(pid)", "-o", "tty="]
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe()
-        do {
-            try task.run()
-            task.waitUntilExit()
-        } catch {
-            return nil
+    /// PID-less Ghostty jump for idle/detected sessions. Finds Ghostty
+    /// by bundle ID and runs Layer A (sid marker) → Layer A' (cwd basename).
+    /// Does nothing if Ghostty isn't running.
+    @discardableResult
+    public static func activateGhosttyDirectly(
+        sessionId: String,
+        cwd: String?
+    ) -> Bool {
+        guard let app = NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.mitchellh.ghostty"
+        ).first else { return false }
+        _ = app.activate(options: [])
+        if focusGhosttySession(app: app, sessionId: sessionId, cwd: cwd) {
+            return true
         }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        guard let raw = String(data: data, encoding: .utf8) else { return nil }
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != "?" else { return nil }
-        // `ps` returns e.g. "ttys003" — prepend /dev/
-        if trimmed.hasPrefix("/dev/") { return trimmed }
-        return "/dev/\(trimmed)"
+        return focusByAccessibility(app: app, cwd: cwd)
+    }
+
+    /// Variant that knows the session id — enables Ghostty Layer A matching.
+    /// Non-Ghostty terminals behave identically to
+    /// `activateTerminal(containingPid:cwd:)`.
+    @discardableResult
+    public static func activateTerminal(
+        containingPid pid: Int,
+        cwd: String? = nil,
+        sessionId: String
+    ) -> Bool {
+        guard let app = findTerminalApp(startingFromPid: pid) else {
+            NSLog("ZackEyes: no terminal found for pid %d", pid)
+            return false
+        }
+
+        let tty = TTYUtil.ttyPath(pid: Int32(pid))
+        NSLog("ZackEyes: activating terminal %{public}@ (tty=%{public}@, cwd=%{public}@, sid=%{public}@) for pid %d",
+              app.bundleIdentifier ?? "?", tty ?? "nil", cwd ?? "nil", sessionId, pid)
+
+        _ = app.activate(options: [])
+
+        switch app.bundleIdentifier {
+        case "com.googlecode.iterm2":
+            if let tty = tty { return focusITerm2(tty: tty) }
+            return true
+        case "com.apple.Terminal":
+            if let tty = tty { return focusAppleTerminal(tty: tty) }
+            return true
+        case "com.mitchellh.ghostty":
+            if focusGhosttySession(app: app, sessionId: sessionId, cwd: cwd) { return true }
+            // Final fallback: existing AX window-title raise
+            return focusByAccessibility(app: app, cwd: cwd)
+        case "dev.warp.Warp-Stable", "dev.warp.Warp",
+             "io.alacritty",
+             "net.kovidgoyal.kitty":
+            return focusByAccessibility(app: app, cwd: cwd)
+        default:
+            return true
+        }
     }
 
     // MARK: - AppleScript focus handlers
@@ -329,5 +362,201 @@ public enum TerminalLocator {
         let result = sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0)
         guard result == 0 else { return nil }
         return info.kp_eproc.e_ppid
+    }
+
+    // MARK: - AX attribute helpers (used by Ghostty Layer A / A')
+
+    /// Read a string-valued AX attribute. Returns nil if the attribute
+    /// is missing or not a String.
+    static func axStringAttr(_ el: AXUIElement, _ attr: String) -> String? {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, attr as CFString, &ref) == .success
+        else { return nil }
+        return ref as? String
+    }
+
+    /// Read the children of an AX element. Returns an empty array if
+    /// the attribute is missing or not an array.
+    static func axChildren(of el: AXUIElement) -> [AXUIElement] {
+        var ref: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            el, kAXChildrenAttribute as CFString, &ref
+        ) == .success else { return [] }
+        return (ref as? [AXUIElement]) ?? []
+    }
+
+    /// Find the first direct child of `el` whose `AXRole` equals `role`.
+    static func axFirstChild(of el: AXUIElement, whereRole role: String) -> AXUIElement? {
+        for child in axChildren(of: el) {
+            if axStringAttr(child, kAXRoleAttribute as String) == role {
+                return child
+            }
+        }
+        return nil
+    }
+
+    // MARK: - Ghostty Layer A: AXTabButton title match
+
+    /// Primary Ghostty fast path. Enumerates AXTabGroup children, finds
+    /// the AXTabButton whose title contains `marker`, AXPresses it.
+    /// Returns true on success.
+    static func focusGhosttyTabByMarker(
+        appRef: AXUIElement,
+        marker: String
+    ) -> Bool {
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            appRef, kAXWindowsAttribute as CFString, &windowsRef
+        ) == .success,
+              let windows = windowsRef as? [AXUIElement] else { return false }
+
+        for window in windows {
+            guard let tabGroup = axFirstChild(of: window, whereRole: "AXTabGroup")
+            else { continue }
+
+            for button in axChildren(of: tabGroup) {
+                guard axStringAttr(button, kAXSubroleAttribute as String) == "AXTabButton",
+                      let title = axStringAttr(button, kAXTitleAttribute as String),
+                      title.contains(marker) else { continue }
+
+                if AXUIElementPerformAction(button, kAXPressAction as CFString) == .success {
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    /// Entry point called from `activateTerminal` for Ghostty. Calls
+    /// Layer A first (fast match on AXTabButton titles); on miss, falls
+    /// through. Layer A' (brute-force cycling) is added in Task 7 — for
+    /// now, Layer A miss returns false immediately.
+    static func focusGhosttySession(
+        app: NSRunningApplication,
+        sessionId: String,
+        cwd: String?
+    ) -> Bool {
+        guard AXIsProcessTrusted() else {
+            NSLog("ZackEyes: focusGhostty skip=noPermission sid=%{public}@", sessionId)
+            return false
+        }
+        let marker = String(sessionId.prefix(8))
+        let appRef = AXUIElementCreateApplication(app.processIdentifier)
+        let start = Date()
+
+        // Layer A — fast path: AXTabButton title contains sid marker
+        if focusGhosttyTabByMarker(appRef: appRef, marker: marker) {
+            let ms = Int(Date().timeIntervalSince(start) * 1000)
+            NSLog("ZackEyes: focusGhostty layer=A sid=%{public}@ hit=1 elapsed=%dms", sessionId, ms)
+            return true
+        }
+
+        let ms = Int(Date().timeIntervalSince(start) * 1000)
+        NSLog("ZackEyes: focusGhostty layer=A sid=%{public}@ hit=0 elapsed=%dms", sessionId, ms)
+
+        // Layer A' — targeted: find the ONE tab matching cwd basename,
+        // switch to it, then cycle panes looking for the sid marker.
+        // Only 1 tab switch + up to 4 pane cycles — no "乱跳".
+        if let cwd = cwd {
+            let cycleStart = Date()
+            if focusGhosttyByCwdThenCyclePanes(
+                appRef: appRef, marker: marker, cwd: cwd
+            ) {
+                let cycleMs = Int(Date().timeIntervalSince(cycleStart) * 1000)
+                NSLog("ZackEyes: focusGhostty layer=A' sid=%{public}@ hit=1 elapsed=%dms",
+                      sessionId, cycleMs)
+                return true
+            }
+            let cycleMs = Int(Date().timeIntervalSince(cycleStart) * 1000)
+            NSLog("ZackEyes: focusGhostty layer=A' sid=%{public}@ hit=0 elapsed=%dms",
+                  sessionId, cycleMs)
+        }
+        return false
+    }
+
+    // MARK: - Ghostty Layer A': targeted tab + AX pane focus
+
+    /// Recursively collect all AXTextArea elements within `element`.
+    /// Each Ghostty pane contains one AXTextArea (the terminal surface).
+    private static func findAllTextAreas(
+        in element: AXUIElement,
+        depth: Int = 0,
+        maxDepth: Int = 6
+    ) -> [AXUIElement] {
+        if depth > maxDepth { return [] }
+        var results: [AXUIElement] = []
+        if axStringAttr(element, kAXRoleAttribute as String) == "AXTextArea" {
+            results.append(element)
+        }
+        for child in axChildren(of: element) {
+            results.append(contentsOf: findAllTextAreas(in: child, depth: depth + 1, maxDepth: maxDepth))
+        }
+        return results
+    }
+
+    /// Targeted Layer A' fallback. Finds the ONE tab whose title contains
+    /// the `cwd` basename, switches to it, then focuses each AXTextArea
+    /// (pane) in turn via `kAXFocusedAttribute` until the window title
+    /// contains the sid marker.
+    ///
+    /// Pure AX — no synthetic keystrokes, no menu bar flash.
+    static func focusGhosttyByCwdThenCyclePanes(
+        appRef: AXUIElement,
+        marker: String,
+        cwd: String
+    ) -> Bool {
+        let basename = (cwd as NSString).lastPathComponent
+        guard !basename.isEmpty else { return false }
+
+        var windowsRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(
+            appRef, kAXWindowsAttribute as CFString, &windowsRef
+        ) == .success,
+              let windows = windowsRef as? [AXUIElement],
+              let window = windows.first else { return false }
+
+        guard let tabGroup = axFirstChild(of: window, whereRole: "AXTabGroup")
+        else { return false }
+
+        // Find the tab whose title contains the cwd basename
+        var targetButton: AXUIElement?
+        for button in axChildren(of: tabGroup) {
+            guard axStringAttr(button, kAXSubroleAttribute as String) == "AXTabButton",
+                  let title = axStringAttr(button, kAXTitleAttribute as String),
+                  title.contains(basename) else { continue }
+            targetButton = button
+            break
+        }
+
+        guard let button = targetButton else { return false }
+
+        // Switch to that tab
+        _ = AXUIElementPerformAction(button, kAXPressAction as CFString)
+        Thread.sleep(forTimeInterval: 0.03)
+
+        // Check if the window title already has the marker
+        if let title = axStringAttr(window, kAXTitleAttribute as String),
+           title.contains(marker) {
+            return true
+        }
+
+        // Cycle panes by focusing each AXTextArea in turn
+        let textAreas = findAllTextAreas(in: window)
+        for textArea in textAreas {
+            AXUIElementSetAttributeValue(
+                textArea, kAXFocusedAttribute as CFString, kCFBooleanTrue
+            )
+            Thread.sleep(forTimeInterval: 0.03)
+
+            if let title = axStringAttr(window, kAXTitleAttribute as String),
+               title.contains(marker) {
+                return true
+            }
+        }
+
+        // Tab was matched by basename and switched to — good enough for
+        // idle sessions that have no sid marker. Precise pane matching
+        // only works when the marker is present (live sessions).
+        return true
     }
 }

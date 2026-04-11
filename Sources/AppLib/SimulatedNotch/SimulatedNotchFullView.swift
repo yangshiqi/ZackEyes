@@ -9,6 +9,7 @@ struct SimulatedNotchFullView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
     @ObservedObject var modeStore: NotchModeStore
+    @ObservedObject var updateChecker: UpdateChecker
     var cornerRadius: CGFloat = 22
 
     /// Weak handle to the actual NSView backing the gear button. Set by
@@ -35,6 +36,7 @@ struct SimulatedNotchFullView: View {
         .background(NotchShape(cornerRadius: cornerRadius).fill(Color.black))
         .clipShape(NotchShape(cornerRadius: cornerRadius))
         .overlay(aboutOverlay)
+        .overlay(hotkeyRecorderOverlay)
     }
 
     /// About card overlay — semi-transparent backdrop + centered card
@@ -79,6 +81,29 @@ struct SimulatedNotchFullView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { /* no-op: prevent backdrop dismiss when tapping card */ }
             }
+            .transition(.opacity)
+        }
+    }
+
+    /// Hotkey recorder overlay — captures a new global shortcut.
+    @ViewBuilder
+    private var hotkeyRecorderOverlay: some View {
+        if modeStore.isHotkeyRecorderShown {
+            HotkeyRecorderView(
+                currentConfig: ConfigStore().load(),
+                onSave: { newConfig in
+                    ConfigStore().save(newConfig)
+                    NotificationCenter.default.post(
+                        name: .hotkeyConfigChanged,
+                        object: nil,
+                        userInfo: ["config": newConfig]
+                    )
+                    modeStore.isHotkeyRecorderShown = false
+                },
+                onCancel: {
+                    modeStore.isHotkeyRecorderShown = false
+                }
+            )
             .transition(.opacity)
         }
     }
@@ -141,6 +166,14 @@ struct SimulatedNotchFullView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.white.opacity(0.85))
                 .frame(width: 22, height: 22)
+                .overlay(alignment: .topTrailing) {
+                    if updateChecker.availableVersion != nil {
+                        Circle()
+                            .fill(.red)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 2, y: -2)
+                    }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -153,6 +186,17 @@ struct SimulatedNotchFullView: View {
     private func popGearMenu() {
         let menu = NSMenu()
 
+        if let version = updateChecker.availableVersion {
+            let update = NSMenuItem(
+                title: "Update Available (v\(version))",
+                action: #selector(GearMenuTarget.updateClicked(_:)),
+                keyEquivalent: ""
+            )
+            update.target = GearMenuTarget.shared
+            menu.addItem(update)
+            menu.addItem(.separator())
+        }
+
         let about = NSMenuItem(
             title: "About",
             action: #selector(GearMenuTarget.aboutClicked(_:)),
@@ -160,6 +204,14 @@ struct SimulatedNotchFullView: View {
         )
         about.target = GearMenuTarget.shared
         menu.addItem(about)
+
+        let hotkey = NSMenuItem(
+            title: "Change Hotkey…",
+            action: #selector(GearMenuTarget.hotkeyClicked(_:)),
+            keyEquivalent: ""
+        )
+        hotkey.target = GearMenuTarget.shared
+        menu.addItem(hotkey)
 
         menu.addItem(.separator())
 
@@ -171,6 +223,7 @@ struct SimulatedNotchFullView: View {
         quit.target = NSApp
         menu.addItem(quit)
 
+        GearMenuTarget.shared.releaseURL = updateChecker.releaseURL
         GearMenuTarget.shared.modeStore = modeStore
 
         // Anchor in window coordinates, relative to the gear's NSView.
@@ -270,4 +323,8 @@ struct SimulatedNotchFullView: View {
         if hours > 0 { return "\(hours)h \(mins)m" }
         return "\(mins)m"
     }
+}
+
+public extension Notification.Name {
+    static let hotkeyConfigChanged = Notification.Name("hotkeyConfigChanged")
 }
