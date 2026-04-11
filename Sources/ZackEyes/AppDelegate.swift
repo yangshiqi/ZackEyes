@@ -76,10 +76,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // panel itself into the full view (no separate NSPopover).
         }
 
-        // 4.5 Global hotkey (Cmd+Shift+Z) — toggles the simulated notch on
-        // notchless Macs, falls back to the menu bar popover if neither exists.
+        // 4.5 Global hotkey — toggles the simulated notch on notchless Macs,
+        // falls back to the menu bar popover if neither exists.
+        // Reads user-configured key from ~/.zackeyes/config.json (default: Cmd+Shift+Z).
+        let hotkeyConfig = ConfigStore().load()
         let hk = HotKeyManager()
-        hk.register { [weak self] in
+        hk.register(
+            keyCode: hotkeyConfig.keyCode,
+            modifiers: hotkeyConfig.modifiers.carbonFlags
+        ) { [weak self] in
             guard let self = self else { return }
             if let sn = self.simulatedNotch {
                 sn.toggleFull()
