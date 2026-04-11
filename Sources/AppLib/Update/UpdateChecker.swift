@@ -61,6 +61,9 @@ public final class UpdateChecker: ObservableObject {
 
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        if let token = Self.loadGitHubToken() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         request.timeoutInterval = 15
 
         do {
@@ -82,6 +85,19 @@ public final class UpdateChecker: ObservableObject {
         } catch {
             // Network/parse failure — silent, retry on next timer tick
         }
+    }
+
+    // MARK: - GitHub token
+
+    /// Read optional GitHub token from ~/.zackeyes/config.json ("githubToken" key).
+    /// Enables update checks for private repos.
+    private nonisolated static func loadGitHubToken() -> String? {
+        let path = NSHomeDirectory() + "/.zackeyes/config.json"
+        guard let data = FileManager.default.contents(atPath: path),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let token = json["githubToken"] as? String,
+              !token.isEmpty else { return nil }
+        return token
     }
 
     // MARK: - Semantic version comparison
