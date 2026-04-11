@@ -144,11 +144,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         //    since `ps` + `lsof` spawn subprocesses.
         let scanner = SessionScanner()
         let detected = scanner.scan(recencyMinutes: 480)  // 8h — covers a full work day
-        Task.detached(priority: .userInitiated) { [weak self, sessionStore] in
-            let cwdCounts = TerminalLocator.runningClaudeCwds()
+        Task.detached(priority: .userInitiated) { [weak self] in
+            // ps/lsof off main; @MainActor SessionStore is touched only
+            // inside the MainActor.run hop below via self?.sessionStore.
+            let cwdCounts = TerminalLocator.runningClaudeCwds() ?? [:]
             let live = LivenessFilter.filterLiveDetected(detected, cwdCounts: cwdCounts)
             await MainActor.run {
-                sessionStore?.importDetectedSessions(live)
+                self?.sessionStore.importDetectedSessions(live)
                 NSLog(
                     "ZackEyes: imported %d live sessions (filtered from %d candidates)",
                     live.count, detected.count
@@ -244,8 +246,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return LivenessFilter.PruneCandidate(id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt)
         }
         guard !candidates.isEmpty else { return }
-        let store = sessionStore!
         Task.detached(priority: .utility) { [weak self] in
+            // ps/lsof off main; @MainActor SessionStore is touched only
+            // inside the MainActor.run hop below via self?.sessionStore.
             let cwdCounts = TerminalLocator.runningClaudeCwds()
             let graceCutoff = Date().addingTimeInterval(-90)
             let deadIds = LivenessFilter.computeDeadIds(
@@ -255,8 +258,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             guard !deadIds.isEmpty else { return }
             await MainActor.run {
-                _ = self                          // keep self alive for the hop
-                store.removeSessions(ids: deadIds)
+                self?.sessionStore.removeSessions(ids: deadIds)
                 NSLog("ZackEyes: liveness sweep pruned %d dead sessions", deadIds.count)
             }
         }

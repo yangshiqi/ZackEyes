@@ -49,21 +49,34 @@ public enum TerminalLocator {
         return nil
     }
 
-    /// Snapshot of currently-running `claude` processes, keyed by cwd, valued
-    /// by count of distinct PIDs. Used as the authoritative liveness signal:
-    /// Claude Code does NOT keep its JSONL transcript open between writes
-    /// (open-append-close), so `lsof <transcript>` returns nothing. The only
-    /// reliable signal is "is there a claude process whose cwd matches this
-    /// session's cwd". Two same-cwd sessions are disambiguated by the caller
-    /// (typically by lastActiveAt / lastModified ordering).
+    /// Snapshot of currently-running Claude Code processes, keyed by cwd,
+    /// valued by count of distinct PIDs.
     ///
-    /// Strict match on `comm == "claude"` (not "node") to avoid counting
-    /// dev servers or other unrelated node processes that share a cwd with
-    /// a Claude session.
-    public static func runningClaudeCwds() -> [String: Int] {
+    /// Used as the authoritative liveness signal: Claude Code does NOT keep
+    /// its JSONL transcript open between writes (open-append-close), so
+    /// `lsof <transcript>` returns nothing. The only reliable signal is
+    /// "is there a claude process whose cwd matches this session's cwd".
+    /// Two same-cwd sessions are disambiguated by the caller (typically
+    /// by lastActiveAt / lastModified ordering).
+    ///
+    /// Returns:
+    /// - `nil` when the underlying `ps` invocation fails outright. Callers
+    ///   must treat this as "snapshot unavailable, do nothing" — never as
+    ///   "no claudes are running".
+    /// - empty dict when `ps` succeeded but found zero claude processes.
+    ///   Callers can act on this (e.g. the sweep prunes everything past
+    ///   the grace window).
+    ///
+    /// Matches both `comm == "claude"` (native binary install) and
+    /// `comm == "node"` (npm install runs Claude Code as a node script).
+    /// Mirrors the long-standing `claudePidByCwd` heuristic. Yes, this can
+    /// over-count if you have an unrelated node dev server in the same cwd
+    /// as a real claude — the cost is at most importing one extra stale
+    /// jsonl, which the 90s sweep grace period catches.
+    public static func runningClaudeCwds() -> [String: Int]? {
         guard let out = runWithTimeout(
             "/bin/ps", args: ["-ax", "-o", "pid=,comm="], timeoutSeconds: 3
-        ) else { return [:] }
+        ) else { return nil }
 
         var counts: [String: Int] = [:]
         for line in out.split(separator: "\n") {
@@ -72,7 +85,7 @@ public enum TerminalLocator {
             guard parts.count == 2 else { continue }
             let comm = String(parts[1])
             let base = (comm as NSString).lastPathComponent
-            guard base == "claude" else { continue }
+            guard base == "claude" || base == "node" else { continue }
             guard let pid = Int(parts[0]) else { continue }
             if let cwd = processCwd(pid: pid) {
                 counts[Self.canonicalize(cwd), default: 0] += 1
