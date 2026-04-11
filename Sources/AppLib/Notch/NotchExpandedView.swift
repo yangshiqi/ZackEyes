@@ -120,7 +120,8 @@ struct NotchExpandedView: View {
                 if let used = session.contextUsedPct {
                     contextBar(usedPct: used,
                                windowSize: session.contextWindowSize,
-                               cost: session.totalCostUSD)
+                               cost: session.totalCostUSD,
+                               model: session.modelDisplayName)
                 }
 
                 // (User prompt now shown in Row 1.5 above)
@@ -208,7 +209,7 @@ struct NotchExpandedView: View {
     }
 
     @ViewBuilder
-    private func contextBar(usedPct: Double, windowSize: Int?, cost: Double?) -> some View {
+    private func contextBar(usedPct: Double, windowSize: Int?, cost: Double?, model: String?) -> some View {
         let color = contextColor(for: usedPct)
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
@@ -222,6 +223,12 @@ struct NotchExpandedView: View {
                     Text(formatWindowSize(size))
                         .font(.system(size: 9))
                         .foregroundColor(.white.opacity(0.4))
+                }
+                if let model = model {
+                    Text(model)
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 if let cost = cost, cost > 0 {
@@ -516,7 +523,12 @@ struct NotchExpandedView: View {
     private var permissionApprovalButtons: some View {
         HStack(spacing: 8) {
             Button(action: { viewModel.deny() }) {
-                Text("Deny")
+                HStack(spacing: 4) {
+                    Text("Deny")
+                    Text("⌘N")
+                        .font(.system(size: 8, weight: .regular, design: .monospaced))
+                        .opacity(0.6)
+                }
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.red)
                     .frame(maxWidth: .infinity)
@@ -525,9 +537,15 @@ struct NotchExpandedView: View {
                     .cornerRadius(8)
             }
             .buttonStyle(.plain)
+            .keyboardShortcut("n", modifiers: .command)
 
             Button(action: { viewModel.approve() }) {
-                Text("Allow Once")
+                HStack(spacing: 4) {
+                    Text("Allow Once")
+                    Text("⌘Y")
+                        .font(.system(size: 8, weight: .regular, design: .monospaced))
+                        .opacity(0.6)
+                }
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
                     .frame(maxWidth: .infinity)
@@ -536,6 +554,7 @@ struct NotchExpandedView: View {
                     .cornerRadius(8)
             }
             .buttonStyle(.plain)
+            .keyboardShortcut("y", modifiers: .command)
         }
     }
 
