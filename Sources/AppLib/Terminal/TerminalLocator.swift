@@ -196,7 +196,7 @@ public enum TerminalLocator {
     /// and we never look at stderr from any caller.
     private static func runWithTimeout(_ path: String, args: [String], timeoutSeconds: Int) -> String? {
         let task = Process()
-        task.launchPath = path
+        task.executableURL = URL(fileURLWithPath: path)
         task.arguments = args
         let stdoutPipe = Pipe()
         task.standardOutput = stdoutPipe
