@@ -21,6 +21,11 @@ public final class UpdateChecker: ObservableObject {
     @Published public var availableVersion: String?
     @Published public var releaseURL: URL?
 
+    /// Called once when a new version is first detected.
+    public var onNewVersion: ((String, URL) -> Void)?
+
+    private var notifiedVersion: String?
+
     private var timer: Timer?
     private let checkInterval: TimeInterval
     private let repoOwner = "yangshiqi"
@@ -69,6 +74,10 @@ public final class UpdateChecker: ObservableObject {
             if Self.isNewer(remote: remoteVersion, thanLocal: localVersion) {
                 availableVersion = remoteVersion
                 releaseURL = release.htmlURL
+                if remoteVersion != notifiedVersion {
+                    notifiedVersion = remoteVersion
+                    onNewVersion?(remoteVersion, release.htmlURL)
+                }
             }
         } catch {
             // Network/parse failure — silent, retry on next timer tick

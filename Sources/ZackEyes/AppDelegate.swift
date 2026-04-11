@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var simulatedNotch: SimulatedNotchController?
     private var usageTracker: UsageTracker!
     private var hotKeyManager: HotKeyManager?
+    private var updateChecker: UpdateChecker?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Prevent macOS from auto-terminating this LSUIElement app when no windows are visible
@@ -24,6 +25,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let session = self?.sessionStore.sessions[sessionId],
                   let pid = session.claudePid else { return }
             _ = TerminalLocator.activateTerminal(containingPid: pid, cwd: session.cwd)
+        }
+        NotificationManager.shared.onUpdateTap = { url in
+            NSWorkspace.shared.open(url)
         }
 
         // Prompt Accessibility permission ONCE at startup (for Ghostty/Warp/Kitty tab focus).
@@ -66,12 +70,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menuBarFallback = mb
 
             // Simulated Dynamic Island at top center (visual indicator)
+            let uc = UpdateChecker()
             let sn = SimulatedNotchController(
                 viewModel: viewModel,
-                usageTracker: usageTracker
+                usageTracker: usageTracker,
+                updateChecker: uc
             )
             sn.setup()
             simulatedNotch = sn
+            updateChecker = uc
             // Tap handling lives inside the controller — it morphs the notch
             // panel itself into the full view (no separate NSPopover).
         }
@@ -121,6 +128,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("ZackEyes: Hook installation failed: \(error)")
             }
         }
+
+        // 6.5 Update checker — polls GitHub Releases every 6h
+        updateChecker?.onNewVersion = { version, url in
+            NotificationManager.shared.notifyUpdateAvailable(version: version, releaseURL: url)
+        }
+        updateChecker?.start()
 
         // 6. Discover already-running sessions from ~/.claude/projects/
         let scanner = SessionScanner()
@@ -189,6 +202,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        updateChecker?.stop()
         hotKeyManager?.unregister()
         socketServer?.stop()
         windowController?.teardown()
