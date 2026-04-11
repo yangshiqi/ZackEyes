@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var usageTracker: UsageTracker!
     private var hotKeyManager: HotKeyManager?
     private var updateChecker: UpdateChecker?
+    private var livenessSweepTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Prevent macOS from auto-terminating this LSUIElement app when no windows are visible
@@ -135,16 +136,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         updateChecker?.start()
 
-        // 6. Discover already-running sessions from ~/.claude/projects/
+        // 6. Discover already-running sessions from ~/.claude/projects/.
+        //    Filter by reverse cwd lookup: only import jsonl files whose
+        //    project directory currently has a running `claude` process.
+        //    For cwds with multiple live claudes, take the N most-recently
+        //    modified jsonls (matches the live count). Runs off main actor
+        //    since `ps` + `lsof` spawn subprocesses.
         let scanner = SessionScanner()
         let detected = scanner.scan(recencyMinutes: 480)  // 8h — covers a full work day
-        sessionStore.importDetectedSessions(detected)
-        NSLog("ZackEyes: imported %d detected sessions", detected.count)
+        Task.detached(priority: .userInitiated) { [weak self, sessionStore] in
+            let cwdCounts = TerminalLocator.runningClaudeCwds()
+            let live = LivenessFilter.filterLiveDetected(detected, cwdCounts: cwdCounts)
+            await MainActor.run {
+                sessionStore?.importDetectedSessions(live)
+                NSLog(
+                    "ZackEyes: imported %d live sessions (filtered from %d candidates)",
+                    live.count, detected.count
+                )
+                // Kick off PID discovery + OSC2 title injection for the imported set
+                self?.activateDetectedSessions()
+            }
+        }
 
-        // 7. Activate detected sessions: find their PIDs and write OSC2
-        //    titles so Layer A tab-jump works on click. Runs in background
-        //    to avoid blocking startup (~200ms per session for lsof/ps).
-        //    Capture value-type snapshots to satisfy Swift 6 Sendable rules.
+        // 7. Periodic liveness sweep — every 60s, drop sessions whose cwd
+        //    no longer matches any running `claude` process. Catches hard
+        //    terminal closes, crashes, and any session whose claude exited
+        //    without firing SessionEnd. Cross-references against `ps` so
+        //    a transient sh wrapper around the bridge can't false-positive.
+        livenessSweepTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.runLivenessSweep() }
+        }
+    }
+
+    /// Discover the claude PID for each detected session and write OSC2 tab
+    /// titles so click-to-jump works. Runs after `importDetectedSessions`.
+    /// Off-main: lsof/ps subprocesses are slow.
+    private func activateDetectedSessions() {
         let snapshots: [(id: String, cwd: String, transcript: String?, prompt: String?)] =
             sessionStore.sessions.values
                 .filter { $0.source == .detected }
@@ -188,10 +215,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 pidCache.append((s.id, pid))
             }
-            // Cache PIDs on MainActor so click handler skips re-discovery
+            // Cache PIDs on MainActor so click handler skips re-discovery.
+            // Only fill in `claudePid` when it's still nil — never overwrite
+            // a value the bridge already supplied via `bridgePpid` for a
+            // session that was upgraded to .live in the meantime.
             await MainActor.run {
                 for (sid, pid) in pidCache {
-                    if var session = store.sessions[sid] {
+                    if var session = store.sessions[sid], session.claudePid == nil {
                         session.claudePid = pid
                         store.sessions[sid] = session
                     }
@@ -201,7 +231,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Periodic sweep: cross-reference each session's cwd against running
+    /// `claude` processes and prune any that have no live owner. Snapshots
+    /// from the main actor, then runs `ps`/`lsof` off main, then evicts
+    /// back on main. Skips sessions with `pendingPermission` (handled by
+    /// the bridge socket abandon path) and applies a 90-second activity
+    /// grace period so a transient subprocess hiccup can't wipe live
+    /// sessions whose hooks are still flowing.
+    private func runLivenessSweep() {
+        let candidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
+            guard let cwd = s.cwd, s.pendingPermission == nil else { return nil }
+            return LivenessFilter.PruneCandidate(id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt)
+        }
+        guard !candidates.isEmpty else { return }
+        let store = sessionStore!
+        Task.detached(priority: .utility) { [weak self] in
+            let cwdCounts = TerminalLocator.runningClaudeCwds()
+            let graceCutoff = Date().addingTimeInterval(-90)
+            let deadIds = LivenessFilter.computeDeadIds(
+                candidates: candidates,
+                cwdCounts: cwdCounts,
+                graceCutoff: graceCutoff
+            )
+            guard !deadIds.isEmpty else { return }
+            await MainActor.run {
+                _ = self                          // keep self alive for the hop
+                store.removeSessions(ids: deadIds)
+                NSLog("ZackEyes: liveness sweep pruned %d dead sessions", deadIds.count)
+            }
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        livenessSweepTimer?.invalidate()
         updateChecker?.stop()
         hotKeyManager?.unregister()
         socketServer?.stop()

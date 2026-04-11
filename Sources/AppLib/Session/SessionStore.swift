@@ -296,6 +296,19 @@ public final class SessionStore: ObservableObject {
         }
     }
 
+    /// Remove sessions by id. Skips any session that currently has a
+    /// pendingPermission — that's an active user-action prompt and must
+    /// only be cleared via the bridge socket's abandon path. The actual
+    /// "is this session dead" decision is made by the caller (typically
+    /// `AppDelegate`, which runs `lsof` off the main actor).
+    public func removeSessions(ids: Set<String>) {
+        for sid in ids {
+            guard let session = sessions[sid] else { continue }
+            if session.pendingPermission != nil { continue }
+            sessions.removeValue(forKey: sid)
+        }
+    }
+
     /// Upgrade a detected session to live when we receive our first hook event for it.
     public func upgradeToLive(sessionId: String) {
         guard var session = sessions[sessionId], session.source == .detected else { return }

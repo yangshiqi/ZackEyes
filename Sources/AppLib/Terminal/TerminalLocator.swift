@@ -49,6 +49,48 @@ public enum TerminalLocator {
         return nil
     }
 
+    /// Snapshot of currently-running `claude` processes, keyed by cwd, valued
+    /// by count of distinct PIDs. Used as the authoritative liveness signal:
+    /// Claude Code does NOT keep its JSONL transcript open between writes
+    /// (open-append-close), so `lsof <transcript>` returns nothing. The only
+    /// reliable signal is "is there a claude process whose cwd matches this
+    /// session's cwd". Two same-cwd sessions are disambiguated by the caller
+    /// (typically by lastActiveAt / lastModified ordering).
+    ///
+    /// Strict match on `comm == "claude"` (not "node") to avoid counting
+    /// dev servers or other unrelated node processes that share a cwd with
+    /// a Claude session.
+    public static func runningClaudeCwds() -> [String: Int] {
+        guard let out = runWithTimeout(
+            "/bin/ps", args: ["-ax", "-o", "pid=,comm="], timeoutSeconds: 3
+        ) else { return [:] }
+
+        var counts: [String: Int] = [:]
+        for line in out.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+            guard parts.count == 2 else { continue }
+            let comm = String(parts[1])
+            let base = (comm as NSString).lastPathComponent
+            guard base == "claude" else { continue }
+            guard let pid = Int(parts[0]) else { continue }
+            if let cwd = processCwd(pid: pid) {
+                counts[Self.canonicalize(cwd), default: 0] += 1
+            }
+        }
+        return counts
+    }
+
+    /// Normalize a filesystem path so two strings naming the same directory
+    /// compare equal: resolves symlinks (e.g. `/Users/foo` vs an Apple
+    /// `/private/Users/foo` style chain) and standardizes (`..`, `~`,
+    /// trailing slashes). Used by the cwd-matching liveness path because
+    /// `lsof` and the JSONL `cwd` field are both raw kernel/user input
+    /// and may disagree on form even when they name the same directory.
+    public static func canonicalize(_ path: String) -> String {
+        ((path as NSString).resolvingSymlinksInPath as NSString).standardizingPath
+    }
+
     private static func lsofPid(file: String) -> Int? {
         guard let out = runWithTimeout("/usr/sbin/lsof", args: ["-t", file], timeoutSeconds: 3) else { return nil }
         for line in out.split(separator: "\n") {
@@ -60,30 +102,72 @@ public enum TerminalLocator {
     }
 
     /// Run a subprocess with a timeout. Returns stdout or nil on error/timeout.
+    ///
+    /// **Why the background drain matters**: macOS pipe buffers are 16-64KB.
+    /// If the subprocess writes more than that and we don't read concurrently,
+    /// it blocks on the next write and `task.isRunning` stays true forever.
+    /// The previous polling-only implementation deadlocked silently for any
+    /// command with non-trivial output (e.g. `ps -ax` with 1000+ processes).
+    ///
+    /// stderr is redirected to /dev/null — same deadlock applies to stderr,
+    /// and we never look at stderr from any caller.
     private static func runWithTimeout(_ path: String, args: [String], timeoutSeconds: Int) -> String? {
         let task = Process()
         task.launchPath = path
         task.arguments = args
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe()
+        let stdoutPipe = Pipe()
+        task.standardOutput = stdoutPipe
+        task.standardError = FileHandle.nullDevice
         do { try task.run() } catch { return nil }
 
-        // Poll for completion
-        let deadline = Date().addingTimeInterval(TimeInterval(timeoutSeconds))
-        while task.isRunning {
-            if Date() >= deadline {
-                task.terminate()
-                Thread.sleep(forTimeInterval: 0.05)
-                if task.isRunning {
-                    kill(task.processIdentifier, SIGKILL)
-                }
-                return nil
-            }
-            Thread.sleep(forTimeInterval: 0.02)
+        // Drain stdout on a background queue so the subprocess can flush
+        // freely. Without this, large outputs deadlock the wait below.
+        // The DataHolder is its own synchronization barrier — captured
+        // closures only touch it via lock-protected accessors so reads
+        // after `drainGroup.wait` see a consistent value.
+        let holder = DataHolder()
+        let drainGroup = DispatchGroup()
+        drainGroup.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            holder.set(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
+            drainGroup.leave()
         }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
+
+        // Schedule a kill if the process overruns its budget. Cancelled
+        // immediately on normal exit so we don't fire after success.
+        let killer = DispatchWorkItem { [task] in
+            guard task.isRunning else { return }
+            task.terminate()
+            Thread.sleep(forTimeInterval: 0.05)
+            if task.isRunning { kill(task.processIdentifier, SIGKILL) }
+        }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(
+            deadline: .now() + .seconds(timeoutSeconds), execute: killer
+        )
+
+        task.waitUntilExit()
+        killer.cancel()
+
+        // Drain finishes when the pipe closes — should be near-instant.
+        _ = drainGroup.wait(timeout: .now() + 1.0)
+
+        return String(data: holder.get(), encoding: .utf8)
+    }
+
+    /// Lock-protected `Data` holder so the background drain in
+    /// `runWithTimeout` can hand a value back to the caller without a
+    /// data race. Marked `@unchecked Sendable` because we provide our
+    /// own synchronization (NSLock) and never expose the inner storage.
+    private final class DataHolder: @unchecked Sendable {
+        private var storage = Data()
+        private let lock = NSLock()
+        func set(_ value: Data) {
+            lock.lock(); storage = value; lock.unlock()
+        }
+        func get() -> Data {
+            lock.lock(); defer { lock.unlock() }
+            return storage
+        }
     }
 
     private static func claudePidByCwd(_ targetCwd: String) -> Int? {

@@ -112,6 +112,27 @@ struct SessionStoreTests {
         #expect(store.primarySession?.id == "s1")
     }
 
+    // 10b. removeSessions deletes the requested ids, but refuses to clear
+    //       a session that has an active pendingPermission, and silently
+    //       ignores ids that don't exist in the store.
+    @Test func removeSessionsRespectsPendingPermissionAndUnknownIds() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "a", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "b", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "c", cwd: "/tmp"))
+
+        // c has a pending permission — should survive a remove request
+        let permission = PendingPermission(toolName: "Bash", toolInput: [:], cwd: "/tmp", responder: { _ in })
+        store.handlePermissionRequest(sessionId: "c", permission: permission)
+
+        store.removeSessions(ids: ["a", "c", "ghost"])
+
+        #expect(store.sessions["a"] == nil)            // removed
+        #expect(store.sessions["b"] != nil)            // not requested
+        #expect(store.sessions["c"] != nil)            // pending — refused
+        #expect(store.sessions.count == 2)             // ghost id is a no-op
+    }
+
     // 10. Aggregate state reflects worst status across sessions
     @Test func aggregateStateReflectsWorstStatus() {
         let store = SessionStore()
