@@ -190,6 +190,10 @@ public final class SimulatedNotchController {
             startOutsideClickMonitoring()
         } else {
             stopOutsideClickMonitoring()
+            // Revert key status when collapsing (unless hotkey recorder is open)
+            if !modeStore.isHotkeyRecorderShown {
+                panel.allowsKeyStatus = false
+            }
         }
     }
 
@@ -201,8 +205,11 @@ public final class SimulatedNotchController {
     /// Force the panel into full mode regardless of current state. Used
     /// by event-driven triggers (permission requests, errors) where the
     /// caller wants the panel open, not toggled.
+    /// Also enables key status so keyboard shortcuts (⌘Y/⌘N) work.
     public func forceExpand() {
         setMode(.full)
+        panel?.allowsKeyStatus = true
+        panel?.makeKey()
     }
 
     /// Tear down the About overlay if it's currently shown. Used by the
