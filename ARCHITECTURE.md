@@ -157,7 +157,8 @@ Full 模式下：
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `HotKeyManager` | `Sources/AppLib/HotKey/HotKeyManager.swift` | Carbon `RegisterEventHotKey` 注册全局快捷键（可配置，默认 `Cmd+Shift+Z`），支持运行时 `reregister` 热更新 |
-| `NotificationManager` | `Sources/AppLib/Notifications/NotificationManager.swift` | 时间敏感通知（session 完成 / API 错误），点击跳转终端 |
+| `NotificationManager` | `Sources/AppLib/Notifications/NotificationManager.swift` | 时间敏感通知（session 完成 / API 错误 / 版本更新），点击跳转终端或打开 GitHub |
+| `UpdateChecker` | `Sources/AppLib/Update/UpdateChecker.swift` | GitHub Releases API 轮询（6h），语义版本比较，`@Published` 状态驱动齿轮红点 + 系统通知 |
 | `TerminalLocator` | `Sources/AppLib/Terminal/TerminalLocator.swift` | 进程树遍历 + iTerm2/Terminal AppleScript + Ghostty/Warp/Kitty Accessibility |
 | `UsageTracker` | `Sources/AppLib/Usage/UsageTracker.swift` | hook stdin 的真实 `rate_limits` 优先，transcript token fallback |
 
@@ -231,6 +232,7 @@ ccisland/
 │   │   ├── HotKey/             # HotKeyManager（可配置快捷键）
 │   │   ├── Notifications/      # NotificationManager
 │   │   ├── Terminal/           # TerminalLocator (tab 跳转)
+│   │   ├── Update/             # UpdateChecker (GitHub 版本检测)
 │   │   └── Usage/              # UsageTracker (5h/7d 限额)
 │   └── ZackEyes/               # main.swift + AppDelegate
 └── Tests/
