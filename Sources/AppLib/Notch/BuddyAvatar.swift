@@ -2,10 +2,16 @@ import SwiftUI
 import Shared
 
 /// Animated pixel avatar with personality — bounces when working, sleeps when idle, shakes when waiting.
+///
+/// `recentlyActive` defers the sleeping animation: when an idle session has had
+/// activity in the last few seconds (parent decides the threshold), the buddy
+/// stays in a calm "resting" pose instead of immediately dropping into Zzz.
+/// Avoids the jarring "task done → instant sleep" transition.
 struct BuddyAvatar: View {
     let seed: String
     let state: SessionState
-    let isWaiting: Bool   // has pending permission
+    let isWaiting: Bool       // has pending permission
+    let recentlyActive: Bool  // idle but within parent's grace window
     var size: CGFloat = 32
 
     @State private var bounce: CGFloat = 0
@@ -20,13 +26,21 @@ struct BuddyAvatar: View {
     @State private var z2Phase: Double = 0.33
     @State private var z3Phase: Double = 0.66
 
-    private let isIdle: Bool
-    init(seed: String, state: SessionState, isWaiting: Bool, size: CGFloat = 32) {
+    private let showSleeping: Bool
+    init(
+        seed: String,
+        state: SessionState,
+        isWaiting: Bool,
+        recentlyActive: Bool = false,
+        size: CGFloat = 32
+    ) {
         self.seed = seed
         self.state = state
         self.isWaiting = isWaiting
+        self.recentlyActive = recentlyActive
         self.size = size
-        self.isIdle = (state == .idle || state == .stopped) && !isWaiting
+        let isAtRest = (state == .idle || state == .stopped) && !isWaiting
+        self.showSleeping = isAtRest && !recentlyActive
     }
 
     var body: some View {
@@ -35,10 +49,10 @@ struct BuddyAvatar: View {
                 .offset(x: shake, y: bounce + rockBounce)
                 .scaleEffect(breathe)
                 .rotationEffect(.degrees(rockTilt + shake * 3 + sleepDroop))
-                .opacity(isIdle ? 0.55 : 1.0)
+                .opacity(showSleeping ? 0.55 : 1.0)
 
             // Sleep "Zzz" — three floating letters of increasing size
-            if isIdle {
+            if showSleeping {
                 zFloat(phase: z1Phase, size: size * 0.28, xOffset: 0.40, delay: 0)
                 zFloat(phase: z2Phase, size: size * 0.34, xOffset: 0.50, delay: 0.4)
                 zFloat(phase: z3Phase, size: size * 0.42, xOffset: 0.62, delay: 0.8)
@@ -48,6 +62,7 @@ struct BuddyAvatar: View {
         .onAppear { applyAnimation() }
         .onChange(of: state) { _, _ in applyAnimation() }
         .onChange(of: isWaiting) { _, _ in applyAnimation() }
+        .onChange(of: recentlyActive) { _, _ in applyAnimation() }
     }
 
     @ViewBuilder
@@ -86,7 +101,7 @@ struct BuddyAvatar: View {
                 rockTilt = -14
                 rockBounce = 1.5
             }
-        } else {
+        } else if showSleeping {
             // Sleeping — buddy drooping + slow breathing + cascading Zzz
             withAnimation(.easeInOut(duration: 3.0).repeatForever(autoreverses: true)) {
                 sleepDroop = 8
@@ -103,6 +118,12 @@ struct BuddyAvatar: View {
             }
             withAnimation(.linear(duration: 2.4).delay(1.6).repeatForever(autoreverses: false)) {
                 z3Phase = 1
+            }
+        } else {
+            // Resting — idle but recently active, gentle breathing only.
+            // No headbang, no droop, no Zzz; just shows the buddy is alive.
+            withAnimation(.easeInOut(duration: 2.4).repeatForever(autoreverses: true)) {
+                breathe = 1.03
             }
         }
     }
