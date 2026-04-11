@@ -9,6 +9,7 @@ struct SimulatedNotchFullView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
     @ObservedObject var modeStore: NotchModeStore
+    @ObservedObject var updateChecker: UpdateChecker
     var cornerRadius: CGFloat = 22
 
     /// Weak handle to the actual NSView backing the gear button. Set by
@@ -165,6 +166,14 @@ struct SimulatedNotchFullView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(.white.opacity(0.85))
                 .frame(width: 22, height: 22)
+                .overlay(alignment: .topTrailing) {
+                    if updateChecker.availableVersion != nil {
+                        Circle()
+                            .fill(.red)
+                            .frame(width: 6, height: 6)
+                            .offset(x: 2, y: -2)
+                    }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -176,6 +185,17 @@ struct SimulatedNotchFullView: View {
     /// stay window-local — no screen conversion, multi-monitor safe.
     private func popGearMenu() {
         let menu = NSMenu()
+
+        if let version = updateChecker.availableVersion {
+            let update = NSMenuItem(
+                title: "Update Available (v\(version))",
+                action: #selector(GearMenuTarget.updateClicked(_:)),
+                keyEquivalent: ""
+            )
+            update.target = GearMenuTarget.shared
+            menu.addItem(update)
+            menu.addItem(.separator())
+        }
 
         let about = NSMenuItem(
             title: "About",
@@ -203,6 +223,7 @@ struct SimulatedNotchFullView: View {
         quit.target = NSApp
         menu.addItem(quit)
 
+        GearMenuTarget.shared.releaseURL = updateChecker.releaseURL
         GearMenuTarget.shared.modeStore = modeStore
 
         // Anchor in window coordinates, relative to the gear's NSView.

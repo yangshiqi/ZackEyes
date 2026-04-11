@@ -14,6 +14,7 @@ import SwiftUI
 public final class SimulatedNotchController {
     private let viewModel: NotchViewModel
     private let usageTracker: UsageTracker
+    private let updateChecker: UpdateChecker
     public var onTap: (() -> Void)?
 
     public var anchorView: NSView? { hostingView }
@@ -52,9 +53,10 @@ public final class SimulatedNotchController {
     private let curveC2x: Double = 0.40
     private let curveC2y: Double = 1.00
 
-    public init(viewModel: NotchViewModel, usageTracker: UsageTracker) {
+    public init(viewModel: NotchViewModel, usageTracker: UsageTracker, updateChecker: UpdateChecker) {
         self.viewModel = viewModel
         self.usageTracker = usageTracker
+        self.updateChecker = updateChecker
     }
 
     public func setup() {
@@ -99,6 +101,7 @@ public final class SimulatedNotchController {
             viewModel: viewModel,
             usageTracker: usageTracker,
             modeStore: modeStore,
+            updateChecker: updateChecker,
             compactWidth: compactWidth,
             fullWidth: fullWidth,
             notchHeight: notchHeight,

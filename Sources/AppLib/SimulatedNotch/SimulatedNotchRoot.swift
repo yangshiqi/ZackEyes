@@ -74,6 +74,7 @@ struct SimulatedNotchRoot: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
     @ObservedObject var modeStore: NotchModeStore
+    @ObservedObject var updateChecker: UpdateChecker
     let compactWidth: CGFloat
     let fullWidth: CGFloat
     let notchHeight: CGFloat
@@ -105,6 +106,7 @@ struct SimulatedNotchRoot: View {
                 viewModel: viewModel,
                 usageTracker: usageTracker,
                 modeStore: modeStore,
+                updateChecker: updateChecker,
                 cornerRadius: 22
             )
             .frame(width: fullWidth, height: fullHeight)
