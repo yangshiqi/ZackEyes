@@ -58,12 +58,10 @@ public enum LivenessFilter {
     ///
     /// Rules, applied in order:
     ///
-    /// 1. **Snapshot failure → no eviction.** If `cwdCounts` is `nil`, the
-    ///    `ps`/`lsof` snapshot failed (transient subprocess error, missing
-    ///    entitlement, etc.). Evict nothing rather than risk wiping the
-    ///    panel; the next sweep will retry. An *empty but non-nil* dict
-    ///    is treated as legitimate "no claudes running" — every candidate
-    ///    is eligible for eviction (subject to the grace period).
+    /// 1. **Empty `cwdCounts` short-circuit** — if the cwd map is empty,
+    ///    we assume the `ps`/`lsof` snapshot failed (transient subprocess
+    ///    error, missing entitlement, etc.). Evict nothing rather than
+    ///    risk wiping the entire panel; the next sweep will retry.
     /// 2. **Recent activity grace period** — sessions whose `lastActiveAt`
     ///    is newer than `graceCutoff` are kept regardless of cwd matching.
     ///    Hooks firing this minute is irrefutable proof of life and
@@ -74,10 +72,10 @@ public enum LivenessFilter {
     ///    that watermark is presumed dead and evicted.
     public static func computeDeadIds(
         candidates: [PruneCandidate],
-        cwdCounts: [String: Int]?,
+        cwdCounts: [String: Int],
         graceCutoff: Date
     ) -> Set<String> {
-        guard let cwdCounts = cwdCounts else { return [] }
+        guard !cwdCounts.isEmpty else { return [] }
 
         var grouped: [String: [PruneCandidate]] = [:]
         for c in candidates {

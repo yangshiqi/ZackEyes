@@ -65,34 +65,17 @@ struct LivenessFilterTests {
 
     // MARK: - computeDeadIds
 
-    @Test func computeDeadIdsBailsWhenSnapshotFailed() {
+    @Test func computeDeadIdsShortCircuitsOnEmptyCounts() {
         let candidates = [
             LivenessFilter.PruneCandidate(
                 id: "a", cwd: "/foo", lastActiveAt: Date.distantPast
             )
         ]
-        // nil cwdCounts = ps/lsof outright failure → never wipe; sweep will retry
         let dead = LivenessFilter.computeDeadIds(
-            candidates: candidates, cwdCounts: nil, graceCutoff: Date()
+            candidates: candidates, cwdCounts: [:], graceCutoff: Date()
         )
+        // ps snapshot failed → never wipe; sweep will retry
         #expect(dead.isEmpty)
-    }
-
-    @Test func computeDeadIdsEvictsAllWhenNoClaudesRunning() {
-        // Empty (but non-nil) counts = ps succeeded with zero claude processes,
-        // e.g. user closed all their terminals. Everything past the grace
-        // window must be evicted, otherwise tombstones live forever.
-        let now = Date()
-        let candidates = [
-            LivenessFilter.PruneCandidate(id: "a", cwd: "/foo", lastActiveAt: now.addingTimeInterval(-300)),
-            LivenessFilter.PruneCandidate(id: "b", cwd: "/bar", lastActiveAt: now.addingTimeInterval(-300)),
-        ]
-        let dead = LivenessFilter.computeDeadIds(
-            candidates: candidates,
-            cwdCounts: [:],
-            graceCutoff: now.addingTimeInterval(-90)
-        )
-        #expect(dead == ["a", "b"])
     }
 
     @Test func computeDeadIdsKeepsRecentlyActiveSessionsEvenOnCwdMiss() {
