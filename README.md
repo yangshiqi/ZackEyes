@@ -21,8 +21,9 @@ A native macOS Dynamic Island for Claude Code. Watches every active session, sur
 - **Personality**: every session gets a deterministic pixel-art rock musician (66+ legends from Queen to RATM). Buddies bounce when working, sleep when idle, panic-shake when waiting on you.
 - **Multi-session**: tracks every concurrent Claude Code window independently with its own state, tasks, and prompt history.
 - **Tasks**: mirrors the Task tool's plan list with progress and status.
-- **Cmd + Shift + Z** global hotkey toggles the panel from anywhere.
-- **Zero third-party dependencies**: pure Foundation + AppKit + SwiftUI. About 46MB binary.
+- **Customizable global hotkey**: defaults to `Cmd + Shift + Z`, changeable from the gear menu.
+- **Update checker**: polls GitHub Releases every 6h, gear icon red badge + system notification when a new version is available.
+- **Zero third-party dependencies**: pure Foundation + AppKit + SwiftUI.
 
 ## Requirements
 
@@ -93,7 +94,7 @@ These six invariants are enforced by both code review and tests:
 
 ```bash
 swift build                  # debug build
-swift test                   # 23 unit tests
+swift test                   # 73 unit tests (50 XCTest + 23 Swift Testing)
 make app                     # debug build + assemble .app bundle
 make app-release             # release build + bundle
 make run                     # build + open
@@ -112,15 +113,17 @@ Sources/
 ├── BridgeLib/                    # Bridge logic (testable)
 ├── Bridge/                       # CLI entry point
 ├── AppLib/                       # All app logic (testable)
+│   ├── Config/                   # HotKeyConfig, ConfigStore
 │   ├── Socket/
 │   ├── Session/
 │   ├── Hooks/
-│   ├── Notch/                    # Real notch panel
+│   ├── Notch/                    # Real notch panel + HotkeyRecorderView
 │   ├── SimulatedNotch/           # Simulated Dynamic Island
 │   ├── MenuBar/
 │   ├── HotKey/
 │   ├── Notifications/
 │   ├── Terminal/
+│   ├── Update/                   # UpdateChecker (GitHub version detection)
 │   └── Usage/
 └── ZackEyes/                     # NSApplication entry point + AppDelegate
 

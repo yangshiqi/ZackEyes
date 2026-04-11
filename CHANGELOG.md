@@ -2,7 +2,7 @@
 
 All notable changes to ZackEyes. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## [Unreleased] — 2026-04-07
+## [0.1.0] — 2026-04-11
 
 ### Added
 
@@ -80,8 +80,22 @@ All notable changes to ZackEyes. Format follows [Keep a Changelog](https://keepa
 - Critical notification with sound when an API error / rate limit is detected
 - Tap a notification → jumps to the originating terminal tab
 
+#### Custom hotkey
+- Global toggle hotkey configurable from the gear menu ("Change Hotkey…")
+- Key recorder overlay captures key combo via `NSEvent` local monitor, validates at least one modifier
+- Persisted to `~/.zackeyes/config.json`, loaded at startup, hot-swapped at runtime via `HotKeyManager.reregister()`
+- Default remains `Cmd + Shift + Z`
+
+#### Update checker
+- Polls `GET /repos/yangshiqi/ZackEyes/releases/latest` on startup + every 6 hours
+- Semantic version comparison (major.minor.patch)
+- Red 6pt badge on gear icon when update available
+- "Update Available (vX.Y.Z)" menu item → opens GitHub Releases page
+- One-time system notification per version (deduped via UserDefaults)
+- Optional GitHub token in `~/.zackeyes/config.json` for private repos
+
 #### Other UX
-- **Cmd + Shift + Z** global hotkey via Carbon `RegisterEventHotKey`
+- **Cmd + Shift + Z** global hotkey via Carbon `RegisterEventHotKey` (now customizable)
 - Menu bar icon: `sparkles` SF Symbol with state-based tint (gray idle, teal working, orange waiting)
 - Popover (when not using simulated notch) auto-dismisses on any click outside via global + local NSEvent monitors
 - Ad-hoc code signing in Makefile so Accessibility / Apple Events grants persist across rebuilds
@@ -94,24 +108,11 @@ All notable changes to ZackEyes. Format follows [Keep a Changelog](https://keepa
 - Tasks list reset at every new user prompt
 - Click handler runs on background task with subprocess timeouts to prevent UI hang
 - Removed misleading "Restart session for live tracking" hint — scanned sessions auto-upgrade on the next live event
+- `ConfigStore.save()` preserves all config keys (previously overwrote `githubToken` on hotkey save)
 
 ### Architecture / Build
 - Swift Package Manager with 5 targets (`Shared`, `BridgeLib`, `AppLib` libraries; `Bridge`, `ZackEyes` executables) + 3 test targets
-- 23 unit tests covering protocol round-trips, socket I/O, session state machine, hook installer
+- 73 unit tests (50 XCTest + 23 Swift Testing)
+- `make dmg` builds universal binary (arm64 + x86_64) DMG for distribution
 - Makefile assembles the `.app` bundle and applies ad-hoc code signature
 - Zero third-party dependencies
-
-## [0.1.0] — 2026-04-05 — MVP
-
-Initial release. Core hook → bridge → socket → notch panel pipeline.
-
-### Added
-- Bridge CLI with stdin parsing, event routing, and exit code strategy
-- `SocketServer` listening on `/tmp/zackeyes.sock`
-- `SessionStore` state machine
-- `HookInstaller` with safe merge, backup, and uninstall
-- `NotchPanel` with three states (collapsed / compact / expanded) for real-notch Macs
-- `MenuBarFallback` with `NSStatusItem` + `NSPopover` for notchless Macs
-- `NotchExpandedView` with permission approval UI
-- `AppDelegate` wiring all components together
-- Manual end-to-end verification with real Claude Code in plan mode
