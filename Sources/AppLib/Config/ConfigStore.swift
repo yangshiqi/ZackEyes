@@ -30,20 +30,39 @@ public final class ConfigStore: Sendable {
         return wrapper.hotkey
     }
 
-    /// Save the hotkey config atomically. Creates directory if needed.
+    /// Load the GitHub token (optional). Returns nil if not configured.
+    public func loadGitHubToken() -> String? {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+            return nil
+        }
+        return wrapper.githubToken
+    }
+
+    /// Save the hotkey config atomically. Preserves other keys (e.g. githubToken).
+    /// Creates directory if needed.
     public func save(_ config: HotKeyConfig) {
         let fm = FileManager.default
         if !fm.fileExists(atPath: directory) {
             try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
         }
-        let wrapper = ConfigWrapper(hotkey: config)
+        // Read existing config to preserve other keys
+        var wrapper: ConfigWrapper
+        if let data = fm.contents(atPath: configPath),
+           let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) {
+            wrapper = existing
+        } else {
+            wrapper = ConfigWrapper(hotkey: .default)
+        }
+        wrapper.hotkey = config
         guard let data = try? JSONEncoder().encode(wrapper) else { return }
         try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
 }
 
-/// Top-level JSON wrapper so config.json has `{ "hotkey": { ... } }` structure,
-/// leaving room for future settings keys without breaking the file format.
+/// Top-level JSON wrapper for ~/.zackeyes/config.json.
+/// All known keys are modeled here so save() preserves them.
 private struct ConfigWrapper: Codable {
     var hotkey: HotKeyConfig
+    var githubToken: String?
 }
