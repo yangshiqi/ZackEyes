@@ -130,8 +130,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // Write OSC2 title with sid marker
                 let basename = (s.cwd as NSString).lastPathComponent
                 let sidShort = String(s.id.prefix(8))
-                let prompt = String((s.prompt ?? "").prefix(30))
-                    .replacingOccurrences(of: "\n", with: " ")
+                // Sanitize: replace \n\r\t with space, strip C0 control chars + DEL
+                let rawPrompt = s.prompt ?? ""
+                var sanitized = ""
+                for scalar in rawPrompt.unicodeScalars {
+                    if scalar == "\n" || scalar == "\r" || scalar == "\t" {
+                        sanitized.append(" ")
+                    } else if scalar.value < 0x20 || scalar.value == 0x7F {
+                        continue
+                    } else {
+                        sanitized.append(Character(scalar))
+                    }
+                }
+                let prompt = String(sanitized.prefix(30))
                 let title = prompt.isEmpty
                     ? "\(basename) · ze:\(sidShort)"
                     : "\(basename) · \(prompt) · ze:\(sidShort)"
