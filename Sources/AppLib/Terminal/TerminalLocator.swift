@@ -206,8 +206,12 @@ public enum TerminalLocator {
 
         // Schedule a kill if the process overruns its budget. Cancelled
         // immediately on normal exit so we don't fire after success.
-        let killer = DispatchWorkItem { [task] in
+        // The `holder.markTimedOut()` only fires when we actually terminate
+        // the task — that lets the caller distinguish a real timeout
+        // (return nil) from "ran cleanly with empty output" (return "").
+        let killer = DispatchWorkItem { [task, holder] in
             guard task.isRunning else { return }
+            holder.markTimedOut()
             task.terminate()
             Thread.sleep(forTimeInterval: 0.05)
             if task.isRunning { kill(task.processIdentifier, SIGKILL) }
@@ -222,15 +226,26 @@ public enum TerminalLocator {
         // Drain finishes when the pipe closes — should be near-instant.
         _ = drainGroup.wait(timeout: .now() + 1.0)
 
+        if holder.isTimedOut() { return nil }
         return String(data: holder.get(), encoding: .utf8)
     }
 
-    /// Lock-protected `Data` holder so the background drain in
-    /// `runWithTimeout` can hand a value back to the caller without a
-    /// data race. Marked `@unchecked Sendable` because we provide our
-    /// own synchronization (NSLock) and never expose the inner storage.
+    /// Lock-protected `Data` holder + timeout flag so the background drain
+    /// and the timer-driven killer in `runWithTimeout` can both hand state
+    /// back to the caller without a data race. Marked `@unchecked Sendable`
+    /// because we provide our own synchronization (NSLock) and never expose
+    /// the inner storage.
+    ///
+    /// `markTimedOut` is called by the killer ONLY when it actually
+    /// terminates a still-running task — so it accurately reflects "we
+    /// killed it because the deadline passed", not "the killer's
+    /// `DispatchWorkItem` happened to dequeue after the task naturally
+    /// exited". `runWithTimeout` checks this before turning the buffered
+    /// stdout into a String, so callers can distinguish a real timeout
+    /// (return `nil`) from "ran cleanly with no output" (return `""`).
     private final class DataHolder: @unchecked Sendable {
         private var storage = Data()
+        private var timedOut = false
         private let lock = NSLock()
         func set(_ value: Data) {
             lock.lock(); storage = value; lock.unlock()
@@ -238,6 +253,13 @@ public enum TerminalLocator {
         func get() -> Data {
             lock.lock(); defer { lock.unlock() }
             return storage
+        }
+        func markTimedOut() {
+            lock.lock(); timedOut = true; lock.unlock()
+        }
+        func isTimedOut() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            return timedOut
         }
     }
 
