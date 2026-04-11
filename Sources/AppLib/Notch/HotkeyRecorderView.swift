@@ -89,11 +89,6 @@ struct HotkeyRecorderView: View {
                 return nil // swallow the event
             }
 
-            // Don't accept bare Escape (it's our cancel)
-            if event.keyCode == UInt16(kVK_Escape) && mods.isEmpty {
-                return event
-            }
-
             errorMessage = nil
             capturedKeyCode = UInt32(event.keyCode)
             capturedModifiers = mods
