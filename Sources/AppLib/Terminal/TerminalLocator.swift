@@ -67,31 +67,55 @@ public enum TerminalLocator {
     ///   Callers can act on this (e.g. the sweep prunes everything past
     ///   the grace window).
     ///
-    /// Matches both `comm == "claude"` (native binary install) and
-    /// `comm == "node"` (npm install runs Claude Code as a node script).
-    /// Mirrors the long-standing `claudePidByCwd` heuristic. Yes, this can
-    /// over-count if you have an unrelated node dev server in the same cwd
-    /// as a real claude — the cost is at most importing one extra stale
-    /// jsonl, which the 90s sweep grace period catches.
+    /// Matching reads full `argv` (via `ps -o args`) instead of `comm`.
+    /// We can't just match `comm == "node"` because every Vue/webpack/vite
+    /// dev server in a project subdirectory would then masquerade as a
+    /// Claude session — that's exactly the false positive we hit when we
+    /// tried the looser match. Rules:
+    ///
+    /// - `argv[0]` basename is `claude` → native binary install. Match.
+    /// - `argv[0]` basename is `node` **and** `argv[1]` path contains
+    ///   `/claude` (covers both `…/claude-code/cli.js` for npm installs
+    ///   and any future `…/claude.js`-style entry point). Match.
+    /// - Anything else → skip. A `node` process running vue-cli-service,
+    ///   vite, jest, webpack, etc. is not Claude Code.
     public static func runningClaudeCwds() -> [String: Int]? {
         guard let out = runWithTimeout(
-            "/bin/ps", args: ["-ax", "-o", "pid=,comm="], timeoutSeconds: 3
+            "/bin/ps", args: ["-ax", "-o", "pid=,args="], timeoutSeconds: 3
         ) else { return nil }
 
         var counts: [String: Int] = [:]
         for line in out.split(separator: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
-            let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
-            guard parts.count == 2 else { continue }
-            let comm = String(parts[1])
-            let base = (comm as NSString).lastPathComponent
-            guard base == "claude" || base == "node" else { continue }
-            guard let pid = Int(parts[0]) else { continue }
+            guard let firstSpace = trimmed.firstIndex(of: " ") else { continue }
+            guard let pid = Int(trimmed[..<firstSpace]) else { continue }
+            let argsStr = String(trimmed[trimmed.index(after: firstSpace)...])
+                .trimmingCharacters(in: .whitespaces)
+            guard isClaudeProcess(args: argsStr) else { continue }
             if let cwd = processCwd(pid: pid) {
                 counts[Self.canonicalize(cwd), default: 0] += 1
             }
         }
         return counts
+    }
+
+    /// True iff `args` (as printed by `ps -o args`) belongs to a real
+    /// Claude Code process — either the native `claude` binary or a
+    /// node interpreter running the Claude Code CLI script. Excludes
+    /// every other node-based tool that might share a project cwd.
+    static func isClaudeProcess(args: String) -> Bool {
+        let argv = args.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        guard let first = argv.first else { return false }
+        let argv0Base = (first as NSString).lastPathComponent
+        if argv0Base == "claude" { return true }
+        if argv0Base == "node", argv.count >= 2 {
+            // npm install runs `node /…/claude-code/cli.js`. Match if the
+            // script path includes a `/claude` segment (covers `claude-code`,
+            // `claude.js`, etc.). Avoids matching `node /…/vue-cli-service`,
+            // `node /…/vite/bin/vite.js`, etc.
+            if argv[1].contains("/claude") { return true }
+        }
+        return false
     }
 
     /// Normalize a filesystem path so two strings naming the same directory
