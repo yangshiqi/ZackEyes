@@ -94,6 +94,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hotKeyManager = hk
 
+        // Listen for hotkey config changes from the recorder UI
+        NotificationCenter.default.addObserver(
+            forName: .hotkeyConfigChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let config = notification.userInfo?["config"] as? HotKeyConfig
+            Task { @MainActor in
+                guard let self, let config else { return }
+                self.hotKeyManager?.reregister(
+                    keyCode: config.keyCode,
+                    modifiers: config.modifiers.carbonFlags
+                )
+            }
+        }
+
         // 5. Hook Installer (silent, best-effort)
         Task {
             do {

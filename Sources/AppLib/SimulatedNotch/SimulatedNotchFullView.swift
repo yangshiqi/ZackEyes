@@ -35,6 +35,7 @@ struct SimulatedNotchFullView: View {
         .background(NotchShape(cornerRadius: cornerRadius).fill(Color.black))
         .clipShape(NotchShape(cornerRadius: cornerRadius))
         .overlay(aboutOverlay)
+        .overlay(hotkeyRecorderOverlay)
     }
 
     /// About card overlay — semi-transparent backdrop + centered card
@@ -79,6 +80,29 @@ struct SimulatedNotchFullView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { /* no-op: prevent backdrop dismiss when tapping card */ }
             }
+            .transition(.opacity)
+        }
+    }
+
+    /// Hotkey recorder overlay — captures a new global shortcut.
+    @ViewBuilder
+    private var hotkeyRecorderOverlay: some View {
+        if modeStore.isHotkeyRecorderShown {
+            HotkeyRecorderView(
+                currentConfig: ConfigStore().load(),
+                onSave: { newConfig in
+                    ConfigStore().save(newConfig)
+                    NotificationCenter.default.post(
+                        name: .hotkeyConfigChanged,
+                        object: nil,
+                        userInfo: ["config": newConfig]
+                    )
+                    modeStore.isHotkeyRecorderShown = false
+                },
+                onCancel: {
+                    modeStore.isHotkeyRecorderShown = false
+                }
+            )
             .transition(.opacity)
         }
     }
@@ -278,4 +302,8 @@ struct SimulatedNotchFullView: View {
         if hours > 0 { return "\(hours)h \(mins)m" }
         return "\(mins)m"
     }
+}
+
+public extension Notification.Name {
+    static let hotkeyConfigChanged = Notification.Name("hotkeyConfigChanged")
 }
