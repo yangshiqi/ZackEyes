@@ -147,8 +147,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task.detached(priority: .userInitiated) { [weak self] in
             // ps/lsof off main; @MainActor SessionStore is touched only
             // inside the MainActor.run hop below via self?.sessionStore.
-            let cwdCounts = TerminalLocator.runningClaudeCwds() ?? [:]
-            let live = LivenessFilter.filterLiveDetected(detected, cwdCounts: cwdCounts)
+            //
+            // Snapshot failure (nil) at startup falls back to importing
+            // every detected session, mirroring the sweep's "do nothing"
+            // semantics: better to show some tombstones temporarily than
+            // to silently miss live sessions whose owning claude isn't
+            // currently firing hooks. The 60s sweep cleans up if ps
+            // recovers; if it stays broken, the user at least sees their
+            // running sessions.
+            let cwdCounts = TerminalLocator.runningClaudeCwds()
+            let live = cwdCounts.map { LivenessFilter.filterLiveDetected(detected, cwdCounts: $0) }
+                ?? detected
             await MainActor.run {
                 self?.sessionStore.importDetectedSessions(live)
                 NSLog(

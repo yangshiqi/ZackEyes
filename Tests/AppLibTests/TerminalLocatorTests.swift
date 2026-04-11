@@ -19,6 +19,17 @@ struct TerminalLocatorTests {
         #expect(TerminalLocator.isClaudeProcess(args: npmLocal))
     }
 
+    @Test func npmClaudeWithNodeFlagsStillMatches() {
+        // node interpreter flags push the script path past argv[1].
+        // The matching must scan all subsequent tokens, not just argv[1].
+        let withInspect = "node --inspect /usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js"
+        let withMemFlag = "node --max-old-space-size=4096 /opt/claude-code/cli.js --resume"
+        let withMultiple = "node --inspect-brk --enable-source-maps /path/claude-code/cli.js"
+        #expect(TerminalLocator.isClaudeProcess(args: withInspect))
+        #expect(TerminalLocator.isClaudeProcess(args: withMemFlag))
+        #expect(TerminalLocator.isClaudeProcess(args: withMultiple))
+    }
+
     @Test func vueDevServerDoesNotMatch() {
         // The exact false positive that Pete-from-The-Who tombstone hit:
         // a Vue CLI dev server running in /packages/web subdirectory.

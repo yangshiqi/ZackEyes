@@ -70,21 +70,26 @@ public enum TerminalLocator {
     /// Matching reads full `argv` (via `ps -o args`) instead of `comm`.
     /// We can't just match `comm == "node"` because every Vue/webpack/vite
     /// dev server in a project subdirectory would then masquerade as a
-    /// Claude session — that's exactly the false positive we hit when we
-    /// tried the looser match. Rules:
-    ///
-    /// - `argv[0]` basename is `claude` → native binary install. Match.
-    /// - `argv[0]` basename is `node` **and** `argv[1]` path contains
-    ///   `/claude` (covers both `…/claude-code/cli.js` for npm installs
-    ///   and any future `…/claude.js`-style entry point). Match.
-    /// - Anything else → skip. A `node` process running vue-cli-service,
-    ///   vite, jest, webpack, etc. is not Claude Code.
+    /// Claude session. See `isClaudeProcess` for the matching rules.
     public static func runningClaudeCwds() -> [String: Int]? {
+        guard let pids = runningClaudePids() else { return nil }
+        let cwdMap = batchProcessCwds(pids: pids)
+        var counts: [String: Int] = [:]
+        for cwd in cwdMap.values {
+            counts[Self.canonicalize(cwd), default: 0] += 1
+        }
+        return counts
+    }
+
+    /// Returns PIDs of all currently-running Claude Code processes via
+    /// `ps -o args` + `isClaudeProcess`. Returns `nil` on subprocess
+    /// failure (transient ps error, missing entitlement). Returns empty
+    /// array if ps succeeded with zero matches.
+    private static func runningClaudePids() -> [Int]? {
         guard let out = runWithTimeout(
             "/bin/ps", args: ["-ax", "-o", "pid=,args="], timeoutSeconds: 3
         ) else { return nil }
-
-        var counts: [String: Int] = [:]
+        var pids: [Int] = []
         for line in out.split(separator: "\n") {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard let firstSpace = trimmed.firstIndex(of: " ") else { continue }
@@ -92,30 +97,59 @@ public enum TerminalLocator {
             let argsStr = String(trimmed[trimmed.index(after: firstSpace)...])
                 .trimmingCharacters(in: .whitespaces)
             guard isClaudeProcess(args: argsStr) else { continue }
-            if let cwd = processCwd(pid: pid) {
-                counts[Self.canonicalize(cwd), default: 0] += 1
-            }
+            pids.append(pid)
         }
-        return counts
+        return pids
     }
 
     /// True iff `args` (as printed by `ps -o args`) belongs to a real
     /// Claude Code process — either the native `claude` binary or a
     /// node interpreter running the Claude Code CLI script. Excludes
     /// every other node-based tool that might share a project cwd.
+    ///
+    /// Rules:
+    /// - `argv[0]` basename is `claude` → native binary install. Match.
+    /// - `argv[0]` basename is `node` **and** any subsequent token contains
+    ///   `/claude` → npm install (covers `…/claude-code/cli.js`,
+    ///   `…/claude.js`, etc.). The "any subsequent token" rule survives
+    ///   node interpreter flags like `--inspect`, `--max-old-space-size`,
+    ///   etc., which would otherwise push the script path past `argv[1]`.
+    /// - Anything else → skip. A `node` process running vue-cli-service,
+    ///   vite, jest, webpack, etc. is not Claude Code.
     static func isClaudeProcess(args: String) -> Bool {
         let argv = args.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
         guard let first = argv.first else { return false }
         let argv0Base = (first as NSString).lastPathComponent
         if argv0Base == "claude" { return true }
-        if argv0Base == "node", argv.count >= 2 {
-            // npm install runs `node /…/claude-code/cli.js`. Match if the
-            // script path includes a `/claude` segment (covers `claude-code`,
-            // `claude.js`, etc.). Avoids matching `node /…/vue-cli-service`,
-            // `node /…/vite/bin/vite.js`, etc.
-            if argv[1].contains("/claude") { return true }
+        if argv0Base == "node" {
+            return argv.dropFirst().contains { $0.contains("/claude") }
         }
         return false
+    }
+
+    /// Batch lsof: get cwd for many PIDs in a single subprocess. Returns
+    /// `[pid: cwd]`. PIDs that lsof can't resolve (already exited, EPERM,
+    /// etc.) are absent from the result. Empty input → empty output (no
+    /// subprocess spawned).
+    private static func batchProcessCwds(pids: [Int]) -> [Int: String] {
+        guard !pids.isEmpty else { return [:] }
+        let pidArgs = pids.map(String.init).joined(separator: ",")
+        guard let out = runWithTimeout(
+            "/usr/sbin/lsof",
+            args: ["-p", pidArgs, "-a", "-d", "cwd", "-Fpn"],
+            timeoutSeconds: 5
+        ) else { return [:] }
+
+        var result: [Int: String] = [:]
+        var currentPid: Int?
+        for line in out.split(separator: "\n") {
+            if line.hasPrefix("p"), let pid = Int(line.dropFirst()) {
+                currentPid = pid
+            } else if line.hasPrefix("n"), let pid = currentPid {
+                result[pid] = String(line.dropFirst())
+            }
+        }
+        return result
     }
 
     /// Normalize a filesystem path so two strings naming the same directory
@@ -208,29 +242,17 @@ public enum TerminalLocator {
     }
 
     private static func claudePidByCwd(_ targetCwd: String) -> Int? {
-        guard let out = runWithTimeout("/bin/ps", args: ["-ax", "-o", "pid=,comm="], timeoutSeconds: 3) else {
+        guard let pids = runningClaudePids() else {
             NSLog("ZackEyes: ps command failed or timed out")
             return nil
         }
-        var candidateCount = 0
-        for line in out.split(separator: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
-            guard parts.count == 2 else { continue }
-            let comm = String(parts[1])
-            let base = (comm as NSString).lastPathComponent
-            guard base == "claude" || base == "node" else { continue }
-            guard let pid = Int(parts[0]) else { continue }
-
-            candidateCount += 1
-            let pidCwd = processCwd(pid: pid)
-            NSLog("ZackEyes: candidate pid=%d comm=%{public}@ cwd=%{public}@ (target=%{public}@)",
-                  pid, comm, pidCwd ?? "nil", targetCwd)
-            if pidCwd == targetCwd {
-                return pid
-            }
+        let cwdMap = batchProcessCwds(pids: pids)
+        let target = canonicalize(targetCwd)
+        for (pid, cwd) in cwdMap where canonicalize(cwd) == target {
+            return pid
         }
-        NSLog("ZackEyes: scanned %d claude candidates, no cwd match", candidateCount)
+        NSLog("ZackEyes: scanned %d claude candidates, no cwd match for %{public}@",
+              pids.count, targetCwd)
         return nil
     }
 
