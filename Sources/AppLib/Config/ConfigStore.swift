@@ -38,7 +38,7 @@ public final class ConfigStore: Sendable {
         }
         let wrapper = ConfigWrapper(hotkey: config)
         guard let data = try? JSONEncoder().encode(wrapper) else { return }
-        fm.createFile(atPath: configPath, contents: data)
+        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
 }
 
