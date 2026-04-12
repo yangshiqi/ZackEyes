@@ -66,10 +66,16 @@ struct SimulatedNotchFullView: View {
                         .font(.system(size: 12))
                         .foregroundColor(.white.opacity(0.6))
 
-                    Button("OK") {
-                        modeStore.isAboutShown = false
+                    Button(action: { modeStore.isAboutShown = false }) {
+                        Text("OK")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                            .padding(.horizontal, 24)
+                            .padding(.vertical, 6)
+                            .background(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.15))
+                            .cornerRadius(6)
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                     .keyboardShortcut(.defaultAction)
                 }
                 .padding(20)

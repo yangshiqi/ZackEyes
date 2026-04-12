@@ -49,13 +49,30 @@ struct HotkeyRecorderView: View {
                 }
 
                 HStack(spacing: 12) {
-                    Button("Cancel") { onCancel() }
-                        .buttonStyle(.bordered)
-                        .keyboardShortcut(.cancelAction)
+                    Button(action: { onCancel() }) {
+                        Text("Cancel")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white.opacity(0.8))
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.08))
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.cancelAction)
 
-                    Button("Save") { save() }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(capturedKeyCode == nil)
+                    Button(action: { save() }) {
+                        Text("Save")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 6)
+                            .background(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.15))
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(capturedKeyCode == nil)
+                    .opacity(capturedKeyCode == nil ? 0.4 : 1.0)
                 }
             }
             .padding(24)
