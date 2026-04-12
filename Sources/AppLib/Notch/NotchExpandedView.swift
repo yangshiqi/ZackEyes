@@ -70,12 +70,20 @@ struct NotchExpandedView: View {
     private func sessionCardContent(_ session: SessionInfo) -> some View {
         let buddy = Buddy.from(sessionId: session.id)
 
+        // Defer the sleeping animation for 30s after the last activity so a
+        // freshly-finished session doesn't snap straight into Zzz. Re-evaluated
+        // every tick (the durationTimer fires once per second).
+        let isAtRest = (session.state == .idle || session.state == .stopped)
+            && session.pendingPermission == nil
+        let recentlyActive = isAtRest && tick.timeIntervalSince(session.lastActiveAt) < 30
+
         HStack(alignment: .top, spacing: 10) {
             // Animated buddy avatar
             BuddyAvatar(
                 seed: session.id,
                 state: session.state,
                 isWaiting: session.pendingPermission != nil,
+                recentlyActive: recentlyActive,
                 size: 32
             )
 

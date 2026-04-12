@@ -49,6 +49,131 @@ public enum TerminalLocator {
         return nil
     }
 
+    /// Snapshot of currently-running Claude Code processes, keyed by cwd,
+    /// valued by count of distinct PIDs.
+    ///
+    /// Used as the authoritative liveness signal: Claude Code does NOT keep
+    /// its JSONL transcript open between writes (open-append-close), so
+    /// `lsof <transcript>` returns nothing. The only reliable signal is
+    /// "is there a claude process whose cwd matches this session's cwd".
+    /// Two same-cwd sessions are disambiguated by the caller (typically
+    /// by lastActiveAt / lastModified ordering).
+    ///
+    /// Returns:
+    /// - `nil` when the underlying `ps` invocation fails outright. Callers
+    ///   must treat this as "snapshot unavailable, do nothing" — never as
+    ///   "no claudes are running".
+    /// - empty dict when `ps` succeeded but found zero claude processes.
+    ///   Callers can act on this (e.g. the sweep prunes everything past
+    ///   the grace window).
+    ///
+    /// Matching reads full `argv` (via `ps -o args`) instead of `comm`.
+    /// We can't just match `comm == "node"` because every Vue/webpack/vite
+    /// dev server in a project subdirectory would then masquerade as a
+    /// Claude session. See `isClaudeProcess` for the matching rules.
+    public static func runningClaudeCwds() -> [String: Int]? {
+        guard let pids = runningClaudePids() else { return nil }
+        let cwdMap = batchProcessCwds(pids: pids)
+        var counts: [String: Int] = [:]
+        for cwd in cwdMap.values {
+            counts[Self.canonicalize(cwd), default: 0] += 1
+        }
+        return counts
+    }
+
+    /// Returns PIDs of all currently-running Claude Code processes via
+    /// `ps -o args` + `isClaudeProcess`. Returns `nil` on subprocess
+    /// failure (transient ps error, missing entitlement). Returns empty
+    /// array if ps succeeded with zero matches.
+    private static func runningClaudePids() -> [Int]? {
+        guard let out = runWithTimeout(
+            "/bin/ps", args: ["-ax", "-o", "pid=,args="], timeoutSeconds: 3
+        ) else { return nil }
+        var pids: [Int] = []
+        for line in out.split(separator: "\n") {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard let firstSpace = trimmed.firstIndex(of: " ") else { continue }
+            guard let pid = Int(trimmed[..<firstSpace]) else { continue }
+            let argsStr = String(trimmed[trimmed.index(after: firstSpace)...])
+                .trimmingCharacters(in: .whitespaces)
+            guard isClaudeProcess(args: argsStr) else { continue }
+            pids.append(pid)
+        }
+        return pids
+    }
+
+    /// True iff `args` (as printed by `ps -o args`) belongs to a real
+    /// Claude Code process — either the native `claude` binary or a
+    /// node interpreter running the Claude Code CLI script. Excludes
+    /// every other node-based tool that might share a project cwd.
+    ///
+    /// Rules:
+    /// - `argv[0]` basename is `claude` → native binary install. Match.
+    /// - `argv[0]` basename is `node` **and** any subsequent token names
+    ///   a recognized Claude Code entry point. We check for three specific
+    ///   shapes (rather than a loose `/claude` substring) to avoid
+    ///   false-positive matches on users named `claude`, project dirs
+    ///   like `claude-wrapper`, or stray `claude-something.js` scripts:
+    ///     - `/claude-code/` — the official npm package directory; covers
+    ///       all Anthropic-published install paths (global, local, volta,
+    ///       nvm, asdf, etc.).
+    ///     - `/claude.js` — a hypothetical future entry-point filename.
+    ///     - trailing `/claude` — a script with no extension named `claude`.
+    ///   The "any subsequent token" sweep survives node interpreter flags
+    ///   like `--inspect`, `--max-old-space-size`, etc., which would
+    ///   otherwise push the script path past `argv[1]`.
+    /// - Anything else → skip. A `node` process running vue-cli-service,
+    ///   vite, jest, webpack, etc. is not Claude Code.
+    static func isClaudeProcess(args: String) -> Bool {
+        let argv = args.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+        guard let first = argv.first else { return false }
+        let argv0Base = (first as NSString).lastPathComponent
+        if argv0Base == "claude" { return true }
+        if argv0Base == "node" {
+            return argv.dropFirst().contains { token in
+                token.contains("/claude-code/")
+                    || token.contains("/claude.js")
+                    || token.hasSuffix("/claude")
+            }
+        }
+        return false
+    }
+
+    /// Batch lsof: get cwd for many PIDs in a single subprocess. Returns
+    /// `[pid: cwd]`. PIDs that lsof can't resolve (already exited, EPERM,
+    /// etc.) are absent from the result. Empty input → empty output (no
+    /// subprocess spawned).
+    private static func batchProcessCwds(pids: [Int]) -> [Int: String] {
+        guard !pids.isEmpty else { return [:] }
+        let pidArgs = pids.map(String.init).joined(separator: ",")
+        guard let out = runWithTimeout(
+            "/usr/sbin/lsof",
+            args: ["-p", pidArgs, "-a", "-d", "cwd", "-Fpn"],
+            timeoutSeconds: 5
+        ) else { return [:] }
+
+        var result: [Int: String] = [:]
+        var currentPid: Int?
+        for line in out.split(separator: "\n") {
+            if line.hasPrefix("p"), let pid = Int(line.dropFirst()) {
+                currentPid = pid
+            } else if line.hasPrefix("n"), let pid = currentPid {
+                result[pid] = String(line.dropFirst())
+            }
+        }
+        return result
+    }
+
+    /// Normalize a filesystem path so two strings naming the same directory
+    /// compare equal: resolves symlinks (e.g. `/Users/foo` vs an Apple
+    /// `/private/Users/foo` style chain) and standardizes (`..`, `~`,
+    /// trailing slashes). Used by the cwd-matching liveness path because
+    /// `lsof` and the JSONL `cwd` field are both raw kernel/user input
+    /// and may disagree on form even when they name the same directory.
+    public static func canonicalize(_ path: String) -> String {
+        ((path as NSString).resolvingSymlinksInPath as NSString).standardizingPath
+    }
+
     private static func lsofPid(file: String) -> Int? {
         guard let out = runWithTimeout("/usr/sbin/lsof", args: ["-t", file], timeoutSeconds: 3) else { return nil }
         for line in out.split(separator: "\n") {
@@ -60,56 +185,108 @@ public enum TerminalLocator {
     }
 
     /// Run a subprocess with a timeout. Returns stdout or nil on error/timeout.
+    ///
+    /// **Why the background drain matters**: macOS pipe buffers are 16-64KB.
+    /// If the subprocess writes more than that and we don't read concurrently,
+    /// it blocks on the next write and `task.isRunning` stays true forever.
+    /// The previous polling-only implementation deadlocked silently for any
+    /// command with non-trivial output (e.g. `ps -ax` with 1000+ processes).
+    ///
+    /// stderr is redirected to /dev/null — same deadlock applies to stderr,
+    /// and we never look at stderr from any caller.
     private static func runWithTimeout(_ path: String, args: [String], timeoutSeconds: Int) -> String? {
         let task = Process()
-        task.launchPath = path
+        task.executableURL = URL(fileURLWithPath: path)
         task.arguments = args
-        let pipe = Pipe()
-        task.standardOutput = pipe
-        task.standardError = Pipe()
+        let stdoutPipe = Pipe()
+        task.standardOutput = stdoutPipe
+        task.standardError = FileHandle.nullDevice
         do { try task.run() } catch { return nil }
 
-        // Poll for completion
-        let deadline = Date().addingTimeInterval(TimeInterval(timeoutSeconds))
-        while task.isRunning {
-            if Date() >= deadline {
-                task.terminate()
-                Thread.sleep(forTimeInterval: 0.05)
-                if task.isRunning {
-                    kill(task.processIdentifier, SIGKILL)
-                }
-                return nil
-            }
-            Thread.sleep(forTimeInterval: 0.02)
+        // Drain stdout on a background queue so the subprocess can flush
+        // freely. Without this, large outputs deadlock the wait below.
+        // The DataHolder is its own synchronization barrier — captured
+        // closures only touch it via lock-protected accessors so reads
+        // after `drainGroup.wait` see a consistent value.
+        let holder = DataHolder()
+        let drainGroup = DispatchGroup()
+        drainGroup.enter()
+        DispatchQueue.global(qos: .userInitiated).async {
+            holder.set(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
+            drainGroup.leave()
         }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)
+
+        // Schedule a kill if the process overruns its budget. Cancelled
+        // immediately on normal exit so we don't fire after success.
+        // The `holder.markTimedOut()` only fires when we actually terminate
+        // the task — that lets the caller distinguish a real timeout
+        // (return nil) from "ran cleanly with empty output" (return "").
+        let killer = DispatchWorkItem { [task, holder] in
+            guard task.isRunning else { return }
+            holder.markTimedOut()
+            task.terminate()
+            Thread.sleep(forTimeInterval: 0.05)
+            if task.isRunning { kill(task.processIdentifier, SIGKILL) }
+        }
+        DispatchQueue.global(qos: .userInitiated).asyncAfter(
+            deadline: .now() + .seconds(timeoutSeconds), execute: killer
+        )
+
+        task.waitUntilExit()
+        killer.cancel()
+
+        // Drain finishes when the pipe closes — should be near-instant.
+        _ = drainGroup.wait(timeout: .now() + 1.0)
+
+        if holder.isTimedOut() { return nil }
+        return String(data: holder.get(), encoding: .utf8)
+    }
+
+    /// Lock-protected `Data` holder + timeout flag so the background drain
+    /// and the timer-driven killer in `runWithTimeout` can both hand state
+    /// back to the caller without a data race. Marked `@unchecked Sendable`
+    /// because we provide our own synchronization (NSLock) and never expose
+    /// the inner storage.
+    ///
+    /// `markTimedOut` is called by the killer ONLY when it actually
+    /// terminates a still-running task — so it accurately reflects "we
+    /// killed it because the deadline passed", not "the killer's
+    /// `DispatchWorkItem` happened to dequeue after the task naturally
+    /// exited". `runWithTimeout` checks this before turning the buffered
+    /// stdout into a String, so callers can distinguish a real timeout
+    /// (return `nil`) from "ran cleanly with no output" (return `""`).
+    private final class DataHolder: @unchecked Sendable {
+        private var storage = Data()
+        private var timedOut = false
+        private let lock = NSLock()
+        func set(_ value: Data) {
+            lock.lock(); storage = value; lock.unlock()
+        }
+        func get() -> Data {
+            lock.lock(); defer { lock.unlock() }
+            return storage
+        }
+        func markTimedOut() {
+            lock.lock(); timedOut = true; lock.unlock()
+        }
+        func isTimedOut() -> Bool {
+            lock.lock(); defer { lock.unlock() }
+            return timedOut
+        }
     }
 
     private static func claudePidByCwd(_ targetCwd: String) -> Int? {
-        guard let out = runWithTimeout("/bin/ps", args: ["-ax", "-o", "pid=,comm="], timeoutSeconds: 3) else {
+        guard let pids = runningClaudePids() else {
             NSLog("ZackEyes: ps command failed or timed out")
             return nil
         }
-        var candidateCount = 0
-        for line in out.split(separator: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            let parts = trimmed.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
-            guard parts.count == 2 else { continue }
-            let comm = String(parts[1])
-            let base = (comm as NSString).lastPathComponent
-            guard base == "claude" || base == "node" else { continue }
-            guard let pid = Int(parts[0]) else { continue }
-
-            candidateCount += 1
-            let pidCwd = processCwd(pid: pid)
-            NSLog("ZackEyes: candidate pid=%d comm=%{public}@ cwd=%{public}@ (target=%{public}@)",
-                  pid, comm, pidCwd ?? "nil", targetCwd)
-            if pidCwd == targetCwd {
-                return pid
-            }
+        let cwdMap = batchProcessCwds(pids: pids)
+        let target = canonicalize(targetCwd)
+        for (pid, cwd) in cwdMap where canonicalize(cwd) == target {
+            return pid
         }
-        NSLog("ZackEyes: scanned %d claude candidates, no cwd match", candidateCount)
+        NSLog("ZackEyes: scanned %d claude candidates, no cwd match for %{public}@",
+              pids.count, targetCwd)
         return nil
     }
 

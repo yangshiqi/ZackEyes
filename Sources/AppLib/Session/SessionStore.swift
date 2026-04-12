@@ -296,6 +296,19 @@ public final class SessionStore: ObservableObject {
         }
     }
 
+    /// Remove sessions by id. Skips any session that currently has a
+    /// pendingPermission — that's an active user-action prompt and must
+    /// only be cleared via the bridge socket's abandon path. The actual
+    /// "is this session dead" decision is made by the caller (typically
+    /// `AppDelegate`, which runs `lsof` off the main actor).
+    public func removeSessions(ids: Set<String>) {
+        for sid in ids {
+            guard let session = sessions[sid] else { continue }
+            if session.pendingPermission != nil { continue }
+            sessions.removeValue(forKey: sid)
+        }
+    }
+
     /// Upgrade a detected session to live when we receive our first hook event for it.
     public func upgradeToLive(sessionId: String) {
         guard var session = sessions[sessionId], session.source == .detected else { return }
@@ -344,34 +357,78 @@ public final class SessionStore: ObservableObject {
 
     /// Detect Claude Code / Anthropic API error patterns in assistant output.
     /// Returns a short user-facing error string, or nil if no error found.
-    private static func detectError(in text: String) -> String? {
+    ///
+    /// HTTP status codes must appear as **standalone number tokens** (not
+    /// embedded in prose like `<500=low` or `$500k`) AND be accompanied by
+    /// a matching error phrase. The previous `contains("500")` check fired
+    /// on any assistant message that happened to mention the number 500.
+    static func detectError(in text: String) -> String? {
         let lower = text.lowercased()
-        let patterns: [(regex: String, label: String)] = [
-            // Rate limit / quota
-            ("429", "Rate limited (429)"),
-            ("rate limit", "Rate limited"),
-            ("rate_limit_error", "Rate limited"),
-            ("quota exceeded", "Quota exceeded"),
-            ("usage limit", "Usage limit reached"),
-            // Auth / credit
-            ("401", "Unauthorized (401)"),
-            ("403", "Forbidden (403)"),
-            ("credit balance", "Insufficient credits"),
-            ("billing", "Billing issue"),
-            // Server errors
-            ("500", "Server error (500)"),
-            ("502", "Bad gateway (502)"),
-            ("503", "Service unavailable (503)"),
-            ("504", "Gateway timeout (504)"),
-            ("overloaded", "API overloaded"),
-            // Generic
-            ("api error", "API error"),
-            ("request rejected", "Request rejected"),
-            ("connection error", "Connection error"),
-        ]
-        for (needle, label) in patterns where lower.contains(needle) {
-            return label
+
+        // Helper — matches a number only when surrounded by whitespace or
+        // string boundaries. Rejects `<500=`, `$500k`, `500,000` etc.
+        func hasStandaloneStatus(_ code: String) -> Bool {
+            let pattern = #"(?<!\S)"# + code + #"(?!\S)"#
+            return lower.range(of: pattern, options: .regularExpression) != nil
         }
+
+        // HTTP status errors: status code + corroborating error phrase
+        if hasStandaloneStatus("503") && lower.contains("service unavailable") {
+            return "Service unavailable (503)"
+        }
+        if hasStandaloneStatus("500") &&
+            (lower.contains("internal server") || lower.contains("server error")) {
+            return "Server error (500)"
+        }
+        if hasStandaloneStatus("502") && lower.contains("bad gateway") {
+            return "Bad gateway (502)"
+        }
+        if hasStandaloneStatus("504") &&
+            (lower.contains("gateway timeout") || lower.contains("timed out")) {
+            return "Gateway timeout (504)"
+        }
+        if hasStandaloneStatus("429") &&
+            (lower.contains("too many requests") || lower.contains("rate limit")) {
+            return "Rate limited (429)"
+        }
+        if hasStandaloneStatus("401") && lower.contains("unauthorized") {
+            return "Unauthorized (401)"
+        }
+        if hasStandaloneStatus("403") && lower.contains("forbidden") {
+            return "Forbidden (403)"
+        }
+
+        // Rate limit / quota — no status code required
+        if lower.contains("rate_limit_error") { return "Rate limited" }
+        if lower.contains("rate limit") &&
+            (lower.contains("exceeded") || lower.contains("reached")
+                || lower.contains("hit") || lower.contains("too many")) {
+            return "Rate limited"
+        }
+        if lower.contains("quota") && lower.contains("exceeded") {
+            return "Quota exceeded"
+        }
+        if lower.contains("usage limit") &&
+            (lower.contains("reached") || lower.contains("exceeded")) {
+            return "Usage limit reached"
+        }
+
+        // Auth / billing
+        if lower.contains("credit balance") &&
+            (lower.contains("low") || lower.contains("insufficient")) {
+            return "Insufficient credits"
+        }
+
+        // Overload
+        if lower.contains("overloaded_error") || lower.contains("api overloaded")
+            || lower.contains("is overloaded") {
+            return "API overloaded"
+        }
+
+        // Explicit connection / rejection
+        if lower.contains("connection error") { return "Connection error" }
+        if lower.contains("request rejected") { return "Request rejected" }
+
         return nil
     }
 
