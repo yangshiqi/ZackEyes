@@ -12,13 +12,34 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
         }
     }
 
-    /// Notification sound filename (without extension) bundled in Resources.
-    /// `nil` means use the system default notification sound.
-    public var soundFile: String? {
+    /// Available notification sounds for this theme. Each tuple is
+    /// (display name, filename without extension). The first entry is
+    /// the default when no explicit selection has been made.
+    /// "none" is a reserved filename meaning silence (no sound).
+    public var availableSounds: [(name: String, file: String)] {
         switch self {
-        case .rock: return "ba-dum"
-        case .f1:   return "box-box"
+        case .rock: return [
+            ("Ba-dum 鼓点",       "ba-dum"),
+            ("Guitar Riff",      "guitar-riff"),
+            ("Skull Guitar",     "skull-guitar"),
+            ("Guitar Notif",     "guitar-notif"),
+            ("Guitar Quick",     "guitar-quick"),
+            ("None",             "none"),
+        ]
+        case .f1: return [
+            ("Box Box 📻",           "box-box"),
+            ("Get In There! 🏆",     "get-in-there"),
+            ("FOR WHAT?! 😤",        "for-what"),
+            ("Team Radio 📡",        "team-radio"),
+            ("F1 Radio 🏎️",          "f1-radio"),
+            ("None",                 "none"),
+        ]
         }
+    }
+
+    /// Default sound filename for this theme (first in availableSounds).
+    public var defaultSoundFile: String? {
+        availableSounds.first?.file
     }
 
     var names: [String] {

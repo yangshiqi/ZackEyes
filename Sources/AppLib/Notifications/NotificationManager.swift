@@ -23,12 +23,28 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         UNUserNotificationCenter.current().delegate = self
     }
 
-    /// Load and play the current theme's notification sound (if any).
+    /// Load and play the selected notification sound for the current theme.
     /// Returns true if a custom sound was played; false means the caller
     /// should fall back to the system notification sound.
     private func playThemeSound() -> Bool {
-        let theme = ConfigStore().loadTheme()
-        guard let file = theme.soundFile else { return false }
+        let config = ConfigStore()
+        let theme = config.loadTheme()
+        // User-selected sound, or theme default
+        let file = config.loadNotificationSound() ?? theme.defaultSoundFile
+        guard let file else { return false }
+        // "none" = explicit silence
+        if file == "none" { return true }
+        // Verify the sound belongs to the current theme's available set
+        guard theme.availableSounds.contains(where: { $0.file == file }) else {
+            if let fallback = theme.defaultSoundFile, fallback != "none" {
+                return playFile(fallback)
+            }
+            return false
+        }
+        return playFile(file)
+    }
+
+    private func playFile(_ file: String) -> Bool {
         if soundCache[file] == nil {
             guard let url = Bundle.main.url(forResource: file, withExtension: "mp3") else {
                 return false

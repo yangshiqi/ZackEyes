@@ -220,7 +220,9 @@ struct SimulatedNotchFullView: View {
         menu.addItem(hotkey)
 
         let themeMenu = NSMenu()
-        let currentTheme = ConfigStore().loadTheme()
+        let config = ConfigStore()
+        let currentTheme = config.loadTheme()
+        let currentSound = config.loadNotificationSound() ?? currentTheme.defaultSoundFile
         for theme in BuddyTheme.allCases {
             let item = NSMenuItem(
                 title: theme.displayName,
@@ -231,6 +233,22 @@ struct SimulatedNotchFullView: View {
             item.representedObject = theme.rawValue
             item.state = (theme == currentTheme) ? .on : .off
             themeMenu.addItem(item)
+        }
+        // Sound options for the current theme
+        let sounds = currentTheme.availableSounds
+        if !sounds.isEmpty {
+            themeMenu.addItem(.separator())
+            for sound in sounds {
+                let item = NSMenuItem(
+                    title: sound.name,
+                    action: #selector(GearMenuTarget.soundClicked(_:)),
+                    keyEquivalent: ""
+                )
+                item.target = GearMenuTarget.shared
+                item.representedObject = sound.file
+                item.state = (sound.file == currentSound) ? .on : .off
+                themeMenu.addItem(item)
+            }
         }
         let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
         themeItem.submenu = themeMenu

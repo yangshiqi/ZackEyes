@@ -33,10 +33,33 @@ final class GearMenuTarget: NSObject {
         guard let item = sender as? NSMenuItem,
               let rawValue = item.representedObject as? String,
               let theme = BuddyTheme(rawValue: rawValue) else { return }
-        ConfigStore().saveTheme(theme)
-        // Update checkmarks across the submenu
+        let config = ConfigStore()
+        config.saveTheme(theme)
+        // Reset sound selection so the new theme uses its default
+        config.saveNotificationSound(nil)
+        // Update checkmarks for theme items only (before the separator)
         for sibling in item.menu?.items ?? [] {
+            if sibling.isSeparatorItem { break }
             sibling.state = (sibling.representedObject as? String == rawValue) ? .on : .off
+        }
+    }
+
+    @objc func soundClicked(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem,
+              let file = item.representedObject as? String else { return }
+        ConfigStore().saveNotificationSound(file)
+        // Update checkmarks for sound items only (after the separator)
+        guard let menu = item.menu else { return }
+        var pastSeparator = false
+        for sibling in menu.items {
+            if sibling.isSeparatorItem { pastSeparator = true; continue }
+            if pastSeparator {
+                sibling.state = (sibling.representedObject as? String == file) ? .on : .off
+            }
+        }
+        // Preview the selected sound
+        if let url = Bundle.main.url(forResource: file, withExtension: "mp3") {
+            NSSound(contentsOf: url, byReference: true)?.play()
         }
     }
 }
