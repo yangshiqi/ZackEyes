@@ -84,6 +84,25 @@ dmg: app-release
 	@echo "✅ $(DMG_PATH)"
 	@du -h $(DMG_PATH) | cut -f1 | xargs -I{} echo "   size: {}"
 
+# Release workflow: bump version in Info.plist, commit, tag, push, create GitHub release.
+# Usage:  make release VERSION=0.1.4
+# Optional: NOTES="changelog text" (defaults to "Release vVERSION")
+release:
+ifndef VERSION
+	$(error VERSION is required. Usage: make release VERSION=0.1.4)
+endif
+	@echo "=== Bumping version to $(VERSION) ==="
+	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" Resources/Info.plist
+	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" Resources/Info.plist
+	git add Resources/Info.plist
+	git commit -m "chore: bump version to $(VERSION)"
+	git tag v$(VERSION)
+	git push && git push origin v$(VERSION)
+	gh release create v$(VERSION) --title "v$(VERSION)" --notes "$${NOTES:-Release v$(VERSION)}"
+	@echo ""
+	@echo "✅ Released v$(VERSION)"
+	@echo "   https://github.com/yangshiqi/ZackEyes/releases/tag/v$(VERSION)"
+
 clean:
 	swift package clean
 	rm -rf $(APP_BUNDLE) .build/dmg .build/*.dmg
