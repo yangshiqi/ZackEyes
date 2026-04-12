@@ -42,12 +42,10 @@ public final class ConfigStore: Sendable {
     /// Load the active theme. Defaults to `.rock`.
     public func loadTheme() -> BuddyTheme {
         guard let data = FileManager.default.contents(atPath: configPath),
-              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data),
-              let raw = wrapper.theme,
-              let theme = BuddyTheme(rawValue: raw) else {
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
             return .rock
         }
-        return theme
+        return wrapper.theme ?? .rock
     }
 
     /// Save the active theme. Preserves other keys.
@@ -63,7 +61,7 @@ public final class ConfigStore: Sendable {
         } else {
             wrapper = ConfigWrapper(hotkey: .default)
         }
-        wrapper.theme = theme.rawValue
+        wrapper.theme = theme
         guard let data = try? JSONEncoder().encode(wrapper) else { return }
         try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
@@ -94,5 +92,5 @@ public final class ConfigStore: Sendable {
 private struct ConfigWrapper: Codable {
     var hotkey: HotKeyConfig
     var githubToken: String?
-    var theme: String?             // nil = "rock" (default)
+    var theme: BuddyTheme?         // nil = .rock (default)
 }

@@ -7,7 +7,12 @@ struct NotchExpandedView: View {
 
     private let durationTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
+    // Read theme once per body evaluation (1/second via durationTimer)
+    // instead of per-session inside sessionCardContent.
+    private var currentTheme: BuddyTheme { ConfigStore().loadTheme() }
+
     var body: some View {
+        let theme = currentTheme
         VStack(alignment: .leading, spacing: 12) {
             if viewModel.sessionStore.sessions.isEmpty {
                 emptyState
@@ -15,7 +20,7 @@ struct NotchExpandedView: View {
                 // List all sessions (most recent first)
                 VStack(spacing: 10) {
                     ForEach(viewModel.sessionStore.orderedSessions, id: \.id) { session in
-                        sessionCard(session)
+                        sessionCard(session, theme: theme)
                     }
                 }
 
@@ -57,19 +62,18 @@ struct NotchExpandedView: View {
     // MARK: - Session card
 
     @ViewBuilder
-    private func sessionCard(_ session: SessionInfo) -> some View {
+    private func sessionCard(_ session: SessionInfo, theme: BuddyTheme) -> some View {
         Button(action: {
             viewModel.activateTerminal(for: session)
         }) {
-            sessionCardContent(session)
+            sessionCardContent(session, theme: theme)
         }
         .buttonStyle(.plain)
     }
 
     @ViewBuilder
-    private func sessionCardContent(_ session: SessionInfo) -> some View {
-        let currentTheme = ConfigStore().loadTheme()
-        let buddy = Buddy.from(sessionId: session.id, theme: currentTheme)
+    private func sessionCardContent(_ session: SessionInfo, theme: BuddyTheme) -> some View {
+        let buddy = Buddy.from(sessionId: session.id, theme: theme)
 
         // Defer the sleeping animation for 30s after the last activity so a
         // freshly-finished session doesn't snap straight into Zzz. Re-evaluated
@@ -79,7 +83,7 @@ struct NotchExpandedView: View {
         let recentlyActive = isAtRest && tick.timeIntervalSince(session.lastActiveAt) < 30
 
         // F1 theme: derive team color from the buddy name ("Max from Red Bull" → Red Bull blue)
-        let teamColor = currentTheme == .f1 ? PixelAvatar.teamColor(forBuddyName: buddy.name) : nil
+        let teamColor = theme == .f1 ? PixelAvatar.teamColor(forBuddyName: buddy.name) : nil
 
         HStack(alignment: .top, spacing: 10) {
             // Animated buddy avatar
