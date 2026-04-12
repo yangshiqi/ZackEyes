@@ -19,20 +19,22 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
     public var availableSounds: [(name: String, file: String)] {
         switch self {
         case .rock: return [
-            ("Ba-dum 鼓点",       "ba-dum"),
-            ("Guitar Riff",      "guitar-riff"),
-            ("Skull Guitar",     "skull-guitar"),
-            ("Guitar Notif",     "guitar-notif"),
-            ("Guitar Quick",     "guitar-quick"),
-            ("None",             "none"),
+            ("Ba-dum 🥁",            "ba-dum"),
+            ("Power Riff ⚡",        "guitar-riff"),
+            ("Skull Crunch 💀",      "skull-guitar"),
+            ("Stage Call 🎸",        "guitar-notif"),
+            ("Pick Slide 🎶",        "guitar-quick"),
+            ("None 🔇",              "none"),
         ]
         case .f1: return [
             ("Box Box 📻",           "box-box"),
             ("Get In There! 🏆",     "get-in-there"),
             ("FOR WHAT?! 😤",        "for-what"),
+            ("Simply Lovely 😌",     "simply-lovely"),
+            ("Super Max 🎵",         "super-max"),
             ("Team Radio 📡",        "team-radio"),
             ("F1 Radio 🏎️",          "f1-radio"),
-            ("None",                 "none"),
+            ("None 🔇",              "none"),
         ]
         }
     }
