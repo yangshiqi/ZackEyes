@@ -463,10 +463,15 @@ public enum TerminalLocator {
     private static func focusByAccessibility(app: NSRunningApplication, cwd: String?) -> Bool {
         guard let cwd = cwd, !cwd.isEmpty else { return false }
 
-        // Check without prompting. If we've already requested once and the user denied,
-        // we don't want to keep nagging them on every click.
-        guard AXIsProcessTrusted() else {
-            // Prompt ONCE per app launch via the promptIfNeeded() call at startup
+        // Lazy prompt: on the first click that actually needs Accessibility,
+        // show the macOS authorization dialog. AXIsProcessTrustedWithOptions
+        // with kAXTrustedCheckOptionPrompt prompts at most once — if the user
+        // grants it, subsequent calls return true immediately. If they deny,
+        // subsequent calls return false without re-prompting (macOS caches
+        // the answer per code signature).
+        let key = "AXTrustedCheckOptionPrompt" as CFString
+        let opts = [key: true] as CFDictionary
+        guard AXIsProcessTrustedWithOptions(opts) else {
             NSLog("ZackEyes: accessibility permission not granted — tab focus unavailable for %{public}@",
                   app.bundleIdentifier ?? "?")
             return false

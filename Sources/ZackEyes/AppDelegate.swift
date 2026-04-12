@@ -31,9 +31,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.open(url)
         }
 
-        // Prompt Accessibility permission ONCE at startup (for Ghostty/Warp/Kitty tab focus).
-        // After this, clicks just silently check without re-prompting.
-        TerminalLocator.promptAccessibilityIfNeeded()
+        // Accessibility is NOT prompted at startup. The focusByAccessibility
+        // path (Ghostty/Warp/Kitty tab-jump) checks AXIsProcessTrusted()
+        // lazily and degrades gracefully if untrusted. Users who need it
+        // can grant it via System Settings when they first click a session
+        // card and notice the tab doesn't focus.
 
         // 1. Session Store
         sessionStore = SessionStore()
