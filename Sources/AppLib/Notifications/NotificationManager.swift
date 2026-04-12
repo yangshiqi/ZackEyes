@@ -14,9 +14,29 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
     /// Called when the user taps an update notification. Payload is the release URL.
     public var onUpdateTap: ((URL) -> Void)?
 
+    /// Cache of loaded NSSound objects keyed by filename. Populated
+    /// lazily when a theme's soundFile is first requested.
+    private var soundCache: [String: NSSound] = [:]
+
     private override init() {
         super.init()
         UNUserNotificationCenter.current().delegate = self
+    }
+
+    /// Load and play the current theme's notification sound (if any).
+    /// Returns true if a custom sound was played; false means the caller
+    /// should fall back to the system notification sound.
+    private func playThemeSound() -> Bool {
+        let theme = ConfigStore().loadTheme()
+        guard let file = theme.soundFile else { return false }
+        if soundCache[file] == nil {
+            guard let url = Bundle.main.url(forResource: file, withExtension: "mp3") else {
+                return false
+            }
+            soundCache[file] = NSSound(contentsOf: url, byReference: true)
+        }
+        soundCache[file]?.play()
+        return true
     }
 
     /// Request permission on app startup.
@@ -39,7 +59,11 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         } else {
             content.body = "Claude Code hit an API error. Click to jump to the terminal."
         }
-        content.sound = .defaultCritical
+        if playThemeSound() {
+            content.sound = nil
+        } else {
+            content.sound = .defaultCritical
+        }
         content.interruptionLevel = .timeSensitive
         content.userInfo = ["sessionId": sessionId]
 
@@ -65,7 +89,11 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         } else {
             content.body = "Claude finished its turn"
         }
-        content.sound = .default
+        if playThemeSound() {
+            content.sound = nil
+        } else {
+            content.sound = .default
+        }
         content.userInfo = ["sessionId": sessionId]
 
         let request = UNNotificationRequest(
