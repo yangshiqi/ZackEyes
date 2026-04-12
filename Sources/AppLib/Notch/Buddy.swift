@@ -178,41 +178,41 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
 
     // MARK: - F1 2026 theme
 
-    /// 2026 F1 grid — "Driver from Team" format.
+    /// 2026 F1 grid — "🇳🇱 Driver from Team" format with nationality flags.
     private static let f1Names: [String] = [
         // Red Bull Racing
-        "Max from Red Bull",
-        "Isack from Red Bull",
+        "🇳🇱 Max from Red Bull",
+        "🇫🇷 Isack from Red Bull",
         // McLaren
-        "Lando from McLaren",
-        "Oscar from McLaren",
+        "🇬🇧 Lando from McLaren",
+        "🇦🇺 Oscar from McLaren",
         // Ferrari
-        "Charles from Ferrari",
-        "Lewis from Ferrari",
+        "🇲🇨 Charles from Ferrari",
+        "🇬🇧 Lewis from Ferrari",
         // Mercedes
-        "George from Mercedes",
-        "Kimi from Mercedes",
+        "🇬🇧 George from Mercedes",
+        "🇮🇹 Kimi from Mercedes",
         // Aston Martin
-        "Fernando from Aston Martin",
-        "Lance from Aston Martin",
+        "🇪🇸 Fernando from Aston Martin",
+        "🇨🇦 Lance from Aston Martin",
         // Alpine
-        "Pierre from Alpine",
-        "Franco from Alpine",
+        "🇫🇷 Pierre from Alpine",
+        "🇦🇷 Franco from Alpine",
         // Williams
-        "Carlos from Williams",
-        "Alex from Williams",
+        "🇪🇸 Carlos from Williams",
+        "🇹🇭 Alex from Williams",
         // Racing Bulls
-        "Liam from Racing Bulls",
-        "Arvid from Racing Bulls",
+        "🇳🇿 Liam from Racing Bulls",
+        "🇸🇪 Arvid from Racing Bulls",
         // Haas
-        "Esteban from Haas",
-        "Oliver from Haas",
+        "🇫🇷 Esteban from Haas",
+        "🇬🇧 Oliver from Haas",
         // Audi (formerly Sauber)
-        "Nico from Audi",
-        "Gabriel from Audi",
+        "🇩🇪 Nico from Audi",
+        "🇧🇷 Gabriel from Audi",
         // Cadillac (11th team, new for 2026)
-        "Sergio from Cadillac",
-        "Valtteri from Cadillac",
+        "🇲🇽 Sergio from Cadillac",
+        "🇫🇮 Valtteri from Cadillac",
     ]
 
     /// Actual F1 team radio phrases.
