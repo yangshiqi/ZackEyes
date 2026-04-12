@@ -68,7 +68,8 @@ struct NotchExpandedView: View {
 
     @ViewBuilder
     private func sessionCardContent(_ session: SessionInfo) -> some View {
-        let buddy = Buddy.from(sessionId: session.id)
+        let currentTheme = ConfigStore().loadTheme()
+        let buddy = Buddy.from(sessionId: session.id, theme: currentTheme)
 
         // Defer the sleeping animation for 30s after the last activity so a
         // freshly-finished session doesn't snap straight into Zzz. Re-evaluated
@@ -77,6 +78,9 @@ struct NotchExpandedView: View {
             && session.pendingPermission == nil
         let recentlyActive = isAtRest && tick.timeIntervalSince(session.lastActiveAt) < 30
 
+        // F1 theme: derive team color from the buddy name ("Max from Red Bull" → Red Bull blue)
+        let teamColor = currentTheme == .f1 ? PixelAvatar.teamColor(forBuddyName: buddy.name) : nil
+
         HStack(alignment: .top, spacing: 10) {
             // Animated buddy avatar
             BuddyAvatar(
@@ -84,6 +88,8 @@ struct NotchExpandedView: View {
                 state: session.state,
                 isWaiting: session.pendingPermission != nil,
                 recentlyActive: recentlyActive,
+                theme: currentTheme,
+                teamColor: teamColor,
                 size: 32
             )
 

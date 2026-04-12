@@ -12,6 +12,8 @@ struct BuddyAvatar: View {
     let state: SessionState
     let isWaiting: Bool       // has pending permission
     let recentlyActive: Bool  // idle but within parent's grace window
+    let theme: BuddyTheme
+    let teamColor: Color?     // F1: per-team livery color
     var size: CGFloat = 32
 
     @State private var bounce: CGFloat = 0
@@ -32,12 +34,16 @@ struct BuddyAvatar: View {
         state: SessionState,
         isWaiting: Bool,
         recentlyActive: Bool = false,
+        theme: BuddyTheme = .rock,
+        teamColor: Color? = nil,
         size: CGFloat = 32
     ) {
         self.seed = seed
         self.state = state
         self.isWaiting = isWaiting
         self.recentlyActive = recentlyActive
+        self.theme = theme
+        self.teamColor = teamColor
         self.size = size
         let isAtRest = (state == .idle || state == .stopped) && !isWaiting
         self.showSleeping = isAtRest && !recentlyActive
@@ -45,7 +51,7 @@ struct BuddyAvatar: View {
 
     var body: some View {
         ZStack {
-            PixelAvatar(seed: seed, size: size)
+            PixelAvatar(seed: seed, theme: theme, teamColor: teamColor, size: size)
                 .offset(x: shake, y: bounce + rockBounce)
                 .scaleEffect(breathe)
                 .rotationEffect(.degrees(rockTilt + shake * 3 + sleepDroop))

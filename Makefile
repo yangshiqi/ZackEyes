@@ -20,6 +20,8 @@ app: build
 	cp $(BIN_PATH)/bridge $(HELPERS)/bridge
 	cp Resources/Info.plist $(CONTENTS)/Info.plist
 	cp Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
+	cp Resources/box-box.mp3 $(RESOURCES)/box-box.mp3
+	cp Resources/ba-dum.mp3 $(RESOURCES)/ba-dum.mp3
 	@# Ad-hoc code signing — gives the app a stable identity so macOS
 	@# persists Accessibility / Apple Events grants across rebuilds.
 	codesign --force --deep --sign - $(APP_BUNDLE) 2>&1 | grep -v "replacing existing signature" || true
@@ -32,6 +34,8 @@ app-release: build-release
 	cp $(BIN_PATH)/bridge $(HELPERS)/bridge
 	cp Resources/Info.plist $(CONTENTS)/Info.plist
 	cp Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
+	cp Resources/box-box.mp3 $(RESOURCES)/box-box.mp3
+	cp Resources/ba-dum.mp3 $(RESOURCES)/ba-dum.mp3
 	codesign --force --deep --sign - $(APP_BUNDLE) 2>&1 | grep -v "replacing existing signature" || true
 	@echo "Built $(APP_BUNDLE) (release)"
 

@@ -219,6 +219,23 @@ struct SimulatedNotchFullView: View {
         hotkey.target = GearMenuTarget.shared
         menu.addItem(hotkey)
 
+        let themeMenu = NSMenu()
+        let currentTheme = ConfigStore().loadTheme()
+        for theme in BuddyTheme.allCases {
+            let item = NSMenuItem(
+                title: theme.displayName,
+                action: #selector(GearMenuTarget.themeClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.target = GearMenuTarget.shared
+            item.representedObject = theme.rawValue
+            item.state = (theme == currentTheme) ? .on : .off
+            themeMenu.addItem(item)
+        }
+        let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
+        themeItem.submenu = themeMenu
+        menu.addItem(themeItem)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(

@@ -1,27 +1,43 @@
 import Foundation
 
-/// A personality-driven character assigned to each session.
-public struct Buddy {
-    public let name: String
-    public let tagline: String
+/// Theme determines the naming pool and notification sound for all sessions.
+public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
+    case rock
+    case f1
 
-    /// Deterministic buddy derived from session ID hash.
-    public static func from(sessionId: String) -> Buddy {
-        let nameIdx = hash(sessionId + ".name") % names.count
-        let taglineIdx = hash(sessionId + ".tagline") % taglines.count
-        return Buddy(name: names[nameIdx], tagline: taglines[taglineIdx])
+    public var displayName: String {
+        switch self {
+        case .rock: return "Rock Legends"
+        case .f1:   return "F1 2026"
+        }
     }
 
-    private static func hash(_ s: String) -> Int {
-        var h = 5381
-        for b in s.utf8 { h = ((h << 5) &+ h) &+ Int(b) }
-        return abs(h)
+    /// Notification sound filename (without extension) bundled in Resources.
+    /// `nil` means use the system default notification sound.
+    public var soundFile: String? {
+        switch self {
+        case .rock: return "ba-dum"
+        case .f1:   return "box-box"
+        }
     }
 
-    // MARK: - Pools
+    var names: [String] {
+        switch self {
+        case .rock: return Self.rockNames
+        case .f1:   return Self.f1Names
+        }
+    }
 
-    /// Rock / metal / punk legends. Format: "First from Band" as tribute.
-    public static let names: [String] = [
+    var taglines: [String] {
+        switch self {
+        case .rock: return Self.rockTaglines
+        case .f1:   return Self.f1Taglines
+        }
+    }
+
+    // MARK: - Rock theme
+
+    private static let rockNames: [String] = [
         // Classic rock
         "Freddie from Queen",
         "Mick from Stones",
@@ -104,7 +120,7 @@ public struct Buddy {
         "Brad from RATM",
     ]
 
-    public static let taglines: [String] = [
+    private static let rockTaglines: [String] = [
         "Always hungry for bytes",
         "Compiles with confidence",
         "Lives on the stack",
@@ -136,4 +152,90 @@ public struct Buddy {
         "Small PRs only",
         "Ships on Fridays (don't)",
     ]
+
+    // MARK: - F1 2026 theme
+
+    /// 2026 F1 grid — "Driver from Team" format.
+    private static let f1Names: [String] = [
+        // Red Bull Racing
+        "Max from Red Bull",
+        "Isack from Red Bull",
+        // McLaren
+        "Lando from McLaren",
+        "Oscar from McLaren",
+        // Ferrari
+        "Charles from Ferrari",
+        "Lewis from Ferrari",
+        // Mercedes
+        "George from Mercedes",
+        "Kimi from Mercedes",
+        // Aston Martin
+        "Fernando from Aston Martin",
+        "Lance from Aston Martin",
+        // Alpine
+        "Pierre from Alpine",
+        "Franco from Alpine",
+        // Williams
+        "Carlos from Williams",
+        "Alex from Williams",
+        // Racing Bulls
+        "Liam from Racing Bulls",
+        "Arvid from Racing Bulls",
+        // Haas
+        "Esteban from Haas",
+        "Oliver from Haas",
+        // Audi (formerly Sauber)
+        "Nico from Audi",
+        "Gabriel from Audi",
+        // Cadillac (11th team, new for 2026)
+        "Sergio from Cadillac",
+        "Valtteri from Cadillac",
+    ]
+
+    /// Actual F1 team radio phrases.
+    private static let f1Taglines: [String] = [
+        "Box box, box box",
+        "Copy, we are checking",
+        "Get in there!",
+        "Tires are gone, mate",
+        "Slow button on, slow button on",
+        "Push push push",
+        "Keep your head down",
+        "You are P1, P1",
+        "Mega lap, mega lap",
+        "Copy, understood",
+        "OK so we'll talk after",
+        "Blue flags! Blue flags!",
+        "I am stupid, I am stupid",
+        "All the time you have to leave a space",
+        "Smooth operator",
+        "It's lights out and away we go",
+        "And it's go go go!",
+        "Grazie ragazzi, grande lavoro",
+        "Bono, my tires are dead",
+        "No Michael no, that was so not right",
+        "FOR WHAT?!",
+        "Is that Glock?",
+        "Honestly, what are we doing here",
+    ]
+}
+
+/// A personality-driven character assigned to each session.
+public struct Buddy {
+    public let name: String
+    public let tagline: String
+
+    /// Deterministic buddy derived from session ID hash + current theme.
+    public static func from(sessionId: String, theme: BuddyTheme? = nil) -> Buddy {
+        let t = theme ?? ConfigStore().loadTheme()
+        let nameIdx = hash(sessionId + ".name") % t.names.count
+        let taglineIdx = hash(sessionId + ".tagline") % t.taglines.count
+        return Buddy(name: t.names[nameIdx], tagline: t.taglines[taglineIdx])
+    }
+
+    private static func hash(_ s: String) -> Int {
+        var h = 5381
+        for b in s.utf8 { h = ((h << 5) &+ h) &+ Int(b) }
+        return abs(h)
+    }
 }

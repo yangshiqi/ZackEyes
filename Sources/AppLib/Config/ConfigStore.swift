@@ -39,6 +39,35 @@ public final class ConfigStore: Sendable {
         return wrapper.githubToken
     }
 
+    /// Load the active theme. Defaults to `.rock`.
+    public func loadTheme() -> BuddyTheme {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data),
+              let raw = wrapper.theme,
+              let theme = BuddyTheme(rawValue: raw) else {
+            return .rock
+        }
+        return theme
+    }
+
+    /// Save the active theme. Preserves other keys.
+    public func saveTheme(_ theme: BuddyTheme) {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: directory) {
+            try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        }
+        var wrapper: ConfigWrapper
+        if let data = fm.contents(atPath: configPath),
+           let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) {
+            wrapper = existing
+        } else {
+            wrapper = ConfigWrapper(hotkey: .default)
+        }
+        wrapper.theme = theme.rawValue
+        guard let data = try? JSONEncoder().encode(wrapper) else { return }
+        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+    }
+
     /// Save the hotkey config atomically. Preserves other keys (e.g. githubToken).
     /// Creates directory if needed.
     public func save(_ config: HotKeyConfig) {
@@ -65,4 +94,5 @@ public final class ConfigStore: Sendable {
 private struct ConfigWrapper: Codable {
     var hotkey: HotKeyConfig
     var githubToken: String?
+    var theme: String?             // nil = "rock" (default)
 }

@@ -28,4 +28,15 @@ final class GearMenuTarget: NSObject {
         guard let url = releaseURL else { return }
         NSWorkspace.shared.open(url)
     }
+
+    @objc func themeClicked(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem,
+              let rawValue = item.representedObject as? String,
+              let theme = BuddyTheme(rawValue: rawValue) else { return }
+        ConfigStore().saveTheme(theme)
+        // Update checkmarks across the submenu
+        for sibling in item.menu?.items ?? [] {
+            sibling.state = (sibling.representedObject as? String == rawValue) ? .on : .off
+        }
+    }
 }
