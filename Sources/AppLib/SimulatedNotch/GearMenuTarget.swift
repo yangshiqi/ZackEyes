@@ -12,6 +12,7 @@ final class GearMenuTarget: NSObject {
     static let shared = GearMenuTarget()
     weak var modeStore: NotchModeStore?
     var releaseURL: URL?
+    private var previewSound: NSSound?
 
     @objc func aboutClicked(_ sender: Any?) {
         modeStore?.isMenuOpen = false
@@ -57,9 +58,12 @@ final class GearMenuTarget: NSObject {
                 sibling.state = (sibling.representedObject as? String == file) ? .on : .off
             }
         }
-        // Preview the selected sound
-        if let url = Bundle.main.url(forResource: file, withExtension: "mp3") {
-            NSSound(contentsOf: url, byReference: true)?.play()
+        // Preview the selected sound (stop any previous preview first)
+        previewSound?.stop()
+        if file != "none", let url = Bundle.main.url(forResource: file, withExtension: "mp3") {
+            let sound = NSSound(contentsOf: url, byReference: true)
+            sound?.play()
+            previewSound = sound
         }
     }
 }
