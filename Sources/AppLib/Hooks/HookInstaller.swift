@@ -196,12 +196,17 @@ public struct HookInstaller {
 
     // MARK: - StatusLine Multiplexer
 
-    /// Derived from bridgePath so tests can point to a tmpDir.
-    /// Default bridgePath = "$HOME/.zackeyes/bin/bridge"
-    ///   → binDir = "$HOME/.zackeyes/bin"
-    ///   → zackDir = "$HOME/.zackeyes"
+    /// bridgePath with `$HOME` expanded so FileManager can use it.
+    /// The default bridgePath is `$HOME/.zackeyes/bin/bridge` — fine
+    /// for shell scripts in settings.json (the shell expands `$HOME`),
+    /// but FileManager needs a real absolute path.
+    private var expandedBridgePath: String {
+        bridgePath.replacingOccurrences(of: "$HOME", with: NSHomeDirectory())
+    }
+
+    /// Derived from expandedBridgePath so tests can point to a tmpDir.
     private var binDir: String {
-        (bridgePath as NSString).deletingLastPathComponent
+        (expandedBridgePath as NSString).deletingLastPathComponent
     }
 
     private var zackDir: String {
@@ -220,7 +225,6 @@ public struct HookInstaller {
     /// original statusLine command. The original's stdout passes through
     /// so the terminal display is unchanged.
     private func deployStatusLineMux(originalCommand: String) throws {
-        let binDir = NSHomeDirectory() + "/.zackeyes/bin"
         try FileManager.default.createDirectory(
             atPath: binDir,
             withIntermediateDirectories: true,
