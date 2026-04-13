@@ -164,31 +164,22 @@ public struct HookInstaller {
     // MARK: - Deploy Launcher Script
 
     public func deployLauncherScript(appPath: String) throws {
-        let binDir = NSHomeDirectory() + "/.zackeyes/bin"
         try FileManager.default.createDirectory(
             atPath: binDir,
             withIntermediateDirectories: true,
             attributes: nil
         )
 
-        let bridgeURL = URL(fileURLWithPath: binDir + "/bridge")
         let helpersPath = appPath + "/Contents/Helpers/bridge"
         let script = """
             #!/bin/sh
             exec "\(helpersPath)" "$@"
             """
-        try script.write(to: bridgeURL, atomically: true, encoding: .utf8)
-
-        // chmod 755
-        try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755],
-            ofItemAtPath: bridgeURL.path
-        )
+        try deployScript(content: script, to: binDir + "/bridge")
 
         // Write app path marker
-        let appPathFile = NSHomeDirectory() + "/.zackeyes/.app-path"
         try appPath.write(
-            toFile: appPathFile,
+            toFile: zackDir + "/.app-path",
             atomically: true,
             encoding: .utf8
         )
@@ -223,7 +214,8 @@ public struct HookInstaller {
 
     /// Deploy a mux script that tees stdin to both our bridge and the
     /// original statusLine command. The original's stdout passes through
-    /// so the terminal display is unchanged.
+    /// so the terminal display is unchanged. Forks bridge per tick
+    /// (~5ms overhead on macOS, acceptable for a ~2-5s interval).
     private func deployStatusLineMux(originalCommand: String) throws {
         try FileManager.default.createDirectory(
             atPath: binDir,
@@ -238,30 +230,23 @@ public struct HookInstaller {
             encoding: .utf8
         )
 
-        // The mux script: read stdin once, fork to bridge in background,
-        // then pipe the same input to the original command whose stdout
-        // goes to Claude Code's terminal.
-        // printf '%s\n' is safer than echo — won't interpret escape
-        // sequences in JSON (\n, \t, backslashes) and preserves content.
-        //
-        // Trust model: `originalCommand` is interpolated raw into the
-        // script (not quoted) because it's a full shell command string
-        // read from settings.json — the same way Claude Code itself
-        // would evaluate it via /bin/sh -c. We trust settings.json
-        // content the same way Claude Code does. If the command has
-        // spaces in paths, the tool that wrote it is responsible for
-        // quoting them (and Claude Code would break on it too).
+        // originalCommand is interpolated raw (not quoted) — it's a full
+        // shell command string, evaluated the same way Claude Code does.
         let script = """
             #!/bin/sh
             INPUT=$(cat)
             printf '%s\\n' "$INPUT" | "\(bridgePath)" --event StatusLine 2>/dev/null &
             printf '%s\\n' "$INPUT" | \(originalCommand)
             """
-        let muxURL = URL(fileURLWithPath: statusLineMuxPath)
-        try script.write(to: muxURL, atomically: true, encoding: .utf8)
+        try deployScript(content: script, to: statusLineMuxPath)
+    }
+
+    /// Write a shell script to disk and chmod 755.
+    private func deployScript(content: String, to path: String) throws {
+        let url = URL(fileURLWithPath: path)
+        try content.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755],
-            ofItemAtPath: muxURL.path
+            [.posixPermissions: 0o755], ofItemAtPath: url.path
         )
     }
 
