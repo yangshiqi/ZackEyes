@@ -152,8 +152,11 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         maxLength: Int = 100
     ) -> String {
         guard let text = text, !text.isEmpty else { return fallback }
-        // System/internal messages start with < and contain XML-like tags
-        if text.hasPrefix("<") && text.contains("</") { return fallback }
+        // System/internal messages (task-notification, system-reminder, etc.)
+        // start with < and contain closing tags. Trim whitespace first since
+        // some messages have leading newlines.
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("<") && trimmed.contains("</") { return fallback }
         let clipped = text.count > maxLength ? String(text.prefix(maxLength)) + "..." : text
         return clipped
     }
