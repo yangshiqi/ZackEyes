@@ -86,13 +86,22 @@ public struct HookInstaller {
 
         settings["hooks"] = hooks
 
-        // statusLine: install ourselves only if no other tool has claimed it
-        // (don't break Vibe Island or other status-line consumers).
+        // statusLine: Claude Code only supports ONE statusLine command.
+        // If another tool (claude-hud, Vibe Island, etc.) already owns it,
+        // install a multiplexer script that tees stdin to both our bridge
+        // and the original command, passing the original's stdout through
+        // so the terminal display is unchanged.
         if let existingStatusLine = settings["statusLine"] as? [String: Any],
            let cmd = existingStatusLine["command"] as? String,
            !cmd.contains("zackeyes") {
-            // Someone else owns it — leave alone
+            // Another tool owns it — wrap with mux
+            try deployStatusLineMux(originalCommand: cmd)
+            settings["statusLine"] = [
+                "type": "command",
+                "command": statusLineMuxPath,
+            ]
         } else {
+            // No one else — install directly
             settings["statusLine"] = [
                 "type": "command",
                 "command": "\(bridgePath) --event StatusLine",
@@ -131,11 +140,22 @@ public struct HookInstaller {
             settings["hooks"] = hooks
         }
 
-        // Remove statusLine if we own it
+        // Remove statusLine if we own it (direct or mux)
         if let sl = settings["statusLine"] as? [String: Any],
            let cmd = sl["command"] as? String,
            cmd.contains("zackeyes") {
-            settings.removeValue(forKey: "statusLine")
+            // If mux was installed, restore the original command
+            if let original = readMuxOriginalCommand() {
+                settings["statusLine"] = [
+                    "type": "command",
+                    "command": original,
+                ]
+            } else {
+                settings.removeValue(forKey: "statusLine")
+            }
+            // Clean up mux files
+            try? FileManager.default.removeItem(atPath: statusLineMuxPath)
+            try? FileManager.default.removeItem(atPath: statusLineMuxOriginalPath)
         }
 
         try writeSettings(settings, to: settingsURL)
@@ -172,6 +192,57 @@ public struct HookInstaller {
             atomically: true,
             encoding: .utf8
         )
+    }
+
+    // MARK: - StatusLine Multiplexer
+
+    private var statusLineMuxPath: String {
+        NSHomeDirectory() + "/.zackeyes/bin/statusline-mux"
+    }
+
+    private var statusLineMuxOriginalPath: String {
+        NSHomeDirectory() + "/.zackeyes/.statusline-original"
+    }
+
+    /// Deploy a mux script that tees stdin to both our bridge and the
+    /// original statusLine command. The original's stdout passes through
+    /// so the terminal display is unchanged.
+    private func deployStatusLineMux(originalCommand: String) throws {
+        let binDir = NSHomeDirectory() + "/.zackeyes/bin"
+        try FileManager.default.createDirectory(
+            atPath: binDir,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+
+        // Save the original command so we can restore on uninstall
+        try originalCommand.write(
+            toFile: statusLineMuxOriginalPath,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // The mux script: read stdin once, fork to bridge in background,
+        // then pipe the same input to the original command whose stdout
+        // goes to Claude Code's terminal.
+        let script = """
+            #!/bin/sh
+            INPUT=$(cat)
+            echo "$INPUT" | "\(bridgePath)" --event StatusLine 2>/dev/null &
+            echo "$INPUT" | \(originalCommand)
+            """
+        let muxURL = URL(fileURLWithPath: statusLineMuxPath)
+        try script.write(to: muxURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755],
+            ofItemAtPath: muxURL.path
+        )
+    }
+
+    /// Read the original statusLine command saved during mux deployment.
+    private func readMuxOriginalCommand() -> String? {
+        try? String(contentsOfFile: statusLineMuxOriginalPath, encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Helpers
