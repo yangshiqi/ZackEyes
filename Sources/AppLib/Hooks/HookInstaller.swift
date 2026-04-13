@@ -225,11 +225,13 @@ public struct HookInstaller {
         // The mux script: read stdin once, fork to bridge in background,
         // then pipe the same input to the original command whose stdout
         // goes to Claude Code's terminal.
+        // printf '%s\n' is safer than echo — won't interpret escape
+        // sequences in JSON (\n, \t, backslashes) and preserves content.
         let script = """
             #!/bin/sh
             INPUT=$(cat)
-            echo "$INPUT" | "\(bridgePath)" --event StatusLine 2>/dev/null &
-            echo "$INPUT" | \(originalCommand)
+            printf '%s\\n' "$INPUT" | "\(bridgePath)" --event StatusLine 2>/dev/null &
+            printf '%s\\n' "$INPUT" | \(originalCommand)
             """
         let muxURL = URL(fileURLWithPath: statusLineMuxPath)
         try script.write(to: muxURL, atomically: true, encoding: .utf8)

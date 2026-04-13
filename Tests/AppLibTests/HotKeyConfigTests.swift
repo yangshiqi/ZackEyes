@@ -39,7 +39,7 @@ final class HotKeyConfigTests: XCTestCase {
 
     func testDefaultConfig() {
         let config = HotKeyConfig.default
-        XCTAssertEqual(config.keyCode, UInt32(kVK_ANSI_Z))
+        XCTAssertEqual(config.keyCode, UInt32(kVK_ANSI_Slash))
         XCTAssertEqual(config.modifiers, [.command, .shift])
     }
 
@@ -65,9 +65,9 @@ final class HotKeyConfigTests: XCTestCase {
 
     // MARK: - Display string
 
-    func testDisplayStringCommandShiftZ() {
+    func testDisplayStringCommandShiftSlash() {
         let config = HotKeyConfig.default
-        XCTAssertEqual(config.displayString, "⇧⌘Z")
+        XCTAssertEqual(config.displayString, "⇧⌘/")
     }
 
     func testDisplayStringOptionCommandK() {
