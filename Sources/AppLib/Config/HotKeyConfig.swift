@@ -92,9 +92,9 @@ public struct HotKeyConfig: Codable, Equatable, Sendable {
         self.modifiers = modifiers
     }
 
-    /// Default: Cmd+Shift+Z
+    /// Default: Cmd+Shift+/
     public static let `default` = HotKeyConfig(
-        keyCode: UInt32(kVK_ANSI_Z),
+        keyCode: UInt32(kVK_ANSI_Slash),
         modifiers: [.command, .shift]
     )
 

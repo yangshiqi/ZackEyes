@@ -65,6 +65,9 @@ dmg: app-release
 	mkdir -p $(DMG_DIR)
 	cp -R $(APP_BUNDLE) $(DMG_DIR)/
 	ln -s /Applications $(DMG_DIR)/Applications
+	@# Volume icon — shows the app logo when the DMG is mounted
+	cp Resources/AppIcon.icns $(DMG_DIR)/.VolumeIcon.icns
+	SetFile -a C $(DMG_DIR)
 	printf '%s\n' \
 	  "ZackEyes — 内部测试版" \
 	  "" \

@@ -69,12 +69,7 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
     public func notifyError(sessionId: String, projectName: String, errorLabel: String, detail: String?) {
         let content = UNMutableNotificationContent()
         content.title = "⚠️ \(projectName) — \(errorLabel)"
-        if let detail = detail, !detail.isEmpty {
-            let clipped = detail.count > 140 ? String(detail.prefix(140)) + "..." : detail
-            content.body = clipped
-        } else {
-            content.body = "Claude Code hit an API error. Click to jump to the terminal."
-        }
+        content.body = Self.sanitizePrompt(detail, fallback: "Claude Code hit an API error. Click to jump to the terminal.", maxLength: 140)
         if playThemeSound() {
             content.sound = nil
         } else {
@@ -99,12 +94,8 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
     public func notifySessionFinished(sessionId: String, projectName: String, lastPrompt: String?) {
         let content = UNMutableNotificationContent()
         content.title = "\(projectName) — done"
-        if let prompt = lastPrompt, !prompt.isEmpty {
-            let clipped = prompt.count > 100 ? String(prompt.prefix(100)) + "..." : prompt
-            content.body = clipped
-        } else {
-            content.body = "Claude finished its turn"
-        }
+        let body = Self.sanitizePrompt(lastPrompt)
+        content.body = body
         if playThemeSound() {
             content.sound = nil
         } else {
@@ -148,6 +139,26 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
             }
         }
         UserDefaults.standard.set(version, forKey: "lastNotifiedVersion")
+    }
+
+    // MARK: - Sanitize
+
+    /// Clean up a prompt/detail string for notification display.
+    /// Strips system messages (XML tags like <task-notification>, <system-reminder>)
+    /// that leak into lastUserPrompt when Claude Code processes subagent results.
+    static func sanitizePrompt(
+        _ text: String?,
+        fallback: String = "Claude finished its turn",
+        maxLength: Int = 100
+    ) -> String {
+        guard let text = text, !text.isEmpty else { return fallback }
+        // System/internal messages (task-notification, system-reminder, etc.)
+        // start with < and contain closing tags. Trim whitespace first since
+        // some messages have leading newlines.
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("<") && trimmed.contains("</") { return fallback }
+        let clipped = text.count > maxLength ? String(text.prefix(maxLength)) + "..." : text
+        return clipped
     }
 
     // MARK: - UNUserNotificationCenterDelegate

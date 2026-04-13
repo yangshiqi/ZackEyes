@@ -126,7 +126,100 @@ struct HookInstallerTests {
         #expect(result == badContent)
     }
 
-    // MARK: - Test 5: uninstall_removesOnlyOurEntries
+    // MARK: - Test 5: mux installed when another statusLine exists
+
+    @Test func installDeploysMuxWhenOtherStatusLineExists() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Pretend ~/.zackeyes lives inside tmpDir so mux files land there
+        let zackDir = tmpDir.appendingPathComponent(".zackeyes")
+        try FileManager.default.createDirectory(
+            at: zackDir.appendingPathComponent("bin"),
+            withIntermediateDirectories: true
+        )
+
+        let settingsURL = tmpDir.appendingPathComponent("settings.json")
+        // Another tool already owns statusLine
+        let initial = """
+            {"statusLine":{"type":"command","command":"claude-hud --render"}}
+            """
+        try initial.write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: zackDir.appendingPathComponent("bin/bridge").path
+        )
+        try installer.installHooks()
+
+        // statusLine should now point to the mux script
+        let data = try Data(contentsOf: settingsURL)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let sl = json["statusLine"] as? [String: Any]
+        let cmd = sl?["command"] as? String ?? ""
+        #expect(cmd.contains("statusline-mux"))
+
+        // Mux script should exist and contain both commands
+        let muxPath = zackDir.appendingPathComponent("bin/statusline-mux").path
+        let muxContent = try String(contentsOfFile: muxPath, encoding: .utf8)
+        #expect(muxContent.contains("bridge"))
+        #expect(muxContent.contains("claude-hud --render"))
+
+        // Original command should be saved
+        let originalPath = zackDir.appendingPathComponent(".statusline-original").path
+        let saved = try String(contentsOfFile: originalPath, encoding: .utf8)
+        #expect(saved == "claude-hud --render")
+    }
+
+    // MARK: - Test 6: uninstall restores original statusLine from mux
+
+    @Test func uninstallRestoresOriginalStatusLine() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let zackDir = tmpDir.appendingPathComponent(".zackeyes")
+        try FileManager.default.createDirectory(
+            at: zackDir.appendingPathComponent("bin"),
+            withIntermediateDirectories: true
+        )
+
+        let settingsURL = tmpDir.appendingPathComponent("settings.json")
+        let initial = """
+            {"statusLine":{"type":"command","command":"claude-hud --render"}}
+            """
+        try initial.write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: zackDir.appendingPathComponent("bin/bridge").path
+        )
+        // Install (creates mux)
+        try installer.installHooks()
+        // Uninstall (should restore original)
+        try installer.uninstallHooks()
+
+        let data = try Data(contentsOf: settingsURL)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let sl = json["statusLine"] as? [String: Any]
+        let cmd = sl?["command"] as? String
+        #expect(cmd == "claude-hud --render")
+
+        // Mux files should be cleaned up
+        let muxExists = FileManager.default.fileExists(
+            atPath: zackDir.appendingPathComponent("bin/statusline-mux").path
+        )
+        let origExists = FileManager.default.fileExists(
+            atPath: zackDir.appendingPathComponent(".statusline-original").path
+        )
+        #expect(!muxExists)
+        #expect(!origExists)
+    }
+
+    // MARK: - Test 7: uninstall_removesOnlyOurEntries
 
     @Test func uninstall_removesOnlyOurEntries() throws {
         let tmpDir = FileManager.default.temporaryDirectory
