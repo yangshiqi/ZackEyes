@@ -12,6 +12,10 @@ public class MenuBarFallback: NSObject {
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
 
+    /// Called when the user clicks the status bar icon. If set, replaces
+    /// the default popover toggle (e.g. to open the simulated notch instead).
+    public var onIconClick: (() -> Void)?
+
     public init(viewModel: NotchViewModel) {
         self.viewModel = viewModel
         super.init()
@@ -100,6 +104,10 @@ public class MenuBarFallback: NSObject {
     }
 
     @objc private func togglePopover() {
+        if let handler = onIconClick {
+            handler()
+            return
+        }
         guard let popover = popover, let button = statusItem?.button else { return }
         if popover.isShown {
             closePopover()

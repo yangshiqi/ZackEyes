@@ -67,12 +67,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             wc.setup()
             windowController = wc
         } else {
-            // Menu bar button (click target for popover)
+            // Menu bar button — click toggles the simulated notch
             let mb = MenuBarFallback(viewModel: viewModel)
             mb.setup()
             menuBarFallback = mb
 
-            // Simulated Dynamic Island at top center (visual indicator)
+            // Simulated Dynamic Island at top center
             let uc = UpdateChecker()
             let sn = SimulatedNotchController(
                 viewModel: viewModel,
@@ -82,8 +82,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             sn.setup()
             simulatedNotch = sn
             updateChecker = uc
-            // Tap handling lives inside the controller — it morphs the notch
-            // panel itself into the full view (no separate NSPopover).
+
+            // Wire status bar click → toggle simulated notch (not popover)
+            mb.onIconClick = { [weak sn] in sn?.toggleFull() }
         }
 
         // 4.5 Global hotkey — toggles the simulated notch on notchless Macs,
