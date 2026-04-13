@@ -196,12 +196,24 @@ public struct HookInstaller {
 
     // MARK: - StatusLine Multiplexer
 
+    /// Derived from bridgePath so tests can point to a tmpDir.
+    /// Default bridgePath = "$HOME/.zackeyes/bin/bridge"
+    ///   → binDir = "$HOME/.zackeyes/bin"
+    ///   → zackDir = "$HOME/.zackeyes"
+    private var binDir: String {
+        (bridgePath as NSString).deletingLastPathComponent
+    }
+
+    private var zackDir: String {
+        (binDir as NSString).deletingLastPathComponent
+    }
+
     private var statusLineMuxPath: String {
-        NSHomeDirectory() + "/.zackeyes/bin/statusline-mux"
+        binDir + "/statusline-mux"
     }
 
     private var statusLineMuxOriginalPath: String {
-        NSHomeDirectory() + "/.zackeyes/.statusline-original"
+        zackDir + "/.statusline-original"
     }
 
     /// Deploy a mux script that tees stdin to both our bridge and the
@@ -227,6 +239,14 @@ public struct HookInstaller {
         // goes to Claude Code's terminal.
         // printf '%s\n' is safer than echo — won't interpret escape
         // sequences in JSON (\n, \t, backslashes) and preserves content.
+        //
+        // Trust model: `originalCommand` is interpolated raw into the
+        // script (not quoted) because it's a full shell command string
+        // read from settings.json — the same way Claude Code itself
+        // would evaluate it via /bin/sh -c. We trust settings.json
+        // content the same way Claude Code does. If the command has
+        // spaces in paths, the tool that wrote it is responsible for
+        // quoting them (and Claude Code would break on it too).
         let script = """
             #!/bin/sh
             INPUT=$(cat)
