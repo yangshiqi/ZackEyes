@@ -68,6 +68,43 @@ struct SessionStoreTests {
         #expect(store.sessions["s1"]?.pendingPermission == nil)
     }
 
+    // 5b. resolvePermission(sessionId:allow:) only clears the named session,
+    //     leaves other pending sessions intact. Guards the contract relied on
+    //     by per-session approval buttons in the notch panel.
+    @Test func resolvePermissionScopedToNamedSession() {
+        // Swift 6 @Sendable closures cannot capture `var`; use a reference box.
+        final class Box<T>: @unchecked Sendable { var value: T? }
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/a"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s2", cwd: "/b"))
+
+        let s1Box = Box<PermissionResponse>()
+        let s2Box = Box<PermissionResponse>()
+        let s1Permission = PendingPermission(
+            toolName: "Bash", toolInput: [:], cwd: "/a",
+            responder: { s1Box.value = $0 }
+        )
+        let s2Permission = PendingPermission(
+            toolName: "Write", toolInput: [:], cwd: "/b",
+            responder: { s2Box.value = $0 }
+        )
+        store.handlePermissionRequest(sessionId: "s1", permission: s1Permission)
+        store.handlePermissionRequest(sessionId: "s2", permission: s2Permission)
+
+        store.resolvePermission(sessionId: "s2", allow: false)
+
+        // s2 cleared and denied
+        #expect(store.sessions["s2"]?.pendingPermission == nil)
+        #expect(store.sessions["s2"]?.state == .working)
+        #expect(s2Box.value?.hookSpecificOutput.decision.behavior == "deny",
+                "s2 should have been denied")
+
+        // s1 untouched
+        #expect(store.sessions["s1"]?.pendingPermission != nil)
+        #expect(store.sessions["s1"]?.state == .waiting)
+        #expect(s1Box.value == nil)
+    }
+
     // 6. SessionEnd removes the session
     @Test func sessionEndRemovesSession() {
         let store = SessionStore()
