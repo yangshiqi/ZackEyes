@@ -48,12 +48,12 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
-    public func approve() {
-        sessionStore.resolvePrimaryPermission(allow: true)
+    public func approve(sessionId: String) {
+        sessionStore.resolvePermission(sessionId: sessionId, allow: true)
     }
 
-    public func deny() {
-        sessionStore.resolvePrimaryPermission(allow: false)
+    public func deny(sessionId: String) {
+        sessionStore.resolvePermission(sessionId: sessionId, allow: false)
     }
 
 /// Click handler: jump to the terminal tab for this session.

@@ -540,7 +540,9 @@ struct NotchExpandedView: View {
 
     private var permissionApprovalButtons: some View {
         HStack(spacing: 8) {
-            Button(action: { viewModel.deny() }) {
+            Button(action: {
+                if let id = viewModel.primarySession?.id { viewModel.deny(sessionId: id) }
+            }) {
                 HStack(spacing: 4) {
                     Text("Deny")
                     Text("⌘N")
@@ -557,7 +559,9 @@ struct NotchExpandedView: View {
             .buttonStyle(.plain)
             .keyboardShortcut("n", modifiers: .command)
 
-            Button(action: { viewModel.approve() }) {
+            Button(action: {
+                if let id = viewModel.primarySession?.id { viewModel.approve(sessionId: id) }
+            }) {
                 HStack(spacing: 4) {
                     Text("Allow Once")
                     Text("⌘Y")
