@@ -24,13 +24,6 @@ struct NotchExpandedView: View {
                     }
                 }
 
-                // If primary session has a regular permission request (not AskUserQuestion),
-                // show approval buttons at bottom
-                if let primary = viewModel.primarySession,
-                   let pending = primary.pendingPermission,
-                   !pending.isAskUserQuestion {
-                    permissionApprovalButtons
-                }
             }
 
             Spacer(minLength: 0)
@@ -63,12 +56,16 @@ struct NotchExpandedView: View {
 
     @ViewBuilder
     private func sessionCard(_ session: SessionInfo, theme: BuddyTheme) -> some View {
-        Button(action: {
-            viewModel.activateTerminal(for: session)
-        }) {
-            sessionCardContent(session, theme: theme)
-        }
-        .buttonStyle(.plain)
+        // .onTapGesture on the content (not a wrapping Button) so the inner
+        // Deny / Allow Once buttons inside sessionCardContent aren't nested
+        // inside another Button — nested buttons make the outer action fire
+        // when a child button is clicked, which would jump the terminal on
+        // every Allow/Deny click.
+        sessionCardContent(session, theme: theme)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                viewModel.activateTerminal(for: session)
+            }
     }
 
     @ViewBuilder
@@ -200,12 +197,18 @@ struct NotchExpandedView: View {
                     taskList(session.tasks)
                 }
 
-                // Permission request details
+                // Permission request details + approval buttons (regular PermissionRequest only).
+                // AskUserQuestion renders its own block with a terminal CTA footer.
                 if let pending = session.pendingPermission {
                     if pending.isAskUserQuestion {
                         askUserQuestionBlock(session: session, pending: pending)
                     } else {
                         permissionDetailBlock(pending)
+                        permissionApprovalButtons(
+                            sessionId: session.id,
+                            isPrimary: viewModel.primarySession?.id == session.id
+                        )
+                        .padding(.top, 4)
                     }
                 }
 
@@ -536,43 +539,67 @@ struct NotchExpandedView: View {
         .padding(.leading, 16)
     }
 
-    // MARK: - Approval buttons (shared across all pending permissions)
+    // MARK: - Approval buttons (rendered inside the owning session's card)
 
-    private var permissionApprovalButtons: some View {
+    @ViewBuilder
+    private func permissionApprovalButtons(sessionId: String, isPrimary: Bool) -> some View {
         HStack(spacing: 8) {
-            Button(action: { viewModel.deny() }) {
-                HStack(spacing: 4) {
-                    Text("Deny")
+            denyButton(sessionId: sessionId, isPrimary: isPrimary)
+            allowButton(sessionId: sessionId, isPrimary: isPrimary)
+        }
+    }
+
+    @ViewBuilder
+    private func denyButton(sessionId: String, isPrimary: Bool) -> some View {
+        let base = Button(action: { viewModel.deny(sessionId: sessionId) }) {
+            HStack(spacing: 4) {
+                Text("Deny")
+                if isPrimary {
                     Text("⌘N")
                         .font(.system(size: 8, weight: .regular, design: .monospaced))
                         .opacity(0.6)
                 }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.red)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Color.red.opacity(0.15))
-                    .cornerRadius(8)
             }
-            .buttonStyle(.plain)
-            .keyboardShortcut("n", modifiers: .command)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.red)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(Color.red.opacity(0.15))
+                .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
 
-            Button(action: { viewModel.approve() }) {
-                HStack(spacing: 4) {
-                    Text("Allow Once")
+        if isPrimary {
+            base.keyboardShortcut("n", modifiers: .command)
+        } else {
+            base
+        }
+    }
+
+    @ViewBuilder
+    private func allowButton(sessionId: String, isPrimary: Bool) -> some View {
+        let base = Button(action: { viewModel.approve(sessionId: sessionId) }) {
+            HStack(spacing: 4) {
+                Text("Allow Once")
+                if isPrimary {
                     Text("⌘Y")
                         .font(.system(size: 8, weight: .regular, design: .monospaced))
                         .opacity(0.6)
                 }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.15))
-                    .cornerRadius(8)
             }
-            .buttonStyle(.plain)
-            .keyboardShortcut("y", modifiers: .command)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.15))
+                .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+
+        if isPrimary {
+            base.keyboardShortcut("y", modifiers: .command)
+        } else {
+            base
         }
     }
 
