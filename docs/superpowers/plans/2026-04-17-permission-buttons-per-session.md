@@ -28,19 +28,23 @@ Append the following method inside the `SessionStoreTests` struct in `Tests/AppL
     //     leaves other pending sessions intact. Guards the contract relied on
     //     by per-session approval buttons in the notch panel.
     @Test func resolvePermissionScopedToNamedSession() {
+        // Swift 6 @Sendable closures cannot capture `var`; use a reference box.
+        // `PermissionResponse` is a struct (not an enum), so the deny-check
+        // compares the `behavior` field rather than pattern-matching a case.
+        final class Box<T>: @unchecked Sendable { var value: T? }
         let store = SessionStore()
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/a"))
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s2", cwd: "/b"))
 
-        var s1Response: PermissionResponse?
-        var s2Response: PermissionResponse?
+        let s1Box = Box<PermissionResponse>()
+        let s2Box = Box<PermissionResponse>()
         let s1Permission = PendingPermission(
             toolName: "Bash", toolInput: [:], cwd: "/a",
-            responder: { s1Response = $0 }
+            responder: { s1Box.value = $0 }
         )
         let s2Permission = PendingPermission(
             toolName: "Write", toolInput: [:], cwd: "/b",
-            responder: { s2Response = $0 }
+            responder: { s2Box.value = $0 }
         )
         store.handlePermissionRequest(sessionId: "s1", permission: s1Permission)
         store.handlePermissionRequest(sessionId: "s2", permission: s2Permission)
@@ -50,12 +54,13 @@ Append the following method inside the `SessionStoreTests` struct in `Tests/AppL
         // s2 cleared and denied
         #expect(store.sessions["s2"]?.pendingPermission == nil)
         #expect(store.sessions["s2"]?.state == .working)
-        if case .deny = s2Response {} else { Issue.record("s2 should have been denied") }
+        #expect(s2Box.value?.hookSpecificOutput.decision.behavior == "deny",
+                "s2 should have been denied")
 
         // s1 untouched
         #expect(store.sessions["s1"]?.pendingPermission != nil)
         #expect(store.sessions["s1"]?.state == .waiting)
-        #expect(s1Response == nil)
+        #expect(s1Box.value == nil)
     }
 ```
 
@@ -170,10 +175,10 @@ Replace the entire existing computed property (lines 539-577) in `Sources/AppLib
     // MARK: - Approval buttons (rendered inside the owning session's card)
 
     @ViewBuilder
-    private func permissionApprovalButtons(for session: SessionInfo, isPrimary: Bool) -> some View {
+    private func permissionApprovalButtons(sessionId: String, isPrimary: Bool) -> some View {
         HStack(spacing: 8) {
-            denyButton(sessionId: session.id, isPrimary: isPrimary)
-            allowButton(sessionId: session.id, isPrimary: isPrimary)
+            denyButton(sessionId: sessionId, isPrimary: isPrimary)
+            allowButton(sessionId: sessionId, isPrimary: isPrimary)
         }
     }
 
@@ -260,7 +265,7 @@ Replace with:
                     } else {
                         permissionDetailBlock(pending)
                         permissionApprovalButtons(
-                            for: session,
+                            sessionId: session.id,
                             isPrimary: viewModel.primarySession?.id == session.id
                         )
                         .padding(.top, 4)

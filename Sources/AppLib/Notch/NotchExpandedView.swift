@@ -56,12 +56,16 @@ struct NotchExpandedView: View {
 
     @ViewBuilder
     private func sessionCard(_ session: SessionInfo, theme: BuddyTheme) -> some View {
-        Button(action: {
-            viewModel.activateTerminal(for: session)
-        }) {
-            sessionCardContent(session, theme: theme)
-        }
-        .buttonStyle(.plain)
+        // .onTapGesture on the content (not a wrapping Button) so the inner
+        // Deny / Allow Once buttons inside sessionCardContent aren't nested
+        // inside another Button — nested buttons make the outer action fire
+        // when a child button is clicked, which would jump the terminal on
+        // every Allow/Deny click.
+        sessionCardContent(session, theme: theme)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                viewModel.activateTerminal(for: session)
+            }
     }
 
     @ViewBuilder
