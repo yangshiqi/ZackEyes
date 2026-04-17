@@ -201,7 +201,7 @@ struct NotchExpandedView: View {
                     } else {
                         permissionDetailBlock(pending)
                         permissionApprovalButtons(
-                            for: session,
+                            sessionId: session.id,
                             isPrimary: viewModel.primarySession?.id == session.id
                         )
                         .padding(.top, 4)
@@ -538,10 +538,10 @@ struct NotchExpandedView: View {
     // MARK: - Approval buttons (rendered inside the owning session's card)
 
     @ViewBuilder
-    private func permissionApprovalButtons(for session: SessionInfo, isPrimary: Bool) -> some View {
+    private func permissionApprovalButtons(sessionId: String, isPrimary: Bool) -> some View {
         HStack(spacing: 8) {
-            denyButton(sessionId: session.id, isPrimary: isPrimary)
-            allowButton(sessionId: session.id, isPrimary: isPrimary)
+            denyButton(sessionId: sessionId, isPrimary: isPrimary)
+            allowButton(sessionId: sessionId, isPrimary: isPrimary)
         }
     }
 
