@@ -4,7 +4,7 @@
 
 **Goal:** Per-version first-launch welcome animation: expanded notch panel opens, shows PixelAvatar + title/subtitle, plays theme chime, auto-collapses after 3 seconds. Fires once per bundle version; both real-notch and simulated-notch surfaces share the same overlay.
 
-**Architecture:** A `@Published var welcomeVisible` on the shared `NotchViewModel` drives a SwiftUI overlay rendered inside the existing expanded views on both surfaces. A tiny pure-function `WelcomeTrigger` handles the `UserDefaults` version check. `AppDelegate.maybeShowWelcome()` coordinates: flag on → `forceUiExpand()` → play chime → 3s sleep → flag off → mark version. No new NSPanel, no new controller.
+**Architecture:** A `@Published var welcomeVisible` on the shared `NotchViewModel` drives a SwiftUI overlay that short-circuits the expanded layout on both notch surfaces (replacing the usage bars + session list entirely). A tiny pure-function `WelcomeTrigger` handles the `UserDefaults` version check. `AppDelegate.maybeShowWelcome()` coordinates: flag on → `forceUiExpand()` → play chime → 3s sleep → flag off → `forceUiCompact()` (explicit collapse, independent of mouse position) → mark version. No new NSPanel, no new controller.
 
 **Tech Stack:** Swift 6, SwiftUI, AppKit, `UserDefaults`, existing `NotificationManager.playThemeSound()` (to be exposed via `playChime()`), existing `NotchViewModel` / `AppDelegate.forceUiExpand()`. Tests use swift-testing (`import Testing`) matching `SessionStoreTests`.
 
@@ -19,9 +19,10 @@
 | Create | `Tests/AppLibTests/WelcomeTriggerTests.swift` | 5 tests covering the version-compare matrix |
 | Modify | `Sources/AppLib/Notch/NotchViewModel.swift` | Add `@Published var welcomeVisible: Bool = false` |
 | Modify | `Sources/AppLib/Notifications/NotificationManager.swift` | Add `public func playChime()` wrapper around private `playThemeSound()` |
-| Modify | `Sources/AppLib/Notch/NotchExpandedView.swift` | Top-level conditional overlay on `welcomeVisible` |
+| Modify | `Sources/AppLib/Notch/NotchCompactView.swift` | Short-circuit the `.expanded` case of `NotchRootView` to `WelcomeOverlay` when `welcomeVisible` — must replace the whole `UsageBarsView + Divider + ScrollView` stack, not just the inner view |
 | Modify | `Sources/AppLib/SimulatedNotch/SimulatedNotchFullView.swift` | Top-level conditional overlay on `welcomeVisible` |
-| Modify | `Sources/ZackEyes/AppDelegate.swift` | Add `maybeShowWelcome()` + call at end of `applicationDidFinishLaunching` |
+| Modify | `Sources/AppLib/SimulatedNotch/SimulatedNotchController.swift` | Add `public func forceCompact()` wrapper around private `setMode(.compact)` so `AppDelegate` can explicitly collapse after welcome ends |
+| Modify | `Sources/ZackEyes/AppDelegate.swift` | Add `maybeShowWelcome()` + `forceUiCompact()` + call at end of `applicationDidFinishLaunching` |
 
 ---
 
@@ -63,13 +64,13 @@ struct WelcomeTriggerTests {
 
     @Test func firesWhenStoredVersionDiffers() {
         let d = defaults(#function)
-        d.set("0.9.0", forKey: "welcomeShownForVersion")
+        d.set("0.9.0", forKey: WelcomeTrigger.storageKey)
         #expect(WelcomeTrigger.shouldShowWelcome(defaults: d, currentVersion: "1.0.0") == true)
     }
 
     @Test func skipsWhenStoredVersionMatches() {
         let d = defaults(#function)
-        d.set("1.0.0", forKey: "welcomeShownForVersion")
+        d.set("1.0.0", forKey: WelcomeTrigger.storageKey)
         #expect(WelcomeTrigger.shouldShowWelcome(defaults: d, currentVersion: "1.0.0") == false)
     }
 
@@ -81,15 +82,15 @@ struct WelcomeTriggerTests {
     @Test func markShownPersistsVersion() {
         let d = defaults(#function)
         WelcomeTrigger.markShown(defaults: d, currentVersion: "1.2.3")
-        #expect(d.string(forKey: "welcomeShownForVersion") == "1.2.3")
+        #expect(d.string(forKey: WelcomeTrigger.storageKey) == "1.2.3")
         #expect(WelcomeTrigger.shouldShowWelcome(defaults: d, currentVersion: "1.2.3") == false)
     }
 
     @Test func markShownWithNilVersionIsNoop() {
         let d = defaults(#function)
-        d.set("0.9.0", forKey: "welcomeShownForVersion")
+        d.set("0.9.0", forKey: WelcomeTrigger.storageKey)
         WelcomeTrigger.markShown(defaults: d, currentVersion: nil)
-        #expect(d.string(forKey: "welcomeShownForVersion") == "0.9.0")
+        #expect(d.string(forKey: WelcomeTrigger.storageKey) == "0.9.0")
     }
 }
 ```
@@ -307,80 +308,96 @@ git commit -m "feat(welcome): WelcomeOverlay SwiftUI view"
 
 ---
 
-### Task 5: Wire overlay into `NotchExpandedView` (real notch)
+### Task 5: Wire overlay into `NotchRootView` (real notch)
 
 **Files:**
-- Modify: `Sources/AppLib/Notch/NotchExpandedView.swift:14-38`
+- Modify: `Sources/AppLib/Notch/NotchCompactView.swift:17-50`
 
-- [ ] **Step 1: Wrap the body in a conditional**
+**Why this file, not `NotchExpandedView`:** On the real-notch surface, `NotchRootView.body` (defined in this file) switches on `viewModel.panelState`. The `.expanded` case builds a `VStack` of `UsageBarsView` + `Divider` + a `ScrollView` wrapping `NotchExpandedView`. Replacing only `NotchExpandedView` would leave the usage bars and divider rendered *above* the welcome overlay. The short-circuit must happen at the top of the `.expanded` branch so the overlay fully replaces the expanded layout.
 
-Find the existing `body` (lines 14–38):
+- [ ] **Step 1: Replace the `.expanded` branch with a welcome-vs-normal split**
+
+Find the existing `body` in `NotchRootView` (lines 17–50 of `NotchCompactView.swift`):
 ```swift
     var body: some View {
-        let theme = currentTheme
-        VStack(alignment: .leading, spacing: 12) {
-            if viewModel.sessionStore.sessions.isEmpty {
-                emptyState
-            } else {
-                // List all sessions (most recent first)
-                VStack(spacing: 10) {
-                    ForEach(viewModel.sessionStore.orderedSessions, id: \.id) { session in
-                        sessionCard(session, theme: theme)
+        // Top-aligned ZStack inside the fixed-size 280pt host. In compact
+        // state only the pill (notchHeight tall) is drawn — the rest is
+        // transparent. In expanded state the full panel fills the host.
+        ZStack(alignment: .top) {
+            switch viewModel.panelState {
+            case .compact:
+                NotchCompactView(viewModel: viewModel, usageTracker: usageTracker)
+                    .frame(height: notchHeight)
+                    .frame(maxWidth: .infinity, alignment: .top)
+
+            case .expanded:
+                VStack(spacing: 0) {
+                    UsageBarsView(usageTracker: usageTracker) {
+                        gearButton
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 10)
+
+                    Divider()
+                        .background(Color.white.opacity(0.08))
+
+                    ScrollView(.vertical, showsIndicators: false) {
+                        NotchExpandedView(viewModel: viewModel)
+                            .background(Color.clear)
                     }
                 }
-
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .onReceive(durationTimer) { now in
-            tick = now
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 ```
 
 Replace with:
 ```swift
     var body: some View {
-        if viewModel.welcomeVisible {
-            WelcomeOverlay()
-        } else {
-            normalBody
-        }
-    }
+        // Top-aligned ZStack inside the fixed-size 280pt host. In compact
+        // state only the pill (notchHeight tall) is drawn — the rest is
+        // transparent. In expanded state the full panel fills the host.
+        ZStack(alignment: .top) {
+            switch viewModel.panelState {
+            case .compact:
+                NotchCompactView(viewModel: viewModel, usageTracker: usageTracker)
+                    .frame(height: notchHeight)
+                    .frame(maxWidth: .infinity, alignment: .top)
 
-    private var normalBody: some View {
-        let theme = currentTheme
-        return VStack(alignment: .leading, spacing: 12) {
-            if viewModel.sessionStore.sessions.isEmpty {
-                emptyState
-            } else {
-                // List all sessions (most recent first)
-                VStack(spacing: 10) {
-                    ForEach(viewModel.sessionStore.orderedSessions, id: \.id) { session in
-                        sessionCard(session, theme: theme)
+            case .expanded:
+                if viewModel.welcomeVisible {
+                    // First-launch welcome: overlay replaces the whole
+                    // expanded layout (no usage bars, no session list).
+                    WelcomeOverlay()
+                } else {
+                    VStack(spacing: 0) {
+                        UsageBarsView(usageTracker: usageTracker) {
+                            gearButton
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 10)
+
+                        Divider()
+                            .background(Color.white.opacity(0.08))
+
+                        ScrollView(.vertical, showsIndicators: false) {
+                            NotchExpandedView(viewModel: viewModel)
+                                .background(Color.clear)
+                        }
                     }
+                    .background(Color.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
-
             }
-
-            Spacer(minLength: 0)
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.black)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .onReceive(durationTimer) { now in
-            tick = now
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 ```
-
-Note: the `normalBody` computed property needs `return` before `VStack` because the `let theme = currentTheme` line makes it a multi-statement closure; computed properties require an explicit `return` when they contain statements other than the final expression.
 
 - [ ] **Step 2: Verify build**
 
@@ -391,8 +408,8 @@ Expected: Build succeeds.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add Sources/AppLib/Notch/NotchExpandedView.swift
-git commit -m "feat(welcome): render WelcomeOverlay in NotchExpandedView"
+git add Sources/AppLib/Notch/NotchCompactView.swift
+git commit -m "feat(welcome): short-circuit NotchRootView .expanded to WelcomeOverlay"
 ```
 
 ---
@@ -477,6 +494,55 @@ git commit -m "feat(welcome): render WelcomeOverlay in SimulatedNotchFullView"
 
 ---
 
+### Task 6.5: Expose `SimulatedNotchController.forceCompact()`
+
+**Files:**
+- Modify: `Sources/AppLib/SimulatedNotch/SimulatedNotchController.swift:209-213`
+
+**Why:** `setMode(_:)` is private, so `AppDelegate` cannot force the simulated notch to collapse. After the welcome ends we must call an explicit collapse (the existing mouse-out debounce only fires when the mouse actually moves out, which isn't guaranteed right after launch). `NotchWindowController.updatePanelState(_:)` is already public, so only the simulated-notch side needs a new wrapper.
+
+- [ ] **Step 1: Add the public wrapper**
+
+Find the existing `forceExpand()` method (around line 209):
+```swift
+    /// Force the panel into full mode regardless of current state. Used
+    /// by event-driven triggers (permission requests, errors) where the
+    /// caller wants the panel open, not toggled.
+    /// Also enables key status so keyboard shortcuts (⌘Y/⌘N) work.
+    public func forceExpand() {
+        setMode(.full)
+        panel?.allowsKeyStatus = true
+        panel?.makeKey()
+    }
+```
+
+Add immediately below it:
+```swift
+
+    /// Force the panel back to compact mode regardless of current state.
+    /// Used by the first-launch welcome coordinator after its 3-second
+    /// display window — the mouse-out debounce alone doesn't trigger if
+    /// the user's cursor is nowhere near the panel.
+    public func forceCompact() {
+        setMode(.compact)
+    }
+```
+
+- [ ] **Step 2: Verify build**
+
+Run: `swift build`
+
+Expected: Build succeeds.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add Sources/AppLib/SimulatedNotch/SimulatedNotchController.swift
+git commit -m "feat(simulated-notch): expose public forceCompact()"
+```
+
+---
+
 ### Task 7: Wire trigger in `AppDelegate`
 
 **Files:**
@@ -515,9 +581,9 @@ Replace with:
     }
 ```
 
-- [ ] **Step 2: Add the `maybeShowWelcome()` method**
+- [ ] **Step 2: Add `maybeShowWelcome()` and `forceUiCompact()`**
 
-Find the private `forceUiExpand()` method (around line 400). Add this method immediately above it:
+Find the private `forceUiExpand()` method (around line 400). Add both methods immediately above it:
 
 ```swift
     /// First-launch onboarding: expand the notch panel, render the welcome
@@ -538,8 +604,29 @@ Find the private `forceUiExpand()` method (around line 400). Add this method imm
             try? await Task.sleep(for: .seconds(3))
             guard let self else { return }
             self.viewModel.welcomeVisible = false
+            // Explicit collapse: the mouse-out debounce only fires when the
+            // cursor actually moves out of the panel, so without this the
+            // panel would sit expanded forever if the user isn't moving
+            // their mouse at app launch.
+            self.forceUiCompact()
             WelcomeTrigger.markShown(defaults: .standard, currentVersion: currentVersion)
         }
+    }
+
+    /// Mirror of `forceUiExpand()` — forces whichever active notch surface
+    /// back to its compact state. Used by the welcome onboarding coordinator
+    /// to guarantee auto-collapse after 3 seconds regardless of mouse position.
+    private func forceUiCompact() {
+        if let sn = simulatedNotch {
+            sn.forceCompact()
+            return
+        }
+        if let wc = windowController {
+            wc.updatePanelState(.compact)
+            return
+        }
+        // No notch surface — the menu-bar popover opens/closes on its own
+        // click, so there's nothing to collapse here.
     }
 
 ```
@@ -574,10 +661,10 @@ git commit -m "feat(welcome): wire maybeShowWelcome() in AppDelegate"
 
 Run:
 ```bash
-defaults delete com.zackeyes.ZackEyes welcomeShownForVersion 2>/dev/null || true
+defaults delete app.zackeyes.macos welcomeShownForVersion 2>/dev/null || true
 ```
 
-(If the bundle identifier differs, adjust accordingly — check `Resources/Info.plist` for `CFBundleIdentifier`.)
+(Bundle identifier is defined in `Resources/Info.plist` as `CFBundleIdentifier = app.zackeyes.macos`.)
 
 - [ ] **Step 2: Build and launch the app**
 
@@ -591,7 +678,7 @@ Expected:
 2. The overlay shows the PixelAvatar bumping in from scale 0 → 1.15 → 1.0.
 3. Title "Welcome to ZackEyes" and subtitle "I live in your notch. Hover here to see me." fade in shortly after.
 4. The theme chime plays once (assuming the user has not set the sound to "none").
-5. After ~3 seconds, the overlay disappears; the normal expanded content becomes visible. The notch then auto-collapses to compact once the mouse leaves.
+5. After ~3 seconds, the overlay disappears and the panel **explicitly collapses back to compact** (not dependent on mouse movement).
 
 - [ ] **Step 3: Quit and relaunch — verify welcome does NOT replay**
 
@@ -603,7 +690,7 @@ Expected: No overlay. No chime. The notch behaves normally (compact on startup; 
 
 Run:
 ```bash
-defaults write com.zackeyes.ZackEyes welcomeShownForVersion "0.0.0"
+defaults write app.zackeyes.macos welcomeShownForVersion "0.0.0"
 ```
 
 Relaunch with `make run`.
@@ -624,8 +711,8 @@ Spec coverage check (against `docs/superpowers/specs/2026-04-19-welcome-onboardi
 - [x] Per-version decision stored via `UserDefaults.standard` → Task 1 (key), Task 7 (call sites)
 - [x] Content: PixelAvatar + title + subtitle with bump + fade → Task 4
 - [x] Sound: `NotificationManager.playThemeSound()` with "none" respected → Task 2 (public wrapper), Task 7 (invocation)
-- [x] Duration: 3s auto-collapse, no early dismiss → Task 7 (Task.sleep 3s, no interaction surface)
-- [x] Surfaces: real notch + simulated notch, menu-bar skipped → Task 5 + Task 6 (menu-bar popover doesn't render either overlay and isn't part of `forceUiExpand()`'s overlay targets)
+- [x] Duration: 3s **explicit** auto-collapse, no early dismiss → Task 7 (Task.sleep 3s → `forceUiCompact()`, no interaction surface)
+- [x] Surfaces: real notch + simulated notch, menu-bar skipped → Task 5 (NotchRootView) + Task 6 (SimulatedNotchFullView); `forceUiCompact()` also skips the menu-bar fallback
 - [x] `NotchViewModel.welcomeVisible` flag → Task 3
 - [x] `AppDelegate.maybeShowWelcome()` coordination → Task 7
 - [x] Edge: CFBundleShortVersionString missing → treated as "already shown" → Task 1 test `skipsWhenCurrentVersionNil` + Task 7 code path
@@ -639,9 +726,11 @@ Placeholder scan: no TBDs, no "similar to Task N" references, every code step ha
 Type consistency:
 - `WelcomeTrigger.shouldShowWelcome(defaults:currentVersion:)` — used consistently in test (Task 1), AppDelegate (Task 7).
 - `WelcomeTrigger.markShown(defaults:currentVersion:)` — used consistently.
-- `WelcomeTrigger.storageKey` — `"welcomeShownForVersion"` matches Task 8 `defaults write` command.
+- `WelcomeTrigger.storageKey` — `"welcomeShownForVersion"` matches Task 8 `defaults write/delete` commands and is now used by all tests.
 - `NotificationManager.shared.playChime()` — added in Task 2, called in Task 7.
 - `viewModel.welcomeVisible` — added in Task 3, read in Tasks 5, 6, 7.
 - `WelcomeOverlay()` — created in Task 4, rendered in Tasks 5 and 6.
+- `SimulatedNotchController.forceCompact()` — added in Task 6.5, called in Task 7 via `forceUiCompact()`.
+- `NotchWindowController.updatePanelState(_:)` — already public; called in Task 7 via `forceUiCompact()`.
 
 No gaps found.
