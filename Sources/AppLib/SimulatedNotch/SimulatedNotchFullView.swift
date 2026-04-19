@@ -316,7 +316,7 @@ struct SimulatedNotchFullView: View {
 
                 Spacer(minLength: 0)
 
-                if let reset = relativeReset(resetsAt) {
+                if let reset = resetsAt?.usageResetDisplay {
                     Text("resets in \(reset)")
                         .font(.system(size: 10))
                         .foregroundColor(.white.opacity(0.45))
@@ -348,17 +348,6 @@ struct SimulatedNotchFullView: View {
         .usageLevelColor(usedPct: used)
     }
 
-    private func relativeReset(_ date: Date?) -> String? {
-        guard let date = date else { return nil }
-        let interval = date.timeIntervalSinceNow
-        if interval <= 0 { return "now" }
-        let hours = Int(interval) / 3600
-        let mins = (Int(interval) % 3600) / 60
-        let days = hours / 24
-        if days >= 1 { return "\(days)d" }
-        if hours > 0 { return "\(hours)h \(mins)m" }
-        return "\(mins)m"
-    }
 }
 
 public extension Notification.Name {
