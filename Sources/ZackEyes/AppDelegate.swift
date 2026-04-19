@@ -427,7 +427,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Mirror of `forceUiExpand()` — forces whichever active notch surface
     /// back to its compact state. Used by the welcome onboarding coordinator
     /// to guarantee auto-collapse after 3 seconds regardless of mouse position.
+    ///
+    /// No-ops if any session has a `pendingPermission`: the mouse-move
+    /// collapse path already gates on this via `stickyOpen`, but explicit
+    /// callers (welcome) must replicate the gate or they'd collapse the
+    /// panel out from under a permission request that happened to arrive
+    /// during the welcome window.
     private func forceUiCompact() {
+        let hasPending = sessionStore.sessions.values.contains { $0.pendingPermission != nil }
+        if hasPending { return }
+
         if let sn = simulatedNotch {
             sn.forceCompact()
             return
