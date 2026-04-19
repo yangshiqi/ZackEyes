@@ -31,6 +31,7 @@ public final class NotchWindowController {
     public var showMenu: ((NSView) -> Void)?
     private var panel: NotchPanel?
     private var mouseMonitor: Any?
+    private var localMouseMonitor: Any?
     private var screenObserver: NSObjectProtocol?
     private var collapseWorkItem: DispatchWorkItem?
 
@@ -173,10 +174,21 @@ public final class NotchWindowController {
     // MARK: - Mouse monitoring
 
     private func startMouseMonitor() {
+        // Global monitor catches events delivered to OTHER apps (our app
+        // in background). Local monitor catches events delivered to US
+        // — needed whenever the app becomes active (e.g., AboutWindow or
+        // HotkeyRecorderWindow calls NSApp.activate), otherwise the
+        // global monitor goes silent and the notch stops tracking.
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.handleMouseMoved(NSEvent.mouseLocation)
             }
+        }
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleMouseMoved(NSEvent.mouseLocation)
+            }
+            return event
         }
     }
 
@@ -184,6 +196,10 @@ public final class NotchWindowController {
         if let monitor = mouseMonitor {
             NSEvent.removeMonitor(monitor)
             mouseMonitor = nil
+        }
+        if let monitor = localMouseMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMouseMonitor = nil
         }
     }
 

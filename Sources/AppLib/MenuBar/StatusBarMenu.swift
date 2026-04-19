@@ -15,6 +15,7 @@ import AppKit
 public final class StatusBarMenu: NSObject {
     private let updateChecker: UpdateChecker
     private var hotkeyWindow: HotkeyRecorderWindow?
+    private var aboutWindow: AboutWindow?
 
     public init(updateChecker: UpdateChecker) {
         self.updateChecker = updateChecker
@@ -74,15 +75,14 @@ public final class StatusBarMenu: NSObject {
     }
 
     @objc private func aboutClicked(_ sender: Any?) {
-        let alert = NSAlert()
-        alert.messageText = "ZackEyes"
-        alert.informativeText = "Version \(appVersion)"
-        if let icon = NSImage(named: "AppIcon") {
-            alert.icon = icon
+        // Non-blocking AboutWindow instead of NSAlert.runModal(): a modal
+        // alert would block the main thread, starving the @MainActor
+        // socket handler. On a slow user (> 15s on the alert) this could
+        // trip the bridge's socket timeout and drop a permission request.
+        if aboutWindow == nil {
+            aboutWindow = AboutWindow()
         }
-        alert.addButton(withTitle: "OK")
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+        aboutWindow?.show()
     }
 
     @objc private func hotkeyClicked(_ sender: Any?) {
@@ -134,9 +134,5 @@ public final class StatusBarMenu: NSObject {
         let themeItem = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
         themeItem.submenu = themeMenu
         return themeItem
-    }
-
-    private var appVersion: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
     }
 }
