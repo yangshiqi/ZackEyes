@@ -19,6 +19,19 @@ struct SimulatedNotchFullView: View {
     @State private var gearHost = HostViewBox()
 
     var body: some View {
+        if viewModel.welcomeVisible {
+            // First-launch welcome: overlay replaces usage header + session
+            // list. Simulated-notch surface wraps with NotchShape so the
+            // welcome shares the silhouette of the dynamic-island pill.
+            WelcomeOverlay()
+                .background(NotchShape(cornerRadius: cornerRadius).fill(Color.black))
+                .clipShape(NotchShape(cornerRadius: cornerRadius))
+        } else {
+            normalBody
+        }
+    }
+
+    private var normalBody: some View {
         VStack(spacing: 0) {
             usageHeader
                 .padding(.horizontal, 16)
