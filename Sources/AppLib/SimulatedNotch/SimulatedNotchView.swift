@@ -109,20 +109,6 @@ struct SimulatedNotchView: View {
         }
     }
 
-    private func relativeReset(_ date: Date?) -> String? {
-        guard let date = date else { return nil }
-        let interval = date.timeIntervalSinceNow
-        if interval <= 0 { return "now" }
-        let hours = Int(interval) / 3600
-        let mins = (Int(interval) % 3600) / 60
-        if hours >= 24 {
-            return "\(hours / 24)d"
-        } else if hours > 0 {
-            return "\(hours)h \(mins)m"
-        } else {
-            return "\(mins)m"
-        }
-    }
 
     // MARK: - Expanded content (shown on hover)
 
@@ -169,7 +155,7 @@ struct SimulatedNotchView: View {
             Text(remainingString(usedPct: usedPct, fallbackTokens: 0, scale: scale))
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(remainingColor(usedPct: usedPct, fallbackTokens: 0, scale: scale))
-            if let reset = relativeReset(resetsAt) {
+            if let reset = resetsAt?.usageResetDisplay {
                 Text(reset)
                     .font(.system(size: 9))
                     .foregroundColor(.white.opacity(0.4))

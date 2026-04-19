@@ -41,7 +41,7 @@ make clean
 任何代码变更 **MUST** 遵守以下所有约束：
 
 1. **用户配置零损坏** — HookInstaller 操作 `~/.claude/settings.json` 时：必须先备份（`settings.json.backup.{timestamp}`）、只追加 hooks key 不动其他字段（`permissions`、`enabledPlugins`、`defaultMode` 等）、JSON 解析失败时不修改原文件。
-2. **Bridge 永不阻塞 Claude Code** — Bridge 进程的任何失败路径必须以 `exit(1)` 退出（非阻塞错误）。永远不使用 `exit(2)`（阻塞错误）。Socket 连不上、超时、崩溃 → 静默退出，Claude Code 继续正常工作。
+2. **Bridge 永不污染 Claude Code 终端** — Bridge 进程的任何受控失败路径必须以 `exit(0)` 退出且不写 stdout/stderr。Claude Code 新版把任何非 0 exit 显示成 hook error，弄脏用户终端。Socket 连不上、超时、stdin 异常 → 静默 `exit(0)`。永远不使用 `exit(2)`（阻塞错误）。PermissionRequest 失败时 exit 0 无 stdout → Claude Code 回退到原生终端授权，行为正确。
 3. **NotchPanel 不抢焦点** — NSPanel 必须是 `nonactivatingPanel`。`canBecomeMain` 返回 `false`。Collapsed/Compact 状态下 `ignoresMouseEvents = true`，只有 Expanded 状态才接收交互。
 4. **Socket 连接不复用** — 每次 hook 调用创建新连接，用完即关。防止连接泄漏和状态混淆。
 5. **Hook 配置可识别** — 注入到 `settings.json` 的 hook entries，command 路径必须包含 `zackeyes` 字符串，用于安全移除时精确匹配。

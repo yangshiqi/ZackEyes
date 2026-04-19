@@ -2,11 +2,26 @@ import Foundation
 import BridgeLib
 import Shared
 
+// MARK: - Bridge invariant
+//
+// The bridge must NEVER leave a user-visible footprint on Claude Code,
+// regardless of what goes wrong. Every failure path exits 0 with no
+// stdout/stderr. Claude Code's newer builds display any non-zero hook
+// exit as a terminal error message, which we don't want — socket
+// unreachable (the app isn't running) is an expected state, not a bug
+// to surface.
+//
+// The only path that writes to stdout is PermissionRequest success,
+// where Claude Code expects a JSON response. If that socket round-trip
+// fails, we still exit 0 with empty stdout — Claude Code treats the
+// missing response as "no hook preference" and falls back to its own
+// default permission prompt.
+
 // MARK: - Step 1: Read stdin
 
 let inputData = FileHandle.standardInput.availableData
 guard !inputData.isEmpty else {
-    exit(1)
+    exit(0)
 }
 
 // MARK: - Step 2: Parse --event argument
@@ -14,21 +29,21 @@ guard !inputData.isEmpty else {
 // Expected: ["bridge", "--event", "EventName"]
 let args = CommandLine.arguments
 guard args.count == 3, args[1] == "--event" else {
-    exit(1)
+    exit(0)
 }
 let eventName = args[2]
 
 // MARK: - Step 3: Inject _bridge_event into JSON payload
 
 guard var jsonObject = try? JSONSerialization.jsonObject(with: inputData) as? [String: Any] else {
-    exit(1)
+    exit(0)
 }
 jsonObject["_bridge_event"] = eventName
 // Pass parent PID (claude process) so the app can locate the terminal
 jsonObject["_bridge_ppid"] = Int(getppid())
 
 guard let enrichedData = try? JSONSerialization.data(withJSONObject: jsonObject) else {
-    exit(1)
+    exit(0)
 }
 
 // Ensure trailing newline (newline-delimited JSON)
@@ -57,23 +72,29 @@ case "PermissionRequest":
     // answer the question, and we shouldn't abandon the prompt out from
     // under them. If the user kills Claude Code (SIGINT), the bridge dies
     // with it and the socket closes cleanly on the app side.
+    //
+    // On socket failure: exit 0 with empty stdout. Claude Code treats
+    // the missing response as "no hook preference" and falls back to
+    // its own default permission prompt — which is the right outcome
+    // when our app isn't running.
     guard let responseData = client.sendAndWaitForResponse(data: payloadData, timeoutSeconds: 0) else {
-        // Connection error — non-blocking failure
-        exit(1)
+        exit(0)
     }
     FileHandle.standardOutput.write(responseData)
     exit(0)
 
 case "StatusLine":
-    // Claude Code statusLine command: receives rich metadata (including rate_limits)
-    // via stdin, expects status text on stdout. We forward to the app and return
-    // an empty status line (or could return a tiny indicator).
-    let _ = client.sendFireAndForget(data: payloadData)
-    // Return nothing so the user's status line stays clean
+    // Claude Code statusLine: stdin carries rich metadata (rate_limits etc.),
+    // stdout is the status-line text. We forward fire-and-forget to the
+    // app and always exit with empty stdout (stays clean regardless of
+    // socket state).
+    _ = client.sendFireAndForget(data: payloadData)
     exit(0)
 
 default:
-    // Fire-and-forget: exit 0 on success, 1 on failure
-    let ok = client.sendFireAndForget(data: payloadData)
-    exit(ok ? 0 : 1)
+    // Fire-and-forget observation-only hook. Always exit 0 — if the
+    // socket isn't reachable we simply drop this event. The app will
+    // catch up on its own via the periodic SessionScanner sweep.
+    _ = client.sendFireAndForget(data: payloadData)
+    exit(0)
 }

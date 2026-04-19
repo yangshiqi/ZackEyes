@@ -16,6 +16,11 @@ public class MenuBarFallback: NSObject {
     /// the default popover toggle (e.g. to open the simulated notch instead).
     public var onIconClick: (() -> Void)?
 
+    /// Supplies the right-click context menu. If nil, a minimal Quit-only
+    /// menu is shown. Set by the App to provide the full About / Hotkey /
+    /// Theme / Quit menu shared across both notch paths.
+    public var menuBuilder: (() -> NSMenu)?
+
     public init(viewModel: NotchViewModel) {
         self.viewModel = viewModel
         super.init()
@@ -23,8 +28,12 @@ public class MenuBarFallback: NSObject {
 
     public func setup() {
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.action = #selector(togglePopover)
+        // Route left-click to the configured handler (or popover fallback),
+        // right-click to a small context menu that exposes Quit. Without
+        // this, LSUIElement + notched Macs have no way to quit the app.
+        statusItem.button?.action = #selector(handleButtonClick)
         statusItem.button?.target = self
+        statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         self.statusItem = statusItem
 
         updateIcon(for: viewModel.sessionStore.aggregateState)
@@ -101,6 +110,46 @@ public class MenuBarFallback: NSObject {
     /// Toggle popover (called by global hotkey)
     public func toggle() {
         togglePopover()
+    }
+
+    @objc private func handleButtonClick(_ sender: NSStatusBarButton) {
+        // Right-click OR Control+LeftClick → context menu. The Control-click
+        // path covers users without a configured secondary click (older
+        // Macs, external single-button mice) and matches the standard
+        // macOS status-item convention. Plain left-click falls through.
+        let event = NSApp.currentEvent
+        let isRightClick = event?.type == .rightMouseUp
+        let isControlClick = event?.modifierFlags.contains(.control) ?? false
+        if isRightClick || isControlClick {
+            showContextMenu(from: sender)
+        } else {
+            togglePopover()
+        }
+    }
+
+    private func showContextMenu(from button: NSStatusBarButton) {
+        let menu = menuBuilder?() ?? fallbackMenu()
+        // AppKit non-flipped coords: y=0 is the bottom edge of the button,
+        // so anchoring there (with a 2pt gap) drops the menu straight down
+        // below the status icon. Using bounds.height would place the anchor
+        // ABOVE the button (off-screen at the menu-bar level) and rely on
+        // AppKit's off-screen correction to clamp it back.
+        let anchor = NSPoint(x: button.bounds.minX, y: button.bounds.minY - 2)
+        menu.popUp(positioning: nil, at: anchor, in: button)
+    }
+
+    /// Minimal menu used when no builder is configured. Ensures Quit is
+    /// always reachable even without app-level wiring.
+    private func fallbackMenu() -> NSMenu {
+        let menu = NSMenu()
+        let quit = NSMenuItem(
+            title: "Quit ZackEyes",
+            action: #selector(NSApplication.terminate(_:)),
+            keyEquivalent: "q"
+        )
+        quit.target = NSApp
+        menu.addItem(quit)
+        return menu
     }
 
     @objc private func togglePopover() {

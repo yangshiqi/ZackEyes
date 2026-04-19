@@ -56,8 +56,8 @@ Claude Code 触发 SessionStart/PreToolUse/PostToolUse/Stop hook
 
 ```
 bridge 连接 /tmp/zackeyes.sock 失败（App 未运行）
-  → bridge exit(1)（非阻塞错误）
-  → Claude Code 正常继续，回退到终端审批
+  → bridge exit(0) 且不写 stdout
+  → Claude Code 视为无 hook 偏好，回退到终端审批 / 正常继续
 ```
 
 ### Rate-limit 数据流
@@ -128,10 +128,24 @@ Full 模式下：
 | `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | 静默安装/卸载 `hooks` + `statusLine`，备份保护，附加合并，所有变更含 `zackeyes` 标识 |
 
 **Notch UI（真刘海机型）**
+
+架构直接参照两个事实标准的开源 Mac Dynamic Island 实现 —— 改这块代码前**必看**它们的对应文件：
+
+- [boring.notch](https://github.com/TheBoredTeam/boring.notch)（`boringNotchApp.swift` / `components/Notch/BoringNotchWindow.swift` / `sizing/matters.swift` / `models/BoringViewModel.swift`）
+- [DynamicIsland_Mac](https://github.com/NKR00711/DynamicIsland_Mac)（`DynamicIslandApp.swift` / `components/Notch/DynamicIslandWindow.swift` / `models/DynamicIslandViewModel.swift`）
+
+两家的关键约定（我们已采纳，偏离必有理由）：
+
+- **NSPanel styleMask**: `[.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow]`
+- **level**: `.mainMenu + 3`（**不是** `.screenSaver` —— 那个 level 在菜单栏边缘行为不文档化）
+- **窗口尺寸固定**: 一次性设为 expanded 尺寸，此后不 resize；SwiftUI 内部按 `panelState` 切换 compact pill / 完整面板
+- **定位公式**: `y = screen.frame.maxY - window.height`（窗口顶边贴屏幕顶）
+- **Notch 探测**: `screen.safeAreaInsets.top > 0` + `notchWidth = frame.width - auxiliaryTopLeftArea.width - auxiliaryTopRightArea.width + 4`
+
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `NotchPanel` | `Sources/AppLib/Notch/NotchPanel.swift` | NSPanel 子类，刘海区域覆盖层 |
-| `NotchWindowController` | `Sources/AppLib/Notch/NotchWindowController.swift` | 位置锚定、展开/收缩动画、鼠标追踪 |
+| `NotchWindowController` | `Sources/AppLib/Notch/NotchWindowController.swift` | 位置锚定、状态切换、鼠标追踪（固定窗口，不帧动画） |
 | `NotchViewModel` | `Sources/AppLib/Notch/NotchViewModel.swift` | 桥接 `SessionStore` → SwiftUI；转发嵌套 `objectWillChange` |
 | `NotchCompactView` | `Sources/AppLib/Notch/NotchCompactView.swift` | 折叠 / 紧凑状态视图 |
 | `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | 完整 popover：会话卡片、tasks、permission 审批、错误横幅、AskUserQuestion 选项卡 |
@@ -178,13 +192,16 @@ Full 模式下：
 | 场景 | 行为 | Exit Code |
 |------|------|-----------|
 | 正常响应（权限决策） | stdout 输出 JSON | 0 |
-| Socket 不存在 / App 未运行 | 静默退出 | 1 |
-| Socket 连接超时（15s） | 静默退出 | 1 |
-| stdin JSON 解析失败 | 静默退出 | 1 |
-| Bridge 崩溃 | 静默退出 | 1 |
+| Socket 不存在 / App 未运行 | 静默退出（无 stdout） | **0** |
+| Socket 连接超时 | 静默退出（无 stdout） | **0** |
+| stdin 为空 / JSON 解析失败 | 静默退出 | **0** |
+| args 错误 | 静默退出 | **0** |
+| Bridge 崩溃 | 静默退出 | 非 0（不可控） |
 | 阻塞 Claude Code | **永远不会发生** | 永不使用 2 |
 
-**铁律**: ZackEyes 的任何故障对用户的 Claude Code 体验完全不可见。
+**铁律**: Bridge 的任何路径只要走到退出都返回 0（除了进程崩溃这种不可控情况）。Claude Code 的新版本会把任何非 0 退出码显示成 "hook error"，会污染用户终端；我们宁可丢事件也不弄脏显示。
+- PermissionRequest socket 不通时 exit 0 且不写 stdout → Claude Code 视为"无 hook 偏好" → 回退到原生终端授权弹窗，行为正确。
+- 其他 fire-and-forget hook socket 不通时就当这次事件没发生；App 重连后靠 `SessionScanner` 做 catch-up sweep。
 
 ### Hook 注入安全
 
