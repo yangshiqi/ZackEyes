@@ -2,30 +2,44 @@ import SwiftUI
 
 /// First-launch welcome content. Rendered on top of the expanded notch
 /// when `NotchViewModel.welcomeVisible == true`. Layout: horizontal pill —
-/// left PixelAvatar bumps in; right title + subtitle fades in. No
-/// interaction; auto-dismissed after 3s by `AppDelegate.maybeShowWelcome()`.
+/// left BuddyAvatar headbangs continuously (state forced to `.working`
+/// to trigger the existing rock-out animation); right side types the
+/// title one character at a time, then fades in the subtitle. The whole
+/// overlay does a spring entrance to sync with the chime. No interaction;
+/// auto-dismissed after 3s by `AppDelegate.maybeShowWelcome()`.
 ///
 /// Pure content view — callers supply the background + clip shape so each
 /// surface (real notch = RoundedRectangle, simulated notch = NotchShape)
 /// can use the silhouette that matches its panel.
 struct WelcomeOverlay: View {
-    @State private var avatarScale: CGFloat = 0.0
-    @State private var textOpacity: Double = 0.0
+    @State private var entranceScale: CGFloat = 0.92
+    @State private var entranceOpacity: Double = 0.0
+    @State private var displayedTitle: String = ""
+    @State private var subtitleOpacity: Double = 0.0
+
+    private let fullTitle = "Welcome to ZackEyes"
+    private let charInterval: Double = 0.045  // 45ms per char → 19 chars ≈ 0.85s
 
     var body: some View {
         HStack(spacing: 16) {
-            PixelAvatar(seed: "zackeyes-welcome", size: 56)
-                .scaleEffect(avatarScale)
+            BuddyAvatar(
+                seed: "zackeyes-welcome",
+                state: .working,   // forces the headbang animation loop
+                isWaiting: false,
+                size: 48
+            )
 
             VStack(alignment: .leading, spacing: 4) {
-                Text("Welcome to ZackEyes")
+                // minHeight keeps the subtitle from jumping as chars are typed.
+                Text(displayedTitle)
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(.white)
+                    .frame(minHeight: 18, alignment: .leading)
                 Text("I live in your notch. Hover here to see me.")
                     .font(.system(size: 12))
                     .foregroundColor(.white.opacity(0.75))
+                    .opacity(subtitleOpacity)
             }
-            .opacity(textOpacity)
 
             Spacer(minLength: 0)
         }
@@ -34,16 +48,31 @@ struct WelcomeOverlay: View {
         // (pushes content leading); .center here only has effect in the
         // vertical dimension — the welcome sits mid-panel, not top-left.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .scaleEffect(entranceScale)
+        .opacity(entranceOpacity)
         .onAppear {
-            // Spring drives 0 → 1.0 with response 0.40s / damping 0.55 —
-            // the underdamped curve naturally overshoots before settling,
-            // no explicit keyframe needed.
-            withAnimation(.spring(response: 0.40, dampingFraction: 0.55)) {
-                avatarScale = 1.0
+            // Entrance: spring 0.92 → 1.0 with a small overshoot, in sync
+            // with the chime (AppDelegate plays the sound right after
+            // flipping viewModel.welcomeVisible = true).
+            withAnimation(.spring(response: 0.45, dampingFraction: 0.55)) {
+                entranceScale = 1.0
+                entranceOpacity = 1.0
             }
-            // Text fades in 0.10s after avatar starts so the bump lands first.
-            withAnimation(.easeOut(duration: 0.30).delay(0.10)) {
-                textOpacity = 1.0
+            typeTitle()
+            // Subtitle fades in after the title finishes typing.
+            let subtitleDelay = charInterval * Double(fullTitle.count) + 0.15
+            withAnimation(.easeOut(duration: 0.35).delay(subtitleDelay)) {
+                subtitleOpacity = 1.0
+            }
+        }
+    }
+
+    private func typeTitle() {
+        Task { @MainActor in
+            for i in 1...fullTitle.count {
+                try? await Task.sleep(for: .seconds(charInterval))
+                let end = fullTitle.index(fullTitle.startIndex, offsetBy: i)
+                displayedTitle = String(fullTitle[..<end])
             }
         }
     }
