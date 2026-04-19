@@ -24,7 +24,10 @@ public final class StatusBarMenu: NSObject {
 
     public func build() -> NSMenu {
         let menu = NSMenu()
-        GearMenuTarget.shared.releaseURL = updateChecker.releaseURL
+        // No side effect on GearMenuTarget.shared.releaseURL — our local
+        // updateClicked reads updateChecker.releaseURL directly. The
+        // simulated-notch gear menu path keeps that shared assignment
+        // because it routes Update through GearMenuTarget.updateClicked.
 
         if let version = updateChecker.availableVersion {
             let item = NSMenuItem(

@@ -55,7 +55,12 @@ final class AboutWindow: NSObject, NSWindowDelegate {
     }
 
     private func dismiss() {
-        panel?.orderOut(nil)
+        // close() removes the window from NSApp.windows so ARC can reclaim it.
+        // orderOut() alone would only hide — NSApp retains the window strongly,
+        // leaking it every time the user opens/dismisses this panel.
+        // isReleasedWhenClosed stays false (ARC-safe): ARC releases via our
+        // `panel = nil`, not via NSWindow's own release path.
+        panel?.close()
         panel = nil
     }
 

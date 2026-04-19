@@ -76,7 +76,10 @@ final class HotkeyRecorderWindow: NSObject, NSWindowDelegate {
     }
 
     private func dismiss() {
-        panel?.orderOut(nil)
+        // close() removes the window from NSApp.windows so ARC can reclaim it.
+        // orderOut() alone only hides — NSApp would keep a strong reference,
+        // leaking the window on every open/dismiss cycle.
+        panel?.close()
         panel = nil
     }
 
