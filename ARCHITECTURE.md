@@ -128,10 +128,24 @@ Full 模式下：
 | `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | 静默安装/卸载 `hooks` + `statusLine`，备份保护，附加合并，所有变更含 `zackeyes` 标识 |
 
 **Notch UI（真刘海机型）**
+
+架构直接参照两个事实标准的开源 Mac Dynamic Island 实现 —— 改这块代码前**必看**它们的对应文件：
+
+- [boring.notch](https://github.com/TheBoredTeam/boring.notch)（`boringNotchApp.swift` / `components/Notch/BoringNotchWindow.swift` / `sizing/matters.swift` / `models/BoringViewModel.swift`）
+- [DynamicIsland_Mac](https://github.com/NKR00711/DynamicIsland_Mac)（`DynamicIslandApp.swift` / `components/Notch/DynamicIslandWindow.swift` / `models/DynamicIslandViewModel.swift`）
+
+两家的关键约定（我们已采纳，偏离必有理由）：
+
+- **NSPanel styleMask**: `[.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow]`
+- **level**: `.mainMenu + 3`（**不是** `.screenSaver` —— 那个 level 在菜单栏边缘行为不文档化）
+- **窗口尺寸固定**: 一次性设为 expanded 尺寸，此后不 resize；SwiftUI 内部按 `panelState` 切换 compact pill / 完整面板
+- **定位公式**: `y = screen.frame.maxY - window.height`（窗口顶边贴屏幕顶）
+- **Notch 探测**: `screen.safeAreaInsets.top > 0` + `notchWidth = frame.width - auxiliaryTopLeftArea.width - auxiliaryTopRightArea.width + 4`
+
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `NotchPanel` | `Sources/AppLib/Notch/NotchPanel.swift` | NSPanel 子类，刘海区域覆盖层 |
-| `NotchWindowController` | `Sources/AppLib/Notch/NotchWindowController.swift` | 位置锚定、展开/收缩动画、鼠标追踪 |
+| `NotchWindowController` | `Sources/AppLib/Notch/NotchWindowController.swift` | 位置锚定、状态切换、鼠标追踪（固定窗口，不帧动画） |
 | `NotchViewModel` | `Sources/AppLib/Notch/NotchViewModel.swift` | 桥接 `SessionStore` → SwiftUI；转发嵌套 `objectWillChange` |
 | `NotchCompactView` | `Sources/AppLib/Notch/NotchCompactView.swift` | 折叠 / 紧凑状态视图 |
 | `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | 完整 popover：会话卡片、tasks、permission 审批、错误横幅、AskUserQuestion 选项卡 |
