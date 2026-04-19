@@ -26,11 +26,13 @@ struct WelcomeOverlay: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.black)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear {
-            // Spring bump: 0 → 1.15 → 1.0 over 0.40s.
+            // Spring drives 0 → 1.0 with response 0.40s / damping 0.55 —
+            // the underdamped curve naturally overshoots before settling,
+            // no explicit keyframe needed.
             withAnimation(.spring(response: 0.40, dampingFraction: 0.55)) {
                 avatarScale = 1.0
             }
