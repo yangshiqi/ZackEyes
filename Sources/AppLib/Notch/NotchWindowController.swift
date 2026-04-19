@@ -84,12 +84,29 @@ public final class NotchWindowController {
     // MARK: - Panel creation
 
     private func createPanel() {
-        guard let screen = notchScreen() else { return }
-        guard let notchRect = screen.notchFrame else { return }
+        guard let screen = notchScreen() else {
+            NSLog("ZackEyes[notch]: no notchScreen found; screens=%d main=%@",
+                  NSScreen.screens.count,
+                  NSScreen.main.map { "\($0.frame)" } ?? "nil")
+            return
+        }
+        guard let notchRect = screen.notchFrame else {
+            NSLog("ZackEyes[notch]: notchFrame nil on screen frame=%@ safeTop=%.1f auxL=%@ auxR=%@",
+                  "\(screen.frame)",
+                  screen.safeAreaInsets.top,
+                  screen.auxiliaryTopLeftArea.map { "\($0)" } ?? "nil",
+                  screen.auxiliaryTopRightArea.map { "\($0)" } ?? "nil")
+            return
+        }
 
         // Compact is the always-visible default. Panel starts sized +
         // positioned as a compact pill on the menu bar row, never collapsed.
         let initialFrame = compactFrame(notchRect: notchRect)
+        NSLog("ZackEyes[notch]: createPanel screen.frame=%@ safeTop=%.1f notchRect=%@ compactFrame=%@",
+              "\(screen.frame)",
+              screen.safeAreaInsets.top,
+              "\(notchRect)",
+              "\(initialFrame)")
         let newPanel = NotchPanel(
             contentRect: initialFrame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -135,6 +152,11 @@ public final class NotchWindowController {
 
         let targetFrame = frame(for: newState, notchRect: notchRect)
         let shouldIgnoreMouse = (newState != .expanded)
+
+        NSLog("ZackEyes[notch]: updatePanelState %@→%@ target=%@ actualBefore=%@",
+              "\(currentState)", "\(newState)",
+              "\(targetFrame)",
+              panel.map { "\($0.frame)" } ?? "nil")
 
         NSAnimationContext.runAnimationGroup { ctx in
             ctx.duration = animationDuration
