@@ -113,10 +113,14 @@ public class MenuBarFallback: NSObject {
     }
 
     @objc private func handleButtonClick(_ sender: NSStatusBarButton) {
-        // Right-click → context menu (Quit, etc.). Left-click / keyboard
-        // activation falls through to togglePopover which runs the configured
-        // onIconClick handler or the default popover toggle.
-        if NSApp.currentEvent?.type == .rightMouseUp {
+        // Right-click OR Control+LeftClick → context menu. The Control-click
+        // path covers users without a configured secondary click (older
+        // Macs, external single-button mice) and matches the standard
+        // macOS status-item convention. Plain left-click falls through.
+        let event = NSApp.currentEvent
+        let isRightClick = event?.type == .rightMouseUp
+        let isControlClick = event?.modifierFlags.contains(.control) ?? false
+        if isRightClick || isControlClick {
             showContextMenu(from: sender)
         } else {
             togglePopover()
