@@ -26,7 +26,10 @@ struct WelcomeOverlay: View {
             Spacer(minLength: 0)
         }
         .padding(20)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // Horizontal positioning comes from the trailing Spacer above
+        // (pushes content leading); .center here only has effect in the
+        // vertical dimension — the welcome sits mid-panel, not top-left.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .background(Color.black)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear {
