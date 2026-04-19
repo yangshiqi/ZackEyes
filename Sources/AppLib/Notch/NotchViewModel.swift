@@ -7,6 +7,9 @@ import Shared
 public final class NotchViewModel: ObservableObject {
     public let sessionStore: SessionStore
     @Published public var panelState: PanelState = .compact
+    /// Drives the first-launch welcome overlay rendered by `NotchRootView`
+    /// and `SimulatedNotchFullView`. Toggled by `AppDelegate.maybeShowWelcome()`.
+    @Published public var welcomeVisible: Bool = false
     private var cancellable: AnyCancellable?
 
     public init(sessionStore: SessionStore) {

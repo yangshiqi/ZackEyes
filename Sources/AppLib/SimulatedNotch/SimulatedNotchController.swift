@@ -212,6 +212,19 @@ public final class SimulatedNotchController {
         panel?.makeKey()
     }
 
+    /// Force the panel back to compact mode regardless of current state.
+    /// Used by the first-launch welcome coordinator after its 3-second
+    /// display window — the mouse-out debounce alone doesn't trigger if
+    /// the user's cursor is nowhere near the panel.
+    ///
+    /// Asymmetric with `forceExpand` — no explicit `panel?.resignKey()` is
+    /// needed because the panel is a `nonactivatingPanel` and `setMode(.compact)`
+    /// already flips `allowsKeyStatus = false`, so the window can no longer
+    /// receive key events regardless of who has focus.
+    public func forceCompact() {
+        setMode(.compact)
+    }
+
     /// Tear down the About overlay if it's currently shown. Used by the
     /// PermissionRequest path so a question can claim the panel even
     /// when the user is reading the About card.
