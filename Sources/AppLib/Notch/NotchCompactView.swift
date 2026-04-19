@@ -26,34 +26,35 @@ struct NotchRootView: View {
                     .frame(maxWidth: .infinity, alignment: .top)
 
             case .expanded:
-                if viewModel.welcomeVisible {
-                    // First-launch welcome: overlay replaces the whole
-                    // expanded layout (no usage bars, no session list).
-                    // Real-notch surface uses a plain RoundedRectangle
-                    // silhouette matching the non-welcome path.
-                    WelcomeOverlay()
-                        .background(Color.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
-                } else {
-                    VStack(spacing: 0) {
-                        UsageBarsView(usageTracker: usageTracker) {
-                            gearButton
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.top, 14)
-                        .padding(.bottom, 10)
+                // Both welcome and normal branches share the same real-notch
+                // silhouette — lift the background + clip out of the Group so
+                // we don't duplicate them on each side.
+                Group {
+                    if viewModel.welcomeVisible {
+                        // First-launch welcome: overlay replaces the whole
+                        // expanded layout (no usage bars, no session list).
+                        WelcomeOverlay()
+                    } else {
+                        VStack(spacing: 0) {
+                            UsageBarsView(usageTracker: usageTracker) {
+                                gearButton
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.top, 14)
+                            .padding(.bottom, 10)
 
-                        Divider()
-                            .background(Color.white.opacity(0.08))
+                            Divider()
+                                .background(Color.white.opacity(0.08))
 
-                        ScrollView(.vertical, showsIndicators: false) {
-                            NotchExpandedView(viewModel: viewModel)
-                                .background(Color.clear)
+                            ScrollView(.vertical, showsIndicators: false) {
+                                NotchExpandedView(viewModel: viewModel)
+                                    .background(Color.clear)
+                            }
                         }
                     }
-                    .background(Color.black)
-                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
