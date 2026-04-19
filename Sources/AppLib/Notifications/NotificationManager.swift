@@ -25,8 +25,9 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
 
     /// Fire-and-forget chime for UI moments like the welcome onboarding.
     /// Respects the user's theme sound choice and the "none" silence
-    /// preference. Callers that need a fallback system sound when the
-    /// theme is unavailable should use `playThemeSound()` directly.
+    /// preference. Intentionally drops the Bool return — welcome has no
+    /// fallback system sound to pick (unlike the internal notification
+    /// callers of `playThemeSound`).
     public func playChime() {
         _ = playThemeSound()
     }
