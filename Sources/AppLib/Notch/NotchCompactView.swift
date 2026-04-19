@@ -4,38 +4,49 @@ import AppKit
 struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
+    /// Real notch height (`screen.safeAreaInsets.top`) piped down so the
+    /// compact pill knows exactly how tall to be. Matches the menu-bar
+    /// strip height.
+    let notchHeight: CGFloat
     /// Called when the gear is clicked. Receives the gear's backing NSView
-    /// so AppDelegate can anchor an NSMenu against it. Built via closure
-    /// so the expanded view stays module-local and doesn't have to know
-    /// about StatusBarMenu wiring.
+    /// so AppDelegate can anchor an NSMenu against it.
     let showMenu: (NSView) -> Void
 
     @State private var gearHost = HostViewBox()
 
     var body: some View {
-        switch viewModel.panelState {
-        case .compact:
-            NotchCompactView(viewModel: viewModel, usageTracker: usageTracker)
-        case .expanded:
-            VStack(spacing: 0) {
-                UsageBarsView(usageTracker: usageTracker) {
-                    gearButton
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
-                .padding(.bottom, 10)
+        // Top-aligned ZStack inside the fixed-size 280pt host. In compact
+        // state only the pill (notchHeight tall) is drawn — the rest is
+        // transparent. In expanded state the full panel fills the host.
+        ZStack(alignment: .top) {
+            switch viewModel.panelState {
+            case .compact:
+                NotchCompactView(viewModel: viewModel, usageTracker: usageTracker)
+                    .frame(height: notchHeight)
+                    .frame(maxWidth: .infinity, alignment: .top)
 
-                Divider()
-                    .background(Color.white.opacity(0.08))
+            case .expanded:
+                VStack(spacing: 0) {
+                    UsageBarsView(usageTracker: usageTracker) {
+                        gearButton
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 14)
+                    .padding(.bottom, 10)
 
-                ScrollView(.vertical, showsIndicators: false) {
-                    NotchExpandedView(viewModel: viewModel)
-                        .background(Color.clear)
+                    Divider()
+                        .background(Color.white.opacity(0.08))
+
+                    ScrollView(.vertical, showsIndicators: false) {
+                        NotchExpandedView(viewModel: viewModel)
+                            .background(Color.clear)
+                    }
                 }
+                .background(Color.black)
+                .clipShape(RoundedRectangle(cornerRadius: 16))
             }
-            .background(Color.black)
-            .clipShape(RoundedRectangle(cornerRadius: 16))
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     /// Plain AppKit-style button (not SwiftUI `Menu`) — a nonactivating

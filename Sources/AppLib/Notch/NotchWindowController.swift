@@ -2,20 +2,35 @@ import AppKit
 import SwiftUI
 
 /// States the notch panel can be in. `compact` is the always-visible
-/// default (a pill that extends past the physical notch to show status
-/// + usage on the visible left/right strips). `expanded` is the full
-/// drop-down on hover. There is no "collapsed" state — the whole point
-/// of Dynamic Island is to be visible at all times.
+/// default (a pill that sits in the notch row). `expanded` is the full
+/// drop-down on hover.
+///
+/// There is no "collapsed" state — Dynamic Island is meant to be visible
+/// at all times.
 public enum PanelState {
     case compact
     case expanded
 }
 
-/// Manages the `NotchPanel` lifecycle: geometry, state transitions, and mouse tracking.
+/// Manages the `NotchPanel` lifecycle.
 ///
-/// - The panel is attached to the built-in screen with a notch.
-/// - Mouse proximity drives automatic transitions between states.
-/// - A session must be active for the panel to leave the `collapsed` state automatically.
+/// Architecture (mirrors boring.notch / DynamicIsland_Mac):
+///
+/// - The NSPanel is created ONCE at the maximum needed size
+///   (expandedSize), positioned so its top edge sits at the top of the
+///   screen, and is NEVER resized or repositioned after that. Every
+///   earlier attempt that animated the panel's frame between compact
+///   (38pt tall) and expanded (280pt tall) sizes hit AppKit quirks on
+///   some machines where the panel would end up rendered below the menu
+///   bar instead of at the notch row.
+/// - State transitions only flip a `@Published panelState` on the view
+///   model. SwiftUI renders the compact pill at the top of the host
+///   (leaving the rest transparent) or the full expanded panel
+///   depending on the state. No NSWindow animation, no `setFrame` on
+///   state change.
+/// - Mouse tracking is geometry-only: we check the cursor against the
+///   "hot zone" rect (menu-bar row + side strips) for triggering expand,
+///   and against the full panel rect for staying expanded.
 @MainActor
 public final class NotchWindowController {
 
@@ -29,8 +44,7 @@ public final class NotchWindowController {
     private let usageTracker: UsageTracker
     /// Called when the gear is clicked in the expanded panel. Receives
     /// the gear's NSView for NSMenu anchoring. Optional so the controller
-    /// still compiles if no caller wires a menu (gear silently does
-    /// nothing in that case).
+    /// still compiles if no caller wires a menu.
     public var showMenu: ((NSView) -> Void)?
     private var panel: NotchPanel?
     private var mouseMonitor: Any?
@@ -38,17 +52,11 @@ public final class NotchWindowController {
     private var screenObserver: NSObjectProtocol?
     private var collapseWorkItem: DispatchWorkItem?
 
-    // Frame geometry constants
-    // Wider than a typical side strip so status icon + compact usage
-    // readouts live entirely on the visible left/right menu-bar areas.
-    // The center (behind the physical notch) is rendered but clipped
-    // away by the hardware cutout. Expanded width matches compact so
-    // the width animation is a no-op — only height grows.
-    private let compactWidth: CGFloat = 420
-    private let expandedWidth: CGFloat = 420
-    private let expandedHeight: CGFloat = 280
-    private let animationDuration: TimeInterval = 0.2
-
+    // Window dimensions. The host panel is sized for the largest state
+    // (expanded) and never resized; SwiftUI draws the narrow pill inside
+    // this fixed host when we're in the compact state.
+    private let windowWidth: CGFloat = 420
+    private let windowHeight: CGFloat = 280
 
     // MARK: - Init
 
@@ -59,14 +67,12 @@ public final class NotchWindowController {
 
     // MARK: - Lifecycle
 
-    /// Create the panel, attach it to the notch screen, and start monitoring.
     public func setup() {
         createPanel()
         startScreenObserver()
         startMouseMonitor()
     }
 
-    /// Tear down all monitors and hide the panel.
     public func teardown() {
         stopMouseMonitor()
         stopScreenObserver()
@@ -85,28 +91,18 @@ public final class NotchWindowController {
 
     private func createPanel() {
         guard let screen = notchScreen() else {
-            NSLog("ZackEyes[notch]: no notchScreen found; screens=%d main=%@",
+            NSLog("ZackEyes[notch]: no notchScreen; screens=%d main=%@",
                   NSScreen.screens.count,
                   NSScreen.main.map { "\($0.frame)" } ?? "nil")
             return
         }
-        guard let notchRect = screen.notchFrame else {
-            NSLog("ZackEyes[notch]: notchFrame nil on screen frame=%@ safeTop=%.1f auxL=%@ auxR=%@",
-                  "\(screen.frame)",
-                  screen.safeAreaInsets.top,
-                  screen.auxiliaryTopLeftArea.map { "\($0)" } ?? "nil",
-                  screen.auxiliaryTopRightArea.map { "\($0)" } ?? "nil")
-            return
-        }
 
-        // Compact is the always-visible default. Panel starts sized +
-        // positioned as a compact pill on the menu bar row, never collapsed.
-        let initialFrame = compactFrame(notchRect: notchRect)
-        NSLog("ZackEyes[notch]: createPanel screen.frame=%@ safeTop=%.1f notchRect=%@ compactFrame=%@",
+        let initialFrame = hostFrame(on: screen)
+        NSLog("ZackEyes[notch]: createPanel screen.frame=%@ safeTop=%.1f hostFrame=%@",
               "\(screen.frame)",
               screen.safeAreaInsets.top,
-              "\(notchRect)",
               "\(initialFrame)")
+
         let newPanel = NotchPanel(
             contentRect: initialFrame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -117,17 +113,12 @@ public final class NotchWindowController {
         let rootView = NotchRootView(
             viewModel: viewModel,
             usageTracker: usageTracker,
+            notchHeight: screen.safeAreaInsets.top,
             showMenu: { [weak self] view in
                 self?.showMenu?(view)
             }
         )
         let hostingView = NSHostingView(rootView: rootView)
-        // Prevent NSHostingView's default `.standardBounds` sizingOptions from
-        // dragging the panel to SwiftUI's natural content size whenever the
-        // layout changes (new session, pending permission, etc.). With this
-        // empty set, the hostingView fills whatever frame we give it via
-        // autoresizingMask and the panel's setFrame is the single source of
-        // truth for geometry.
         hostingView.sizingOptions = []
         hostingView.frame = NSRect(origin: .zero, size: initialFrame.size)
         hostingView.autoresizingMask = [.width, .height]
@@ -139,70 +130,59 @@ public final class NotchWindowController {
         panel = newPanel
         currentState = .compact
         viewModel.panelState = .compact
+        // In compact state the SwiftUI content only covers the top pill
+        // strip; the rest of the 280pt host is transparent. Letting the
+        // panel ignore mouse events keeps clicks on desktop / other apps
+        // flowing through. Expanded state flips this off.
+        newPanel.ignoresMouseEvents = true
     }
 
     // MARK: - State transitions
 
     public func updatePanelState(_ newState: PanelState) {
-        guard let screen = notchScreen(), let notchRect = screen.notchFrame else { return }
         guard newState != currentState || panel == nil else { return }
 
         currentState = newState
         viewModel.panelState = newState
 
-        let targetFrame = frame(for: newState, notchRect: notchRect)
-        let shouldIgnoreMouse = (newState != .expanded)
+        // In expanded mode the user needs to click Allow/Deny buttons,
+        // the gear, session cards, etc., so the panel must receive
+        // mouse events. In compact mode content only lives in the top
+        // pill strip — rest of the 280pt host is transparent, and we
+        // don't want to swallow clicks into apps below.
+        panel?.ignoresMouseEvents = (newState != .expanded)
 
-        NSLog("ZackEyes[notch]: updatePanelState %@→%@ target=%@ actualBefore=%@",
-              "\(currentState)", "\(newState)",
-              "\(targetFrame)",
-              panel.map { "\($0.frame)" } ?? "nil")
-
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = animationDuration
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            panel?.animator().setFrame(targetFrame, display: true)
-        }
-
-        // Apply ignoresMouseEvents synchronously — not animated
-        panel?.ignoresMouseEvents = shouldIgnoreMouse
+        NSLog("ZackEyes[notch]: updatePanelState →%@", "\(newState)")
     }
 
     // MARK: - Frame calculations
 
-    private func compactFrame(notchRect: CGRect) -> CGRect {
+    /// The single host frame: sized for the expanded state, top edge at
+    /// the top of the screen, horizontally centered on the notch.
+    private func hostFrame(on screen: NSScreen) -> CGRect {
         CGRect(
-            x: notchRect.midX - compactWidth / 2,
-            y: notchRect.minY,
-            width: compactWidth,
-            height: notchRect.height
+            x: screen.frame.midX - windowWidth / 2,
+            y: screen.frame.maxY - windowHeight,
+            width: windowWidth,
+            height: windowHeight
         )
     }
 
-    private func expandedFrame(notchRect: CGRect) -> CGRect {
-        CGRect(
-            x: notchRect.midX - expandedWidth / 2,
-            y: notchRect.minY - expandedHeight,
-            width: expandedWidth,
-            height: expandedHeight
+    /// Rect that represents the compact pill (menu-bar row across the
+    /// full width of the host). Used for hover-to-expand detection.
+    private func compactPillRect(on screen: NSScreen, notchHeight: CGFloat) -> CGRect {
+        let host = hostFrame(on: screen)
+        return CGRect(
+            x: host.minX,
+            y: host.maxY - notchHeight,
+            width: host.width,
+            height: notchHeight
         )
-    }
-
-    private func frame(for state: PanelState, notchRect: CGRect) -> CGRect {
-        switch state {
-        case .compact:  return compactFrame(notchRect: notchRect)
-        case .expanded: return expandedFrame(notchRect: notchRect)
-        }
     }
 
     // MARK: - Mouse monitoring
 
     private func startMouseMonitor() {
-        // Global monitor catches events delivered to OTHER apps (our app
-        // in background). Local monitor catches events delivered to US
-        // — needed whenever the app becomes active (e.g., AboutWindow or
-        // HotkeyRecorderWindow calls NSApp.activate), otherwise the
-        // global monitor goes silent and the notch stops tracking.
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
             Task { @MainActor [weak self] in
                 self?.handleMouseMoved(NSEvent.mouseLocation)
@@ -228,33 +208,28 @@ public final class NotchWindowController {
     }
 
     private func handleMouseMoved(_ mouse: NSPoint) {
-        guard let screen = notchScreen(), let notchRect = screen.notchFrame else { return }
+        guard let screen = notchScreen() else { return }
+        let notchHeight = screen.safeAreaInsets.top
 
         switch currentState {
         case .compact:
-            let panelFrame = compactFrame(notchRect: notchRect)
-            if isMouseOver(mouse, rect: panelFrame) {
+            // Expand the moment the cursor enters the menu-bar row within
+            // our horizontal pill span.
+            let pill = compactPillRect(on: screen, notchHeight: notchHeight)
+            if pill.contains(mouse) {
                 cancelCollapseWorkItem()
                 updatePanelState(.expanded)
             }
-            // No else branch — compact is the resting state; we never
-            // hide the panel entirely.
 
         case .expanded:
-            // Hover area = notch strip ∪ expanded panel, padded outward so
-            // small cursor jitter between the two adjacent rects doesn't
-            // drop out. Without this the user loses the panel the instant
-            // compact→expanded fires because the cursor is still on the
-            // notch strip (y ≥ notchRect.minY), strictly outside
-            // expandedFrame (expandedFrame.maxY == notchRect.minY).
-            let hoverArea = compactFrame(notchRect: notchRect)
-                .union(expandedFrame(notchRect: notchRect))
-                .insetBy(dx: -20, dy: -12)
-            if hoverArea.contains(mouse) {
+            // Stay expanded while the cursor is anywhere within the full
+            // 280pt host (plus a small inset so minor jitter between
+            // adjacent rows doesn't drop us out). Sticky when a pending
+            // permission is waiting.
+            let host = hostFrame(on: screen).insetBy(dx: -20, dy: -12)
+            if host.contains(mouse) {
                 cancelCollapseWorkItem()
             } else if stickyOpen {
-                // Pending permission / AskUserQuestion must stay visible
-                // until resolved, even if the cursor wanders off.
                 cancelCollapseWorkItem()
             } else {
                 scheduleCollapse()
@@ -262,8 +237,6 @@ public final class NotchWindowController {
         }
     }
 
-    /// True when any session has a pending permission request waiting on
-    /// the user. The panel must not auto-collapse while this holds.
     private var stickyOpen: Bool {
         viewModel.sessionStore.sessions.values.contains { $0.pendingPermission != nil }
     }
@@ -316,9 +289,5 @@ public final class NotchWindowController {
     private func notchScreen() -> NSScreen? {
         NSScreen.screens.first { $0.hasNotch }
             ?? NSScreen.main
-    }
-
-    private func isMouseOver(_ point: CGPoint, rect: CGRect) -> Bool {
-        rect.contains(point)
     }
 }
