@@ -26,24 +26,30 @@ struct NotchRootView: View {
                     .frame(maxWidth: .infinity, alignment: .top)
 
             case .expanded:
-                VStack(spacing: 0) {
-                    UsageBarsView(usageTracker: usageTracker) {
-                        gearButton
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 14)
-                    .padding(.bottom, 10)
+                if viewModel.welcomeVisible {
+                    // First-launch welcome: overlay replaces the whole
+                    // expanded layout (no usage bars, no session list).
+                    WelcomeOverlay()
+                } else {
+                    VStack(spacing: 0) {
+                        UsageBarsView(usageTracker: usageTracker) {
+                            gearButton
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.top, 14)
+                        .padding(.bottom, 10)
 
-                    Divider()
-                        .background(Color.white.opacity(0.08))
+                        Divider()
+                            .background(Color.white.opacity(0.08))
 
-                    ScrollView(.vertical, showsIndicators: false) {
-                        NotchExpandedView(viewModel: viewModel)
-                            .background(Color.clear)
+                        ScrollView(.vertical, showsIndicators: false) {
+                            NotchExpandedView(viewModel: viewModel)
+                                .background(Color.clear)
+                        }
                     }
+                    .background(Color.black)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
                 }
-                .background(Color.black)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
