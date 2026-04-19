@@ -206,6 +206,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         livenessSweepTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.runLivenessSweep() }
         }
+
+        // 8. First-launch welcome — per-version one-shot. Runs last so the
+        //    notch controllers are already created and reachable via
+        //    forceUiExpand().
+        maybeShowWelcome()
     }
 
     /// Discover the claude PID for each detected session and write OSC2 tab
@@ -390,6 +395,49 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             }
         }
+    }
+
+    /// First-launch onboarding: expand the notch panel, render the welcome
+    /// overlay, play the theme chime, auto-collapse after 3 seconds. Fires
+    /// once per bundle version; no-op on subsequent launches.
+    private func maybeShowWelcome() {
+        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        guard WelcomeTrigger.shouldShowWelcome(
+            defaults: .standard,
+            currentVersion: currentVersion
+        ) else { return }
+
+        viewModel.welcomeVisible = true
+        forceUiExpand()
+        NotificationManager.shared.playChime()
+
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(3))
+            guard let self else { return }
+            self.viewModel.welcomeVisible = false
+            // Explicit collapse: the mouse-out debounce only fires when the
+            // cursor actually moves out of the panel, so without this the
+            // panel would sit expanded forever if the user isn't moving
+            // their mouse at app launch.
+            self.forceUiCompact()
+            WelcomeTrigger.markShown(defaults: .standard, currentVersion: currentVersion)
+        }
+    }
+
+    /// Mirror of `forceUiExpand()` — forces whichever active notch surface
+    /// back to its compact state. Used by the welcome onboarding coordinator
+    /// to guarantee auto-collapse after 3 seconds regardless of mouse position.
+    private func forceUiCompact() {
+        if let sn = simulatedNotch {
+            sn.forceCompact()
+            return
+        }
+        if let wc = windowController {
+            wc.updatePanelState(.compact)
+            return
+        }
+        // No notch surface — the menu-bar popover opens/closes on its own
+        // click, so there's nothing to collapse here.
     }
 
     /// Force the active UI surface to expand so the user can see/respond to
