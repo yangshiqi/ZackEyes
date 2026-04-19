@@ -46,7 +46,7 @@ diff ~/.claude/settings.json ~/.claude/settings.json.backup.*  # 确认只改了
 ### 硬性规则
 
 - 编译错误 → 先修再继续，不注释掉代码绕过
-- Bridge 任何代码路径 → 确认失败时 exit(1)，永不 exit(2)
+- Bridge 任何代码路径 → 受控失败时 exit(0) 静默；永不 exit(2)（旧版文档写的 exit(1) 已失效，Claude Code 新版会把它显示成 hook error）
 - NSPanel 相关变更 → 手动验证不抢焦点、不挡菜单栏点击
 - HookInstaller 变更 → 先备份一份 settings.json，测完恢复
 - 新代码应有测试覆盖（XCTest）
@@ -85,11 +85,11 @@ diff ~/.claude/settings.json ~/.claude/settings.json.backup.*  # 确认只改了
 - [ ] 卸载逻辑只移除包含 `zackeyes` 的条目
 
 **Bridge:**
-- [ ] 所有错误路径 → `exit(1)`
+- [ ] 所有受控失败路径 → `exit(0)`（不写 stdout/stderr）
 - [ ] 永不使用 `exit(2)`
-- [ ] Socket 超时 15s → `exit(1)`
-- [ ] Socket 连不上 → `exit(1)`
-- [ ] stdin 解析失败 → `exit(1)`
+- [ ] Socket 超时 / 连不上 → `exit(0)` 静默
+- [ ] stdin 为空 / 解析失败 / args 错误 → `exit(0)` 静默
+- [ ] PermissionRequest 失败 → `exit(0)` 且不写 stdout（Claude Code 回退到原生授权）
 
 **NotchPanel:**
 - [ ] `styleMask` 包含 `.nonactivatingPanel`

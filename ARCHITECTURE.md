@@ -56,8 +56,8 @@ Claude Code 触发 SessionStart/PreToolUse/PostToolUse/Stop hook
 
 ```
 bridge 连接 /tmp/zackeyes.sock 失败（App 未运行）
-  → bridge exit(1)（非阻塞错误）
-  → Claude Code 正常继续，回退到终端审批
+  → bridge exit(0) 且不写 stdout
+  → Claude Code 视为无 hook 偏好，回退到终端审批 / 正常继续
 ```
 
 ### Rate-limit 数据流
@@ -178,13 +178,16 @@ Full 模式下：
 | 场景 | 行为 | Exit Code |
 |------|------|-----------|
 | 正常响应（权限决策） | stdout 输出 JSON | 0 |
-| Socket 不存在 / App 未运行 | 静默退出 | 1 |
-| Socket 连接超时（15s） | 静默退出 | 1 |
-| stdin JSON 解析失败 | 静默退出 | 1 |
-| Bridge 崩溃 | 静默退出 | 1 |
+| Socket 不存在 / App 未运行 | 静默退出（无 stdout） | **0** |
+| Socket 连接超时 | 静默退出（无 stdout） | **0** |
+| stdin 为空 / JSON 解析失败 | 静默退出 | **0** |
+| args 错误 | 静默退出 | **0** |
+| Bridge 崩溃 | 静默退出 | 非 0（不可控） |
 | 阻塞 Claude Code | **永远不会发生** | 永不使用 2 |
 
-**铁律**: ZackEyes 的任何故障对用户的 Claude Code 体验完全不可见。
+**铁律**: Bridge 的任何路径只要走到退出都返回 0（除了进程崩溃这种不可控情况）。Claude Code 的新版本会把任何非 0 退出码显示成 "hook error"，会污染用户终端；我们宁可丢事件也不弄脏显示。
+- PermissionRequest socket 不通时 exit 0 且不写 stdout → Claude Code 视为"无 hook 偏好" → 回退到原生终端授权弹窗，行为正确。
+- 其他 fire-and-forget hook socket 不通时就当这次事件没发生；App 重连后靠 `SessionScanner` 做 catch-up sweep。
 
 ### Hook 注入安全
 
