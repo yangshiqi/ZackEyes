@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var usageTracker: UsageTracker!
     private var hotKeyManager: HotKeyManager?
     private var updateChecker: UpdateChecker?
+    private var statusBarMenu: StatusBarMenu?
     private var livenessSweepTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -62,18 +63,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         usageTracker = UsageTracker()
 
         // 4. UI — Notch or Menu Bar (+ simulated notch on notchless Macs)
+        // UpdateChecker is ALWAYS created so real-notch users also get
+        // version notifications (previously only the simulated-notch path
+        // wired it up, silently leaving notched Macs on stale binaries).
+        let uc = UpdateChecker()
+        updateChecker = uc
+
+        // Menu bar icon is ALWAYS shown: on notched Macs it's the only
+        // non-CLI surface for Quit / About / Change Hotkey / Theme
+        // (real-notch path has no gear menu).
+        let mb = MenuBarFallback(viewModel: viewModel)
+        mb.setup()
+        menuBarFallback = mb
+
+        // Shared right-click context menu (About / Update / Hotkey / Theme /
+        // Quit). Both paths get the same menu; on simulated-notch it is
+        // redundant with the gear button but harmless.
+        let statusMenu = StatusBarMenu(updateChecker: uc)
+        mb.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
+        self.statusBarMenu = statusMenu
+
         if NSScreen.main?.hasNotch == true {
-            let wc = NotchWindowController(viewModel: viewModel)
+            let wc = NotchWindowController(viewModel: viewModel, usageTracker: usageTracker)
+            // Gear in the expanded panel pops the same StatusBarMenu as
+            // the status-bar right-click — single source of truth for
+            // About / Hotkey / Theme / Quit across both surfaces.
+            wc.showMenu = { [weak statusMenu] view in
+                guard let menu = statusMenu?.build() else { return }
+                let anchor = NSPoint(x: 0, y: view.bounds.height + 2)
+                menu.popUp(positioning: nil, at: anchor, in: view)
+            }
             wc.setup()
             windowController = wc
+            mb.onIconClick = { [weak wc] in wc?.forceExpand() }
         } else {
-            // Menu bar button — click toggles the simulated notch
-            let mb = MenuBarFallback(viewModel: viewModel)
-            mb.setup()
-            menuBarFallback = mb
-
             // Simulated Dynamic Island at top center
-            let uc = UpdateChecker()
             let sn = SimulatedNotchController(
                 viewModel: viewModel,
                 usageTracker: usageTracker,
@@ -81,9 +105,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             sn.setup()
             simulatedNotch = sn
-            updateChecker = uc
 
-            // Wire status bar click → toggle simulated notch (not popover)
             mb.onIconClick = { [weak sn] in sn?.toggleFull() }
         }
 
@@ -99,6 +121,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self = self else { return }
             if let sn = self.simulatedNotch {
                 sn.toggleFull()
+            } else if let wc = self.windowController {
+                wc.forceExpand()
             } else {
                 self.menuBarFallback?.toggle()
             }

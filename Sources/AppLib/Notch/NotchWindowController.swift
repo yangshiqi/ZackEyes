@@ -23,6 +23,12 @@ public final class NotchWindowController {
     // MARK: - Private
 
     private let viewModel: NotchViewModel
+    private let usageTracker: UsageTracker
+    /// Called when the gear is clicked in the expanded panel. Receives
+    /// the gear's NSView for NSMenu anchoring. Optional so the controller
+    /// still compiles if no caller wires a menu (gear silently does
+    /// nothing in that case).
+    public var showMenu: ((NSView) -> Void)?
     private var panel: NotchPanel?
     private var mouseMonitor: Any?
     private var screenObserver: NSObjectProtocol?
@@ -40,8 +46,9 @@ public final class NotchWindowController {
 
     // MARK: - Init
 
-    public init(viewModel: NotchViewModel) {
+    public init(viewModel: NotchViewModel, usageTracker: UsageTracker) {
         self.viewModel = viewModel
+        self.usageTracker = usageTracker
     }
 
     // MARK: - Lifecycle
@@ -82,8 +89,21 @@ public final class NotchWindowController {
             defer: true
         )
 
-        let rootView = NotchRootView(viewModel: viewModel)
+        let rootView = NotchRootView(
+            viewModel: viewModel,
+            usageTracker: usageTracker,
+            showMenu: { [weak self] view in
+                self?.showMenu?(view)
+            }
+        )
         let hostingView = NSHostingView(rootView: rootView)
+        // Prevent NSHostingView's default `.standardBounds` sizingOptions from
+        // dragging the panel to SwiftUI's natural content size whenever the
+        // layout changes (new session, pending permission, etc.). With this
+        // empty set, the hostingView fills whatever frame we give it via
+        // autoresizingMask and the panel's setFrame is the single source of
+        // truth for geometry.
+        hostingView.sizingOptions = []
         hostingView.frame = NSRect(origin: .zero, size: initialFrame.size)
         hostingView.autoresizingMask = [.width, .height]
         newPanel.contentView = hostingView
@@ -153,9 +173,9 @@ public final class NotchWindowController {
     // MARK: - Mouse monitoring
 
     private func startMouseMonitor() {
-        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
+        mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.handleMouseMoved(event)
+                self?.handleMouseMoved(NSEvent.mouseLocation)
             }
         }
     }
@@ -167,9 +187,8 @@ public final class NotchWindowController {
         }
     }
 
-    private func handleMouseMoved(_ event: NSEvent) {
+    private func handleMouseMoved(_ mouse: NSPoint) {
         guard let screen = notchScreen(), let notchRect = screen.notchFrame else { return }
-        let mouse = event.locationInWindow  // global coords for global monitor
 
         switch currentState {
         case .collapsed:
@@ -189,13 +208,31 @@ public final class NotchWindowController {
             }
 
         case .expanded:
-            let panelFrame = expandedFrame(notchRect: notchRect)
-            if !isMouseOver(mouse, rect: panelFrame) {
-                scheduleCollapse()
-            } else {
+            // Hover area = notch strip ∪ expanded panel, padded outward so
+            // small cursor jitter between the two adjacent rects doesn't
+            // drop out. Without this the user loses the panel the instant
+            // compact→expanded fires because the cursor is still on the
+            // notch strip (y ≥ notchRect.minY), strictly outside
+            // expandedFrame (expandedFrame.maxY == notchRect.minY).
+            let hoverArea = compactFrame(notchRect: notchRect)
+                .union(expandedFrame(notchRect: notchRect))
+                .insetBy(dx: -20, dy: -12)
+            if hoverArea.contains(mouse) {
                 cancelCollapseWorkItem()
+            } else if stickyOpen {
+                // Pending permission / AskUserQuestion must stay visible
+                // until resolved, even if the cursor wanders off.
+                cancelCollapseWorkItem()
+            } else {
+                scheduleCollapse()
             }
         }
+    }
+
+    /// True when any session has a pending permission request waiting on
+    /// the user. The panel must not auto-collapse while this holds.
+    private var stickyOpen: Bool {
+        viewModel.sessionStore.sessions.values.contains { $0.pendingPermission != nil }
     }
 
     private func scheduleCollapse() {

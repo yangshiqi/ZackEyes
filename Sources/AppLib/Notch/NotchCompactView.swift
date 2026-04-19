@@ -1,7 +1,16 @@
 import SwiftUI
+import AppKit
 
 struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
+    @ObservedObject var usageTracker: UsageTracker
+    /// Called when the gear is clicked. Receives the gear's backing NSView
+    /// so AppDelegate can anchor an NSMenu against it. Built via closure
+    /// so the expanded view stays module-local and doesn't have to know
+    /// about StatusBarMenu wiring.
+    let showMenu: (NSView) -> Void
+
+    @State private var gearHost = HostViewBox()
 
     var body: some View {
         switch viewModel.panelState {
@@ -10,8 +19,46 @@ struct NotchRootView: View {
         case .compact:
             NotchCompactView(viewModel: viewModel)
         case .expanded:
-            NotchExpandedView(viewModel: viewModel)
+            VStack(spacing: 0) {
+                UsageBarsView(usageTracker: usageTracker) {
+                    gearButton
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
+                .padding(.bottom, 10)
+
+                Divider()
+                    .background(Color.white.opacity(0.08))
+
+                ScrollView(.vertical, showsIndicators: false) {
+                    NotchExpandedView(viewModel: viewModel)
+                        .background(Color.clear)
+                }
+            }
+            .background(Color.black)
+            .clipShape(RoundedRectangle(cornerRadius: 16))
         }
+    }
+
+    /// Plain AppKit-style button (not SwiftUI `Menu`) — a nonactivating
+    /// panel with a black background renders `Menu`'s label with a
+    /// window-chrome tint that's effectively invisible. Popping an
+    /// NSMenu via the host NSView sidesteps the rendering problem and
+    /// anchors the menu to the gear's real screen rect.
+    private var gearButton: some View {
+        Button {
+            if let view = gearHost.view {
+                showMenu(view)
+            }
+        } label: {
+            Image(systemName: "gearshape.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.white.opacity(0.85))
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .background(HostViewProbe(box: gearHost))
     }
 }
 
