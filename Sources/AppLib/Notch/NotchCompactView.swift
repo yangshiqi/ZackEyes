@@ -29,7 +29,11 @@ struct NotchRootView: View {
                 if viewModel.welcomeVisible {
                     // First-launch welcome: overlay replaces the whole
                     // expanded layout (no usage bars, no session list).
+                    // Real-notch surface uses a plain RoundedRectangle
+                    // silhouette matching the non-welcome path.
                     WelcomeOverlay()
+                        .background(Color.black)
+                        .clipShape(RoundedRectangle(cornerRadius: 16))
                 } else {
                     VStack(spacing: 0) {
                         UsageBarsView(usageTracker: usageTracker) {

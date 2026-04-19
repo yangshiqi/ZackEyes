@@ -1,9 +1,13 @@
 import SwiftUI
 
-/// First-launch welcome. Rendered on top of the expanded notch content when
-/// `NotchViewModel.welcomeVisible == true`. Layout: horizontal pill — left
-/// PixelAvatar bumps in; right title + subtitle fades in. No interaction;
-/// auto-dismissed after 3s by `AppDelegate.maybeShowWelcome()`.
+/// First-launch welcome content. Rendered on top of the expanded notch
+/// when `NotchViewModel.welcomeVisible == true`. Layout: horizontal pill —
+/// left PixelAvatar bumps in; right title + subtitle fades in. No
+/// interaction; auto-dismissed after 3s by `AppDelegate.maybeShowWelcome()`.
+///
+/// Pure content view — callers supply the background + clip shape so each
+/// surface (real notch = RoundedRectangle, simulated notch = NotchShape)
+/// can use the silhouette that matches its panel.
 struct WelcomeOverlay: View {
     @State private var avatarScale: CGFloat = 0.0
     @State private var textOpacity: Double = 0.0
@@ -30,8 +34,6 @@ struct WelcomeOverlay: View {
         // (pushes content leading); .center here only has effect in the
         // vertical dimension — the welcome sits mid-panel, not top-left.
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-        .background(Color.black)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear {
             // Spring drives 0 → 1.0 with response 0.40s / damping 0.55 —
             // the underdamped curve naturally overshoots before settling,
