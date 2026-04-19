@@ -129,7 +129,12 @@ public class MenuBarFallback: NSObject {
 
     private func showContextMenu(from button: NSStatusBarButton) {
         let menu = menuBuilder?() ?? fallbackMenu()
-        let anchor = NSPoint(x: 0, y: button.bounds.height + 2)
+        // AppKit non-flipped coords: y=0 is the bottom edge of the button,
+        // so anchoring there (with a 2pt gap) drops the menu straight down
+        // below the status icon. Using bounds.height would place the anchor
+        // ABOVE the button (off-screen at the menu-bar level) and rely on
+        // AppKit's off-screen correction to clamp it back.
+        let anchor = NSPoint(x: button.bounds.minX, y: button.bounds.minY - 2)
         menu.popUp(positioning: nil, at: anchor, in: button)
     }
 

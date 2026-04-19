@@ -90,7 +90,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // About / Hotkey / Theme / Quit across both surfaces.
             wc.showMenu = { [weak statusMenu] view in
                 guard let menu = statusMenu?.build() else { return }
-                let anchor = NSPoint(x: 0, y: view.bounds.height + 2)
+                // Anchor at the bottom edge of the gear (AppKit non-flipped:
+                // y=minY is bottom). Matches SimulatedNotchFullView.popGearMenu.
+                let anchor = NSPoint(x: view.bounds.minX, y: view.bounds.minY - 2)
                 menu.popUp(positioning: nil, at: anchor, in: view)
             }
             wc.setup()
