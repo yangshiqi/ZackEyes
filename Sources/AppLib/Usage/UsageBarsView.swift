@@ -88,11 +88,7 @@ struct UsageBarsView<Trailing: View>: View {
     }
 
     private func barColor(for used: Double) -> Color {
-        switch used {
-        case ..<50: return Color(red: 0.31, green: 0.80, blue: 0.77)
-        case ..<85: return Color(red: 0.96, green: 0.65, blue: 0.14)
-        default:    return Color(red: 0.95, green: 0.30, blue: 0.30)
-        }
+        .usageLevelColor(usedPct: used)
     }
 
     private func relativeReset(_ date: Date?) -> String? {

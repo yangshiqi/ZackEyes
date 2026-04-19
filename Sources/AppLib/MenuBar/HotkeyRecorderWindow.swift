@@ -93,7 +93,4 @@ final class HotkeyRecorderWindow: NSObject, NSWindowDelegate {
     }
 }
 
-private final class KeyablePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-}
+// KeyablePanel: see MenuBar/KeyablePanel.swift (shared with AboutWindow).

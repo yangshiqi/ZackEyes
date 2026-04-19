@@ -134,7 +134,5 @@ private struct AboutCardView: View {
     }
 }
 
-private final class KeyablePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { false }
-}
+// KeyablePanel is defined once in MenuBar/KeyablePanel.swift and shared
+// with HotkeyRecorderWindow.
