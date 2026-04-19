@@ -1,9 +1,12 @@
 import AppKit
 import SwiftUI
 
-/// States the notch panel can be in.
+/// States the notch panel can be in. `compact` is the always-visible
+/// default (a pill that extends past the physical notch to show status
+/// + usage on the visible left/right strips). `expanded` is the full
+/// drop-down on hover. There is no "collapsed" state — the whole point
+/// of Dynamic Island is to be visible at all times.
 public enum PanelState {
-    case collapsed
     case compact
     case expanded
 }
@@ -18,7 +21,7 @@ public final class NotchWindowController {
 
     // MARK: - Public
 
-    public private(set) var currentState: PanelState = .collapsed
+    public private(set) var currentState: PanelState = .compact
 
     // MARK: - Private
 
@@ -36,14 +39,16 @@ public final class NotchWindowController {
     private var collapseWorkItem: DispatchWorkItem?
 
     // Frame geometry constants
-    private let compactWidth: CGFloat = 320
-    private let expandedWidth: CGFloat = 380
+    // Wider than a typical side strip so status icon + compact usage
+    // readouts live entirely on the visible left/right menu-bar areas.
+    // The center (behind the physical notch) is rendered but clipped
+    // away by the hardware cutout. Expanded width matches compact so
+    // the width animation is a no-op — only height grows.
+    private let compactWidth: CGFloat = 420
+    private let expandedWidth: CGFloat = 420
     private let expandedHeight: CGFloat = 280
     private let animationDuration: TimeInterval = 0.2
 
-    // Mouse proximity thresholds (in screen coordinates)
-    private let notchActivationDistance: CGFloat = 6
-    private let notchDeactivationDistance: CGFloat = 40
 
     // MARK: - Init
 
@@ -82,7 +87,9 @@ public final class NotchWindowController {
         guard let screen = notchScreen() else { return }
         guard let notchRect = screen.notchFrame else { return }
 
-        let initialFrame = collapsedFrame(notchRect: notchRect)
+        // Compact is the always-visible default. Panel starts sized +
+        // positioned as a compact pill on the menu bar row, never collapsed.
+        let initialFrame = compactFrame(notchRect: notchRect)
         let newPanel = NotchPanel(
             contentRect: initialFrame,
             styleMask: [.borderless, .nonactivatingPanel],
@@ -113,8 +120,8 @@ public final class NotchWindowController {
         newPanel.orderFrontRegardless()
 
         panel = newPanel
-        currentState = .collapsed
-        viewModel.panelState = .collapsed
+        currentState = .compact
+        viewModel.panelState = .compact
     }
 
     // MARK: - State transitions
@@ -141,10 +148,6 @@ public final class NotchWindowController {
 
     // MARK: - Frame calculations
 
-    private func collapsedFrame(notchRect: CGRect) -> CGRect {
-        notchRect
-    }
-
     private func compactFrame(notchRect: CGRect) -> CGRect {
         CGRect(
             x: notchRect.midX - compactWidth / 2,
@@ -165,9 +168,8 @@ public final class NotchWindowController {
 
     private func frame(for state: PanelState, notchRect: CGRect) -> CGRect {
         switch state {
-        case .collapsed: return collapsedFrame(notchRect: notchRect)
-        case .compact:   return compactFrame(notchRect: notchRect)
-        case .expanded:  return expandedFrame(notchRect: notchRect)
+        case .compact:  return compactFrame(notchRect: notchRect)
+        case .expanded: return expandedFrame(notchRect: notchRect)
         }
     }
 
@@ -207,21 +209,14 @@ public final class NotchWindowController {
         guard let screen = notchScreen(), let notchRect = screen.notchFrame else { return }
 
         switch currentState {
-        case .collapsed:
-            let sessionActive = viewModel.aggregateState != .idle
-            if sessionActive && isMouseNear(mouse, rect: notchRect, threshold: notchActivationDistance) {
-                cancelCollapseWorkItem()
-                updatePanelState(.compact)
-            }
-
         case .compact:
             let panelFrame = compactFrame(notchRect: notchRect)
             if isMouseOver(mouse, rect: panelFrame) {
                 cancelCollapseWorkItem()
                 updatePanelState(.expanded)
-            } else if !isMouseNear(mouse, rect: notchRect, threshold: notchDeactivationDistance) {
-                updatePanelState(.collapsed)
             }
+            // No else branch — compact is the resting state; we never
+            // hide the panel entirely.
 
         case .expanded:
             // Hover area = notch strip ∪ expanded panel, padded outward so
@@ -299,11 +294,6 @@ public final class NotchWindowController {
     private func notchScreen() -> NSScreen? {
         NSScreen.screens.first { $0.hasNotch }
             ?? NSScreen.main
-    }
-
-    private func isMouseNear(_ point: CGPoint, rect: CGRect, threshold: CGFloat) -> Bool {
-        let expanded = rect.insetBy(dx: -threshold, dy: -threshold)
-        return expanded.contains(point)
     }
 
     private func isMouseOver(_ point: CGPoint, rect: CGRect) -> Bool {

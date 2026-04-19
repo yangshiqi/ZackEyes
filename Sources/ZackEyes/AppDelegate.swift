@@ -355,12 +355,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             sessionStore.handleEvent(event)
 
-            if event.bridgeEvent == "SessionStart" {
-                windowController?.updatePanelState(.compact)
-            }
-            if event.bridgeEvent == "SessionEnd" {
-                windowController?.updatePanelState(.collapsed)
-            }
+            // Compact is the resting state and is always visible —
+            // no SessionStart/SessionEnd panel-state transitions needed.
+            // (The expanded panel still auto-opens via forceUiExpand on
+            // PermissionRequest / error.)
 
             guard let sid = event.sessionId,
                   let session = sessionStore.sessions[sid] else { return }

@@ -6,7 +6,7 @@ import Shared
 @MainActor
 public final class NotchViewModel: ObservableObject {
     public let sessionStore: SessionStore
-    @Published public var panelState: PanelState = .collapsed
+    @Published public var panelState: PanelState = .compact
     private var cancellable: AnyCancellable?
 
     public init(sessionStore: SessionStore) {
