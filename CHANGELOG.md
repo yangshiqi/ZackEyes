@@ -2,6 +2,19 @@
 
 All notable changes to ZackEyes. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [0.2.7] — 2026-04-21
+
+### Added
+- **Show Dynamic Island toggle** — a checkmark item in the menu-bar right-click menu, the real-notch gear, and the simulated-notch gear. When off, the compact pill is fully ordered off-screen (not just transparent), and hover over the notch / screen top will not auto-expand it.
+- When hidden, the panel still returns for: the global hotkey (default `⌘⇧/`), left-click on the menu-bar icon, `PermissionRequest`, session errors, and the welcome onboarding — each calls `orderFrontRegardless()` before expanding, then orders out again on collapse.
+- Visibility persisted in `~/.zackeyes/config.json`; controllers receive initial visibility via init to avoid a startup flash.
+
+### Changed
+- Menu-bar icon: SF Symbol `sparkles` → `star.fill`, aligning with the app logo's five-point star. State tinting (`.idle` untinted / `.working` teal / `.waiting` orange) unchanged.
+
+### Fixed
+- `ConfigStore.saveNotchVisibility` now aborts when `config.json` exists but cannot be decoded, instead of seeding defaults and wiping `githubToken` / `theme` / `notificationSound`. Matches the spirit of the user-config preservation invariant.
+
 ## [0.1.0] — 2026-04-11
 
 ### Added
