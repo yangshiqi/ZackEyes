@@ -51,6 +51,7 @@ public final class NotchWindowController {
     private var localMouseMonitor: Any?
     private var screenObserver: NSObjectProtocol?
     private var collapseWorkItem: DispatchWorkItem?
+    private var visibility: NotchVisibility
 
     // Window dimensions. The host panel is sized for the largest state
     // (expanded) and never resized; SwiftUI draws the narrow pill inside
@@ -60,9 +61,14 @@ public final class NotchWindowController {
 
     // MARK: - Init
 
-    public init(viewModel: NotchViewModel, usageTracker: UsageTracker) {
+    public init(
+        viewModel: NotchViewModel,
+        usageTracker: UsageTracker,
+        initialVisibility: NotchVisibility = .always
+    ) {
         self.viewModel = viewModel
         self.usageTracker = usageTracker
+        self.visibility = initialVisibility
     }
 
     // MARK: - Lifecycle
@@ -84,7 +90,25 @@ public final class NotchWindowController {
 
     /// Force-expand the panel (called when a PermissionRequest arrives).
     public func forceExpand() {
+        if let panel, !panel.isVisible {
+            panel.orderFrontRegardless()
+        }
         updatePanelState(.expanded)
+    }
+
+    /// Respond to a runtime visibility change from the menu toggle.
+    /// - `.hidden` + currently compact → order the panel off-screen immediately
+    /// - `.always` → order the panel back on-screen
+    /// - `.hidden` + currently expanded → leave on-screen; next collapse
+    ///   naturally orders out via the tail of `updatePanelState(.compact)`
+    public func applyVisibility(_ v: NotchVisibility) {
+        visibility = v
+        guard let panel = panel else { return }
+        if v == .hidden && currentState != .expanded {
+            panel.orderOut(nil)
+        } else if v == .always && !panel.isVisible {
+            panel.orderFrontRegardless()
+        }
     }
 
     // MARK: - Panel creation
@@ -125,7 +149,11 @@ public final class NotchWindowController {
         newPanel.contentView = hostingView
 
         newPanel.setFrame(initialFrame, display: false)
-        newPanel.orderFrontRegardless()
+        if visibility == .always {
+            newPanel.orderFrontRegardless()
+        }
+        // Hidden: stay off-screen. forceExpand / hotkey / menu click / events
+        // will order the panel front when needed.
 
         panel = newPanel
         currentState = .compact
@@ -151,6 +179,11 @@ public final class NotchWindowController {
         // pill strip — rest of the 280pt host is transparent, and we
         // don't want to swallow clicks into apps below.
         panel?.ignoresMouseEvents = (newState != .expanded)
+
+        // Hidden: once collapsed, immediately remove the panel from screen.
+        if newState == .compact && visibility == .hidden {
+            panel?.orderOut(nil)
+        }
 
         NSLog("ZackEyes[notch]: updatePanelState →%@", "\(newState)")
     }
@@ -213,6 +246,10 @@ public final class NotchWindowController {
 
         switch currentState {
         case .compact:
+            // In hidden mode the panel is off-screen and should not auto-expand
+            // on hover — only hotkey / menu click / explicit event triggers bring
+            // it back.
+            if visibility == .hidden { return }
             // Expand the moment the cursor enters the menu-bar row within
             // our horizontal pill span.
             let pill = compactPillRect(on: screen, notchHeight: notchHeight)
