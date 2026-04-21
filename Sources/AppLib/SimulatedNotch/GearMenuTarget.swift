@@ -30,6 +30,22 @@ final class GearMenuTarget: NSObject {
         NSWorkspace.shared.open(url)
     }
 
+    @objc func toggleVisibilityClicked(_ sender: Any?) {
+        // Match sibling handlers (aboutClicked / hotkeyClicked / updateClicked):
+        // clear the menu-open sticky flag so mouse-out collapse works without
+        // waiting for the safety-net timer.
+        modeStore?.isMenuOpen = false
+        let store = ConfigStore()
+        let current = store.loadNotchVisibility()
+        let next: NotchVisibility = (current == .always) ? .hidden : .always
+        store.saveNotchVisibility(next)
+        NotificationCenter.default.post(
+            name: .notchVisibilityChanged,
+            object: nil,
+            userInfo: ["visibility": next]
+        )
+    }
+
     @objc func themeClicked(_ sender: Any?) {
         guard let item = sender as? NSMenuItem,
               let rawValue = item.representedObject as? String,

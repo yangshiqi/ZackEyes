@@ -57,7 +57,7 @@ public class MenuBarFallback: NSObject {
     }
 
     private func updateIcon(for state: SessionState) {
-        guard let image = NSImage(systemSymbolName: "sparkles", accessibilityDescription: "ZackEyes") else {
+        guard let image = NSImage(systemSymbolName: "star.fill", accessibilityDescription: "ZackEyes") else {
             return
         }
         image.isTemplate = true

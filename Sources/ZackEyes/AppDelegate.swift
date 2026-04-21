@@ -83,8 +83,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mb.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
         self.statusBarMenu = statusMenu
 
+        // Load persisted visibility up front — passing it into the controller
+        // init avoids a first-frame flash where the panel would orderFront then
+        // immediately orderOut again on a .hidden startup.
+        let initialVisibility = ConfigStore().loadNotchVisibility()
+
         if NSScreen.main?.hasNotch == true {
-            let wc = NotchWindowController(viewModel: viewModel, usageTracker: usageTracker)
+            let wc = NotchWindowController(
+                viewModel: viewModel,
+                usageTracker: usageTracker,
+                initialVisibility: initialVisibility
+            )
             // Gear in the expanded panel pops the same StatusBarMenu as
             // the status-bar right-click — single source of truth for
             // About / Hotkey / Theme / Quit across both surfaces.
@@ -103,7 +112,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let sn = SimulatedNotchController(
                 viewModel: viewModel,
                 usageTracker: usageTracker,
-                updateChecker: uc
+                updateChecker: uc,
+                initialVisibility: initialVisibility
             )
             sn.setup()
             simulatedNotch = sn
@@ -144,6 +154,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     keyCode: config.keyCode,
                     modifiers: config.modifiers.carbonFlags
                 )
+            }
+        }
+
+        // Listen for visibility changes from the menu toggle.
+        NotificationCenter.default.addObserver(
+            forName: .notchVisibilityChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let visibility = notification.userInfo?["visibility"] as? NotchVisibility ?? .always
+            Task { @MainActor in
+                guard let self else { return }
+                self.windowController?.applyVisibility(visibility)
+                self.simulatedNotch?.applyVisibility(visibility)
             }
         }
 

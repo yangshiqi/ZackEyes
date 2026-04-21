@@ -94,6 +94,45 @@ public final class ConfigStore: Sendable {
         try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
 
+    /// Load the notch visibility setting. Returns `.always` on any failure
+    /// or when the field is absent (new installs / pre-visibility configs).
+    public func loadNotchVisibility() -> NotchVisibility {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data),
+              let raw = wrapper.notchVisibility,
+              let v = NotchVisibility(rawValue: raw) else {
+            return .always
+        }
+        return v
+    }
+
+    /// Save the notch visibility setting. Preserves other keys.
+    ///
+    /// Safety: if `config.json` exists but cannot be decoded (e.g. corrupt
+    /// JSON), abort the save instead of seeding defaults. Seeding defaults
+    /// would overwrite `githubToken` / `theme` / `notificationSound` the
+    /// user can still recover if we leave the file untouched. Asymmetric
+    /// with sibling saves for now; unifying that pattern is a follow-up.
+    public func saveNotchVisibility(_ visibility: NotchVisibility) {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: directory) {
+            try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        }
+        var wrapper: ConfigWrapper
+        if fm.fileExists(atPath: configPath) {
+            guard let data = fm.contents(atPath: configPath),
+                  let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+                return  // corrupt file — don't clobber other fields
+            }
+            wrapper = existing
+        } else {
+            wrapper = ConfigWrapper(hotkey: .default)
+        }
+        wrapper.notchVisibility = visibility.rawValue
+        guard let data = try? JSONEncoder().encode(wrapper) else { return }
+        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+    }
+
     /// Save the hotkey config atomically. Preserves other keys (e.g. githubToken).
     /// Creates directory if needed.
     public func save(_ config: HotKeyConfig) {
@@ -120,6 +159,7 @@ public final class ConfigStore: Sendable {
 private struct ConfigWrapper: Codable {
     var hotkey: HotKeyConfig
     var githubToken: String?
-    var theme: BuddyTheme?         // nil = .rock (default)
-    var notificationSound: String? // nil = theme default sound
+    var theme: BuddyTheme?              // nil = .rock (default)
+    var notificationSound: String?      // nil = theme default sound
+    var notchVisibility: String?        // nil = .always (default)
 }
