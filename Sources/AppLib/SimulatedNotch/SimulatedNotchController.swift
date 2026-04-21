@@ -270,9 +270,6 @@ public final class SimulatedNotchController {
 
     private func handleMouseMove(_ location: NSPoint) {
         guard let panel = panel else { return }
-        // In hidden mode the panel should not react to hover — only hotkey /
-        // menu click / explicit event triggers may bring it back.
-        if visibility == .hidden { return }
 
         // Hover area depends on current mode — for compact pill it's a small
         // box near the notch; for full panel it's the entire panel rect.
@@ -280,6 +277,13 @@ public final class SimulatedNotchController {
         let hoverArea: CGRect
         switch mode {
         case .compact, .hoverWide:
+            // In hidden mode the off-screen pill must not auto-expand on
+            // hover — only hotkey / menu / explicit event may recall it.
+            // Placed inside the compact branch (not at function entry) so
+            // that `.full` still runs the mouse-out collapse logic below,
+            // matching NotchWindowController's parity and guaranteeing the
+            // "next collapse orders out" promise in applyVisibility's doc.
+            if visibility == .hidden { return }
             hoverArea = panelFrame.insetBy(dx: -20, dy: -12)
         case .full:
             hoverArea = panelFrame.insetBy(dx: -16, dy: -16)
