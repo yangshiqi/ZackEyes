@@ -232,6 +232,16 @@ struct SimulatedNotchFullView: View {
         hotkey.target = GearMenuTarget.shared
         menu.addItem(hotkey)
 
+        let visibility = ConfigStore().loadNotchVisibility()
+        let showIsland = NSMenuItem(
+            title: "Show Dynamic Island",
+            action: #selector(GearMenuTarget.toggleVisibilityClicked(_:)),
+            keyEquivalent: ""
+        )
+        showIsland.target = GearMenuTarget.shared
+        showIsland.state = (visibility == .always) ? .on : .off
+        menu.addItem(showIsland)
+
         let themeMenu = NSMenu()
         let config = ConfigStore()
         let currentTheme = config.loadTheme()

@@ -30,6 +30,18 @@ final class GearMenuTarget: NSObject {
         NSWorkspace.shared.open(url)
     }
 
+    @objc func toggleVisibilityClicked(_ sender: Any?) {
+        let store = ConfigStore()
+        let current = store.loadNotchVisibility()
+        let next: NotchVisibility = (current == .always) ? .hidden : .always
+        store.saveNotchVisibility(next)
+        NotificationCenter.default.post(
+            name: .notchVisibilityChanged,
+            object: nil,
+            userInfo: ["visibility": next]
+        )
+    }
+
     @objc func themeClicked(_ sender: Any?) {
         guard let item = sender as? NSMenuItem,
               let rawValue = item.representedObject as? String,
