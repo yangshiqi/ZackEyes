@@ -56,6 +56,16 @@ public final class StatusBarMenu: NSObject {
         hotkey.target = self
         menu.addItem(hotkey)
 
+        let visibility = ConfigStore().loadNotchVisibility()
+        let showIsland = NSMenuItem(
+            title: "Show Dynamic Island",
+            action: #selector(toggleVisibilityClicked(_:)),
+            keyEquivalent: ""
+        )
+        showIsland.target = self
+        showIsland.state = (visibility == .always) ? .on : .off
+        menu.addItem(showIsland)
+
         menu.addItem(themeSubmenuItem())
         menu.addItem(.separator())
 
@@ -96,6 +106,18 @@ public final class StatusBarMenu: NSObject {
             hotkeyWindow = HotkeyRecorderWindow()
         }
         hotkeyWindow?.show()
+    }
+
+    @objc private func toggleVisibilityClicked(_ sender: Any?) {
+        let store = ConfigStore()
+        let current = store.loadNotchVisibility()
+        let next: NotchVisibility = (current == .always) ? .hidden : .always
+        store.saveNotchVisibility(next)
+        NotificationCenter.default.post(
+            name: .notchVisibilityChanged,
+            object: nil,
+            userInfo: ["visibility": next]
+        )
     }
 
     // MARK: - Theme submenu
