@@ -691,7 +691,7 @@ if NSScreen.main?.hasNotch == true {
 }
 ```
 
-Replace with:
+Replace with (preserve all existing comments; only the `NotchWindowController(...)` and `SimulatedNotchController(...)` init calls and the new `initialVisibility` line are new):
 
 ```swift
 // Load persisted visibility up front — passing it into the controller
@@ -705,8 +705,13 @@ if NSScreen.main?.hasNotch == true {
         usageTracker: usageTracker,
         initialVisibility: initialVisibility
     )
+    // Gear in the expanded panel pops the same StatusBarMenu as
+    // the status-bar right-click — single source of truth for
+    // About / Hotkey / Theme / Quit across both surfaces.
     wc.showMenu = { [weak statusMenu] view in
         guard let menu = statusMenu?.build() else { return }
+        // Anchor at the bottom edge of the gear (AppKit non-flipped:
+        // y=minY is bottom). Matches SimulatedNotchFullView.popGearMenu.
         let anchor = NSPoint(x: view.bounds.minX, y: view.bounds.minY - 2)
         menu.popUp(positioning: nil, at: anchor, in: view)
     }
@@ -714,6 +719,7 @@ if NSScreen.main?.hasNotch == true {
     windowController = wc
     mb.onIconClick = { [weak wc] in wc?.forceExpand() }
 } else {
+    // Simulated Dynamic Island at top center
     let sn = SimulatedNotchController(
         viewModel: viewModel,
         usageTracker: usageTracker,
@@ -722,6 +728,7 @@ if NSScreen.main?.hasNotch == true {
     )
     sn.setup()
     simulatedNotch = sn
+
     mb.onIconClick = { [weak sn] in sn?.toggleFull() }
 }
 ```
