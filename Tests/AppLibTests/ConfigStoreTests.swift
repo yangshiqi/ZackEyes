@@ -103,4 +103,23 @@ final class ConfigStoreTests: XCTestCase {
         try? "not json".write(toFile: path, atomically: true, encoding: .utf8)
         XCTAssertEqual(store.loadNotchVisibility(), .always)
     }
+
+    /// If config.json exists but cannot be decoded, saveNotchVisibility
+    /// must abort rather than seed defaults — otherwise the save would
+    /// wipe githubToken / theme / other fields the user can still recover
+    /// from the corrupt file manually. This differs from siblings (save,
+    /// saveTheme, …) which do still overwrite; harmonizing those is a
+    /// follow-up.
+    func testSaveAbortsWhenFileCorrupt() {
+        let store = ConfigStore(directory: tmpDir.path)
+        let path = tmpDir.appendingPathComponent("config.json").path
+        let garbage = "not json — keep this content intact"
+        try? garbage.write(toFile: path, atomically: true, encoding: .utf8)
+
+        store.saveNotchVisibility(.hidden)
+
+        // File unchanged — abort preserved the corrupt bytes
+        let after = try? String(contentsOfFile: path, encoding: .utf8)
+        XCTAssertEqual(after, garbage)
+    }
 }

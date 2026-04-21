@@ -107,14 +107,23 @@ public final class ConfigStore: Sendable {
     }
 
     /// Save the notch visibility setting. Preserves other keys.
+    ///
+    /// Safety: if `config.json` exists but cannot be decoded (e.g. corrupt
+    /// JSON), abort the save instead of seeding defaults. Seeding defaults
+    /// would overwrite `githubToken` / `theme` / `notificationSound` the
+    /// user can still recover if we leave the file untouched. Asymmetric
+    /// with sibling saves for now; unifying that pattern is a follow-up.
     public func saveNotchVisibility(_ visibility: NotchVisibility) {
         let fm = FileManager.default
         if !fm.fileExists(atPath: directory) {
             try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
         }
         var wrapper: ConfigWrapper
-        if let data = fm.contents(atPath: configPath),
-           let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) {
+        if fm.fileExists(atPath: configPath) {
+            guard let data = fm.contents(atPath: configPath),
+                  let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+                return  // corrupt file — don't clobber other fields
+            }
             wrapper = existing
         } else {
             wrapper = ConfigWrapper(hotkey: .default)
