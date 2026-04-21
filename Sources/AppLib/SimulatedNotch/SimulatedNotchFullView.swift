@@ -365,4 +365,5 @@ struct SimulatedNotchFullView: View {
 
 public extension Notification.Name {
     static let hotkeyConfigChanged = Notification.Name("hotkeyConfigChanged")
+    static let notchVisibilityChanged = Notification.Name("notchVisibilityChanged")
 }
