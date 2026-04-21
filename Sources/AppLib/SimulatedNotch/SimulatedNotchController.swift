@@ -22,6 +22,7 @@ public final class SimulatedNotchController {
     private var panel: SimulatedNotchPanel?
     private var hostingView: NSHostingView<SimulatedNotchRoot>?
     private var modeStore = NotchModeStore()
+    private var visibility: NotchVisibility
     private var mouseMonitor: Any?
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
@@ -53,10 +54,16 @@ public final class SimulatedNotchController {
     private let curveC2x: Double = 0.40
     private let curveC2y: Double = 1.00
 
-    public init(viewModel: NotchViewModel, usageTracker: UsageTracker, updateChecker: UpdateChecker) {
+    public init(
+        viewModel: NotchViewModel,
+        usageTracker: UsageTracker,
+        updateChecker: UpdateChecker,
+        initialVisibility: NotchVisibility = .always
+    ) {
         self.viewModel = viewModel
         self.usageTracker = usageTracker
         self.updateChecker = updateChecker
+        self.visibility = initialVisibility
     }
 
     public func setup() {
@@ -125,7 +132,11 @@ public final class SimulatedNotchController {
         hostingView.autoresizingMask = [.width, .height]
         panel.contentView = hostingView
 
-        panel.orderFrontRegardless()
+        if visibility == .always {
+            panel.orderFrontRegardless()
+        }
+        // Hidden: stay off-screen. forceExpand / hotkey / menu click / events
+        // will order the panel front when needed.
         self.panel = panel
         self.hostingView = hostingView
 
@@ -194,11 +205,23 @@ public final class SimulatedNotchController {
             if !modeStore.isHotkeyRecorderShown {
                 panel.allowsKeyStatus = false
             }
+            // Hidden: once collapsed, immediately remove the panel from screen.
+            if visibility == .hidden {
+                panel.orderOut(nil)
+            }
         }
     }
 
     /// Click handler from the compact view — morphs into the full panel.
     public func toggleFull() {
+        // If we were hidden and off-screen, the panel needs to come back
+        // before any mode animation, otherwise the user's menu-bar click
+        // toggles a panel they can't see.
+        if let panel, !panel.isVisible {
+            panel.orderFrontRegardless()
+            setMode(.full)
+            return
+        }
         setMode(mode == .full ? .compact : .full)
     }
 
@@ -207,6 +230,9 @@ public final class SimulatedNotchController {
     /// caller wants the panel open, not toggled.
     /// Also enables key status so keyboard shortcuts (⌘Y/⌘N) work.
     public func forceExpand() {
+        if let panel, !panel.isVisible {
+            panel.orderFrontRegardless()
+        }
         setMode(.full)
         panel?.allowsKeyStatus = true
         panel?.makeKey()
@@ -244,6 +270,9 @@ public final class SimulatedNotchController {
 
     private func handleMouseMove(_ location: NSPoint) {
         guard let panel = panel else { return }
+        // In hidden mode the panel should not react to hover — only hotkey /
+        // menu click / explicit event triggers may bring it back.
+        if visibility == .hidden { return }
 
         // Hover area depends on current mode — for compact pill it's a small
         // box near the notch; for full panel it's the entire panel rect.
@@ -358,6 +387,21 @@ public final class SimulatedNotchController {
                 self.fullHeight = min(480, screen.visibleFrame.height - 60)
                 panel.setFrame(self.currentFrame(on: screen), display: true)
             }
+        }
+    }
+
+    /// Respond to a runtime visibility change from the menu toggle.
+    /// - `.hidden` + currently compact → order the panel off-screen immediately
+    /// - `.always` → order the panel back on-screen, leave mode untouched
+    /// - `.hidden` + currently full → leave on-screen; next collapse will
+    ///   naturally `orderOut` via the tail of `setMode(.compact)`
+    public func applyVisibility(_ v: NotchVisibility) {
+        visibility = v
+        guard let panel = panel else { return }
+        if v == .hidden && mode != .full {
+            panel.orderOut(nil)
+        } else if v == .always && !panel.isVisible {
+            panel.orderFrontRegardless()
         }
     }
 }
