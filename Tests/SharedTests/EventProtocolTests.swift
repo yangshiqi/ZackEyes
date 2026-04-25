@@ -57,3 +57,58 @@ import Foundation
     let event = try JSONDecoder().decode(BridgeEvent.self, from: json)
     #expect(event.bridgeEvent == "PreToolUse")
 }
+
+@Test func encodePreToolUseHookResponse_askUQAnswers() throws {
+    let questions: [[String: Any]] = [[
+        "question": "Pick a color",
+        "header": "color",
+        "multiSelect": false,
+        "options": [
+            ["label": "red", "description": "warm"],
+            ["label": "blue", "description": "cool"],
+        ],
+    ]]
+    let answers = ["Pick a color": "red"]
+    let response = PreToolUseHookResponse.askUQAnswers(
+        questions: questions, answers: answers
+    )
+    let data = try JSONEncoder().encode(response)
+    let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    let hookOutput = json["hookSpecificOutput"] as! [String: Any]
+    #expect(hookOutput["hookEventName"] as? String == "PreToolUse")
+    #expect(hookOutput["permissionDecision"] as? String == "allow")
+    let updated = hookOutput["updatedInput"] as! [String: Any]
+    let returnedAnswers = updated["answers"] as! [String: String]
+    #expect(returnedAnswers["Pick a color"] == "red")
+}
+
+@Test func bridgeResponse_encodesPermissionVariant() throws {
+    let r: BridgeResponse = .permission(.allow(message: "ok"))
+    let data = try r.encoded()
+    let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    let hookOutput = json["hookSpecificOutput"] as! [String: Any]
+    #expect(hookOutput["hookEventName"] as? String == "PermissionRequest")
+}
+
+@Test func bridgeResponse_encodesPreToolUseVariant() throws {
+    let r: BridgeResponse = .preToolUse(
+        .askUQAnswers(questions: [], answers: ["q": "a"])
+    )
+    let data = try r.encoded()
+    let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    let hookOutput = json["hookSpecificOutput"] as! [String: Any]
+    #expect(hookOutput["hookEventName"] as? String == "PreToolUse")
+}
+
+@Test func requiresBlockingResponse_matrix() {
+    let perm = BridgeEvent(bridgeEvent: "PermissionRequest", toolName: "Bash")
+    let askUQ = BridgeEvent(bridgeEvent: "PreToolUse", toolName: "AskUserQuestion")
+    let preBash = BridgeEvent(bridgeEvent: "PreToolUse", toolName: "Bash")
+    let post = BridgeEvent(bridgeEvent: "PostToolUse", toolName: "AskUserQuestion")
+    let start = BridgeEvent(bridgeEvent: "SessionStart")
+    #expect(perm.requiresBlockingResponse == true)
+    #expect(askUQ.requiresBlockingResponse == true)
+    #expect(preBash.requiresBlockingResponse == false)
+    #expect(post.requiresBlockingResponse == false)
+    #expect(start.requiresBlockingResponse == false)
+}

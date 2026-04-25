@@ -256,7 +256,29 @@ public final class SessionStore: ObservableObject {
         let response: PermissionResponse = allow
             ? .allow(message: "User approved via ZackEyes")
             : .deny(message: "User denied via ZackEyes")
-        pending.responder(response)
+        pending.responder(.permission(response))
+        session.pendingPermission = nil
+        session.state = .working
+        session.lastActiveAt = Date()
+        sessions[sessionId] = session
+    }
+
+    /// Send AskUserQuestion answers back through the blocking PreToolUse hook.
+    /// `answers` is keyed by question text; for multi-select the value is a
+    /// comma-joined string of selected option labels (verified in spike).
+    public func submitAskUQAnswer(sessionId: String, answers: [String: String]) {
+        guard var session = sessions[sessionId],
+              let pending = session.pendingPermission,
+              pending.isAskUserQuestion else { return }
+
+        // Reconstruct the questions array CC sent us so updatedInput.questions
+        // round-trips intact.
+        let questions = (pending.toolInput["questions"] as? [[String: Any]]) ?? []
+        let response = PreToolUseHookResponse.askUQAnswers(
+            questions: questions, answers: answers
+        )
+        pending.responder(.preToolUse(response))
+
         session.pendingPermission = nil
         session.state = .working
         session.lastActiveAt = Date()
@@ -440,13 +462,13 @@ public struct PendingPermission {
     public let toolName: String
     public let toolInput: [String: Any]
     public let cwd: String?
-    public let responder: @Sendable (PermissionResponse) -> Void
+    public let responder: @Sendable (BridgeResponse) -> Void
 
     public init(
         toolName: String,
         toolInput: [String: Any],
         cwd: String?,
-        responder: @escaping @Sendable (PermissionResponse) -> Void
+        responder: @escaping @Sendable (BridgeResponse) -> Void
     ) {
         self.toolName = toolName
         self.toolInput = toolInput

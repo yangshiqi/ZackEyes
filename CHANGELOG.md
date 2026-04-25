@@ -2,6 +2,21 @@
 
 All notable changes to ZackEyes. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## [0.2.8] — 2026-04-25
+
+### Added
+- **AskUserQuestion click-to-answer** — when Claude Code calls the `AskUserQuestion` tool, the notch now renders the options as clickable buttons. Tapping submits the answer through the PreToolUse hook's `updatedInput.answers` channel; CC consumes it directly and never renders its terminal AskUQ UI. Single-select submits on tap; multi-select uses checkboxes plus a Submit button (disabled while nothing is selected, joins selected labels with `", "`).
+- 60-second internal soft timeout in the bridge: if no answer arrives in time, the bridge silently exits and CC falls back to its native terminal AskUQ UI — so stepping away from the keyboard never blocks an agent.
+
+### Changed
+- `BridgeSocketClient.sendAndWaitForResponse` now uses `poll()` instead of `read()` + `SO_RCVTIMEO`. App crashing or quitting during a permission/AskUQ prompt now falls back to the terminal in milliseconds instead of stalling for the full timeout.
+- `BridgeEvent.requiresBlockingResponse` centralizes which hook events keep the bridge connection open. Today: `PermissionRequest` and `PreToolUse + AskUserQuestion`. Adding more in the future is a single-branch change.
+- New `BridgeResponse` enum (`.permission` / `.preToolUse`) unifies the two structurally different hook response shapes at responder call sites without conflating their JSON encoding.
+- Stale `PermissionRequest` events for `AskUserQuestion` (which can fire when the tool isn't in a user's allow list) are now auto-allowed instead of rendering a competing read-only preview behind the new clickable UI.
+
+### Removed
+- The "请在终端回答 / Answer in terminal" footer button under AskUQ options. The terminal remains the authoritative fallback path (after the 60-second soft timeout) but is no longer offered as a primary affordance.
+
 ## [0.2.7] — 2026-04-21
 
 ### Added

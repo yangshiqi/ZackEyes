@@ -59,6 +59,10 @@ public final class NotchViewModel: ObservableObject {
         sessionStore.resolvePermission(sessionId: sessionId, allow: false)
     }
 
+    public func submitAskUQAnswer(sessionId: String, answers: [String: String]) {
+        sessionStore.submitAskUQAnswer(sessionId: sessionId, answers: answers)
+    }
+
 /// Click handler: jump to the terminal tab for this session.
     /// Runs on a background task so subprocess + AppleScript calls don't block the UI.
     public func activateTerminal(for session: SessionInfo) {

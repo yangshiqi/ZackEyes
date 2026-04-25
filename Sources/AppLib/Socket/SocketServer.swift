@@ -21,7 +21,7 @@ public final class SocketServer {
     private let path: String
     private var serverFd: Int32 = -1
     private var isRunning = false
-    private var onEvent: ((BridgeEvent, (@Sendable (PermissionResponse) -> Void)?) -> Void)?
+    private var onEvent: ((BridgeEvent, (@Sendable (BridgeResponse) -> Void)?) -> Void)?
     private var onPermissionAbandoned: ((String) -> Void)?
 
     // MARK: - Init
@@ -33,7 +33,7 @@ public final class SocketServer {
     // MARK: - Public API
 
     public func setEventHandler(
-        _ handler: @escaping @MainActor (BridgeEvent, (@Sendable (PermissionResponse) -> Void)?) -> Void
+        _ handler: @escaping @MainActor (BridgeEvent, (@Sendable (BridgeResponse) -> Void)?) -> Void
     ) {
         self.onEvent = handler
     }
@@ -137,7 +137,7 @@ public final class SocketServer {
             return
         }
 
-        if event.bridgeEvent == "PermissionRequest" {
+        if event.requiresBlockingResponse {
             // DO NOT close fd — the responder closure owns it
             let capturedFd = fd
 
@@ -146,9 +146,9 @@ public final class SocketServer {
             }
             let tracker = ResponseTracker()
 
-            let responder: @Sendable (PermissionResponse) -> Void = { response in
+            let responder: @Sendable (BridgeResponse) -> Void = { response in
                 defer { tracker.completed = true }
-                guard let responseData = try? JSONEncoder().encode(response) else {
+                guard let responseData = try? response.encoded() else {
                     close(capturedFd)
                     return
                 }

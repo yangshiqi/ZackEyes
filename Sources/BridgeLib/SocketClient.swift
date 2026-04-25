@@ -71,22 +71,13 @@ public struct BridgeSocketClient: Sendable {
         return written && totalWritten == count
     }
 
-    /// Connect, set SO_RCVTIMEO, write data, read response, close.
-    /// Returns the response Data, or nil on any error or timeout.
-    /// Pass `timeoutSeconds <= 0` to wait without a timeout (read blocks
-    /// until the server responds or the socket closes).
+    /// Connect, write data, wait for response via poll(), read, close.
+    /// Returns the response Data, or nil on any error, timeout, or peer disconnect.
+    /// Pass `timeoutSeconds <= 0` to wait without a timeout.
     public func sendAndWaitForResponse(data: Data, timeoutSeconds: Int) -> Data? {
         let fd = connect()
         guard fd >= 0 else { return nil }
         defer { close(fd) }
-
-        // Skip the SO_RCVTIMEO option when timeoutSeconds <= 0 so read()
-        // blocks until the server responds — permission prompts need this
-        // because the user takes as long as they take to pick an option.
-        if timeoutSeconds > 0 {
-            var tv = timeval(tv_sec: timeoutSeconds, tv_usec: 0)
-            setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
-        }
 
         // Write all data
         var totalWritten = 0
@@ -102,10 +93,19 @@ public struct BridgeSocketClient: Sendable {
         }
         guard sendOK else { return nil }
 
-        // Read response (up to 64 KB)
+        // Wait for either a response or peer disconnect (POLLHUP).
+        // poll() takes milliseconds; -1 means wait forever. Even though we
+        // only request POLLIN, the kernel always reports POLLHUP/POLLERR/
+        // POLLNVAL in revents when relevant — that's how peer-close wakes
+        // us up early instead of stalling on the SO_RCVTIMEO budget.
+        let pollTimeoutMs: Int32 = timeoutSeconds > 0 ? Int32(timeoutSeconds * 1000) : -1
+        var pfd = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+        let pollResult = poll(&pfd, 1, pollTimeoutMs)
+        guard pollResult > 0 else { return nil }
+        guard (pfd.revents & Int16(POLLIN)) != 0 else { return nil }
+
         var buffer = [UInt8](repeating: 0, count: 65536)
         let n = read(fd, &buffer, buffer.count)
-        guard n > 0 else { return nil }
-        return Data(buffer[0..<n])
+        return n > 0 ? Data(buffer[0..<n]) : nil
     }
 }

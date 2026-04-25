@@ -52,6 +52,24 @@ Claude Code 触发 SessionStart/PreToolUse/PostToolUse/Stop hook
   → NotchPanel 响应式更新 UI
 ```
 
+### AskUserQuestion 自动作答流（双向，同步）
+
+```
+Claude Code 触发 PreToolUse hook (tool_name="AskUserQuestion")
+  → bridge --event PreToolUse 阻塞 60s 等响应（其他 PreToolUse 仍 fire-and-forget）
+    → SocketServer 持 fd（沿用 PermissionRequest 的 fd-hold 模式）
+    → SessionStore 标 pending（responder 类型为 BridgeResponse）
+    → NotchExpandedView 渲染**可点击**选项（单选 tap 直接提交，多选 checkbox + Submit）
+    → 用户点 → submitAskUQAnswer 调 responder(.preToolUse(...))
+    → bridge stdout = JSON → CC 消费 updatedInput.answers，跳过终端 UI
+  → 60s 内未点 / app 崩 / socket 异常 → bridge 静默 exit 0 → CC 渲染终端 UI
+    （SocketClient 用 poll() 检测 POLLHUP，app 崩溃时 < 1s 内回退）
+```
+
+`BridgeEvent.requiresBlockingResponse` 把"哪些 hook 走阻塞"集中起来：当前 `PermissionRequest` + `PreToolUse(AskUserQuestion)`。AskUQ 的 `answers` 形状由 spike 验证（2026-04-25）：单选 `{"<question>": "<label>"}`，多选 `{"<question>": "<label1>, <label2>"}` 单字符串逗号分隔。
+
+⚠️ **PreToolUse 路径独占 AskUQ**。如果用户的 allow 列表没把 `AskUserQuestion` 加白，CC 还会另外发一次 `PermissionRequest` —— `AppDelegate.handleEvent` 里那条早期 `if event.toolName == "AskUserQuestion"` 自动 allow，避免老的"只读预览"块叠在新的可点击块后面。
+
 ### 失败流
 
 ```
