@@ -199,3 +199,59 @@ public struct PermissionResponse: Codable, Sendable {
         )
     }
 }
+
+// MARK: - PreToolUseHookResponse
+
+/// Response sent to Claude Code from a PreToolUse hook to either auto-allow
+/// (with optional `updatedInput`) or auto-answer an `AskUserQuestion` tool
+/// call by populating `updatedInput.answers`. CC consumes `answers` directly
+/// and skips its own terminal UI for AskUserQuestion when this is set.
+public struct PreToolUseHookResponse: Codable, Sendable {
+    public let hookSpecificOutput: HookSpecificOutput
+
+    public struct HookSpecificOutput: Codable, Sendable {
+        public let hookEventName: String  // always "PreToolUse"
+        public let permissionDecision: String  // "allow"
+        public let updatedInput: [String: AnyCodable]?
+
+        public init(updatedInput: [String: AnyCodable]? = nil) {
+            self.hookEventName = "PreToolUse"
+            self.permissionDecision = "allow"
+            self.updatedInput = updatedInput
+        }
+    }
+
+    /// Build a response that auto-answers AskUserQuestion. CC keys `answers`
+    /// by the exact `question` text (verified in spike 2026-04-25); values
+    /// are single strings (multi-select uses comma-joined labels).
+    public static func askUQAnswers(
+        questions: [[String: Any]],
+        answers: [String: String]
+    ) -> PreToolUseHookResponse {
+        return PreToolUseHookResponse(
+            hookSpecificOutput: HookSpecificOutput(
+                updatedInput: [
+                    "questions": AnyCodable(questions),
+                    "answers": AnyCodable(answers),
+                ]
+            )
+        )
+    }
+}
+
+// MARK: - BridgeResponse
+
+/// Sum type for any response the app sends back to a blocking bridge call.
+/// `PermissionRequest` and `PreToolUse + AskUserQuestion` use structurally
+/// different JSON shapes; this enum keeps them straight at the call sites.
+public enum BridgeResponse: Sendable {
+    case permission(PermissionResponse)
+    case preToolUse(PreToolUseHookResponse)
+
+    public func encoded() throws -> Data {
+        switch self {
+        case .permission(let r): return try JSONEncoder().encode(r)
+        case .preToolUse(let r): return try JSONEncoder().encode(r)
+        }
+    }
+}
