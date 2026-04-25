@@ -74,4 +74,47 @@ struct SocketClientTests {
         #expect(response != nil, "Expected a response, got nil")
         #expect(response == data, "Expected echoed data to equal sent data")
     }
+
+    // MARK: - Test 3: peer closes without writing — should return nil promptly
+
+    @Test("sendAndWaitForResponse returns nil promptly when peer closes without writing")
+    func socketClient_pollHUPDetectsPeerClose() async throws {
+        let path = "/tmp/zackeyes-test-\(UUID().uuidString).sock"
+        defer { unlink(path) }
+
+        let serverFd = socket(AF_UNIX, SOCK_STREAM, 0)
+        #expect(serverFd >= 0)
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+            ptr.withMemoryRebound(to: CChar.self, capacity: 108) { buf in
+                _ = path.withCString { strncpy(buf, $0, 107) }
+            }
+        }
+        let bindResult = withUnsafePointer(to: &addr) { addrPtr in
+            addrPtr.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                bind(serverFd, sa, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        #expect(bindResult == 0)
+        #expect(listen(serverFd, 1) == 0)
+
+        // Server accepts then immediately closes — no write.
+        Task.detached {
+            let clientFd = accept(serverFd, nil, nil)
+            if clientFd >= 0 { close(clientFd) }
+            close(serverFd)
+        }
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        let client = BridgeSocketClient(path: path)
+        let start = Date()
+        let result = client.sendAndWaitForResponse(
+            data: Data("ping\n".utf8), timeoutSeconds: 30
+        )
+        let elapsed = Date().timeIntervalSince(start)
+
+        #expect(result == nil, "Expected nil on peer-close")
+        #expect(elapsed < 1.0, "Expected fast return (<1s) but took \(elapsed)s")
+    }
 }
