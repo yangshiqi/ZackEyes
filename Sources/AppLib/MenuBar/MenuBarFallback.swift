@@ -57,25 +57,28 @@ public class MenuBarFallback: NSObject {
     }
 
     private func updateIcon(for state: SessionState) {
-        guard let image = NSImage(systemSymbolName: "star.fill", accessibilityDescription: "ZackEyes") else {
-            return
-        }
-        image.isTemplate = true
-        statusItem?.button?.image = image
-        statusItem?.button?.title = ""
-
-        // State-based tint
+        // Bake the color into the symbol via paletteColors. Setting
+        // contentTintColor + isTemplate is unreliable — in Light mode the
+        // system overrides template tint to black regardless of what we
+        // pass. Palette-rendered images keep the color we asked for.
+        let tint: NSColor
         switch state {
         case .waiting:
-            // Orange — attention grabbing
-            statusItem?.button?.contentTintColor = NSColor(red: 0.96, green: 0.65, blue: 0.14, alpha: 1.0)
+            tint = NSColor(red: 0.96, green: 0.65, blue: 0.14, alpha: 1.0)
         case .working:
-            // Teal — active
-            statusItem?.button?.contentTintColor = NSColor(red: 0.31, green: 0.80, blue: 0.77, alpha: 1.0)
+            tint = NSColor(red: 0.31, green: 0.80, blue: 0.77, alpha: 1.0)
         case .idle, .stopped:
-            // No tint — adapts to menu bar
-            statusItem?.button?.contentTintColor = nil
+            tint = .white
         }
+        let config = NSImage.SymbolConfiguration(paletteColors: [tint])
+        guard let image = NSImage(systemSymbolName: "star.fill", accessibilityDescription: "ZackEyes")?
+            .withSymbolConfiguration(config) else {
+            return
+        }
+        image.isTemplate = false
+        statusItem?.button?.image = image
+        statusItem?.button?.title = ""
+        statusItem?.button?.contentTintColor = nil
     }
 
     public func teardown() {
