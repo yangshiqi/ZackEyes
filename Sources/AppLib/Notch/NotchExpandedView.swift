@@ -438,78 +438,68 @@ struct NotchExpandedView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    // Read-only numbered option list. CC's PreToolUse hook has a
-                    // short timeout that kills any attempt to answer interactively
-                    // via the notch — by the time a human clicks, CC has already
-                    // moved past the hook gate and is showing its own terminal UI.
-                    // So we present this as a heads-up preview and point the user
-                    // back to the terminal to actually answer.
                     VStack(spacing: 4) {
                         ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
-                            HStack(alignment: .top, spacing: 10) {
-                                Text("\(index + 1)")
-                                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                                    .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
-                                    .frame(width: 20, height: 20)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .fill(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.15))
+                            if !question.multiSelect {
+                                Button {
+                                    viewModel.submitAskUQAnswer(
+                                        sessionId: session.id,
+                                        answers: [question.text: option.label]
                                     )
-
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(option.label)
-                                        .font(.system(size: 11, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .lineLimit(1)
-                                        .truncationMode(.tail)
-                                    if let desc = option.description {
-                                        Text(desc)
-                                            .font(.system(size: 10))
-                                            .foregroundColor(.white.opacity(0.6))
-                                            .lineLimit(2)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
+                                } label: {
+                                    askUQOptionRow(index: index, option: option, selected: false)
                                 }
-                                Spacer(minLength: 0)
+                                .buttonStyle(.plain)
+                            } else {
+                                // Multi-select rendering lands in Task 11
+                                askUQOptionRow(index: index, option: option, selected: false)
                             }
-                            .padding(10)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.white.opacity(0.04))
-                            )
                         }
                     }
                 }
             }
-
-            // Footer hint — click jumps to the terminal running this session.
-            Button(action: {
-                viewModel.activateTerminal(for: session)
-            }) {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.up.right.square")
-                        .font(.system(size: 10))
-                    Text("请在终端回答 · Answer in terminal")
-                        .font(.system(size: 10, weight: .medium))
-                    Spacer(minLength: 0)
-                }
-                .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(Color(red: 0.96, green: 0.65, blue: 0.14).opacity(0.10))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(Color(red: 0.96, green: 0.65, blue: 0.14).opacity(0.3), lineWidth: 1)
-                        )
-                )
-            }
-            .buttonStyle(.plain)
         }
         .padding(.top, 6)
         .padding(.leading, 16)
+    }
+
+    @ViewBuilder
+    private func askUQOptionRow(
+        index: Int,
+        option: PendingPermission.QuestionOption,
+        selected: Bool
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\(index + 1)")
+                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                .frame(width: 20, height: 20)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(selected ? 0.35 : 0.15))
+                )
+            VStack(alignment: .leading, spacing: 2) {
+                Text(option.label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let desc = option.description {
+                    Text(desc)
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.6))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.white.opacity(selected ? 0.10 : 0.04))
+        )
     }
 
     @ViewBuilder
