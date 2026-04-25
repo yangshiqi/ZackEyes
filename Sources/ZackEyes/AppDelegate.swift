@@ -354,6 +354,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch event.bridgeEvent {
         case "PermissionRequest":
+            // PreToolUse path now owns AskUserQuestion. If a stale PermissionRequest
+            // for AskUQ comes through (user with strict allow list), auto-allow so
+            // it doesn't render behind the new clickable PreToolUse flow.
+            if event.toolName == "AskUserQuestion" {
+                responder?(.permission(.allow(message: "Handled by PreToolUse")))
+                return
+            }
             guard let responder = responder else {
                 NSLog("ZackEyes: PermissionRequest received but no responder")
                 return
