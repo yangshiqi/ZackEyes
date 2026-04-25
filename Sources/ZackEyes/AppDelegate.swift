@@ -345,7 +345,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleEvent(
         _ event: BridgeEvent,
-        responder: (@Sendable (PermissionResponse) -> Void)?
+        responder: (@Sendable (BridgeResponse) -> Void)?
     ) {
         // Capture real subscriber rate limits if Claude Code provided them
         if let rl = event.rateLimits {
@@ -367,9 +367,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 toolName: event.toolName ?? "Unknown",
                 toolInput: toolInput,
                 cwd: event.cwd,
+                bridgeEventOrigin: "PermissionRequest",
                 responder: responder
             )
             NSLog("ZackEyes: PermissionRequest for tool=%@", event.toolName ?? "?")
+            sessionStore.handlePermissionRequest(sessionId: sid, permission: pending)
+            simulatedNotch?.dismissAboutOverlay()
+            forceUiExpand()
+
+        case "PreToolUse" where event.toolName == "AskUserQuestion":
+            guard let responder = responder else {
+                NSLog("ZackEyes: PreToolUse AskUQ received but no responder")
+                return
+            }
+            guard let sid = event.sessionId else {
+                NSLog("ZackEyes: PreToolUse AskUQ missing session_id")
+                return
+            }
+            let toolInput = event.toolInput?.mapValues { $0.value } ?? [:]
+            let pending = PendingPermission(
+                toolName: event.toolName ?? "AskUserQuestion",
+                toolInput: toolInput,
+                cwd: event.cwd,
+                bridgeEventOrigin: "PreToolUse",
+                responder: responder
+            )
+            NSLog("ZackEyes: PreToolUse AskUQ for tool=AskUserQuestion")
             sessionStore.handlePermissionRequest(sessionId: sid, permission: pending)
             simulatedNotch?.dismissAboutOverlay()
             forceUiExpand()

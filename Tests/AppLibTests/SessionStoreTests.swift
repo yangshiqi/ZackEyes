@@ -44,6 +44,7 @@ struct SessionStoreTests {
             toolName: "Bash",
             toolInput: [:],
             cwd: "/tmp",
+            bridgeEventOrigin: "PermissionRequest",
             responder: { _ in }
         )
         store.handlePermissionRequest(sessionId: "s1", permission: permission)
@@ -60,6 +61,7 @@ struct SessionStoreTests {
             toolName: "Bash",
             toolInput: [:],
             cwd: "/tmp",
+            bridgeEventOrigin: "PermissionRequest",
             responder: { _ in }
         )
         store.handlePermissionRequest(sessionId: "s1", permission: permission)
@@ -78,14 +80,16 @@ struct SessionStoreTests {
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/a"))
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s2", cwd: "/b"))
 
-        let s1Box = Box<PermissionResponse>()
-        let s2Box = Box<PermissionResponse>()
+        let s1Box = Box<BridgeResponse>()
+        let s2Box = Box<BridgeResponse>()
         let s1Permission = PendingPermission(
             toolName: "Bash", toolInput: [:], cwd: "/a",
+            bridgeEventOrigin: "PermissionRequest",
             responder: { s1Box.value = $0 }
         )
         let s2Permission = PendingPermission(
             toolName: "Write", toolInput: [:], cwd: "/b",
+            bridgeEventOrigin: "PermissionRequest",
             responder: { s2Box.value = $0 }
         )
         store.handlePermissionRequest(sessionId: "s1", permission: s1Permission)
@@ -96,8 +100,12 @@ struct SessionStoreTests {
         // s2 cleared and denied
         #expect(store.sessions["s2"]?.pendingPermission == nil)
         #expect(store.sessions["s2"]?.state == .working)
-        #expect(s2Box.value?.hookSpecificOutput.decision.behavior == "deny",
-                "s2 should have been denied")
+        if case .permission(let r) = s2Box.value {
+            #expect(r.hookSpecificOutput.decision.behavior == "deny",
+                    "s2 should have been denied")
+        } else {
+            #expect(Bool(false), "s2 responder should have received a .permission response")
+        }
 
         // s1 untouched
         #expect(store.sessions["s1"]?.pendingPermission != nil)
@@ -144,7 +152,7 @@ struct SessionStoreTests {
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/a"))
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s2", cwd: "/b"))
         // s2 is more recent (working), but s1 gets a pending permission
-        let permission = PendingPermission(toolName: "Bash", toolInput: [:], cwd: "/a", responder: { _ in })
+        let permission = PendingPermission(toolName: "Bash", toolInput: [:], cwd: "/a", bridgeEventOrigin: "PermissionRequest", responder: { _ in })
         store.handlePermissionRequest(sessionId: "s1", permission: permission)
         #expect(store.primarySession?.id == "s1")
     }
@@ -194,7 +202,7 @@ struct SessionStoreTests {
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "c", cwd: "/tmp"))
 
         // c has a pending permission — should survive a remove request
-        let permission = PendingPermission(toolName: "Bash", toolInput: [:], cwd: "/tmp", responder: { _ in })
+        let permission = PendingPermission(toolName: "Bash", toolInput: [:], cwd: "/tmp", bridgeEventOrigin: "PermissionRequest", responder: { _ in })
         store.handlePermissionRequest(sessionId: "c", permission: permission)
 
         store.removeSessions(ids: ["a", "c", "ghost"])
@@ -213,8 +221,47 @@ struct SessionStoreTests {
         #expect(store.aggregateState == .idle)
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s2", cwd: "/b"))
         #expect(store.aggregateState == .working)
-        let permission = PendingPermission(toolName: "Bash", toolInput: [:], cwd: "/b", responder: { _ in })
+        let permission = PendingPermission(toolName: "Bash", toolInput: [:], cwd: "/b", bridgeEventOrigin: "PermissionRequest", responder: { _ in })
         store.handlePermissionRequest(sessionId: "s2", permission: permission)
         #expect(store.aggregateState == .waiting)
+    }
+
+    @Test @MainActor func submitAskUQAnswer_callsResponderWithEncodedJSON() throws {
+        final class DataBox: @unchecked Sendable { var value: Data? }
+        let store = SessionStore()
+        let dataBox = DataBox()
+
+        let pending = PendingPermission(
+            toolName: "AskUserQuestion",
+            toolInput: ["questions": [
+                ["question": "Pick a color",
+                 "header": "color",
+                 "multiSelect": false,
+                 "options": [["label": "red", "description": "warm"]]]
+            ]],
+            cwd: "/tmp",
+            bridgeEventOrigin: "PreToolUse",
+            responder: { response in
+                dataBox.value = try? response.encoded()
+            }
+        )
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+
+        store.submitAskUQAnswer(
+            sessionId: "s1",
+            answers: ["Pick a color": "red"]
+        )
+
+        let data = try #require(dataBox.value)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let hook = json["hookSpecificOutput"] as! [String: Any]
+        #expect(hook["hookEventName"] as? String == "PreToolUse")
+        let updated = hook["updatedInput"] as! [String: Any]
+        let answers = updated["answers"] as! [String: String]
+        #expect(answers["Pick a color"] == "red")
+
+        // pending should be cleared
+        #expect(store.sessions["s1"]?.pendingPermission == nil)
+        #expect(store.sessions["s1"]?.state == .working)
     }
 }
