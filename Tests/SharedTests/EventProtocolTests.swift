@@ -99,3 +99,16 @@ import Foundation
     let hookOutput = json["hookSpecificOutput"] as! [String: Any]
     #expect(hookOutput["hookEventName"] as? String == "PreToolUse")
 }
+
+@Test func requiresBlockingResponse_matrix() {
+    let perm = BridgeEvent(bridgeEvent: "PermissionRequest", toolName: "Bash")
+    let askUQ = BridgeEvent(bridgeEvent: "PreToolUse", toolName: "AskUserQuestion")
+    let preBash = BridgeEvent(bridgeEvent: "PreToolUse", toolName: "Bash")
+    let post = BridgeEvent(bridgeEvent: "PostToolUse", toolName: "AskUserQuestion")
+    let start = BridgeEvent(bridgeEvent: "SessionStart")
+    #expect(perm.requiresBlockingResponse == true)
+    #expect(askUQ.requiresBlockingResponse == true)
+    #expect(preBash.requiresBlockingResponse == false)
+    #expect(post.requiresBlockingResponse == false)
+    #expect(start.requiresBlockingResponse == false)
+}

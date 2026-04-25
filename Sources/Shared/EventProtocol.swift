@@ -239,6 +239,20 @@ public struct PreToolUseHookResponse: Codable, Sendable {
     }
 }
 
+// MARK: - BridgeEvent helpers
+
+extension BridgeEvent {
+    /// True when this event needs the bridge to wait for an app-side response
+    /// (the connection stays open instead of fire-and-forget).
+    public var requiresBlockingResponse: Bool {
+        if bridgeEvent == "PermissionRequest" { return true }
+        if bridgeEvent == "PreToolUse" && toolName == "AskUserQuestion" {
+            return true
+        }
+        return false
+    }
+}
+
 // MARK: - BridgeResponse
 
 /// Sum type for any response the app sends back to a blocking bridge call.
