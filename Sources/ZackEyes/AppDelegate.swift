@@ -367,7 +367,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 toolName: event.toolName ?? "Unknown",
                 toolInput: toolInput,
                 cwd: event.cwd,
-                bridgeEventOrigin: "PermissionRequest",
                 responder: responder
             )
             NSLog("ZackEyes: PermissionRequest for tool=%@", event.toolName ?? "?")
@@ -389,7 +388,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 toolName: event.toolName ?? "AskUserQuestion",
                 toolInput: toolInput,
                 cwd: event.cwd,
-                bridgeEventOrigin: "PreToolUse",
                 responder: responder
             )
             NSLog("ZackEyes: PreToolUse AskUQ for tool=AskUserQuestion")

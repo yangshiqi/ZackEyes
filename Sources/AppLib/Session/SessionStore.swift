@@ -462,17 +462,14 @@ public struct PendingPermission {
     public let toolName: String
     public let toolInput: [String: Any]
     public let cwd: String?
-    public let bridgeEventOrigin: String  // "PermissionRequest" | "PreToolUse"
     public let responder: @Sendable (BridgeResponse) -> Void
 
     public init(
         toolName: String,
         toolInput: [String: Any],
         cwd: String?,
-        bridgeEventOrigin: String,
         responder: @escaping @Sendable (BridgeResponse) -> Void
     ) {
-        self.bridgeEventOrigin = bridgeEventOrigin
         self.toolName = toolName
         self.toolInput = toolInput
         self.cwd = cwd
