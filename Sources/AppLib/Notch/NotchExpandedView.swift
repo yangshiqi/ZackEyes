@@ -444,6 +444,7 @@ struct NotchExpandedView: View {
                             question: question,
                             viewModel: viewModel
                         )
+                        .id(question.text + "|" + question.options.map(\.label).joined(separator: "\u{1F}"))
                     } else {
                         VStack(spacing: 4) {
                             ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
