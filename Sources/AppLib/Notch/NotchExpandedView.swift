@@ -438,9 +438,15 @@ struct NotchExpandedView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
-                    VStack(spacing: 4) {
-                        ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
-                            if !question.multiSelect {
+                    if question.multiSelect {
+                        AskUQMultiSelectQuestion(
+                            session: session,
+                            question: question,
+                            viewModel: viewModel
+                        )
+                    } else {
+                        VStack(spacing: 4) {
+                            ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
                                 Button {
                                     viewModel.submitAskUQAnswer(
                                         sessionId: session.id,
@@ -450,9 +456,6 @@ struct NotchExpandedView: View {
                                     askUQOptionRow(index: index, option: option, selected: false)
                                 }
                                 .buttonStyle(.plain)
-                            } else {
-                                // Multi-select rendering lands in Task 11
-                                askUQOptionRow(index: index, option: option, selected: false)
                             }
                         }
                     }
@@ -664,5 +667,97 @@ struct NotchExpandedView: View {
         guard let text = try? String(contentsOfFile: path, encoding: .utf8),
               !text.isEmpty else { return nil }
         return text
+    }
+}
+
+// MARK: - Multi-select AskUserQuestion view
+
+/// Separate View struct so @State (selected labels) can live at the right
+/// lifecycle boundary — one per question, reset when a new pending arrives.
+private struct AskUQMultiSelectQuestion: View {
+    let session: SessionInfo
+    let question: PendingPermission.Question
+    let viewModel: NotchViewModel
+    @State private var selected: Set<String> = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(question.options.enumerated()), id: \.element.id) { index, option in
+                Button {
+                    if selected.contains(option.label) {
+                        selected.remove(option.label)
+                    } else {
+                        selected.insert(option.label)
+                    }
+                } label: {
+                    askUQMultiSelectRow(
+                        index: index,
+                        option: option,
+                        selected: selected.contains(option.label)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+            Button {
+                let joined = question.options
+                    .map(\.label)
+                    .filter(selected.contains)
+                    .joined(separator: ", ")
+                viewModel.submitAskUQAnswer(
+                    sessionId: session.id,
+                    answers: [question.text: joined]
+                )
+            } label: {
+                Text("Submit")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(selected.isEmpty ? .white.opacity(0.4) : .white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(selected.isEmpty
+                                  ? Color.white.opacity(0.08)
+                                  : Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.4))
+                    )
+            }
+            .buttonStyle(.plain)
+            .disabled(selected.isEmpty)
+        }
+    }
+
+    @ViewBuilder
+    private func askUQMultiSelectRow(
+        index: Int,
+        option: PendingPermission.QuestionOption,
+        selected: Bool
+    ) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: selected ? "checkmark.square.fill" : "square")
+                .font(.system(size: 14))
+                .foregroundColor(selected
+                                 ? Color(red: 0.31, green: 0.80, blue: 0.77)
+                                 : .white.opacity(0.5))
+                .frame(width: 20, height: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(option.label)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                if let desc = option.description {
+                    Text(desc)
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.6))
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.white.opacity(selected ? 0.10 : 0.04))
+        )
     }
 }
