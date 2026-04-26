@@ -187,6 +187,9 @@ struct SimulatedNotchFullView: View {
                 .foregroundColor(.white.opacity(0.85))
                 .frame(width: 22, height: 22)
                 .overlay(alignment: .topTrailing) {
+                    // Red dot persists across all downloader states (idle / downloading / failed)
+                    // until the user upgrades — failed downloads must remain visible so the user
+                    // doesn't lose the affordance to retry.
                     if updateChecker.availableVersion != nil {
                         Circle()
                             .fill(.red)

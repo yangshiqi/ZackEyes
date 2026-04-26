@@ -33,6 +33,11 @@ public final class UpdateDownloader: ObservableObject {
     /// Download the DMG at `url` to tmp/<filename>, then open it with Finder.
     /// On cache hit, skips the URLSession call entirely.
     public func download(from url: URL) async {
+        // Prevent re-entrance: if a previous click is still mid-flight, ignore.
+        // The menu rebuild disables the item, but @Published propagation can lag
+        // a fast double-click — this gate is the actual safety net.
+        if case .downloading = state { return }
+
         let dest = FileManager.default.temporaryDirectory
             .appendingPathComponent(url.lastPathComponent)
 
