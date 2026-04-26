@@ -16,13 +16,26 @@
 
 Before starting, run these one-time checks:
 
-- [ ] **Verify public repo exists and is writable**
+- [ ] **Verify public repo exists, is public, and its default branch is `main`**
 
 ```bash
-gh repo view yangshiqi/ZackEyes-release --json name,visibility,defaultBranchRef
+gh repo view yangshiqi/ZackEyes-release \
+  --json name,visibility,defaultBranchRef \
+  --jq '{name, visibility, defaultBranch: .defaultBranchRef.name}'
 ```
 
-Expected: JSON with `"visibility": "PUBLIC"` and a `defaultBranchRef` (e.g. `"main"`). If the repo has no default branch (no commits), create a placeholder commit:
+Required output:
+- `visibility: "PUBLIC"`
+- `defaultBranch: "main"`
+
+The Makefile in Task 1 hard-codes `--target main`. If the default branch is anything else (e.g. `master`), **abort and rename the branch first**:
+
+```bash
+gh api -X POST /repos/yangshiqi/ZackEyes-release/branches/<old>/rename \
+  -f new_name=main
+```
+
+If the repo has no default branch (no commits), create a placeholder commit:
 
 ```bash
 gh repo clone yangshiqi/ZackEyes-release /tmp/zackeyes-release && \
@@ -446,7 +459,16 @@ public final class UpdateDownloader: ObservableObject {
 
         state = .downloading
         do {
-            let (tmpURL, _) = try await URLSession.shared.download(from: url)
+            let (tmpURL, response) = try await URLSession.shared.download(from: url)
+            // URLSession.download does NOT throw on 4xx/5xx — without this guard
+            // we'd cheerfully save GitHub's 404 HTML page as a "DMG" and hand it
+            // to NSWorkspace.open. Treat anything outside 2xx as a download failure.
+            guard let http = response as? HTTPURLResponse,
+                  (200...299).contains(http.statusCode) else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                state = .failed("HTTP \(code)")
+                return
+            }
             try? FileManager.default.removeItem(at: dest)
             try FileManager.default.moveItem(at: tmpURL, to: dest)
             state = .ready(dest)
@@ -476,6 +498,8 @@ public final class UpdateDownloader: ObservableObject {
 
 Run: `swift test --filter UpdateDownloaderTests`
 Expected: all 3 tests PASS.
+
+> **Note on HTTP-error testing:** the non-2xx guard inside `download()` is not unit-tested. Mocking `URLSession` would require a `URLProtocol` stub or a protocol seam — overkill for a single guard. It is exercised manually in Task 9 step 7 (delete the DMG asset on the public release page, click "Update Available", verify the menu shows `Update Failed — Click to Retry`).
 
 - [ ] **Step 5: Commit**
 
@@ -944,6 +968,15 @@ Expected sequence:
 - [ ] **Step 7: Re-open the menu while the DMG is still mounted**
 
 Expected: the menu item now reads `Update Ready (vX.Y.Z) — Click to Open`. Clicking it re-opens (cache hit path, no network).
+
+- [ ] **Step 7.5: Verify the HTTP-error guard (one-time)**
+
+This is the hand-test that stands in for the missing unit test on the non-2xx guard.
+
+1. On the public release, **temporarily delete** the DMG asset via the GitHub UI (or `gh release delete-asset vX.Y.Z ZackEyes-X.Y.Z.dmg --repo yangshiqi/ZackEyes-release --yes`).
+2. Wait for the next `UpdateChecker` poll (or restart the app), then `dmgURL` will point at a URL that 404s.
+3. Click "Update Available" once; expected menu transition: `Downloading…` → `Update Failed — Click to Retry` (the title says `Update Failed`, no DMG ever opens, no junk file lands in `$TMPDIR`).
+4. Re-upload the DMG via `gh release upload vX.Y.Z .build/ZackEyes-X.Y.Z.dmg --repo yangshiqi/ZackEyes-release` so the public release is back to a downloadable state before you stop testing.
 
 - [ ] **Step 8: Restore Info.plist and clean tmp**
 

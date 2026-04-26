@@ -20,7 +20,7 @@ Two-part change:
 | `yangshiqi/ZackEyes` | private | Source code, commits, tags, empty releases (internal record) |
 | `yangshiqi/ZackEyes-release` | public | Releases with DMG assets only. `main` has a minimal README. Tags created by `gh release create --target main`. |
 
-The public repo already exists.
+The public repo already exists. **Pre-condition**: its default branch must be named `main` (the Makefile hard-codes `--target main`); the implementation plan's pre-flight verifies this before any code lands.
 
 ## Release Pipeline
 
@@ -135,7 +135,16 @@ public final class UpdateDownloader: ObservableObject {
 
         state = .downloading
         do {
-            let (tmpURL, _) = try await URLSession.shared.download(from: url)
+            let (tmpURL, response) = try await URLSession.shared.download(from: url)
+            // URLSession.download does NOT throw on 4xx/5xx — without this guard
+            // we'd cheerfully save GitHub's 404 HTML page as a "DMG" and hand it
+            // to NSWorkspace.open. Treat anything outside 2xx as a download failure.
+            guard let http = response as? HTTPURLResponse,
+                  (200...299).contains(http.statusCode) else {
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                state = .failed("HTTP \(code)")
+                return
+            }
             try? FileManager.default.removeItem(at: dest)
             try FileManager.default.moveItem(at: tmpURL, to: dest)
             state = .ready(dest)
@@ -159,8 +168,10 @@ Add a `UpdateDownloader` injected alongside `UpdateChecker`. The menu item rewri
 |---------|-----------------|--------|
 | `.idle` (with `availableVersion`) | `Update Available (vX.Y.Z)` | start download |
 | `.downloading` | `Downloading vX.Y.Z…` | disabled |
-| `.ready` | (item hides — DMG is open in Finder) | n/a |
-| `.failed(msg)` | `Update Failed — Click to retry` | re-trigger download |
+| `.ready` | `Update Ready (vX.Y.Z) — Click to Open` | re-open the DMG (cache hit, no network) |
+| `.failed(msg)` | `Update Failed — Click to Retry` | re-trigger download |
+
+The `.ready` item stays visible (rather than hiding) so the user can re-open the DMG window if they accidentally dismissed it. Cache rule below makes this a zero-cost click.
 
 Click handler:
 
@@ -235,6 +246,7 @@ User clicks "Update Available":
 - **Anonymous rate-limited** (60/hr/IP) → 403 from GitHub, current code already treats as silent failure, retry next timer.
 - **DMG asset name doesn't end in `.dmg`** → asset filter returns nil, falls back to release page.
 - **Multiple `.dmg` assets** (won't happen with current `make dmg`, but defensively) → take first.
+- **DMG download returns non-2xx** (404 if asset deleted, 5xx during GitHub incident) → guarded explicitly in `UpdateDownloader.download`; transitions to `.failed("HTTP <code>")`. Without the guard, `URLSession.download` would silently move the error-page body into the cache file.
 
 ## Testing
 
