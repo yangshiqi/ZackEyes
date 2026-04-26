@@ -193,7 +193,8 @@ Full 模式下：
 |------|------|------|
 | `HotKeyManager` | `Sources/AppLib/HotKey/HotKeyManager.swift` | Carbon `RegisterEventHotKey` 注册全局快捷键（可配置，默认 `Cmd+Shift+Z`），支持运行时 `reregister` 热更新 |
 | `NotificationManager` | `Sources/AppLib/Notifications/NotificationManager.swift` | 时间敏感通知（session 完成 / API 错误 / 版本更新），点击跳转终端或打开 GitHub |
-| `UpdateChecker` | `Sources/AppLib/Update/UpdateChecker.swift` | GitHub Releases API 轮询（6h），语义版本比较，`@Published` 状态驱动齿轮红点 + 系统通知 |
+| `UpdateChecker` | `Sources/AppLib/Update/UpdateChecker.swift` | 轮询公开发布仓库（6h）获取最新 DMG，语义版本比较，`@Published dmgURL` 驱动齿轮红点 + 系统通知 |
+| `UpdateDownloader` | `Sources/AppLib/Update/UpdateDownloader.swift` | URLSession 下载 DMG 到 `$TMPDIR`，通过 NSWorkspace 打开使 Finder 挂载；状态栏菜单 + 齿轮菜单 + 通知点击均通过此下载器 |
 | `TerminalLocator` | `Sources/AppLib/Terminal/TerminalLocator.swift` | 进程树遍历 + iTerm2/Terminal AppleScript + Ghostty/Warp/Kitty Accessibility |
 | `UsageTracker` | `Sources/AppLib/Usage/UsageTracker.swift` | hook stdin 的真实 `rate_limits` 优先，transcript token fallback |
 
@@ -202,6 +203,14 @@ Full 模式下：
 |------|------|------|
 | `AppDelegate` | `Sources/ZackEyes/AppDelegate.swift` | 启动 / 路由 / 通知 / 禁用 macOS auto-termination |
 | `main.swift` | `Sources/ZackEyes/main.swift` | NSApplication 启动 |
+
+## Release distribution
+
+Source code lives in **`yangshiqi/ZackEyes` (private)**; release artifacts (DMG) are published to **`yangshiqi/ZackEyes-release` (public)** so the in-app update checker can poll and download without requiring a GitHub token.
+
+`make release VERSION=x.y.z` runs both: it tags and creates an empty release on the source repo (internal record), then `gh release create --repo yangshiqi/ZackEyes-release --target main` uploads the DMG to the public repo.
+
+`UpdateChecker` polls `/repos/yangshiqi/ZackEyes-release/releases/latest` every 6 hours, parses `assets[]` for the first `.dmg`, and publishes its `browser_download_url` via `@Published dmgURL`. `UpdateDownloader` runs `URLSession.download` to `$TMPDIR/ZackEyes-x.y.z.dmg`, then `NSWorkspace.open` so Finder mounts the disk image and shows the drag-to-Applications layout. Both menu surfaces (status-bar right-click and simulated-notch gear menu) and the system notification tap route through the downloader.
 
 ## 安全模型
 

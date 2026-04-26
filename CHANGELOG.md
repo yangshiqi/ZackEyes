@@ -2,6 +2,22 @@
 
 All notable changes to ZackEyes. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+## Unreleased
+
+### Added
+
+- In-app DMG download for new versions. Releases now publish the DMG to a public companion repo (`yangshiqi/ZackEyes-release`); clicking "Update Available" downloads the installer and opens it in Finder. No GitHub token required.
+- `UpdateDownloader` component to fetch DMG files from the public release repo and mount them via Finder; both menu surfaces (status-bar right-click and simulated-notch gear menu) and system notification tap route through this downloader.
+
+### Changed
+
+- `make release` now builds a DMG before committing the version bump and uploads it to the public release repo in addition to tagging the source repo.
+- `UpdateChecker` now polls the public `yangshiqi/ZackEyes-release` repo instead of requiring a GitHub token for private source repo access.
+
+### Removed
+
+- `ConfigStore.loadGitHubToken()` and the `githubToken` field — no longer needed now that update checks hit a public repo.
+
 ## [0.2.8] — 2026-04-25
 
 ### Added
