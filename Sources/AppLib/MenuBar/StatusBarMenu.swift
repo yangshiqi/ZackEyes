@@ -14,11 +14,13 @@ import AppKit
 @MainActor
 public final class StatusBarMenu: NSObject {
     private let updateChecker: UpdateChecker
+    private let downloader: UpdateDownloader
     private var hotkeyWindow: HotkeyRecorderWindow?
     private var aboutWindow: AboutWindow?
 
-    public init(updateChecker: UpdateChecker) {
+    public init(updateChecker: UpdateChecker, downloader: UpdateDownloader) {
         self.updateChecker = updateChecker
+        self.downloader = downloader
         super.init()
     }
 
@@ -30,12 +32,17 @@ public final class StatusBarMenu: NSObject {
         // because it routes Update through GearMenuTarget.updateClicked.
 
         if let version = updateChecker.availableVersion {
+            let (title, enabled) = Self.updateMenuLabel(
+                version: version,
+                state: downloader.state
+            )
             let item = NSMenuItem(
-                title: "Update Available (v\(version))",
-                action: #selector(updateClicked(_:)),
+                title: title,
+                action: enabled ? #selector(updateClicked(_:)) : nil,
                 keyEquivalent: ""
             )
-            item.target = self
+            item.target = enabled ? self : nil
+            item.isEnabled = enabled
             menu.addItem(item)
             menu.addItem(.separator())
         }
@@ -83,8 +90,13 @@ public final class StatusBarMenu: NSObject {
     // MARK: - Actions
 
     @objc private func updateClicked(_ sender: Any?) {
-        guard let url = updateChecker.releaseURL else { return }
-        NSWorkspace.shared.open(url)
+        if let dmgURL = updateChecker.dmgURL {
+            Task { @MainActor in await downloader.download(from: dmgURL) }
+        } else if let url = updateChecker.releaseURL {
+            // No DMG asset attached (in-flight release, or manual gh release
+            // without --asset) — fall back to opening the release page.
+            NSWorkspace.shared.open(url)
+        }
     }
 
     @objc private func aboutClicked(_ sender: Any?) {
@@ -118,6 +130,27 @@ public final class StatusBarMenu: NSObject {
             object: nil,
             userInfo: ["visibility": next]
         )
+    }
+
+    /// Map (availableVersion, downloader.state) → menu item title + enabled flag.
+    /// Pure function so it's trivially testable and shared with the simulated-notch
+    /// gear menu in Task 8.
+    public static func updateMenuLabel(
+        version: String,
+        state: UpdateDownloader.State
+    ) -> (title: String, enabled: Bool) {
+        switch state {
+        case .idle:
+            return ("Update Available (v\(version))", true)
+        case .downloading:
+            return ("Downloading v\(version)…", false)
+        case .ready:
+            // After a successful download Finder is already showing the DMG.
+            // Keep the menu offering a re-open in case the user dismissed it.
+            return ("Update Ready (v\(version)) — Click to Open", true)
+        case .failed:
+            return ("Update Failed — Click to Retry", true)
+        }
     }
 
     // MARK: - Theme submenu

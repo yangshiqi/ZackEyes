@@ -12,6 +12,8 @@ final class GearMenuTarget: NSObject {
     static let shared = GearMenuTarget()
     weak var modeStore: NotchModeStore?
     var releaseURL: URL?
+    var dmgURL: URL?
+    var downloader: UpdateDownloader?
     private var previewSound: NSSound?
 
     @objc func aboutClicked(_ sender: Any?) {
@@ -26,8 +28,12 @@ final class GearMenuTarget: NSObject {
 
     @objc func updateClicked(_ sender: Any?) {
         modeStore?.isMenuOpen = false
-        guard let url = releaseURL else { return }
-        NSWorkspace.shared.open(url)
+        if let dmgURL, let downloader {
+            Task { @MainActor in await downloader.download(from: dmgURL) }
+        } else if let releaseURL {
+            // No DMG yet — fall back to opening the release page.
+            NSWorkspace.shared.open(releaseURL)
+        }
     }
 
     @objc func toggleVisibilityClicked(_ sender: Any?) {

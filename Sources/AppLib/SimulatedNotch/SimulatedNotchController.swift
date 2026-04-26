@@ -15,6 +15,7 @@ public final class SimulatedNotchController {
     private let viewModel: NotchViewModel
     private let usageTracker: UsageTracker
     private let updateChecker: UpdateChecker
+    private let downloader: UpdateDownloader
     public var onTap: (() -> Void)?
 
     public var anchorView: NSView? { hostingView }
@@ -58,11 +59,13 @@ public final class SimulatedNotchController {
         viewModel: NotchViewModel,
         usageTracker: UsageTracker,
         updateChecker: UpdateChecker,
+        downloader: UpdateDownloader,
         initialVisibility: NotchVisibility = .always
     ) {
         self.viewModel = viewModel
         self.usageTracker = usageTracker
         self.updateChecker = updateChecker
+        self.downloader = downloader
         self.visibility = initialVisibility
     }
 
@@ -109,6 +112,7 @@ public final class SimulatedNotchController {
             usageTracker: usageTracker,
             modeStore: modeStore,
             updateChecker: updateChecker,
+            downloader: downloader,
             compactWidth: compactWidth,
             fullWidth: fullWidth,
             notchHeight: notchHeight,

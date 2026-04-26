@@ -36,4 +36,34 @@ final class UpdateDownloaderTests: XCTestCase {
             XCTFail("expected .ready, got \(d.state)")
         }
     }
+
+    func testMenuLabelIdle() {
+        let (t, e) = StatusBarMenu.updateMenuLabel(version: "0.3.0", state: .idle)
+        XCTAssertEqual(t, "Update Available (v0.3.0)")
+        XCTAssertTrue(e)
+    }
+
+    func testMenuLabelDownloading() {
+        let (t, e) = StatusBarMenu.updateMenuLabel(version: "0.3.0", state: .downloading)
+        XCTAssertEqual(t, "Downloading v0.3.0…")
+        XCTAssertFalse(e)
+    }
+
+    func testMenuLabelReady() {
+        let (t, e) = StatusBarMenu.updateMenuLabel(
+            version: "0.3.0",
+            state: .ready(URL(fileURLWithPath: "/tmp/x.dmg"))
+        )
+        XCTAssertEqual(t, "Update Ready (v0.3.0) — Click to Open")
+        XCTAssertTrue(e)
+    }
+
+    func testMenuLabelFailed() {
+        let (t, e) = StatusBarMenu.updateMenuLabel(
+            version: "0.3.0",
+            state: .failed("network error")
+        )
+        XCTAssertEqual(t, "Update Failed — Click to Retry")
+        XCTAssertTrue(e)
+    }
 }

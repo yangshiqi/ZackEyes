@@ -10,6 +10,7 @@ struct SimulatedNotchFullView: View {
     @ObservedObject var usageTracker: UsageTracker
     @ObservedObject var modeStore: NotchModeStore
     @ObservedObject var updateChecker: UpdateChecker
+    @ObservedObject var downloader: UpdateDownloader
     var cornerRadius: CGFloat = 22
 
     /// Weak handle to the actual NSView backing the gear button. Set by
@@ -206,12 +207,17 @@ struct SimulatedNotchFullView: View {
         let menu = NSMenu()
 
         if let version = updateChecker.availableVersion {
+            let (title, enabled) = StatusBarMenu.updateMenuLabel(
+                version: version,
+                state: downloader.state
+            )
             let update = NSMenuItem(
-                title: "Update Available (v\(version))",
-                action: #selector(GearMenuTarget.updateClicked(_:)),
+                title: title,
+                action: enabled ? #selector(GearMenuTarget.updateClicked(_:)) : nil,
                 keyEquivalent: ""
             )
-            update.target = GearMenuTarget.shared
+            update.target = enabled ? GearMenuTarget.shared : nil
+            update.isEnabled = enabled
             menu.addItem(update)
             menu.addItem(.separator())
         }
@@ -287,6 +293,8 @@ struct SimulatedNotchFullView: View {
         quit.target = NSApp
         menu.addItem(quit)
 
+        GearMenuTarget.shared.downloader = downloader
+        GearMenuTarget.shared.dmgURL = updateChecker.dmgURL
         GearMenuTarget.shared.releaseURL = updateChecker.releaseURL
         GearMenuTarget.shared.modeStore = modeStore
 
