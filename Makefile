@@ -1,4 +1,4 @@
-.PHONY: build build-release run clean app test test-permission dmg app-release
+.PHONY: build build-release run clean app test test-permission dmg app-release release
 
 APP_NAME = ZackEyes
 APP_BUNDLE = .build/$(APP_NAME).app
@@ -89,6 +89,14 @@ dmg: app-release
 # push to source repo, then publish DMG to the public release repo.
 # Usage:  make release VERSION=0.3.0
 # Optional: NOTES="changelog text" (defaults to "Release vVERSION")
+#
+# Recovery from partial failure: this target is NOT idempotent. If a step
+# fails after the version bump is committed, do NOT re-run `make release`
+# (the commit/tag steps will fail). Instead:
+#   - Push failed: re-run `git push && git push origin v<VERSION>` manually.
+#   - Source-repo `gh release create` failed: re-run that single command.
+#   - Public-repo `gh release create` failed: re-run that single command,
+#     including the DMG asset path .build/ZackEyes-<VERSION>.dmg.
 release:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release VERSION=0.3.0)
