@@ -30,15 +30,6 @@ public final class ConfigStore: Sendable {
         return wrapper.hotkey
     }
 
-    /// Load the GitHub token (optional). Returns nil if not configured.
-    public func loadGitHubToken() -> String? {
-        guard let data = FileManager.default.contents(atPath: configPath),
-              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
-            return nil
-        }
-        return wrapper.githubToken
-    }
-
     /// Load the active theme. Defaults to `.rock`.
     public func loadTheme() -> BuddyTheme {
         guard let data = FileManager.default.contents(atPath: configPath),
@@ -110,9 +101,9 @@ public final class ConfigStore: Sendable {
     ///
     /// Safety: if `config.json` exists but cannot be decoded (e.g. corrupt
     /// JSON), abort the save instead of seeding defaults. Seeding defaults
-    /// would overwrite `githubToken` / `theme` / `notificationSound` the
-    /// user can still recover if we leave the file untouched. Asymmetric
-    /// with sibling saves for now; unifying that pattern is a follow-up.
+    /// would overwrite `theme` / `notificationSound` the user can still
+    /// recover if we leave the file untouched. Asymmetric with sibling saves
+    /// for now; unifying that pattern is a follow-up.
     public func saveNotchVisibility(_ visibility: NotchVisibility) {
         let fm = FileManager.default
         if !fm.fileExists(atPath: directory) {
@@ -133,7 +124,7 @@ public final class ConfigStore: Sendable {
         try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
 
-    /// Save the hotkey config atomically. Preserves other keys (e.g. githubToken).
+    /// Save the hotkey config atomically. Preserves other keys.
     /// Creates directory if needed.
     public func save(_ config: HotKeyConfig) {
         let fm = FileManager.default
@@ -158,7 +149,6 @@ public final class ConfigStore: Sendable {
 /// All known keys are modeled here so save() preserves them.
 private struct ConfigWrapper: Codable {
     var hotkey: HotKeyConfig
-    var githubToken: String?
     var theme: BuddyTheme?              // nil = .rock (default)
     var notificationSound: String?      // nil = theme default sound
     var notchVisibility: String?        // nil = .always (default)

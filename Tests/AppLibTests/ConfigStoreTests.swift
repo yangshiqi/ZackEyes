@@ -106,10 +106,9 @@ final class ConfigStoreTests: XCTestCase {
 
     /// If config.json exists but cannot be decoded, saveNotchVisibility
     /// must abort rather than seed defaults — otherwise the save would
-    /// wipe githubToken / theme / other fields the user can still recover
-    /// from the corrupt file manually. This differs from siblings (save,
-    /// saveTheme, …) which do still overwrite; harmonizing those is a
-    /// follow-up.
+    /// wipe theme / other fields the user can still recover from the
+    /// corrupt file manually. This differs from siblings (save, saveTheme, …)
+    /// which do still overwrite; harmonizing those is a follow-up.
     func testSaveAbortsWhenFileCorrupt() {
         let store = ConfigStore(directory: tmpDir.path)
         let path = tmpDir.appendingPathComponent("config.json").path
