@@ -13,6 +13,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var usageTracker: UsageTracker!
     private var hotKeyManager: HotKeyManager?
     private var updateChecker: UpdateChecker?
+    private var updateDownloader: UpdateDownloader?
     private var statusBarMenu: StatusBarMenu?
     private var livenessSweepTimer: Timer?
 
@@ -28,8 +29,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                   let pid = session.claudePid else { return }
             _ = TerminalLocator.activateTerminal(containingPid: pid, cwd: session.cwd)
         }
-        NotificationManager.shared.onUpdateTap = { url in
-            NSWorkspace.shared.open(url)
+        NotificationManager.shared.onUpdateTap = { [weak self] _ in
+            guard let self,
+                  let dmgURL = self.updateChecker?.dmgURL,
+                  let dl = self.updateDownloader else { return }
+            Task { @MainActor in await dl.download(from: dmgURL) }
         }
 
         // Accessibility is NOT prompted at startup. The focusByAccessibility
@@ -68,6 +72,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // wired it up, silently leaving notched Macs on stale binaries).
         let uc = UpdateChecker()
         updateChecker = uc
+        let dl = UpdateDownloader()
+        updateDownloader = dl
 
         // Menu bar icon is ALWAYS shown: on notched Macs it's the only
         // non-CLI surface for Quit / About / Change Hotkey / Theme
@@ -79,7 +85,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Shared right-click context menu (About / Update / Hotkey / Theme /
         // Quit). Both paths get the same menu; on simulated-notch it is
         // redundant with the gear button but harmless.
-        let statusMenu = StatusBarMenu(updateChecker: uc)
+        let statusMenu = StatusBarMenu(updateChecker: uc, downloader: dl)
         mb.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
         self.statusBarMenu = statusMenu
 
@@ -113,6 +119,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 viewModel: viewModel,
                 usageTracker: usageTracker,
                 updateChecker: uc,
+                downloader: dl,
                 initialVisibility: initialVisibility
             )
             sn.setup()

@@ -1,13 +1,26 @@
 import Foundation
 
+/// A downloadable asset attached to a GitHub release.
+public struct GitHubAsset: Codable, Sendable {
+    public let name: String
+    public let browserDownloadURL: URL
+
+    enum CodingKeys: String, CodingKey {
+        case name
+        case browserDownloadURL = "browser_download_url"
+    }
+}
+
 /// Minimal model for GitHub's /releases/latest response.
 public struct GitHubRelease: Codable, Sendable {
     public let tagName: String
     public let htmlURL: URL
+    public let assets: [GitHubAsset]
 
     enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
         case htmlURL = "html_url"
+        case assets
     }
 }
 
@@ -20,6 +33,7 @@ public final class UpdateChecker: ObservableObject {
 
     @Published public var availableVersion: String?
     @Published public var releaseURL: URL?
+    @Published public var dmgURL: URL?
 
     /// Called once when a new version is first detected.
     public var onNewVersion: ((String, URL) -> Void)?
@@ -29,7 +43,7 @@ public final class UpdateChecker: ObservableObject {
     private var timer: Timer?
     private let checkInterval: TimeInterval
     private let repoOwner = "yangshiqi"
-    private let repoName = "ZackEyes"
+    private let repoName = "ZackEyes-release"
 
     /// Current app version from Info.plist.
     private var localVersion: String {
@@ -61,9 +75,6 @@ public final class UpdateChecker: ObservableObject {
 
         var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        if let token = ConfigStore().loadGitHubToken() {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
         request.timeoutInterval = 15
 
         do {
@@ -77,6 +88,7 @@ public final class UpdateChecker: ObservableObject {
             if Self.isNewer(remote: remoteVersion, thanLocal: localVersion) {
                 availableVersion = remoteVersion
                 releaseURL = release.htmlURL
+                dmgURL = release.assets.first(where: { $0.name.hasSuffix(".dmg") })?.browserDownloadURL
                 if remoteVersion != notifiedVersion {
                     notifiedVersion = remoteVersion
                     onNewVersion?(remoteVersion, release.htmlURL)

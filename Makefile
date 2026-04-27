@@ -1,4 +1,4 @@
-.PHONY: build build-release run clean app test test-permission dmg app-release
+.PHONY: build build-release run clean app test test-permission dmg app-release release
 
 APP_NAME = ZackEyes
 APP_BUNDLE = .build/$(APP_NAME).app
@@ -85,24 +85,52 @@ dmg: app-release
 	@echo "✅ $(DMG_PATH)"
 	@du -h $(DMG_PATH) | cut -f1 | xargs -I{} echo "   size: {}"
 
-# Release workflow: bump version in Info.plist, commit, tag, push, create GitHub release.
-# Usage:  make release VERSION=0.1.4
+# Release workflow: bump version in Info.plist, build DMG, commit, tag,
+# push to source repo, then publish DMG to the public release repo.
+# Usage:  make release VERSION=0.3.0
 # Optional: NOTES="changelog text" (defaults to "Release vVERSION")
+#
+# Recovery from partial failure: this target is NOT idempotent. If a step
+# fails after the version bump is committed, do NOT re-run `make release`
+# (the commit/tag steps will fail). Instead:
+#   - Push failed: re-run `git push && git push origin v<VERSION>` manually.
+#   - Source-repo `gh release create` failed: re-run that single command.
+#   - Public-repo `gh release create` failed: re-run that single command,
+#     including the DMG asset path .build/ZackEyes-<VERSION>.dmg.
 release:
 ifndef VERSION
-	$(error VERSION is required. Usage: make release VERSION=0.1.4)
+	$(error VERSION is required. Usage: make release VERSION=0.3.0)
 endif
+	@echo "=== Sanity check ==="
+	@branch=$$(git rev-parse --abbrev-ref HEAD); \
+	  if [ "$$branch" != "master" ]; then \
+	    echo "ERROR: must release from master, currently on $$branch"; exit 1; \
+	  fi
+	@if [ -n "$$(git status --porcelain)" ]; then \
+	  echo "ERROR: working tree not clean"; git status --short; exit 1; \
+	fi
 	@echo "=== Bumping version to $(VERSION) ==="
 	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" Resources/Info.plist
 	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" Resources/Info.plist
+	@echo "=== Building DMG (before commit so failures are recoverable) ==="
+	$(MAKE) dmg
+	@echo "=== Committing + tagging ==="
 	git add Resources/Info.plist
 	git commit -m "chore: bump version to $(VERSION)"
 	git tag v$(VERSION)
 	git push && git push origin v$(VERSION)
+	@echo "=== Creating release on source repo (empty, internal record) ==="
 	gh release create v$(VERSION) --title "v$(VERSION)" --notes "$${NOTES:-Release v$(VERSION)}"
+	@echo "=== Publishing DMG to public release repo ==="
+	gh release create v$(VERSION) .build/ZackEyes-$(VERSION).dmg \
+	  --repo yangshiqi/ZackEyes-release \
+	  --target main \
+	  --title "v$(VERSION)" \
+	  --notes "$${NOTES:-Release v$(VERSION)}"
 	@echo ""
 	@echo "✅ Released v$(VERSION)"
-	@echo "   https://github.com/yangshiqi/ZackEyes/releases/tag/v$(VERSION)"
+	@echo "   source:   https://github.com/yangshiqi/ZackEyes/releases/tag/v$(VERSION)"
+	@echo "   download: https://github.com/yangshiqi/ZackEyes-release/releases/tag/v$(VERSION)"
 
 clean:
 	swift package clean
