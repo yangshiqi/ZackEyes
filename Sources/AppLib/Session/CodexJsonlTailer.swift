@@ -187,6 +187,10 @@ private final class Watcher: @unchecked Sendable {
     private var pendingBuffer: String = ""
     private let onTaskComplete: (CodexTaskCompleteEvent) -> Void
     private let onClosed: (URL) -> Void
+    /// Guards `isCancelled` so the MainActor `stop()` path and the
+    /// DispatchSource event handler (private queue, fires on .delete /
+    /// .rename) can't both flip-and-cancel concurrently.
+    private let cancelLock = NSLock()
     private var isCancelled = false
 
     init?(
@@ -257,14 +261,21 @@ private final class Watcher: @unchecked Sendable {
     }
 
     deinit {
-        if !isCancelled {
-            source.cancel()
-        }
+        cancel()
     }
 
     func cancel() {
-        guard !isCancelled else { return }
+        cancelLock.lock()
+        guard !isCancelled else {
+            cancelLock.unlock()
+            return
+        }
         isCancelled = true
+        cancelLock.unlock()
+        // DispatchSource.cancel() is itself idempotent and thread-safe; we
+        // call it OUTSIDE the lock so the cancel handler (which closes the
+        // fd and reaches back through onClosed) can never try to re-enter
+        // this watcher's lock.
         source.cancel()
     }
 

@@ -582,8 +582,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
 extension AppDelegate: CodexJsonlTailerDelegate {
     /// Tailer detected an `event_msg.task_complete` for a codex session.
-    /// Update SessionStore and fire a notification — but only if the hook
-    /// path isn't already covering this session (to avoid double-notify).
+    /// Delegate the session-state mutation to SessionStore (mirrors the
+    /// Stop branch of `handleEvent`), then fire the UI notification.
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectTaskComplete event: CodexTaskCompleteEvent) {
         // If the session already has a `.live` state in our store, hooks
         // are flowing for it and the existing Stop path will deliver the
@@ -592,25 +592,13 @@ extension AppDelegate: CodexJsonlTailerDelegate {
             return
         }
 
-        let now = event.completedAt ?? Date()
-        var session = sessionStore.sessions[event.sessionId]
-            ?? SessionInfo(
-                id: event.sessionId,
-                cwd: event.cwd,
-                agent: .codex,
-                state: .idle,
-                startedAt: now
-            )
-        session.agent = .codex
-        if session.cwd == nil { session.cwd = event.cwd }
-        if session.transcriptPath == nil { session.transcriptPath = event.transcriptPath }
-        if let msg = event.lastAgentMessage, !msg.isEmpty {
-            session.lastAssistantMessage = msg
-        }
-        session.state = .idle
-        session.isToolRunning = false
-        session.lastActiveAt = now
-        sessionStore.sessions[event.sessionId] = session
+        let session = sessionStore.recordCodexTaskComplete(
+            sessionId: event.sessionId,
+            cwd: event.cwd,
+            lastAgentMessage: event.lastAgentMessage,
+            transcriptPath: event.transcriptPath,
+            completedAt: event.completedAt ?? Date()
+        )
 
         NotificationManager.shared.notifySessionFinished(
             sessionId: event.sessionId,

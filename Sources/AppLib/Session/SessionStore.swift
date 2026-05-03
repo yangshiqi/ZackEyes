@@ -316,6 +316,43 @@ public final class SessionStore: ObservableObject {
         sessions[sessionId] = session
     }
 
+    /// Apply a Codex `event_msg.task_complete` observation to the session
+    /// state. This is the jsonl-tailer fallback path (used when codex's TUI
+    /// predates our hooks and never fires `Stop`). Mirrors the Stop branch
+    /// of `handleEvent`: marks the session idle, captures the agent's last
+    /// reply, refreshes activity timestamps, and stamps any missing cwd /
+    /// transcript metadata. Returns the updated `SessionInfo` so callers
+    /// (AppDelegate) can fire UI notifications without re-reading the
+    /// store.
+    @discardableResult
+    public func recordCodexTaskComplete(
+        sessionId: String,
+        cwd: String?,
+        lastAgentMessage: String?,
+        transcriptPath: String?,
+        completedAt: Date
+    ) -> SessionInfo {
+        var session = sessions[sessionId]
+            ?? SessionInfo(
+                id: sessionId,
+                cwd: cwd,
+                agent: .codex,
+                state: .idle,
+                startedAt: completedAt
+            )
+        session.agent = .codex
+        if session.cwd == nil { session.cwd = cwd }
+        if session.transcriptPath == nil { session.transcriptPath = transcriptPath }
+        if let msg = lastAgentMessage, !msg.isEmpty {
+            session.lastAssistantMessage = msg
+        }
+        session.state = .idle
+        session.isToolRunning = false
+        session.lastActiveAt = completedAt
+        sessions[sessionId] = session
+        return session
+    }
+
     /// Import sessions discovered by SessionScanner. These are read-only and
     /// marked as `.detected` — user needs to restart them (or open a new
     /// thread, in Codex's case) for live tracking.
