@@ -77,12 +77,13 @@ diff ~/.claude/settings.json ~/.claude/settings.json.backup.*  # 确认只改了
 
 当修改以下组件时，额外确认：
 
-**HookInstaller:**
-- [ ] 写入前备份 `settings.json.backup.{timestamp}`
-- [ ] 只追加 `hooks` key，不修改 `permissions` / `enabledPlugins` / `defaultMode` / `theme`
+**HookInstaller / CodexHookInstaller:**
+- [ ] 写入前备份 `settings.json.backup.{timestamp}` / `hooks.json.backup.{timestamp}`
+- [ ] 只追加 `hooks` key（Claude 还有 `statusLine`），不修改 `permissions` / `enabledPlugins` / `defaultMode` / `theme` / Codex 任何其它字段
 - [ ] JSON 解析失败时不修改原文件
-- [ ] hook command 路径包含 `zackeyes` 标识
+- [ ] hook command 路径包含 `zackeyes` 标识 + 显式 `--agent claude|codex` flag
 - [ ] 卸载逻辑只移除包含 `zackeyes` 的条目
+- [ ] **永远不读不写 `~/.codex/config.toml`**（codex 默认开 hooks，碰它会引入 TOML 解析依赖 / 用户配置损坏风险）
 
 **Bridge:**
 - [ ] 所有受控失败路径 → `exit(0)`（不写 stdout/stderr）
@@ -109,12 +110,15 @@ diff ~/.claude/settings.json ~/.claude/settings.json.backup.*  # 确认只改了
 | scope | 组件 |
 |-------|------|
 | `bridge` | Bridge CLI（`Bridge/`） |
-| `socket` | SocketServer（`ZackEyes/Socket/`） |
-| `notch` | NotchPanel + Views（`ZackEyes/Notch/`） |
-| `menubar` | MenuBar fallback（`ZackEyes/MenuBar/`） |
-| `hooks` | HookInstaller（`ZackEyes/Hooks/`） |
-| `session` | SessionStore（`ZackEyes/Session/`） |
-| `app` | App 级别变更（`ZackEyes/App/`） |
+| `socket` | SocketServer（`AppLib/Socket/`） |
+| `notch` | NotchPanel + Views + AgentBadge + SimulatedNotch（`AppLib/Notch/`、`AppLib/SimulatedNotch/`） |
+| `menubar` | MenuBar fallback（`AppLib/MenuBar/`） |
+| `hooks` | HookInstaller（Claude）+ CodexHookInstaller |
+| `session` | SessionStore + SessionScanner + LivenessFilter（`AppLib/Session/`） |
+| `codex` | Codex 专属：CodexJsonlTailer / CodexHookInstaller / SessionStore.recordCodexTaskComplete / Codex usage 数据源 |
+| `usage` | UsageTracker（5h/7d，双 agent） |
+| `notify` | NotificationManager（agent 标签 / 错误 / 完成） |
+| `app` | App 级别变更（`ZackEyes/`） |
 
 **规则**:
 - 每个 commit 是一个原子变更，可独立 revert

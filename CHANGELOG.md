@@ -2,7 +2,45 @@
 
 All notable changes to ZackEyes. Format follows [Keep a Changelog](https://keepachangelog.com).
 
-## Unreleased
+## [0.3.1] — 2026-05-03
+
+### Fixed
+- **Stale Codex cards no longer pile up in the notch.** v0.3.0 imported any Codex rollout written in the last 8 hours, including ones whose TUI had long since closed. Two compounding fixes:
+  - `SessionScanner.scan` now takes per-agent recency windows (`claudeRecencyMinutes` defaults to 480 / 8h, `codexRecencyMinutes` defaults to 30 min). Codex creates a fresh rollout per `codex` invocation, so a tight window keeps closed-TUI rollouts off the notch.
+  - `runLivenessSweep` adds a time-based prune for Codex sessions: any Codex session whose `lastActiveAt` is older than 15 min and has no pending permission gets evicted. `CodexJsonlTailer` keeps watching the rollout, so the next `task_complete` re-creates the session via `SessionStore.recordCodexTaskComplete`.
+
+## [0.3.0] — 2026-05-03
+
+### Added — OpenAI Codex CLI as a parallel agent
+
+- **Both agents in one notch.** Sessions, permission approvals, errors, and 5h/7d quota all surface in the same Dynamic Island UI alongside Claude Code. The expanded panel splits the quota bars left/right when both agents have data. The compact pill shows whichever agent the user picks (gear menu → "Compact display").
+- **Bridge `--agent` flag.** Hook entries now include `--agent claude|codex`. Existing Claude installations keep working — the flag defaults to `claude` for legacy entries (no re-install required between an app upgrade and the next HookInstaller sweep).
+- **`CodexHookInstaller`** writes `~/.codex/hooks.json` with six events (SessionStart / PreToolUse / PostToolUse / PermissionRequest / Stop / UserPromptSubmit). Same defensive contract as the Claude installer: backup first, parse failure no-op, preserve user content. We never read or write `~/.codex/config.toml` because `[features].hooks` is `default_enabled: true` in current Codex (verified against `openai/codex` source).
+- **`SessionScanner` Codex adapter** — walks `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` so already-running Codex sessions surface immediately at app launch (no need to start a new thread).
+- **`CodexJsonlTailer`** — kqueue-based real-time fallback for Codex TUIs that started before `~/.codex/hooks.json` was written. Tails active rollouts and fires a notification on every `event_msg.task_complete` event without requiring a Codex restart.
+- **`UsageTracker` reads Codex rate limits** from `event_msg.token_count.rate_limits` (primary→5h, secondary→7d). The `SimulatedNotchFullView` header splits left/right with a fixed gear column so 5h and 7d tracks line up regardless of which row carries the menu.
+- **`AgentBadge`** — purple `[Claude]` / green `[Codex]` chip on every session card. Notifications also tag the agent in the title (`[Codex] proj — done`, `⚠️ [Claude] proj — Rate limited`).
+- **Compact display setting.** Gear menu → "Compact display" lets you pick which agent's quota the always-visible pill shows.
+
+### Changed
+
+- `BridgeEvent.agent` and `SessionInfo.agent` thread the agent kind through the socket, store, and notch UI.
+- `LivenessFilter.filterLiveDetected` partitions detected sessions by agent: Claude sessions run through the existing cwd-matched filter; Codex sessions pass through unchanged (no `runningCodexCwds()` analog yet — deferred).
+- `runLivenessSweep` filters its candidates to Claude only, so Codex sessions can't be evicted as ghosts.
+- Stop notification gate: notify on `Stop` if the session did work *this turn* OR had a user prompt waiting on a reply. The previous `toolCallCount > 0` gate suppressed notifications on chat-only turns where the agent answers without invoking any tools (common with Codex).
+
+### Performance
+
+- `SessionScanner.scanCodex` and `UsageTracker.scanLatestCodexRateLimits` walk only the `YYYY/MM/DD` subdirectories that intersect the recency window (≤ 2 dirs for a 30-min or 24h window) instead of the entire archive (caught by `/codex review`).
+- Both scanners use `URL.resourceValues(forKeys:)` for pre-fetched modification dates instead of a second `attributesOfItem(atPath:)` stat per file.
+- `SessionScanner.scan()` is now invoked from a background `Task.detached` in `AppDelegate` instead of synchronously on the main thread.
+
+### Internal
+
+- 7 new test files / 22 new tests covering the codex paths (CodexHookInstaller, SessionScanner codex parsing, LivenessFilter codex pass-through, UsageTracker codex rate_limits, CodexJsonlTailer parser).
+- Spec: `docs/superpowers/specs/2026-05-03-codex-compat-design.md`.
+
+## [0.2.9] — 2026-04-26
 
 ### Added
 
