@@ -9,6 +9,7 @@ import Shared
 struct SimulatedNotchView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
+    @ObservedObject var modeStore: NotchModeStore
     let isExpanded: Bool
     var onTap: (() -> Void)? = nil
 
@@ -66,11 +67,14 @@ struct SimulatedNotchView: View {
     @ViewBuilder
     private var compactContent: some View {
         let snap = usageTracker.snapshot
-        percentageChip(label: "5h", usedPct: snap.fiveHourUsedPct, fallbackTokens: snap.tokens5h, scale: .fiveHour)
+        let agent = modeStore.compactAgent
+        let fivePct = (agent == .codex) ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct
+        let sevenPct = (agent == .codex) ? snap.codexSevenDayUsedPct : snap.sevenDayUsedPct
+        percentageChip(label: "5h", usedPct: fivePct, fallbackTokens: snap.tokens5h, scale: .fiveHour)
         Text("·")
             .font(.system(size: 12))
             .foregroundColor(.white.opacity(0.3))
-        percentageChip(label: "7d", usedPct: snap.sevenDayUsedPct, fallbackTokens: snap.tokens7d, scale: .sevenDay)
+        percentageChip(label: "7d", usedPct: sevenPct, fallbackTokens: snap.tokens7d, scale: .sevenDay)
     }
 
     @ViewBuilder
@@ -115,11 +119,16 @@ struct SimulatedNotchView: View {
     @ViewBuilder
     private var expandedContent: some View {
         let snap = usageTracker.snapshot
+        let agent = modeStore.compactAgent
+        let fivePct = (agent == .codex) ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct
+        let fiveResets = (agent == .codex) ? snap.codexFiveHourResetsAt : snap.fiveHourResetsAt
+        let sevenPct = (agent == .codex) ? snap.codexSevenDayUsedPct : snap.sevenDayUsedPct
+        let sevenResets = (agent == .codex) ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
 
         usageStat(
             label: "5h",
-            usedPct: snap.fiveHourUsedPct,
-            resetsAt: snap.fiveHourResetsAt,
+            usedPct: fivePct,
+            resetsAt: fiveResets,
             scale: .fiveHour
         )
 
@@ -129,8 +138,8 @@ struct SimulatedNotchView: View {
 
         usageStat(
             label: "7d",
-            usedPct: snap.sevenDayUsedPct,
-            resetsAt: snap.sevenDayResetsAt,
+            usedPct: sevenPct,
+            resetsAt: sevenResets,
             scale: .sevenDay
         )
 

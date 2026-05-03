@@ -24,22 +24,50 @@ guard !inputData.isEmpty else {
     exit(0)
 }
 
-// MARK: - Step 2: Parse --event argument
+// MARK: - Step 2: Parse --event and optional --agent
 
-// Expected: ["bridge", "--event", "EventName"]
+// Accepted shapes:
+//   ["bridge", "--event", "<EventName>"]                        (legacy — agent defaults to "claude")
+//   ["bridge", "--event", "<EventName>", "--agent", "<Agent>"]  (current)
+//   ["bridge", "--agent", "<Agent>", "--event", "<EventName>"]  (flag order tolerated)
+//
+// Anything else: exit 0 silently (per the bridge invariant).
 let args = CommandLine.arguments
-guard args.count == 3, args[1] == "--event" else {
-    exit(0)
+var eventName: String? = nil
+var agentName: String = "claude"  // legacy default
+var idx = 1
+while idx < args.count {
+    let flag = args[idx]
+    let next = idx + 1 < args.count ? args[idx + 1] : nil
+    switch flag {
+    case "--event":
+        guard let value = next else { exit(0) }
+        eventName = value
+        idx += 2
+    case "--agent":
+        guard let value = next else { exit(0) }
+        agentName = value
+        idx += 2
+    default:
+        exit(0)
+    }
 }
-let eventName = args[2]
+guard let eventName, !eventName.isEmpty else { exit(0) }
+// Coerce unknown agent strings to "claude" — keeps the invariant of never
+// blocking on bad input. If a future build adds --agent values we don't know
+// about yet, it falls through to the Claude code path rather than dying.
+if agentName != "claude" && agentName != "codex" {
+    agentName = "claude"
+}
 
-// MARK: - Step 3: Inject _bridge_event into JSON payload
+// MARK: - Step 3: Inject _bridge_event + _bridge_agent into JSON payload
 
 guard var jsonObject = try? JSONSerialization.jsonObject(with: inputData) as? [String: Any] else {
     exit(0)
 }
 jsonObject["_bridge_event"] = eventName
-// Pass parent PID (claude process) so the app can locate the terminal
+jsonObject["_bridge_agent"] = agentName
+// Pass parent PID (claude/codex process) so the app can locate the terminal
 jsonObject["_bridge_ppid"] = Int(getppid())
 
 guard let enrichedData = try? JSONSerialization.data(withJSONObject: jsonObject) else {

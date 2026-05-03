@@ -219,6 +219,49 @@ struct HookInstallerTests {
         #expect(!origExists)
     }
 
+    // MARK: - Test 6.5: command embeds `--agent claude` (codex-compat migration)
+
+    /// After Codex compat lands, every hook command we install must embed
+    /// `--agent claude`. The Bridge defaults to claude when the flag is
+    /// missing (legacy compat), but explicit is better — and lets us
+    /// distinguish events from co-installed agents at the top of Bridge.
+    @Test func claudeCommandsEmbedAgentFlag() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let settingsURL = tmpDir.appendingPathComponent("settings.json")
+        try "{}".write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: "/test/bridge"
+        )
+        try installer.installHooks()
+
+        let data = try Data(contentsOf: settingsURL)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let hooks = json["hooks"] as! [String: Any]
+
+        for (event, raw) in hooks {
+            let entries = raw as! [[String: Any]]
+            for entry in entries {
+                let inner = entry["hooks"] as! [[String: Any]]
+                for hook in inner {
+                    let cmd = hook["command"] as? String ?? ""
+                    #expect(cmd.contains("--agent claude"),
+                            "event=\(event) cmd=\(cmd) missing --agent claude")
+                }
+            }
+        }
+
+        // statusLine command must also embed it (direct install path).
+        let sl = json["statusLine"] as? [String: Any]
+        let slCmd = sl?["command"] as? String ?? ""
+        #expect(slCmd.contains("--agent claude"))
+    }
+
     // MARK: - Test 7: uninstall_removesOnlyOurEntries
 
     @Test func uninstall_removesOnlyOurEntries() throws {

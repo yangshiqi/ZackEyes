@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Shared
 
 /// Full-content view shown when the simulated notch is morphed into the
 /// expanded panel. Layout:
@@ -153,19 +154,130 @@ struct SimulatedNotchFullView: View {
 
     private var usageHeader: some View {
         let snap = usageTracker.snapshot
-        return VStack(spacing: 8) {
-            usageBar(
-                label: "5h",
-                usedPct: snap.fiveHourUsedPct,
-                resetsAt: snap.fiveHourResetsAt,
-                trailing: { gearMenu }
-            )
-            usageBar(
-                label: "7d",
-                usedPct: snap.sevenDayUsedPct,
-                resetsAt: snap.sevenDayResetsAt
-            )
+        let codexOnly = snap.hasCodexData && !snap.hasClaudeData
+        let bothActive = snap.hasClaudeData && snap.hasCodexData
+
+        return VStack(spacing: 4) {
+            if bothActive {
+                splitUsageRow(
+                    label: "5h",
+                    leftPct: snap.fiveHourUsedPct,
+                    leftResetsAt: snap.fiveHourResetsAt,
+                    rightPct: snap.codexFiveHourUsedPct,
+                    rightResetsAt: snap.codexFiveHourResetsAt,
+                    trailing: { gearMenu }
+                )
+                splitUsageRow(
+                    label: "7d",
+                    leftPct: snap.sevenDayUsedPct,
+                    leftResetsAt: snap.sevenDayResetsAt,
+                    rightPct: snap.codexSevenDayUsedPct,
+                    rightResetsAt: snap.codexSevenDayResetsAt
+                )
+            } else {
+                // Single-agent path. Claude shows when only Claude (or
+                // neither) reports data — preserves existing behavior for
+                // Claude-only users and the empty / first-launch state.
+                let useCodex = codexOnly
+                usageBar(
+                    label: "5h",
+                    agent: useCodex ? .codex : .claude,
+                    usedPct: useCodex ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct,
+                    resetsAt: useCodex ? snap.codexFiveHourResetsAt : snap.fiveHourResetsAt,
+                    trailing: { gearMenu }
+                )
+                usageBar(
+                    label: "7d",
+                    agent: useCodex ? .codex : .claude,
+                    usedPct: useCodex ? snap.codexSevenDayUsedPct : snap.sevenDayUsedPct,
+                    resetsAt: useCodex ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
+                )
+            }
         }
+    }
+
+    /// Side-by-side bar: left half = Claude, right half = Codex. Both 5h
+    /// and 7d rows share the same outer column layout
+    /// (label / left-half / right-half / gear-or-placeholder) so the two
+    /// progress tracks line up horizontally regardless of which row
+    /// carries the gear menu.
+    @ViewBuilder
+    private func splitUsageRow<Trailing: View>(
+        label: String,
+        leftPct: Double?, leftResetsAt: Date?,
+        rightPct: Double?, rightResetsAt: Date?,
+        @ViewBuilder trailing: () -> Trailing = { EmptyView() }
+    ) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Text(label)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundColor(.white.opacity(0.7))
+                .frame(width: 22, alignment: .leading)
+
+            HStack(spacing: 8) {
+                splitHalf(agent: .claude, usedPct: leftPct, resetsAt: leftResetsAt)
+                splitHalf(agent: .codex,  usedPct: rightPct, resetsAt: rightResetsAt)
+            }
+
+            // Trailing column: always reserves the same width so both
+            // 5h and 7d rows have identical bar tracks underneath.
+            ZStack { trailing() }
+                .frame(width: gearColumnWidth, height: gearColumnWidth, alignment: .center)
+        }
+    }
+
+    /// Width reserved for the gear-menu column on every split row.
+    private var gearColumnWidth: CGFloat { 22 }
+
+    /// One agent's half of a split row: header (letter + remaining % +
+    /// reset countdown) sitting tightly above its progress bar.
+    @ViewBuilder
+    private func splitHalf(agent: AgentKind, usedPct: Double?, resetsAt: Date?) -> some View {
+        let used = usedPct ?? 0
+        let remaining = max(0, 100 - used)
+        let color = barColor(for: used)
+        let hasData = usedPct != nil
+        let accent = AgentBadge.accentColor(for: agent)
+
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Text(agent == .claude ? "C" : "X")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(accent)
+                if hasData {
+                    Text(String(format: "%.0f%%", remaining))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(color)
+                } else {
+                    Text("—")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.35))
+                }
+                Spacer(minLength: 0)
+                if let reset = resetsAt?.usageResetDisplay {
+                    Text(reset)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.4))
+                }
+            }
+            // Progress track. Pin the height with `.frame(height: 5)` AT
+            // the GeometryReader level so the parent HStack can't grow
+            // vertically — without it, GeometryReader is flexible and the
+            // row balloons to whatever height the layout has available.
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 2.5)
+                        .fill(Color.white.opacity(0.10))
+                    if hasData {
+                        RoundedRectangle(cornerRadius: 2.5)
+                            .fill(color)
+                            .frame(width: geo.size.width * CGFloat(used / 100))
+                    }
+                }
+            }
+            .frame(height: 5)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Settings gear — plain SwiftUI Button that pops a native NSMenu
@@ -286,6 +398,26 @@ struct SimulatedNotchFullView: View {
         themeItem.submenu = themeMenu
         menu.addItem(themeItem)
 
+        // Compact display: which agent's 5h/7d shows in the collapsed pill.
+        // The full panel always shows both agents when both have data; this
+        // only steers the narrow always-visible pill.
+        let compactMenu = NSMenu()
+        let currentCompactAgent = config.loadCompactAgent()
+        for agent in [AgentKind.claude, .codex] {
+            let item = NSMenuItem(
+                title: agent == .claude ? "Claude" : "Codex",
+                action: #selector(GearMenuTarget.compactAgentClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.target = GearMenuTarget.shared
+            item.representedObject = agent.rawValue
+            item.state = (agent == currentCompactAgent) ? .on : .off
+            compactMenu.addItem(item)
+        }
+        let compactItem = NSMenuItem(title: "Compact display", action: nil, keyEquivalent: "")
+        compactItem.submenu = compactMenu
+        menu.addItem(compactItem)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(
@@ -322,6 +454,7 @@ struct SimulatedNotchFullView: View {
     @ViewBuilder
     private func usageBar<Trailing: View>(
         label: String,
+        agent: AgentKind = .claude,
         usedPct: Double?,
         resetsAt: Date?,
         @ViewBuilder trailing: () -> Trailing = { EmptyView() }
@@ -330,6 +463,7 @@ struct SimulatedNotchFullView: View {
         let remaining = max(0, 100 - used)
         let color = barColor(for: used)
         let hasData = usedPct != nil
+        let accent = AgentBadge.accentColor(for: agent)
 
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
@@ -337,6 +471,16 @@ struct SimulatedNotchFullView: View {
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundColor(.white.opacity(0.7))
                     .frame(width: 22, alignment: .leading)
+
+                // Agent tag — small label so the user knows which agent's
+                // quota this bar represents when only one is active.
+                Text(agent == .claude ? "Claude" : "Codex")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(accent)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 1)
+                    .background(accent.opacity(0.15))
+                    .clipShape(Capsule())
 
                 if hasData {
                     Text(String(format: "%.0f%% remaining", remaining))

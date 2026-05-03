@@ -1,5 +1,6 @@
 import XCTest
 @testable import AppLib
+import Shared
 
 final class ConfigStoreTests: XCTestCase {
 
@@ -118,6 +119,47 @@ final class ConfigStoreTests: XCTestCase {
         store.saveNotchVisibility(.hidden)
 
         // File unchanged — abort preserved the corrupt bytes
+        let after = try? String(contentsOfFile: path, encoding: .utf8)
+        XCTAssertEqual(after, garbage)
+    }
+
+    // MARK: - Compact agent
+
+    func testCompactAgentDefaultsToClaude() {
+        let store = ConfigStore(directory: tmpDir.path)
+        XCTAssertEqual(store.loadCompactAgent(), .claude)
+    }
+
+    func testSaveAndLoadCompactAgent() {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveCompactAgent(.codex)
+        XCTAssertEqual(store.loadCompactAgent(), .codex)
+        store.saveCompactAgent(.claude)
+        XCTAssertEqual(store.loadCompactAgent(), .claude)
+    }
+
+    /// Setting compactAgent must not wipe theme / hotkey / other keys.
+    func testCompactAgentSavePreservesOtherKeys() {
+        let store = ConfigStore(directory: tmpDir.path)
+        let custom = HotKeyConfig(keyCode: 40, modifiers: [.option, .command])
+        store.save(custom)
+        store.saveTheme(.f1)
+
+        store.saveCompactAgent(.codex)
+
+        XCTAssertEqual(store.load(), custom)
+        XCTAssertEqual(store.loadTheme(), .f1)
+        XCTAssertEqual(store.loadCompactAgent(), .codex)
+    }
+
+    func testCompactAgentSaveAbortsWhenFileCorrupt() {
+        let store = ConfigStore(directory: tmpDir.path)
+        let path = tmpDir.appendingPathComponent("config.json").path
+        let garbage = "not json — preserve me"
+        try? garbage.write(toFile: path, atomically: true, encoding: .utf8)
+
+        store.saveCompactAgent(.codex)
+
         let after = try? String(contentsOfFile: path, encoding: .utf8)
         XCTAssertEqual(after, garbage)
     }

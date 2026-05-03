@@ -16,6 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var updateDownloader: UpdateDownloader?
     private var statusBarMenu: StatusBarMenu?
     private var livenessSweepTimer: Timer?
+    private var codexTailer: CodexJsonlTailer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Prevent macOS from auto-terminating this LSUIElement app when no windows are visible
@@ -188,6 +189,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 NSLog("ZackEyes: Hook installation failed: \(error)")
             }
+            // Codex installer is independent — failure here must not affect
+            // the Claude install. Skips silently if `~/.codex/` is absent.
+            do {
+                let codexInstaller = CodexHookInstaller()
+                try codexInstaller.installHooks()
+            } catch {
+                NSLog("ZackEyes: Codex hook installation failed: \(error)")
+            }
         }
 
         // 6.5 Update checker — polls GitHub Releases every 6h
@@ -196,17 +205,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         updateChecker?.start()
 
-        // 6. Discover already-running sessions from ~/.claude/projects/.
-        //    Filter by reverse cwd lookup: only import jsonl files whose
-        //    project directory currently has a running `claude` process.
-        //    For cwds with multiple live claudes, take the N most-recently
-        //    modified jsonls (matches the live count). Runs off main actor
-        //    since `ps` + `lsof` spawn subprocesses.
-        let scanner = SessionScanner()
-        let detected = scanner.scan(recencyMinutes: 480)  // 8h — covers a full work day
+        // 6. Discover already-running sessions from ~/.claude/projects/
+        //    and ~/.codex/sessions/. Filter by reverse cwd lookup: only
+        //    import jsonl files whose project directory currently has a
+        //    running `claude` process (codex sessions pass through the
+        //    filter unchanged — see LivenessFilter). For cwds with
+        //    multiple live claudes, take the N most-recently modified
+        //    jsonls (matches the live count). Runs off main actor —
+        //    both `scanner.scan()` and `ps`/`lsof` do disk + subprocess
+        //    work that must not block the main thread on first launch.
         Task.detached(priority: .userInitiated) { [weak self] in
-            // ps/lsof off main; @MainActor SessionStore is touched only
-            // inside the MainActor.run hop below via self?.sessionStore.
+            let scanner = SessionScanner()
+            let detected = scanner.scan(recencyMinutes: 480)  // 8h — covers a full work day
             //
             // Snapshot failure (nil) at startup falls back to importing
             // every detected session, mirroring the sweep's "do nothing"
@@ -237,6 +247,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         livenessSweepTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.runLivenessSweep() }
         }
+
+        // 7.5 Codex jsonl tailer. Real-time fallback for codex sessions
+        //     whose owning TUI predates ~/.codex/hooks.json (those processes
+        //     never picked up our hooks and never fire Stop). The tailer
+        //     watches the rollouts and fires a notification on each
+        //     `event_msg.task_complete` line.
+        let tailer = CodexJsonlTailer()
+        tailer.delegate = self
+        tailer.start()
+        codexTailer = tailer
 
         // 8. First-launch welcome — per-version one-shot. Runs last so the
         //    notch controllers are already created and reachable via
@@ -315,7 +335,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// grace period so a transient subprocess hiccup can't wipe live
     /// sessions whose hooks are still flowing.
     private func runLivenessSweep() {
+        // Liveness pruning is Claude-only. The cwd→count snapshot below
+        // matches `claude` argv strictly (see TerminalLocator), so feeding a
+        // Codex session through it would always come up "no live owner" and
+        // evict the session past the 90s grace, even with `codex` running
+        // happily in the same cwd. Codex sessions stick around until the
+        // app restarts; that's fine — Codex doesn't emit SessionEnd anyway,
+        // so the worst case is a stale idle card, not a dropped one.
         let candidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
+            guard s.agent == .claude else { return nil }
             guard let cwd = s.cwd, s.pendingPermission == nil else { return nil }
             return LivenessFilter.PruneCandidate(id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt)
         }
@@ -383,8 +411,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 cwd: event.cwd,
                 responder: responder
             )
-            NSLog("ZackEyes: PermissionRequest for tool=%@", event.toolName ?? "?")
-            sessionStore.handlePermissionRequest(sessionId: sid, permission: pending)
+            NSLog("ZackEyes: PermissionRequest agent=%@ tool=%@",
+                  event.agent.rawValue, event.toolName ?? "?")
+            sessionStore.handlePermissionRequest(
+                sessionId: sid, permission: pending, agent: event.agent
+            )
             simulatedNotch?.dismissAboutOverlay()
             forceUiExpand()
 
@@ -405,19 +436,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 responder: responder
             )
             NSLog("ZackEyes: PreToolUse AskUQ for tool=AskUserQuestion")
-            sessionStore.handlePermissionRequest(sessionId: sid, permission: pending)
+            sessionStore.handlePermissionRequest(
+                sessionId: sid, permission: pending, agent: event.agent
+            )
             simulatedNotch?.dismissAboutOverlay()
             forceUiExpand()
 
         default:
-            NSLog("ZackEyes: event=%@ tool=%@", event.bridgeEvent, event.toolName ?? "-")
+            // Always log the agent so codex/claude bugs can be told apart
+            // from a single Console.app filter ("ZackEyes:").
+            NSLog("ZackEyes: agent=%@ event=%@ tool=%@ sid=%@",
+                  event.agent.rawValue,
+                  event.bridgeEvent,
+                  event.toolName ?? "-",
+                  event.sessionId.map { String($0.prefix(8)) } ?? "-")
 
             // Capture prior state BEFORE handling the event (for Stop detection)
             let priorState: SessionState? = event.sessionId.flatMap { sessionStore.sessions[$0]?.state }
             let priorErrorAt: Date? = event.sessionId.flatMap { sessionStore.sessions[$0]?.errorAt }
-            let hadToolActivity = event.sessionId.flatMap {
-                sessionStore.sessions[$0].map { $0.toolCallCount > 0 }
-            } ?? false
+            let priorToolCount = event.sessionId.flatMap {
+                sessionStore.sessions[$0]?.toolCallCount
+            } ?? 0
+            let priorUserPrompt = event.sessionId.flatMap {
+                sessionStore.sessions[$0]?.lastUserPrompt
+            }
 
             sessionStore.handleEvent(event)
 
@@ -434,6 +476,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                session.errorAt != priorErrorAt {
                 NotificationManager.shared.notifyError(
                     sessionId: sid,
+                    agent: session.agent,
                     projectName: session.displayName,
                     errorLabel: errLabel,
                     detail: session.lastAssistantMessage
@@ -442,16 +485,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 forceUiExpand()
             }
 
-            // Notify on Stop only if the session was actually doing something
+            // Notify on Stop. The session must have done something this
+            // turn — either ran a tool (toolCallCount went up) or had a
+            // user prompt waiting on a reply. The earlier gate only
+            // checked `toolCallCount > 0` over the session lifetime, which
+            // suppressed notifications on chat-only turns where the agent
+            // answers without invoking any tools (common with Codex).
             if event.bridgeEvent == "Stop",
-               hadToolActivity,
-               session.errorMessage == nil,  // don't double-notify on errors
+               session.errorMessage == nil,    // don't double-notify on errors
                priorState == .working || priorState == .waiting {
-                NotificationManager.shared.notifySessionFinished(
-                    sessionId: sid,
-                    projectName: session.displayName,
-                    lastPrompt: session.lastUserPrompt
-                )
+                let didWorkThisTurn = session.toolCallCount > priorToolCount
+                let hasInteraction = priorUserPrompt != nil
+                if didWorkThisTurn || hasInteraction {
+                    NotificationManager.shared.notifySessionFinished(
+                        sessionId: sid,
+                        agent: session.agent,
+                        projectName: session.displayName,
+                        lastPrompt: session.lastUserPrompt
+                    )
+                }
             }
         }
     }
@@ -523,5 +575,36 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         menuBarFallback?.showPopover()
+    }
+}
+
+// MARK: - CodexJsonlTailerDelegate
+
+extension AppDelegate: CodexJsonlTailerDelegate {
+    /// Tailer detected an `event_msg.task_complete` for a codex session.
+    /// Delegate the session-state mutation to SessionStore (mirrors the
+    /// Stop branch of `handleEvent`), then fire the UI notification.
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectTaskComplete event: CodexTaskCompleteEvent) {
+        // If the session already has a `.live` state in our store, hooks
+        // are flowing for it and the existing Stop path will deliver the
+        // notification. Skip the tailer-side notification.
+        if let existing = sessionStore.sessions[event.sessionId], existing.source == .live {
+            return
+        }
+
+        let session = sessionStore.recordCodexTaskComplete(
+            sessionId: event.sessionId,
+            cwd: event.cwd,
+            lastAgentMessage: event.lastAgentMessage,
+            transcriptPath: event.transcriptPath,
+            completedAt: event.completedAt ?? Date()
+        )
+
+        NotificationManager.shared.notifySessionFinished(
+            sessionId: event.sessionId,
+            agent: .codex,
+            projectName: session.displayName,
+            lastPrompt: session.lastUserPrompt
+        )
     }
 }

@@ -1,4 +1,5 @@
 import SwiftUI
+import Shared
 
 /// The three modes the simulated notch can morph between.
 public enum NotchMode: Sendable {
@@ -23,6 +24,13 @@ public final class NotchModeStore: ObservableObject {
 
     /// True while the hotkey recorder overlay is shown.
     @Published public var isHotkeyRecorderShown: Bool = false
+
+    /// Which agent's 5h/7d quota the *collapsed* simulated notch shows.
+    /// (The full panel always shows both when both have data — this only
+    /// controls the narrow pill the user stares at all day.) Persisted to
+    /// `~/.zackeyes/config.json` via `ConfigStore`. Initialized from disk
+    /// by `SimulatedNotchController` at app launch.
+    @Published public var compactAgent: AgentKind = .claude
 
     /// Convenience: any interactive overlay that should keep the panel
     /// open. Used by `SimulatedNotchController` to suppress the
@@ -96,6 +104,7 @@ struct SimulatedNotchRoot: View {
         SimulatedNotchView(
             viewModel: viewModel,
             usageTracker: usageTracker,
+            modeStore: modeStore,
             isExpanded: false,
             onTap: onTap
         )

@@ -1,12 +1,16 @@
 import Foundation
+import Shared
 
-/// Scans ~/.claude/projects/ to discover existing Claude Code sessions.
-/// These sessions are "detected" (read-only) because their hooks were loaded
-/// before ZackEyes started — they won't send live events.
+/// Scans the JSONL transcript trees produced by Claude Code and Codex CLI to
+/// discover sessions that were already running when ZackEyes started. These
+/// sessions are "detected" (read-only) because their hooks were loaded before
+/// ZackEyes started — they won't send live events until the user opens a new
+/// thread or restarts the agent.
 public struct SessionScanner {
 
     public struct DetectedSession: Sendable {
         public let id: String
+        public let agent: AgentKind
         public let cwd: String?
         public let lastModified: Date
         public let lastUserPrompt: String?
@@ -15,21 +19,38 @@ public struct SessionScanner {
     }
 
     private let projectsDir: URL
+    private let codexSessionsDir: URL?
 
-    public init(projectsDir: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/projects")) {
+    public init(
+        projectsDir: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/projects"),
+        codexSessionsDir: URL? = URL(fileURLWithPath: NSHomeDirectory() + "/.codex/sessions")
+    ) {
         self.projectsDir = projectsDir
+        self.codexSessionsDir = codexSessionsDir
     }
 
-    /// Scan all project directories, return sessions with jsonl files modified in the last N minutes.
+    /// Scan all known transcript directories. Returns sessions whose jsonl
+    /// files were modified within the recency window, with their `agent`
+    /// stamped from the directory they were found in.
     public func scan(recencyMinutes: Int = 60) -> [DetectedSession] {
+        let cutoff = Date().addingTimeInterval(-Double(recencyMinutes * 60))
+        var results: [DetectedSession] = []
+        results.append(contentsOf: scanClaude(cutoff: cutoff))
+        if let codexDir = codexSessionsDir {
+            results.append(contentsOf: scanCodex(rootDir: codexDir, cutoff: cutoff))
+        }
+        return results.sorted { $0.lastModified > $1.lastModified }
+    }
+
+    // MARK: - Claude (~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl)
+
+    private func scanClaude(cutoff: Date) -> [DetectedSession] {
         let fm = FileManager.default
         guard let projectDirs = try? fm.contentsOfDirectory(at: projectsDir, includingPropertiesForKeys: nil) else {
             return []
         }
 
-        let cutoff = Date().addingTimeInterval(-Double(recencyMinutes * 60))
         var results: [DetectedSession] = []
-
         for projectDir in projectDirs {
             guard let files = try? fm.contentsOfDirectory(
                 at: projectDir,
@@ -37,39 +58,24 @@ public struct SessionScanner {
             ) else { continue }
 
             for file in files where file.pathExtension == "jsonl" {
-                guard let attrs = try? fm.attributesOfItem(atPath: file.path),
-                      let modDate = attrs[.modificationDate] as? Date,
+                // Use the URL's pre-fetched resource values (we asked
+                // contentsOfDirectory for .contentModificationDateKey) so
+                // we don't pay a second stat() per file via attributesOfItem.
+                guard let modDate = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
                       modDate >= cutoff else { continue }
 
                 let sessionId = file.deletingPathExtension().lastPathComponent
-                if let session = parseSession(at: file, id: sessionId, lastModified: modDate) {
+                if let session = parseClaudeSession(at: file, id: sessionId, lastModified: modDate) {
                     results.append(session)
                 }
             }
         }
-
-        return results.sorted { $0.lastModified > $1.lastModified }
+        return results
     }
 
-    /// Parse the tail of a jsonl file to extract session metadata.
-    private func parseSession(at url: URL, id: String, lastModified: Date) -> DetectedSession? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-
-        // Read the last ~64KB of the file (more than enough for recent messages)
-        let fileSize: UInt64
-        do {
-            fileSize = try handle.seekToEnd()
-        } catch {
-            return nil
-        }
-
-        let readSize: UInt64 = 65536
-        let offset = fileSize > readSize ? fileSize - readSize : 0
-        try? handle.seek(toOffset: offset)
-
-        guard let data = try? handle.readToEnd() else { return nil }
-        guard let text = String(data: data, encoding: .utf8) else { return nil }
+    /// Parse the tail of a Claude jsonl file to extract session metadata.
+    private func parseClaudeSession(at url: URL, id: String, lastModified: Date) -> DetectedSession? {
+        guard let text = readTail(of: url, maxBytes: 65_536) else { return nil }
 
         var cwd: String? = nil
         var lastUserPrompt: String? = nil
@@ -104,11 +110,155 @@ public struct SessionScanner {
 
         return DetectedSession(
             id: id,
+            agent: .claude,
             cwd: cwd,
             lastModified: lastModified,
             lastUserPrompt: lastUserPrompt,
             messageCount: messageCount,
             transcriptPath: url.path
         )
+    }
+
+    // MARK: - Codex (~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl)
+
+    /// Walk only the YYYY/MM/DD subdirectories that could possibly contain
+    /// rollouts within the recency window, instead of the entire history.
+    /// Codex partitions its session log by UTC date (verified against the
+    /// `session_meta.timestamp` field), so once the cutoff is known we can
+    /// enumerate the candidate dirs directly. For an 8h window that's at
+    /// most two paths; for a 24h window at most two; for 7d, eight.
+    private func scanCodex(rootDir: URL, cutoff: Date) -> [DetectedSession] {
+        let fm = FileManager.default
+        var results: [DetectedSession] = []
+        for day in Self.candidateDateDirs(rootDir: rootDir, cutoff: cutoff) {
+            guard let files = try? fm.contentsOfDirectory(
+                at: day,
+                includingPropertiesForKeys: [.contentModificationDateKey]
+            ) else { continue }
+            for file in files where file.pathExtension == "jsonl" {
+                guard let modDate = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+                      modDate >= cutoff else { continue }
+                if let session = parseCodexSession(at: file, lastModified: modDate) {
+                    results.append(session)
+                }
+            }
+        }
+        return results
+    }
+
+    /// Build the list of `<rootDir>/YYYY/MM/DD` paths whose UTC date
+    /// intersects `[cutoff, now]`. Non-existent dirs are returned anyway —
+    /// the caller's `contentsOfDirectory` simply skips them.
+    static func candidateDateDirs(rootDir: URL, cutoff: Date, now: Date = Date()) -> [URL] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+        let startOfCutoff = calendar.startOfDay(for: cutoff)
+        let endDay = calendar.startOfDay(for: now)
+        var current = startOfCutoff
+        var dirs: [URL] = []
+        while current <= endDay {
+            let comps = calendar.dateComponents([.year, .month, .day], from: current)
+            if let y = comps.year, let m = comps.month, let d = comps.day {
+                dirs.append(
+                    rootDir
+                        .appendingPathComponent(String(format: "%04d", y))
+                        .appendingPathComponent(String(format: "%02d", m))
+                        .appendingPathComponent(String(format: "%02d", d))
+                )
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
+            current = next
+        }
+        return dirs
+    }
+
+    /// Codex rollout file names embed the session UUID as the trailing
+    /// segment after the ISO timestamp:
+    ///   `rollout-2026-05-03T14-27-59-019dec85-b760-71f2-bca7-b1c463f0d36e.jsonl`
+    /// The UUID is the canonical 5-group form (8-4-4-4-12 hex). We pick the
+    /// last five `-`-joined groups whose total length is 36 to form the id —
+    /// the timestamp's own dashes never look like a UUID.
+    static func extractCodexSessionId(fromFilename name: String) -> String? {
+        let stem = (name as NSString).deletingPathExtension
+        let parts = stem.split(separator: "-").map(String.init)
+        guard parts.count >= 5 else { return nil }
+        let tail = parts.suffix(5).joined(separator: "-")
+        // UUID canonical length is 36 chars (32 hex + 4 dashes).
+        guard tail.count == 36 else { return nil }
+        return tail
+    }
+
+    /// Codex session jsonl schema (verified against codex-tui 0.128.0):
+    /// - line 0 is `{"type":"session_meta","payload":{"id","cwd","timestamp",...}}`
+    /// - subsequent `event_msg` lines with `payload.type=user_message`
+    ///   carry the user prompt text in `payload.message`.
+    /// Read the head for cwd, the tail for the last user prompt — same tail
+    /// budget as the Claude parser.
+    private func parseCodexSession(at url: URL, lastModified: Date) -> DetectedSession? {
+        guard let id = Self.extractCodexSessionId(fromFilename: url.lastPathComponent) else {
+            return nil
+        }
+
+        // Head: first 4KB is enough for session_meta; that line is line 0.
+        var cwd: String? = nil
+        if let head = readHead(of: url, maxBytes: 4096),
+           let firstLine = head.split(separator: "\n").first,
+           let lineData = firstLine.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+           obj["type"] as? String == "session_meta",
+           let payload = obj["payload"] as? [String: Any] {
+            cwd = payload["cwd"] as? String
+        }
+
+        // Tail: last 64KB for user_message events.
+        var lastUserPrompt: String? = nil
+        var messageCount = 0
+        if let tail = readTail(of: url, maxBytes: 65_536) {
+            for line in tail.split(separator: "\n") {
+                guard let lineData = line.data(using: .utf8) else { continue }
+                guard let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
+                guard obj["type"] as? String == "event_msg" else { continue }
+                guard let payload = obj["payload"] as? [String: Any] else { continue }
+                guard payload["type"] as? String == "user_message" else { continue }
+                messageCount += 1
+                if let msg = payload["message"] as? String, !msg.isEmpty {
+                    lastUserPrompt = msg
+                }
+            }
+        }
+
+        return DetectedSession(
+            id: id,
+            agent: .codex,
+            cwd: cwd,
+            lastModified: lastModified,
+            lastUserPrompt: lastUserPrompt,
+            messageCount: messageCount,
+            transcriptPath: url.path
+        )
+    }
+
+    // MARK: - Shared file IO
+
+    private func readTail(of url: URL, maxBytes: UInt64) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        let fileSize: UInt64
+        do {
+            fileSize = try handle.seekToEnd()
+        } catch {
+            return nil
+        }
+        let offset = fileSize > maxBytes ? fileSize - maxBytes : 0
+        try? handle.seek(toOffset: offset)
+        guard let data = try? handle.readToEnd() else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    private func readHead(of url: URL, maxBytes: Int) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: maxBytes) else { return nil }
+        return String(data: data, encoding: .utf8)
     }
 }

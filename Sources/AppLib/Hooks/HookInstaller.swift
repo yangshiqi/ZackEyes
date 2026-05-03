@@ -34,7 +34,7 @@ public struct HookInstaller {
                     "hooks": [
                         [
                             "type": "command",
-                            "command": "\(bridgePath) --event \(event)",
+                            "command": "\(bridgePath) --event \(event) --agent claude",
                         ]
                     ]
                 ]
@@ -104,7 +104,7 @@ public struct HookInstaller {
             // No one else — install directly
             settings["statusLine"] = [
                 "type": "command",
-                "command": "\(bridgePath) --event StatusLine",
+                "command": "\(bridgePath) --event StatusLine --agent claude",
             ]
         }
 
@@ -235,7 +235,7 @@ public struct HookInstaller {
         let script = """
             #!/bin/sh
             INPUT=$(cat)
-            printf '%s\\n' "$INPUT" | "\(bridgePath)" --event StatusLine 2>/dev/null &
+            printf '%s\\n' "$INPUT" | "\(bridgePath)" --event StatusLine --agent claude 2>/dev/null &
             printf '%s\\n' "$INPUT" | \(originalCommand)
             """
         try deployScript(content: script, to: statusLineMuxPath)

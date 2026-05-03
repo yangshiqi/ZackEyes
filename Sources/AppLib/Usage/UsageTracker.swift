@@ -13,19 +13,27 @@ import Shared
 public final class UsageTracker: ObservableObject {
 
     public struct Snapshot: Sendable, Codable {
-        // Real subscriber data from hook rate_limits (preferred)
+        // --- Claude subscriber data (StatusLine hook rate_limits) ---
         public var fiveHourUsedPct: Double?
         public var fiveHourResetsAt: Date?
         public var sevenDayUsedPct: Double?
         public var sevenDayResetsAt: Date?
 
-        // Fallback estimates from transcript scanning
+        // --- Codex rate limits (parsed from session jsonl `event_msg.token_count`) ---
+        // Codex emits the same conceptual primary/secondary windows (5h / 7d)
+        // but in its own field shape — we map them onto the same axes.
+        public var codexFiveHourUsedPct: Double?
+        public var codexFiveHourResetsAt: Date?
+        public var codexSevenDayUsedPct: Double?
+        public var codexSevenDayResetsAt: Date?
+
+        // Fallback estimates from transcript scanning (Claude-only)
         public var tokens5h: Int
         public var tokens7d: Int
         public var messages5h: Int
         public var messages7d: Int
 
-        // Last time we received fresh rate_limits data from a hook
+        // Last time we received fresh rate_limits data from any source
         public var lastUpdated: Date?
 
         public static let empty = Snapshot(
@@ -33,6 +41,10 @@ public final class UsageTracker: ObservableObject {
             fiveHourResetsAt: nil,
             sevenDayUsedPct: nil,
             sevenDayResetsAt: nil,
+            codexFiveHourUsedPct: nil,
+            codexFiveHourResetsAt: nil,
+            codexSevenDayUsedPct: nil,
+            codexSevenDayResetsAt: nil,
             tokens5h: 0,
             tokens7d: 0,
             messages5h: 0,
@@ -40,9 +52,15 @@ public final class UsageTracker: ObservableObject {
             lastUpdated: nil
         )
 
-        public var hasRealData: Bool {
+        public var hasClaudeData: Bool {
             fiveHourUsedPct != nil || sevenDayUsedPct != nil
         }
+
+        public var hasCodexData: Bool {
+            codexFiveHourUsedPct != nil || codexSevenDayUsedPct != nil
+        }
+
+        public var hasRealData: Bool { hasClaudeData || hasCodexData }
     }
 
     @Published public private(set) var snapshot: Snapshot = .empty
@@ -91,11 +109,24 @@ public final class UsageTracker: ObservableObject {
         saveToCache()
     }
 
+    /// Update Codex rate limit data from a `event_msg.token_count.rate_limits`
+    /// payload (parses the same shape codex writes to its session jsonl).
+    /// Codex doesn't fire hooks, so this is only called by tests + the
+    /// background scanner via the nonisolated decoder below.
+    public func updateFromCodexRateLimits(_ rateLimits: [String: Any]) {
+        applyCodexObservation(Self.decodeCodexObservation(from: rateLimits))
+    }
+
     private let projectsDir: URL
+    private let codexSessionsDir: URL?
     private var refreshTask: Task<Void, Never>?
 
-    public init(projectsDir: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/projects")) {
+    public init(
+        projectsDir: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/projects"),
+        codexSessionsDir: URL? = URL(fileURLWithPath: NSHomeDirectory() + "/.codex/sessions")
+    ) {
         self.projectsDir = projectsDir
+        self.codexSessionsDir = codexSessionsDir
     }
 
     /// Start periodic refresh every N seconds.
@@ -134,19 +165,158 @@ public final class UsageTracker: ObservableObject {
         refreshTask = nil
     }
 
+    /// Sendable observation of a codex `rate_limits` snapshot. We decode out
+    /// of the dynamic JSON into this fixed-shape struct in the background
+    /// task so the cross-actor return value is Sendable.
+    public struct CodexRateLimitObservation: Sendable {
+        public var fiveHourUsedPct: Double?
+        public var fiveHourResetsAt: Date?
+        public var sevenDayUsedPct: Double?
+        public var sevenDayResetsAt: Date?
+    }
+
     /// Rescan all recent JSONL files and update the snapshot.
     /// Preserves real rate-limit data captured from hook events.
     public func refresh() async {
         let dir = projectsDir
+        let codexDir = codexSessionsDir
         let estimated = await Task.detached(priority: .utility) {
             Self.computeSnapshot(projectsDir: dir)
         }.value
+        let codexObservation = await Task.detached(priority: .utility) { () -> CodexRateLimitObservation? in
+            guard let codexDir else { return nil }
+            return Self.scanLatestCodexRateLimits(rootDir: codexDir)
+        }.value
+
         var merged = snapshot
         merged.tokens5h = estimated.tokens5h
         merged.tokens7d = estimated.tokens7d
         merged.messages5h = estimated.messages5h
         merged.messages7d = estimated.messages7d
         self.snapshot = merged
+
+        if let obs = codexObservation {
+            applyCodexObservation(obs)
+        }
+    }
+
+    private func applyCodexObservation(_ obs: CodexRateLimitObservation) {
+        var s = snapshot
+        s.lastUpdated = Date()
+        if let v = obs.fiveHourUsedPct { s.codexFiveHourUsedPct = v }
+        if let v = obs.fiveHourResetsAt { s.codexFiveHourResetsAt = v }
+        if let v = obs.sevenDayUsedPct { s.codexSevenDayUsedPct = v }
+        if let v = obs.sevenDayResetsAt { s.codexSevenDayResetsAt = v }
+        snapshot = s
+        saveToCache()
+    }
+
+    /// Walk the date-partitioned codex sessions tree and return the
+    /// `rate_limits` payload from the most recent `event_msg.token_count`
+    /// event, decoded into a Sendable observation. Returns `nil` if no
+    /// recent event is found. Bounded — only inspects rollouts modified in
+    /// the last 24h, only reads the tail of each file.
+    nonisolated static func scanLatestCodexRateLimits(rootDir: URL) -> CodexRateLimitObservation? {
+        let fm = FileManager.default
+        let cutoff = Date().addingTimeInterval(-24 * 3600)
+        struct Candidate {
+            let url: URL
+            let mtime: Date
+        }
+        var candidates: [Candidate] = []
+        // Codex partitions rollouts by UTC date; walk only the YYYY/MM/DD
+        // subdirs that intersect the 24h cutoff (≤ 2 directories) instead
+        // of the entire archive.
+        for day in SessionScanner.candidateDateDirs(rootDir: rootDir, cutoff: cutoff) {
+            guard let files = try? fm.contentsOfDirectory(
+                at: day,
+                includingPropertiesForKeys: [.contentModificationDateKey]
+            ) else { continue }
+            for file in files where file.pathExtension == "jsonl" {
+                // Pre-fetched mtime via URL.resourceValues — avoids an
+                // extra stat() per file.
+                guard let mod = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+                      mod >= cutoff else { continue }
+                candidates.append(Candidate(url: file, mtime: mod))
+            }
+        }
+        // Walk newest-first; first file with a token_count event wins.
+        let sorted = candidates.sorted { $0.mtime > $1.mtime }
+        for c in sorted {
+            if let obs = lastTokenCountObservation(in: c.url) {
+                return obs
+            }
+        }
+        return nil
+    }
+
+    /// Tail-scan a codex rollout jsonl for the last `event_msg` line whose
+    /// payload type is `token_count`, and decode its `rate_limits` into a
+    /// Sendable observation.
+    private nonisolated static func lastTokenCountObservation(in url: URL) -> CodexRateLimitObservation? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        let fileSize: UInt64
+        do {
+            fileSize = try handle.seekToEnd()
+        } catch {
+            return nil
+        }
+        // 256KB tail covers many turns of token_count payloads (each ~500B).
+        let readSize: UInt64 = 262_144
+        let offset = fileSize > readSize ? fileSize - readSize : 0
+        try? handle.seek(toOffset: offset)
+        guard let data = try? handle.readToEnd(),
+              let text = String(data: data, encoding: .utf8) else { return nil }
+
+        var observation: CodexRateLimitObservation? = nil
+        for line in text.split(separator: "\n") {
+            guard let lineData = line.data(using: .utf8) else { continue }
+            guard let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
+            guard obj["type"] as? String == "event_msg" else { continue }
+            guard let payload = obj["payload"] as? [String: Any] else { continue }
+            guard payload["type"] as? String == "token_count" else { continue }
+            guard let rl = payload["rate_limits"] as? [String: Any] else { continue }
+            observation = decodeCodexObservation(from: rl)
+        }
+        return observation
+    }
+
+    /// Decode codex rate_limits dict into the Sendable observation struct.
+    /// Codex schema (verified 2026-05-03):
+    ///   primary:   {used_percent, window_minutes=300,   resets_at}  → 5h
+    ///   secondary: {used_percent, window_minutes=10080, resets_at}  → 7d
+    /// `resets_at` is unix seconds (integer or double).
+    nonisolated static func decodeCodexObservation(from rl: [String: Any]) -> CodexRateLimitObservation {
+        var obs = CodexRateLimitObservation()
+
+        if let primary = rl["primary"] as? [String: Any] {
+            if let used = primary["used_percent"] as? Double {
+                obs.fiveHourUsedPct = used
+            } else if let used = primary["used_percent"] as? Int {
+                obs.fiveHourUsedPct = Double(used)
+            }
+            if let resets = primary["resets_at"] as? Double {
+                obs.fiveHourResetsAt = Date(timeIntervalSince1970: resets > 1e12 ? resets / 1000 : resets)
+            } else if let resets = primary["resets_at"] as? Int {
+                let secs = resets > 1_000_000_000_000 ? Double(resets) / 1000 : Double(resets)
+                obs.fiveHourResetsAt = Date(timeIntervalSince1970: secs)
+            }
+        }
+        if let secondary = rl["secondary"] as? [String: Any] {
+            if let used = secondary["used_percent"] as? Double {
+                obs.sevenDayUsedPct = used
+            } else if let used = secondary["used_percent"] as? Int {
+                obs.sevenDayUsedPct = Double(used)
+            }
+            if let resets = secondary["resets_at"] as? Double {
+                obs.sevenDayResetsAt = Date(timeIntervalSince1970: resets > 1e12 ? resets / 1000 : resets)
+            } else if let resets = secondary["resets_at"] as? Int {
+                let secs = resets > 1_000_000_000_000 ? Double(resets) / 1000 : Double(resets)
+                obs.sevenDayResetsAt = Date(timeIntervalSince1970: secs)
+            }
+        }
+        return obs
     }
 
     // MARK: - Computation
