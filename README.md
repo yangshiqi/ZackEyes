@@ -87,7 +87,7 @@ See `ARCHITECTURE.md` for the full component breakdown, data flows, and safety m
 These invariants are enforced by both code review and tests:
 
 1. **User config zero damage** — every write to `~/.claude/settings.json` and `~/.codex/hooks.json` is preceded by a timestamped backup, only `hooks` / `statusLine` keys are touched (Claude side; Codex side scaffolds the file fresh if absent), and a parse failure aborts the write. We **never** read or write `~/.codex/config.toml` (Codex enables hooks by default).
-3. **Bridge never blocks the calling agent** — every controlled failure path exits with code 0 and writes nothing to stdout. Codex / Claude treat the empty stdout as "no hook preference" and fall back to their native flow.
+2. **Bridge never blocks the calling agent** — every controlled failure path exits with code 0 and writes nothing to stdout. Codex / Claude treat the empty stdout as "no hook preference" and fall back to their native flow.
 3. **NotchPanel never steals focus** — `nonactivatingPanel`, `canBecomeMain` returns `false`, `ignoresMouseEvents` is true outside the interaction zone.
 4. **Socket connections are not reused** — every hook call creates a fresh connection that closes when done.
 5. **Hook entries are identifiable** — every command we install contains the literal string `zackeyes`, so uninstall is precise.
