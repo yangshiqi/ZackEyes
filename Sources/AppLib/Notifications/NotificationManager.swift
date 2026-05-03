@@ -96,7 +96,12 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
     ) {
         let content = UNMutableNotificationContent()
         content.title = "⚠️ \(Self.agentTag(agent)) \(projectName) — \(errorLabel)"
-        content.body = Self.sanitizePrompt(detail, fallback: "Claude Code hit an API error. Click to jump to the terminal.", maxLength: 140)
+        let agentName = (agent == .claude) ? "Claude Code" : "Codex"
+        content.body = Self.sanitizePrompt(
+            detail,
+            fallback: "\(agentName) hit an API error. Click to jump to the terminal.",
+            maxLength: 140
+        )
         if playThemeSound() {
             content.sound = nil
         } else {
