@@ -45,7 +45,7 @@ public struct SessionScanner {
     ///   (default 30 min) keeps the notch focused on currently-running
     ///   codex threads.
     public func scan(
-        claudeRecencyMinutes: Int = 60,
+        claudeRecencyMinutes: Int = 480,
         codexRecencyMinutes: Int = 30
     ) -> [DetectedSession] {
         let claudeCutoff = Date().addingTimeInterval(-Double(claudeRecencyMinutes * 60))
