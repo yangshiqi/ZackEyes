@@ -398,6 +398,26 @@ struct SimulatedNotchFullView: View {
         themeItem.submenu = themeMenu
         menu.addItem(themeItem)
 
+        // Compact display: which agent's 5h/7d shows in the collapsed pill.
+        // The full panel always shows both agents when both have data; this
+        // only steers the narrow always-visible pill.
+        let compactMenu = NSMenu()
+        let currentCompactAgent = config.loadCompactAgent()
+        for agent in [AgentKind.claude, .codex] {
+            let item = NSMenuItem(
+                title: agent == .claude ? "Claude" : "Codex",
+                action: #selector(GearMenuTarget.compactAgentClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.target = GearMenuTarget.shared
+            item.representedObject = agent.rawValue
+            item.state = (agent == currentCompactAgent) ? .on : .off
+            compactMenu.addItem(item)
+        }
+        let compactItem = NSMenuItem(title: "Compact display", action: nil, keyEquivalent: "")
+        compactItem.submenu = compactMenu
+        menu.addItem(compactItem)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(

@@ -1,4 +1,5 @@
 import AppKit
+import Shared
 
 /// Tiny @objc target for the gear NSMenu items. We use a single shared
 /// instance so each menu item can wire its action via `#selector` without
@@ -64,6 +65,18 @@ final class GearMenuTarget: NSObject {
         for sibling in item.menu?.items ?? [] {
             if sibling.isSeparatorItem { break }
             sibling.state = (sibling.representedObject as? String == rawValue) ? .on : .off
+        }
+    }
+
+    @objc func compactAgentClicked(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem,
+              let raw = item.representedObject as? String,
+              let agent = AgentKind(rawValue: raw) else { return }
+        ConfigStore().saveCompactAgent(agent)
+        modeStore?.compactAgent = agent
+        // Update checkmarks on the Compact display submenu
+        for sibling in item.menu?.items ?? [] {
+            sibling.state = (sibling.representedObject as? String == raw) ? .on : .off
         }
     }
 

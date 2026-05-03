@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 /// Reads and writes ZackEyes configuration from `~/.zackeyes/config.json`.
 ///
@@ -124,6 +125,41 @@ public final class ConfigStore: Sendable {
         try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
 
+    /// Load which agent's quota the collapsed simulated notch should
+    /// display. Defaults to `.claude` (preserves the pre-existing UX for
+    /// any user who hasn't picked a side yet).
+    public func loadCompactAgent() -> AgentKind {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data),
+              let raw = wrapper.compactAgent,
+              let agent = AgentKind(rawValue: raw) else {
+            return .claude
+        }
+        return agent
+    }
+
+    /// Save the compact-notch agent preference. Same defensive contract as
+    /// `saveNotchVisibility` — bail rather than clobber a corrupt file.
+    public func saveCompactAgent(_ agent: AgentKind) {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: directory) {
+            try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        }
+        var wrapper: ConfigWrapper
+        if fm.fileExists(atPath: configPath) {
+            guard let data = fm.contents(atPath: configPath),
+                  let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+                return
+            }
+            wrapper = existing
+        } else {
+            wrapper = ConfigWrapper(hotkey: .default)
+        }
+        wrapper.compactAgent = agent.rawValue
+        guard let data = try? JSONEncoder().encode(wrapper) else { return }
+        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+    }
+
     /// Save the hotkey config atomically. Preserves other keys.
     /// Creates directory if needed.
     public func save(_ config: HotKeyConfig) {
@@ -152,4 +188,5 @@ private struct ConfigWrapper: Codable {
     var theme: BuddyTheme?              // nil = .rock (default)
     var notificationSound: String?      // nil = theme default sound
     var notchVisibility: String?        // nil = .always (default)
+    var compactAgent: String?           // nil = .claude (default — agent shown in collapsed simulated notch)
 }

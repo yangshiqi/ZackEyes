@@ -67,6 +67,10 @@ public final class SimulatedNotchController {
         self.updateChecker = updateChecker
         self.downloader = downloader
         self.visibility = initialVisibility
+        // Hydrate the compact-agent preference from disk before any view
+        // observes modeStore — otherwise the first frame renders Claude
+        // (the default) and snaps to the persisted value on the next tick.
+        self.modeStore.compactAgent = ConfigStore().loadCompactAgent()
     }
 
     public func setup() {
