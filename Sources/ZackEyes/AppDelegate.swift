@@ -476,6 +476,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                session.errorAt != priorErrorAt {
                 NotificationManager.shared.notifyError(
                     sessionId: sid,
+                    agent: session.agent,
                     projectName: session.displayName,
                     errorLabel: errLabel,
                     detail: session.lastAssistantMessage
@@ -498,6 +499,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 if didWorkThisTurn || hasInteraction {
                     NotificationManager.shared.notifySessionFinished(
                         sessionId: sid,
+                        agent: session.agent,
                         projectName: session.displayName,
                         lastPrompt: session.lastUserPrompt
                     )
@@ -612,6 +614,7 @@ extension AppDelegate: CodexJsonlTailerDelegate {
 
         NotificationManager.shared.notifySessionFinished(
             sessionId: event.sessionId,
+            agent: .codex,
             projectName: session.displayName,
             lastPrompt: session.lastUserPrompt
         )

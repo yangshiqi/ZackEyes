@@ -1,6 +1,7 @@
 import Foundation
 import UserNotifications
 import AppKit
+import Shared
 
 /// Manages macOS user notifications for session events.
 @MainActor
@@ -74,10 +75,27 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         }
     }
 
-    /// Post a critical notification when Claude hits an API error / rate limit.
-    public func notifyError(sessionId: String, projectName: String, errorLabel: String, detail: String?) {
+    /// Tag for the notification title showing which agent emitted the
+    /// event. Renders as `[Claude]` / `[Codex]`. Bracketed text stays
+    /// crisp on macOS' multi-line notification truncation; emojis would
+    /// fight with the existing `⚠️` warning glyph in error titles.
+    private static func agentTag(_ agent: AgentKind) -> String {
+        switch agent {
+        case .claude: return "[Claude]"
+        case .codex:  return "[Codex]"
+        }
+    }
+
+    /// Post a critical notification when an agent hits an API error / rate limit.
+    public func notifyError(
+        sessionId: String,
+        agent: AgentKind,
+        projectName: String,
+        errorLabel: String,
+        detail: String?
+    ) {
         let content = UNMutableNotificationContent()
-        content.title = "⚠️ \(projectName) — \(errorLabel)"
+        content.title = "⚠️ \(Self.agentTag(agent)) \(projectName) — \(errorLabel)"
         content.body = Self.sanitizePrompt(detail, fallback: "Claude Code hit an API error. Click to jump to the terminal.", maxLength: 140)
         if playThemeSound() {
             content.sound = nil
@@ -100,9 +118,14 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
     }
 
     /// Post a notification when a session finishes its turn.
-    public func notifySessionFinished(sessionId: String, projectName: String, lastPrompt: String?) {
+    public func notifySessionFinished(
+        sessionId: String,
+        agent: AgentKind,
+        projectName: String,
+        lastPrompt: String?
+    ) {
         let content = UNMutableNotificationContent()
-        content.title = "\(projectName) — done"
+        content.title = "\(Self.agentTag(agent)) \(projectName) — done"
         let body = Self.sanitizePrompt(lastPrompt)
         content.body = body
         if playThemeSound() {
