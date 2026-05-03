@@ -2,25 +2,46 @@
 
 ## 项目定位
 
-ZackEyes 是 macOS 原生应用，将 MacBook 刘海（Dynamic Island）区域变为 AI 编码代理的实时控制面板。MVP 聚焦 Claude Code 单 Agent 监控 + 权限审批。定位为 Vibe Island 的免费替代品。
+ZackEyes 是 macOS 原生应用，将 MacBook 刘海（Dynamic Island）区域变为 AI 编码代理的实时控制面板。**自 v0.3.0 起同时支持 Claude Code 和 OpenAI Codex CLI**，两边会话并存于同一刘海面板。定位为 Vibe Island 的免费替代品。
 
 ## 组件架构
 
 ```
-Claude Code                    Bridge CLI                     ZackEyes.app
-(hooks in settings.json)  -->  (~/.zackeyes/bin/bridge)  <->  (SwiftUI + AppKit)
-                               Swift CLI ~200 LOC             /tmp/zackeyes.sock
+Claude Code  ──┐                                     ┌──> SocketServer
+               ├── ~/.zackeyes/bin/bridge ───────────┤    (single socket /tmp/zackeyes.sock)
+Codex CLI    ──┘     --event X --agent {claude|codex}     │
+                     SAME BINARY, agent flag              ▼
+                                                    SessionStore
+                                                    (sessions tagged with agent)
+                                                          │
+                                                          ▼
+                                                    NotchPanel UI
+                                                    (AgentBadge per card)
 ```
 
 三个组件，通过 Unix Domain Socket 连接：
 
 | 组件 | 位置 | 职责 | 禁止 |
 |------|------|------|------|
-| **Bridge CLI** | `Bridge/` → 嵌入 `ZackEyes.app/Contents/Helpers/bridge` | 被 Claude Code hook 调用，转发事件到主 App，返回权限决策 | 不含 UI 逻辑，不直接读写用户配置文件 |
-| **Main App** | `ZackEyes/` | Socket 监听、会话状态管理、NotchPanel UI、Hook 自动安装 | 不直接与 Claude Code 进程交互（全部通过 Bridge） |
+| **Bridge CLI** | `Bridge/` → 嵌入 `ZackEyes.app/Contents/Helpers/bridge` | 被 Claude Code 和 Codex CLI hook 调用，解析 `--event` + `--agent`，转发事件到主 App，返回权限决策 | 不含 UI 逻辑，不直接读写用户配置文件 |
+| **Main App** | `ZackEyes/` | Socket 监听、会话状态管理、NotchPanel UI、Hook 自动安装（Claude + Codex 各一套）、Codex jsonl 实时 tailer | 不直接与 agent 进程交互（全部通过 Bridge / jsonl tail） |
 | **Launcher Script** | `~/.zackeyes/bin/bridge`（shell 脚本） | 定位 .app 路径，exec 到真实 Bridge 二进制 | 不含业务逻辑，只做路径查找和 exec |
 
-**依赖方向**: Claude Code → Bridge → Main App（单向）。Main App 不主动连接 Bridge。
+**依赖方向**: Agent → Bridge → Main App（单向）。Main App 不主动连接 Bridge，但会**单向反向读** Codex 的 session jsonl（通过 SessionScanner 启动扫描 + CodexJsonlTailer kqueue 实时监听）。
+
+## 双 agent 兼容点速查
+
+| 主题 | Claude | Codex |
+|------|--------|-------|
+| Hook 配置文件 | `~/.claude/settings.json`（`HookInstaller`） | `~/.codex/hooks.json`（`CodexHookInstaller`） |
+| 启用 hooks 的额外 flag | 无（CC 默认） | `[features].hooks` 在 codex `default_enabled: true`，所以**我们也不碰 `config.toml`** |
+| 支持的事件 | 8 个：含 `Notification` / `SessionEnd` / `StatusLine` | 6 个：无 Notification / SessionEnd / StatusLine |
+| 5h/7d 配额数据源 | StatusLine hook 的 `rate_limits.{five_hour,seven_day}` | rollout jsonl 的 `event_msg.token_count.rate_limits.{primary,secondary}`（UsageTracker 周期扫描） |
+| Permission 响应 JSON 形状 | `{hookSpecificOutput:{decision:{behavior,message}}}` | 同上（codex 文档形状完全一致，**Bridge 输出不需翻译**） |
+| AskUserQuestion | 支持（PreToolUse 阻塞） | 不支持（codex 不定义此工具） |
+| 进程探测（liveness sweep） | `TerminalLocator.runningClaudeCwds()` 走 `ps`/`lsof` | 暂无 `runningCodexCwds()`，改用 `lastActiveAt` 时间剪枝（15 min 阈值） |
+| Detected session 启动扫描窗口 | 8h | 30 min（codex 一次 invocation = 一个 rollout，关掉就死） |
+| 已运行 agent 的实时回退 | hook 自动接入 | hook 缓存的限制 → `CodexJsonlTailer` 监 `event_msg.task_complete` 兜底 |
 
 ## 核心数据流
 
@@ -130,9 +151,11 @@ Full 模式下：
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `SocketServer` | `Sources/AppLib/Socket/SocketServer.swift` | 监听 `/tmp/zackeyes.sock`，`PermissionRequest` 连接保持到用户决策 / POLLHUP / 超时 |
-| `SessionStore` | `Sources/AppLib/Session/SessionStore.swift` | 按 `session_id` 索引的多 session 状态机，含 `aggregateState` / `primarySession` / 错误检测 |
-| `SessionScanner` | `Sources/AppLib/Session/SessionScanner.swift` | 扫描 `~/.claude/projects/*.jsonl` 导入既有会话 |
-| `TaskExtractor` | `Sources/AppLib/Session/TaskExtractor.swift` | 解析 transcript 重建任务列表，按用户 prompt 边界重置（只显示当前 turn） |
+| `SessionStore` | `Sources/AppLib/Session/SessionStore.swift` | 按 `session_id` 索引的多 session 状态机，含 `aggregateState` / `primarySession` / 错误检测。`SessionInfo.agent: AgentKind` 标记每个 session 的 agent。`recordCodexTaskComplete(...)` 处理来自 jsonl tailer 的 turn 完成事件。 |
+| `SessionScanner` | `Sources/AppLib/Session/SessionScanner.swift` | 扫描 `~/.claude/projects/*.jsonl` + `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` 导入既有会话。两个 agent **使用独立 recency 窗口**（claude 默认 8h，codex 默认 30 min）。Codex 路径按 UTC 日期裁剪只走候选日期子目录。 |
+| `LivenessFilter` | `Sources/AppLib/Session/LivenessFilter.swift` | 纯函数：根据 `cwd` → 运行中 `claude` 进程 map 决定哪些 detected session 还活着。Codex session 直接 pass-through 不参与（暂无 `runningCodexCwds()`）。 |
+| `CodexJsonlTailer` | `Sources/AppLib/Session/CodexJsonlTailer.swift` | kqueue 实时监控 `~/.codex/sessions/*/rollout-*.jsonl`，看到 `event_msg.task_complete` 即触发通知。**用于覆盖那些启动早于 hooks 安装的 codex TUI**——它们永远不会 fire hook，但会持续写 jsonl。 |
+| `TaskExtractor` | `Sources/AppLib/Session/TaskExtractor.swift` | 解析 Claude transcript 重建任务列表，按用户 prompt 边界重置（只显示当前 turn）。Codex transcript schema 不同，目前不重建 task 列表。 |
 
 **配置**
 | 模块 | 文件 | 职责 |
@@ -143,7 +166,8 @@ Full 模式下：
 **Hook 安装**
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | 静默安装/卸载 `hooks` + `statusLine`，备份保护，附加合并，所有变更含 `zackeyes` 标识 |
+| `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | Claude 路径——静默安装/卸载 `~/.claude/settings.json` 的 `hooks` + `statusLine`，备份保护，附加合并，所有变更含 `zackeyes` 标识 + `--agent claude` flag |
+| `CodexHookInstaller` | `Sources/AppLib/Hooks/CodexHookInstaller.swift` | Codex 路径——静默安装/卸载 `~/.codex/hooks.json` 的 6 个事件，命令含 `--agent codex`。同样的备份 / 解析失败不动 / 用户内容保留契约。**不读不写 `~/.codex/config.toml`**（codex 默认开 hooks）。 |
 
 **Notch UI（真刘海机型）**
 
@@ -166,7 +190,8 @@ Full 模式下：
 | `NotchWindowController` | `Sources/AppLib/Notch/NotchWindowController.swift` | 位置锚定、状态切换、鼠标追踪（固定窗口，不帧动画） |
 | `NotchViewModel` | `Sources/AppLib/Notch/NotchViewModel.swift` | 桥接 `SessionStore` → SwiftUI；转发嵌套 `objectWillChange` |
 | `NotchCompactView` | `Sources/AppLib/Notch/NotchCompactView.swift` | 折叠 / 紧凑状态视图 |
-| `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | 完整 popover：会话卡片、tasks、permission 审批、错误横幅、AskUserQuestion 选项卡 |
+| `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | 完整 popover：会话卡片、tasks、permission 审批、错误横幅、AskUserQuestion 选项卡。卡片右上角带 `AgentBadge`。 |
+| `AgentBadge` | `Sources/AppLib/Notch/AgentBadge.swift` | 14×14 SwiftUI 角标：`[CLAUDE]` 紫色 / `[CODEX]` 绿色。也提供 `accentColor(for:)` 给其它视图染色（split usage bar / 通知标题映射）。 |
 | `BuddyAvatar` | `Sources/AppLib/Notch/BuddyAvatar.swift` | 动画化 buddy（headbang / 睡觉 / 惊慌） |
 | `Buddy` | `Sources/AppLib/Notch/Buddy.swift` | 摇滚传奇命名池（66 个）+ 性格标语池 |
 | `PixelAvatar` | `Sources/AppLib/Notch/PixelAvatar.swift` | 9 种 8×8 像素图案 + 8 色摇滚配色 |
@@ -176,11 +201,11 @@ Full 模式下：
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `SimulatedNotchPanel` | `Sources/AppLib/SimulatedNotch/SimulatedNotchPanel.swift` | 顶部居中 NSPanel，`.screenSaver` 层级 |
-| `SimulatedNotchView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchView.swift` | Compact / hoverWide 内容（5h/7d 剩余 + NotchShape） |
-| `SimulatedNotchFullView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchFullView.swift` | Full 模式：5h/7d 进度条 header + 滚动 session 列表 |
-| `SimulatedNotchController` | `Sources/AppLib/SimulatedNotch/SimulatedNotchController.swift` | 三态形变控制器，hover 进入 full，外部点击退出，内容自适应高度 |
-| `SimulatedNotchRoot` | `Sources/AppLib/SimulatedNotch/SimulatedNotchRoot.swift` | SwiftUI 根视图，compact/full 切换 + overlay 层叠 |
-| `GearMenuTarget` | `Sources/AppLib/SimulatedNotch/GearMenuTarget.swift` | NSMenu 动作目标（About / Change Hotkey / Update） |
+| `SimulatedNotchView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchView.swift` | Compact / hoverWide 内容（5h/7d 剩余 + NotchShape）。读 `NotchModeStore.compactAgent` 决定显示哪个 agent 的配额 |
+| `SimulatedNotchFullView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchFullView.swift` | Full 模式：5h/7d 进度条 header + 滚动 session 列表。当两 agent 都有数据时，header 自动左右切割（左 Claude / 右 Codex），用固定宽 gear 列保证 5h 与 7d 两行轨道对齐 |
+| `SimulatedNotchController` | `Sources/AppLib/SimulatedNotch/SimulatedNotchController.swift` | 三态形变控制器，hover 进入 full，外部点击退出，内容自适应高度。启动时从 `ConfigStore.loadCompactAgent()` 注水 `modeStore.compactAgent` 避免首帧闪烁 |
+| `SimulatedNotchRoot` | `Sources/AppLib/SimulatedNotch/SimulatedNotchRoot.swift` | SwiftUI 根视图，compact/full 切换 + overlay 层叠。`NotchModeStore` 含 `@Published compactAgent: AgentKind` |
+| `GearMenuTarget` | `Sources/AppLib/SimulatedNotch/GearMenuTarget.swift` | NSMenu 动作目标（About / Change Hotkey / Theme / Compact display / Update） |
 | `HostViewProbe` | `Sources/AppLib/SimulatedNotch/HostViewProbe.swift` | SwiftUI → NSView 桥接，用于齿轮菜单锚点定位 |
 
 **菜单栏 fallback**
@@ -196,7 +221,7 @@ Full 模式下：
 | `UpdateChecker` | `Sources/AppLib/Update/UpdateChecker.swift` | 轮询公开发布仓库（6h）获取最新 DMG，语义版本比较，`@Published dmgURL` 驱动齿轮红点 + 系统通知 |
 | `UpdateDownloader` | `Sources/AppLib/Update/UpdateDownloader.swift` | URLSession 下载 DMG 到 `$TMPDIR`，通过 NSWorkspace 打开使 Finder 挂载；状态栏菜单 + 齿轮菜单 + 通知点击均通过此下载器 |
 | `TerminalLocator` | `Sources/AppLib/Terminal/TerminalLocator.swift` | 进程树遍历 + iTerm2/Terminal AppleScript + Ghostty/Warp/Kitty Accessibility |
-| `UsageTracker` | `Sources/AppLib/Usage/UsageTracker.swift` | hook stdin 的真实 `rate_limits` 优先，transcript token fallback |
+| `UsageTracker` | `Sources/AppLib/Usage/UsageTracker.swift` | 双 agent 配额。Claude 数据来自 statusLine hook 的 `rate_limits.{five_hour,seven_day}`；Codex 数据来自周期扫描 `~/.codex/sessions/` 最新 rollout 的 `event_msg.token_count.rate_limits.{primary,secondary}`。Snapshot 含 claude + codex 平行字段，UI 按需呈现单条或左右切。 |
 
 **App 入口**
 | 模块 | 文件 | 职责 |
