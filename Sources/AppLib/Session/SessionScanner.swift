@@ -58,8 +58,10 @@ public struct SessionScanner {
             ) else { continue }
 
             for file in files where file.pathExtension == "jsonl" {
-                guard let attrs = try? fm.attributesOfItem(atPath: file.path),
-                      let modDate = attrs[.modificationDate] as? Date,
+                // Use the URL's pre-fetched resource values (we asked
+                // contentsOfDirectory for .contentModificationDateKey) so
+                // we don't pay a second stat() per file via attributesOfItem.
+                guard let modDate = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
                       modDate >= cutoff else { continue }
 
                 let sessionId = file.deletingPathExtension().lastPathComponent
@@ -119,37 +121,55 @@ public struct SessionScanner {
 
     // MARK: - Codex (~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl)
 
-    /// Walk the date-partitioned rollout tree and return any session jsonl
-    /// modified within the recency window. The tree depth is fixed (year /
-    /// month / day) so a bounded recursive walk is enough — no need for a
-    /// FileManager enumerator.
+    /// Walk only the YYYY/MM/DD subdirectories that could possibly contain
+    /// rollouts within the recency window, instead of the entire history.
+    /// Codex partitions its session log by UTC date (verified against the
+    /// `session_meta.timestamp` field), so once the cutoff is known we can
+    /// enumerate the candidate dirs directly. For an 8h window that's at
+    /// most two paths; for a 24h window at most two; for 7d, eight.
     private func scanCodex(rootDir: URL, cutoff: Date) -> [DetectedSession] {
         let fm = FileManager.default
-        guard let years = try? fm.contentsOfDirectory(at: rootDir, includingPropertiesForKeys: nil) else {
-            return []
-        }
         var results: [DetectedSession] = []
-        for year in years {
-            guard let months = try? fm.contentsOfDirectory(at: year, includingPropertiesForKeys: nil) else { continue }
-            for month in months {
-                guard let days = try? fm.contentsOfDirectory(at: month, includingPropertiesForKeys: nil) else { continue }
-                for day in days {
-                    guard let files = try? fm.contentsOfDirectory(
-                        at: day,
-                        includingPropertiesForKeys: [.contentModificationDateKey]
-                    ) else { continue }
-                    for file in files where file.pathExtension == "jsonl" {
-                        guard let attrs = try? fm.attributesOfItem(atPath: file.path),
-                              let modDate = attrs[.modificationDate] as? Date,
-                              modDate >= cutoff else { continue }
-                        if let session = parseCodexSession(at: file, lastModified: modDate) {
-                            results.append(session)
-                        }
-                    }
+        for day in Self.candidateDateDirs(rootDir: rootDir, cutoff: cutoff) {
+            guard let files = try? fm.contentsOfDirectory(
+                at: day,
+                includingPropertiesForKeys: [.contentModificationDateKey]
+            ) else { continue }
+            for file in files where file.pathExtension == "jsonl" {
+                guard let modDate = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+                      modDate >= cutoff else { continue }
+                if let session = parseCodexSession(at: file, lastModified: modDate) {
+                    results.append(session)
                 }
             }
         }
         return results
+    }
+
+    /// Build the list of `<rootDir>/YYYY/MM/DD` paths whose UTC date
+    /// intersects `[cutoff, now]`. Non-existent dirs are returned anyway —
+    /// the caller's `contentsOfDirectory` simply skips them.
+    static func candidateDateDirs(rootDir: URL, cutoff: Date, now: Date = Date()) -> [URL] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
+        let startOfCutoff = calendar.startOfDay(for: cutoff)
+        let endDay = calendar.startOfDay(for: now)
+        var current = startOfCutoff
+        var dirs: [URL] = []
+        while current <= endDay {
+            let comps = calendar.dateComponents([.year, .month, .day], from: current)
+            if let y = comps.year, let m = comps.month, let d = comps.day {
+                dirs.append(
+                    rootDir
+                        .appendingPathComponent(String(format: "%04d", y))
+                        .appendingPathComponent(String(format: "%02d", m))
+                        .appendingPathComponent(String(format: "%02d", d))
+                )
+            }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
+            current = next
+        }
+        return dirs
     }
 
     /// Codex rollout file names embed the session UUID as the trailing

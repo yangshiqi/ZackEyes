@@ -219,30 +219,25 @@ public final class UsageTracker: ObservableObject {
     nonisolated static func scanLatestCodexRateLimits(rootDir: URL) -> CodexRateLimitObservation? {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-24 * 3600)
-        guard let years = try? fm.contentsOfDirectory(at: rootDir, includingPropertiesForKeys: nil) else {
-            return nil
-        }
         struct Candidate {
             let url: URL
             let mtime: Date
         }
         var candidates: [Candidate] = []
-        for year in years {
-            guard let months = try? fm.contentsOfDirectory(at: year, includingPropertiesForKeys: nil) else { continue }
-            for month in months {
-                guard let days = try? fm.contentsOfDirectory(at: month, includingPropertiesForKeys: nil) else { continue }
-                for day in days {
-                    guard let files = try? fm.contentsOfDirectory(
-                        at: day,
-                        includingPropertiesForKeys: [.contentModificationDateKey]
-                    ) else { continue }
-                    for file in files where file.pathExtension == "jsonl" {
-                        guard let attrs = try? fm.attributesOfItem(atPath: file.path),
-                              let mod = attrs[.modificationDate] as? Date,
-                              mod >= cutoff else { continue }
-                        candidates.append(Candidate(url: file, mtime: mod))
-                    }
-                }
+        // Codex partitions rollouts by UTC date; walk only the YYYY/MM/DD
+        // subdirs that intersect the 24h cutoff (≤ 2 directories) instead
+        // of the entire archive.
+        for day in SessionScanner.candidateDateDirs(rootDir: rootDir, cutoff: cutoff) {
+            guard let files = try? fm.contentsOfDirectory(
+                at: day,
+                includingPropertiesForKeys: [.contentModificationDateKey]
+            ) else { continue }
+            for file in files where file.pathExtension == "jsonl" {
+                // Pre-fetched mtime via URL.resourceValues — avoids an
+                // extra stat() per file.
+                guard let mod = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
+                      mod >= cutoff else { continue }
+                candidates.append(Candidate(url: file, mtime: mod))
             }
         }
         // Walk newest-first; first file with a token_count event wins.

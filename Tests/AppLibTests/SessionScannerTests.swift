@@ -151,6 +151,48 @@ struct SessionScannerTests {
         #expect(results[1].id == claudeId)
     }
 
+    // MARK: - candidateDateDirs (date-window pruning)
+
+    @Test func candidateDateDirs_returnsOneDayWhenWindowFitsInDay() {
+        // 2026-05-03 14:00 UTC ± 8h is still within 2026-05-03 (after
+        // start-of-day) — so the result spans 05-03 only.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = calendar.date(from: DateComponents(
+            timeZone: TimeZone(identifier: "UTC"), year: 2026, month: 5, day: 3,
+            hour: 14, minute: 0))!
+        let cutoff = now.addingTimeInterval(-2 * 3600)  // 12:00
+        let root = URL(fileURLWithPath: "/tmp/cdx")
+        let dirs = SessionScanner.candidateDateDirs(rootDir: root, cutoff: cutoff, now: now)
+        #expect(dirs.count == 1)
+        #expect(dirs[0].path == "/tmp/cdx/2026/05/03")
+    }
+
+    @Test func candidateDateDirs_spansAcrossUTCMidnight() {
+        // now = 2026-05-04 00:30 UTC; cutoff = -8h = 2026-05-03 16:30.
+        // Window touches both 05-03 and 05-04.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = calendar.date(from: DateComponents(
+            timeZone: TimeZone(identifier: "UTC"), year: 2026, month: 5, day: 4,
+            hour: 0, minute: 30))!
+        let cutoff = now.addingTimeInterval(-8 * 3600)
+        let root = URL(fileURLWithPath: "/tmp/cdx")
+        let dirs = SessionScanner.candidateDateDirs(rootDir: root, cutoff: cutoff, now: now)
+        #expect(dirs.count == 2)
+        #expect(dirs[0].path == "/tmp/cdx/2026/05/03")
+        #expect(dirs[1].path == "/tmp/cdx/2026/05/04")
+    }
+
+    @Test func candidateDateDirs_doesNotEnumerateWholeArchive() {
+        // 7-day window — should produce 7 or 8 dirs, never the whole year.
+        let now = Date()
+        let cutoff = now.addingTimeInterval(-7 * 86400)
+        let root = URL(fileURLWithPath: "/tmp/cdx")
+        let dirs = SessionScanner.candidateDateDirs(rootDir: root, cutoff: cutoff, now: now)
+        #expect(dirs.count == 7 || dirs.count == 8)
+    }
+
     // MARK: - Codex sessions dir absent
 
     @Test func scan_skipsCodexWhenDirNotProvided() throws {

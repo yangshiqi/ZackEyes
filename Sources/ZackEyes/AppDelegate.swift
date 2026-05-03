@@ -204,17 +204,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         updateChecker?.start()
 
-        // 6. Discover already-running sessions from ~/.claude/projects/.
-        //    Filter by reverse cwd lookup: only import jsonl files whose
-        //    project directory currently has a running `claude` process.
-        //    For cwds with multiple live claudes, take the N most-recently
-        //    modified jsonls (matches the live count). Runs off main actor
-        //    since `ps` + `lsof` spawn subprocesses.
-        let scanner = SessionScanner()
-        let detected = scanner.scan(recencyMinutes: 480)  // 8h — covers a full work day
+        // 6. Discover already-running sessions from ~/.claude/projects/
+        //    and ~/.codex/sessions/. Filter by reverse cwd lookup: only
+        //    import jsonl files whose project directory currently has a
+        //    running `claude` process (codex sessions pass through the
+        //    filter unchanged — see LivenessFilter). For cwds with
+        //    multiple live claudes, take the N most-recently modified
+        //    jsonls (matches the live count). Runs off main actor —
+        //    both `scanner.scan()` and `ps`/`lsof` do disk + subprocess
+        //    work that must not block the main thread on first launch.
         Task.detached(priority: .userInitiated) { [weak self] in
-            // ps/lsof off main; @MainActor SessionStore is touched only
-            // inside the MainActor.run hop below via self?.sessionStore.
+            let scanner = SessionScanner()
+            let detected = scanner.scan(recencyMinutes: 480)  // 8h — covers a full work day
             //
             // Snapshot failure (nil) at startup falls back to importing
             // every detected session, mirroring the sweep's "do nothing"
