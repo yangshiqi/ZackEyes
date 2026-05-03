@@ -1,6 +1,7 @@
 import Testing
 import Foundation
 @testable import AppLib
+import Shared
 
 struct LivenessFilterTests {
 
@@ -61,6 +62,26 @@ struct LivenessFilterTests {
             detected, cwdCounts: ["/foo": 1]
         )
         #expect(result.map(\.id) == ["a"])
+    }
+
+    /// `cwdCounts` only describes running `claude` processes. A Codex
+    /// session in a cwd with no claude must still come through, otherwise
+    /// the user's already-running Codex would never appear in the notch.
+    @Test func filterPassesCodexThroughEvenWithNoClaudeInCwd() {
+        let now = Date()
+        let detected = [
+            mkDetected("claude-a", cwd: "/foo", mtime: now, agent: .claude),
+            mkDetected("codex-b",  cwd: "/bar", mtime: now, agent: .codex),
+            mkDetected("codex-c",  cwd: nil,    mtime: now, agent: .codex),
+        ]
+        // Only /foo has a running claude; /bar has no claude (and Codex
+        // wouldn't appear in this snapshot at all).
+        let result = LivenessFilter.filterLiveDetected(
+            detected, cwdCounts: ["/foo": 1]
+        )
+        let ids = Set(result.map(\.id))
+        // Codex sessions all pass through, including the one without a cwd.
+        #expect(ids == ["claude-a", "codex-b", "codex-c"])
     }
 
     // MARK: - computeDeadIds
@@ -146,10 +167,12 @@ struct LivenessFilterTests {
     // MARK: - Helpers
 
     private func mkDetected(
-        _ id: String, cwd: String?, mtime: Date
+        _ id: String, cwd: String?, mtime: Date,
+        agent: AgentKind = .claude
     ) -> SessionScanner.DetectedSession {
         SessionScanner.DetectedSession(
             id: id,
+            agent: agent,
             cwd: cwd,
             lastModified: mtime,
             lastUserPrompt: nil,

@@ -9,6 +9,16 @@ public enum SessionState: String, Codable, Sendable {
     case stopped
 }
 
+// MARK: - AgentKind
+
+/// Which AI coding agent produced this hook event. Bridge stamps this onto
+/// every payload via the `--agent` CLI flag (defaults to `.claude` so legacy
+/// hook entries that predate the flag keep working).
+public enum AgentKind: String, Codable, Sendable {
+    case claude
+    case codex
+}
+
 // MARK: - AnyCodable
 
 /// Type-erased JSON value wrapper. Handles all JSON primitives, arrays, and objects.
@@ -84,6 +94,7 @@ public struct AnyCodable: Codable, @unchecked Sendable {
 /// Unknown fields in the JSON are silently ignored (default Codable behavior).
 public struct BridgeEvent: Codable, Sendable {
     public let bridgeEvent: String
+    public let agent: AgentKind
     public let sessionId: String?
     public let hookEventName: String?
     public let cwd: String?
@@ -102,6 +113,7 @@ public struct BridgeEvent: Codable, Sendable {
 
     public init(
         bridgeEvent: String,
+        agent: AgentKind = .claude,
         sessionId: String? = nil,
         hookEventName: String? = nil,
         cwd: String? = nil,
@@ -119,6 +131,7 @@ public struct BridgeEvent: Codable, Sendable {
         cost: [String: AnyCodable]? = nil
     ) {
         self.bridgeEvent = bridgeEvent
+        self.agent = agent
         self.sessionId = sessionId
         self.hookEventName = hookEventName
         self.cwd = cwd
@@ -137,14 +150,15 @@ public struct BridgeEvent: Codable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case bridgeEvent      = "_bridge_event"
-        case sessionId        = "session_id"
-        case hookEventName    = "hook_event_name"
+        case bridgeEvent          = "_bridge_event"
+        case agent                = "_bridge_agent"
+        case sessionId            = "session_id"
+        case hookEventName        = "hook_event_name"
         case cwd
-        case toolName         = "tool_name"
-        case toolInput        = "tool_input"
-        case permissionMode   = "permission_mode"
-        case transcriptPath   = "transcript_path"
+        case toolName             = "tool_name"
+        case toolInput            = "tool_input"
+        case permissionMode       = "permission_mode"
+        case transcriptPath       = "transcript_path"
         case userPrompt           = "prompt"
         case source
         case bridgePpid           = "_bridge_ppid"
@@ -153,6 +167,29 @@ public struct BridgeEvent: Codable, Sendable {
         case contextWindow        = "context_window"
         case model
         case cost
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.bridgeEvent = try c.decode(String.self, forKey: .bridgeEvent)
+        // Legacy bridge entries (pre-agent flag) omit _bridge_agent. Default to
+        // Claude — that's what those installs were originally doing.
+        self.agent = (try? c.decodeIfPresent(AgentKind.self, forKey: .agent)) ?? .claude
+        self.sessionId = try c.decodeIfPresent(String.self, forKey: .sessionId)
+        self.hookEventName = try c.decodeIfPresent(String.self, forKey: .hookEventName)
+        self.cwd = try c.decodeIfPresent(String.self, forKey: .cwd)
+        self.toolName = try c.decodeIfPresent(String.self, forKey: .toolName)
+        self.toolInput = try c.decodeIfPresent([String: AnyCodable].self, forKey: .toolInput)
+        self.permissionMode = try c.decodeIfPresent(String.self, forKey: .permissionMode)
+        self.transcriptPath = try c.decodeIfPresent(String.self, forKey: .transcriptPath)
+        self.userPrompt = try c.decodeIfPresent(String.self, forKey: .userPrompt)
+        self.source = try c.decodeIfPresent(String.self, forKey: .source)
+        self.bridgePpid = try c.decodeIfPresent(Int.self, forKey: .bridgePpid)
+        self.lastAssistantMessage = try c.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
+        self.rateLimits = try c.decodeIfPresent([String: AnyCodable].self, forKey: .rateLimits)
+        self.contextWindow = try c.decodeIfPresent([String: AnyCodable].self, forKey: .contextWindow)
+        self.model = try c.decodeIfPresent([String: AnyCodable].self, forKey: .model)
+        self.cost = try c.decodeIfPresent([String: AnyCodable].self, forKey: .cost)
     }
 }
 

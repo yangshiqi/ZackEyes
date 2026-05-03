@@ -112,3 +112,44 @@ import Foundation
     #expect(post.requiresBlockingResponse == false)
     #expect(start.requiresBlockingResponse == false)
 }
+
+// MARK: - AgentKind / agent field
+
+@Test func decodeBridgeEvent_explicitCodexAgent() throws {
+    let json = """
+    {"_bridge_event":"PreToolUse","_bridge_agent":"codex","session_id":"s","cwd":"/tmp","tool_name":"Bash"}
+    """.data(using: .utf8)!
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: json)
+    #expect(event.agent == .codex)
+}
+
+@Test func decodeBridgeEvent_explicitClaudeAgent() throws {
+    let json = """
+    {"_bridge_event":"PreToolUse","_bridge_agent":"claude","session_id":"s"}
+    """.data(using: .utf8)!
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: json)
+    #expect(event.agent == .claude)
+}
+
+/// Legacy bridge entries (pre-agent flag) omit `_bridge_agent` entirely. The
+/// decoder must default to `.claude` so existing installs keep working
+/// between an app upgrade and the next HookInstaller reinstall sweep.
+@Test func decodeBridgeEvent_missingAgentDefaultsToClaude() throws {
+    let json = """
+    {"_bridge_event":"SessionStart","session_id":"s","cwd":"/tmp"}
+    """.data(using: .utf8)!
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: json)
+    #expect(event.agent == .claude)
+}
+
+@Test func encodeDecodeBridgeEvent_agentRoundTrip() throws {
+    let original = BridgeEvent(bridgeEvent: "PreToolUse", agent: .codex, sessionId: "s")
+    let data = try JSONEncoder().encode(original)
+    // Encoded JSON must use the `_bridge_agent` JSON key.
+    let raw = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    #expect(raw["_bridge_agent"] as? String == "codex")
+
+    let decoded = try JSONDecoder().decode(BridgeEvent.self, from: data)
+    #expect(decoded.agent == .codex)
+    #expect(decoded.sessionId == "s")
+}

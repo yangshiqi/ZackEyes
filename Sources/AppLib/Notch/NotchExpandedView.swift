@@ -95,13 +95,15 @@ struct NotchExpandedView: View {
             )
 
             VStack(alignment: .leading, spacing: 6) {
-                // Row 1: buddy name (left) ... project name pill + elapsed (right)
+                // Row 1: buddy name (left) ... agent badge + project pill + elapsed (right)
                 HStack(spacing: 6) {
                     Text(buddy.name)
                         .font(.system(size: 12, weight: .bold))
                         .foregroundColor(.white)
 
                     Spacer(minLength: 4)
+
+                    AgentBadge(agent: session.agent)
 
                     Text(session.displayName)
                         .font(.system(size: 9, weight: .medium))

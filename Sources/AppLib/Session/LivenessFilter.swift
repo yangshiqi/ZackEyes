@@ -19,12 +19,23 @@ public enum LivenessFilter {
     /// `claude` process. For cwds with multiple live claudes, keep the N
     /// most-recently-modified jsonls. Sessions with `cwd == nil` are dropped
     /// (no signal to match against).
+    ///
+    /// **Codex sessions are passed through unchanged.** `cwdCounts` only
+    /// reflects running `claude` processes (see `TerminalLocator`), so it
+    /// would always evaluate to "no live owner" for any Codex session and
+    /// drop them all. We don't have an equivalent `runningCodexCwds()` yet;
+    /// the safer behavior is to import every detected Codex session and
+    /// accept that a stopped Codex run will leave a tombstone until app
+    /// restart. (Same compromise as `runLivenessSweep`.)
     public static func filterLiveDetected(
         _ detected: [SessionScanner.DetectedSession],
         cwdCounts: [String: Int]
     ) -> [SessionScanner.DetectedSession] {
+        let codexPassThrough = detected.filter { $0.agent == .codex }
+        let claude = detected.filter { $0.agent == .claude }
+
         var grouped: [String: [SessionScanner.DetectedSession]] = [:]
-        for d in detected {
+        for d in claude {
             guard let cwd = d.cwd else { continue }
             grouped[canonicalize(cwd), default: []].append(d)
         }
@@ -35,6 +46,7 @@ public enum LivenessFilter {
             let sortedDesc = group.sorted { $0.lastModified > $1.lastModified }
             live.append(contentsOf: sortedDesc.prefix(liveCount))
         }
+        live.append(contentsOf: codexPassThrough)
         return live
     }
 

@@ -188,6 +188,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } catch {
                 NSLog("ZackEyes: Hook installation failed: \(error)")
             }
+            // Codex installer is independent — failure here must not affect
+            // the Claude install. Skips silently if `~/.codex/` is absent.
+            do {
+                let codexInstaller = CodexHookInstaller()
+                try codexInstaller.installHooks()
+            } catch {
+                NSLog("ZackEyes: Codex hook installation failed: \(error)")
+            }
         }
 
         // 6.5 Update checker — polls GitHub Releases every 6h
@@ -315,7 +323,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// grace period so a transient subprocess hiccup can't wipe live
     /// sessions whose hooks are still flowing.
     private func runLivenessSweep() {
+        // Liveness pruning is Claude-only. The cwd→count snapshot below
+        // matches `claude` argv strictly (see TerminalLocator), so feeding a
+        // Codex session through it would always come up "no live owner" and
+        // evict the session past the 90s grace, even with `codex` running
+        // happily in the same cwd. Codex sessions stick around until the
+        // app restarts; that's fine — Codex doesn't emit SessionEnd anyway,
+        // so the worst case is a stale idle card, not a dropped one.
         let candidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
+            guard s.agent == .claude else { return nil }
             guard let cwd = s.cwd, s.pendingPermission == nil else { return nil }
             return LivenessFilter.PruneCandidate(id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt)
         }
@@ -383,8 +399,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 cwd: event.cwd,
                 responder: responder
             )
-            NSLog("ZackEyes: PermissionRequest for tool=%@", event.toolName ?? "?")
-            sessionStore.handlePermissionRequest(sessionId: sid, permission: pending)
+            NSLog("ZackEyes: PermissionRequest agent=%@ tool=%@",
+                  event.agent.rawValue, event.toolName ?? "?")
+            sessionStore.handlePermissionRequest(
+                sessionId: sid, permission: pending, agent: event.agent
+            )
             simulatedNotch?.dismissAboutOverlay()
             forceUiExpand()
 
@@ -405,7 +424,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 responder: responder
             )
             NSLog("ZackEyes: PreToolUse AskUQ for tool=AskUserQuestion")
-            sessionStore.handlePermissionRequest(sessionId: sid, permission: pending)
+            sessionStore.handlePermissionRequest(
+                sessionId: sid, permission: pending, agent: event.agent
+            )
             simulatedNotch?.dismissAboutOverlay()
             forceUiExpand()
 

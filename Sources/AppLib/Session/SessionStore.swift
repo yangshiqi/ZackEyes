@@ -13,6 +13,7 @@ public struct TaskItem: Identifiable, Sendable {
 
 public struct SessionInfo: Identifiable {
     public let id: String
+    public var agent: AgentKind = .claude
     public var cwd: String?
     public var state: SessionState
     public var currentToolName: String?
@@ -26,12 +27,12 @@ public struct SessionInfo: Identifiable {
     public var toolCallCount: Int
     public var source: SessionSource = .live
     public var tasks: [TaskItem] = []
-    public var claudePid: Int?   // PID of the claude process (from bridge ppid)
+    public var claudePid: Int?   // PID of the claude/codex process (from bridge ppid)
     public var transcriptPath: String?  // Path to the JSONL transcript file (for lsof lookup)
     public var errorMessage: String?
     public var errorAt: Date?
 
-    // Per-session context window data (from statusLine)
+    // Per-session context window data (from statusLine — Claude only)
     public var contextUsedPct: Double?
     public var contextWindowSize: Int?
     public var modelDisplayName: String?
@@ -48,10 +49,12 @@ public struct SessionInfo: Identifiable {
     public init(
         id: String,
         cwd: String?,
+        agent: AgentKind = .claude,
         state: SessionState = .working,
         startedAt: Date = Date()
     ) {
         self.id = id
+        self.agent = agent
         self.cwd = cwd
         self.state = state
         self.currentToolName = nil
@@ -149,7 +152,9 @@ public final class SessionStore: ObservableObject {
         // statusLine carries per-session context window + model + cost
         applyStatusLineFields(event: event, sid: sid)
 
-        // Capture claude pid + transcript path from bridge if available
+        // Capture claude pid + transcript path from bridge if available;
+        // also stamp the session's agent if the existing record doesn't
+        // have one yet (defensive — should already match).
         if var existing = sessions[sid] {
             if let ppid = event.bridgePpid, existing.claudePid == nil {
                 existing.claudePid = ppid
@@ -160,17 +165,20 @@ public final class SessionStore: ObservableObject {
             sessions[sid] = existing
         }
 
+        let agent = event.agent
+
         switch event.bridgeEvent {
         case "SessionStart":
-            var newSession = SessionInfo(id: sid, cwd: event.cwd)
+            var newSession = SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             newSession.claudePid = event.bridgePpid
             sessions[sid] = newSession
 
         case "SessionEnd":
+            // Codex doesn't emit SessionEnd; only Claude does.
             sessions.removeValue(forKey: sid)
 
         case "PreToolUse":
-            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             session.currentToolName = event.toolName
             session.currentToolInput = event.toolInput?.mapValues { $0.value }
             session.isToolRunning = true
@@ -181,7 +189,7 @@ public final class SessionStore: ObservableObject {
             sessions[sid] = session
 
         case "UserPromptSubmit":
-            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             if let prompt = event.userPrompt {
                 session.lastUserPrompt = prompt
                 session.lastAssistantMessage = nil  // clear stale reply on new prompt
@@ -195,7 +203,7 @@ public final class SessionStore: ObservableObject {
         case "PostToolUse":
             // Don't clear currentToolName — keep it as "most recent action".
             // Just mark that the tool is no longer running.
-            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             session.isToolRunning = false
             session.lastActiveAt = Date()
 
@@ -211,8 +219,10 @@ public final class SessionStore: ObservableObject {
             sessions[sid] = session
 
         case "Stop":
-            // Stop = Claude finished current turn, session still active.
-            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
+            // Stop = agent finished current turn, session still active.
+            // Codex uses Stop in place of SessionEnd, so we leave the
+            // session alive (it'll naturally idle out).
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             session.state = .idle
             session.isToolRunning = false
             if let msg = event.lastAssistantMessage {
@@ -227,8 +237,8 @@ public final class SessionStore: ObservableObject {
             sessions[sid] = session
 
         case "Notification":
-            // Claude Code Notification hook — often carries rate limit warnings
-            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
+            // Claude-only — Codex doesn't define Notification.
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             // The notification text is in lastAssistantMessage or we can check tool_input
             let notifText = event.lastAssistantMessage ?? ""
             if let errText = Self.detectError(in: notifText) {
@@ -243,8 +253,13 @@ public final class SessionStore: ObservableObject {
         }
     }
 
-    public func handlePermissionRequest(sessionId: String, permission: PendingPermission) {
-        var session = sessions[sessionId] ?? SessionInfo(id: sessionId, cwd: permission.cwd)
+    public func handlePermissionRequest(
+        sessionId: String,
+        permission: PendingPermission,
+        agent: AgentKind = .claude
+    ) {
+        var session = sessions[sessionId]
+            ?? SessionInfo(id: sessionId, cwd: permission.cwd, agent: agent)
         session.state = .waiting
         session.pendingPermission = permission
         session.lastActiveAt = Date()
@@ -302,17 +317,28 @@ public final class SessionStore: ObservableObject {
     }
 
     /// Import sessions discovered by SessionScanner. These are read-only and
-    /// marked as `.detected` — user needs to restart them for live tracking.
+    /// marked as `.detected` — user needs to restart them (or open a new
+    /// thread, in Codex's case) for live tracking.
     public func importDetectedSessions(_ detected: [SessionScanner.DetectedSession]) {
         for d in detected {
             // Don't overwrite live sessions if we already have them
             if sessions[d.id]?.source == .live { continue }
 
-            var session = SessionInfo(id: d.id, cwd: d.cwd, state: .idle, startedAt: d.lastModified)
+            var session = SessionInfo(
+                id: d.id,
+                cwd: d.cwd,
+                agent: d.agent,
+                state: .idle,
+                startedAt: d.lastModified
+            )
             session.lastActiveAt = d.lastModified
             session.lastUserPrompt = d.lastUserPrompt
             session.transcriptPath = d.transcriptPath
-            session.tasks = TaskExtractor.extractTasks(fromTranscriptAt: d.transcriptPath)
+            // TaskExtractor only knows the Claude transcript schema. Codex
+            // tasks would need their own extractor (deferred).
+            if d.agent == .claude {
+                session.tasks = TaskExtractor.extractTasks(fromTranscriptAt: d.transcriptPath)
+            }
             session.source = .detected
             sessions[d.id] = session
         }
@@ -344,7 +370,7 @@ public final class SessionStore: ObservableObject {
         let hasAny = event.contextWindow != nil || event.model != nil || event.cost != nil
         guard hasAny else { return }
 
-        var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd)
+        var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: event.agent)
 
         if let cw = event.contextWindow {
             if let used = (cw["used_percentage"]?.value as? Double)
