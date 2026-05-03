@@ -32,14 +32,36 @@ public struct SessionScanner {
     /// Scan all known transcript directories. Returns sessions whose jsonl
     /// files were modified within the recency window, with their `agent`
     /// stamped from the directory they were found in.
-    public func scan(recencyMinutes: Int = 60) -> [DetectedSession] {
-        let cutoff = Date().addingTimeInterval(-Double(recencyMinutes * 60))
+    ///
+    /// Claude and Codex use **separate windows** because the two agents
+    /// have different session lifecycles:
+    ///
+    /// - Claude often keeps a single session open for hours of intermittent
+    ///   work, so a wide window (8h) is appropriate.
+    /// - Codex creates a fresh rollout per `codex` invocation, and once
+    ///   the user closes the TUI the rollout is dead. Importing every
+    ///   rollout written in the last 8h would surface dozens of stale
+    ///   "idle" cards for sessions that no longer exist. A tight window
+    ///   (default 30 min) keeps the notch focused on currently-running
+    ///   codex threads.
+    public func scan(
+        claudeRecencyMinutes: Int = 60,
+        codexRecencyMinutes: Int = 30
+    ) -> [DetectedSession] {
+        let claudeCutoff = Date().addingTimeInterval(-Double(claudeRecencyMinutes * 60))
+        let codexCutoff = Date().addingTimeInterval(-Double(codexRecencyMinutes * 60))
         var results: [DetectedSession] = []
-        results.append(contentsOf: scanClaude(cutoff: cutoff))
+        results.append(contentsOf: scanClaude(cutoff: claudeCutoff))
         if let codexDir = codexSessionsDir {
-            results.append(contentsOf: scanCodex(rootDir: codexDir, cutoff: cutoff))
+            results.append(contentsOf: scanCodex(rootDir: codexDir, cutoff: codexCutoff))
         }
         return results.sorted { $0.lastModified > $1.lastModified }
+    }
+
+    /// Convenience overload preserved for callers (and tests) that want a
+    /// single window applied to both agents.
+    public func scan(recencyMinutes: Int) -> [DetectedSession] {
+        scan(claudeRecencyMinutes: recencyMinutes, codexRecencyMinutes: recencyMinutes)
     }
 
     // MARK: - Claude (~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl)

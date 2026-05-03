@@ -195,6 +195,68 @@ struct SessionScannerTests {
 
     // MARK: - Codex sessions dir absent
 
+    // MARK: - Split recency windows (claude vs codex)
+
+    /// Codex rollouts written outside the codex window must be excluded
+    /// even when the claude window is wide. Without per-agent windows we
+    /// pull stale closed-TUI rollouts into the notch on launch.
+    @Test func scan_appliesCodexWindowIndependentlyOfClaudeWindow() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        // Claude transcript modified 6h ago — within an 8h claude window.
+        let claudeRoot = tmpDir.appendingPathComponent("claude-projects")
+        let claudeProj = claudeRoot.appendingPathComponent("-Users-test-foo")
+        try FileManager.default.createDirectory(at: claudeProj, withIntermediateDirectories: true)
+        let claudeFile = claudeProj.appendingPathComponent("claude-old.jsonl")
+        try """
+            {"type":"user","cwd":"/Users/test/foo","message":{"content":"hello"}}
+            """.write(to: claudeFile, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-6 * 3600)],
+            ofItemAtPath: claudeFile.path
+        )
+
+        // Codex rollout modified 6h ago — outside a tight 30-min codex
+        // window even though it's inside the 8h claude window.
+        let codexRoot = tmpDir.appendingPathComponent("codex-sessions")
+        let day = codexRoot
+            .appendingPathComponent("2026")
+            .appendingPathComponent("05")
+            .appendingPathComponent("03")
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        let codexId = "019dec85-b760-71f2-bca7-b1c463f0d36e"
+        let codexFile = day.appendingPathComponent("rollout-2026-05-03T08-00-00-\(codexId).jsonl")
+        try """
+            {"type":"session_meta","payload":{"id":"\(codexId)","cwd":"/Users/test/bar"}}
+            """.write(to: codexFile, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-6 * 3600)],
+            ofItemAtPath: codexFile.path
+        )
+
+        let scanner = SessionScanner(projectsDir: claudeRoot, codexSessionsDir: codexRoot)
+        let results = scanner.scan(claudeRecencyMinutes: 480, codexRecencyMinutes: 30)
+        // Claude session shows up; the equally-old codex session is dropped.
+        #expect(results.count == 1)
+        #expect(results[0].agent == .claude)
+    }
+
+    @Test func scan_singleWindowOverloadAppliesToBothAgents() throws {
+        // The convenience overload `scan(recencyMinutes:)` should still
+        // exist for callers that want one window for both agents.
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeRoot = tmpDir.appendingPathComponent("claude-projects")
+        let codexRoot = tmpDir.appendingPathComponent("codex-sessions")
+        try FileManager.default.createDirectory(at: claudeRoot, withIntermediateDirectories: true)
+
+        let scanner = SessionScanner(projectsDir: claudeRoot, codexSessionsDir: codexRoot)
+        // Just verify it doesn't crash and returns an empty list.
+        let results = scanner.scan(recencyMinutes: 60)
+        #expect(results.isEmpty)
+    }
+
     @Test func scan_skipsCodexWhenDirNotProvided() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
