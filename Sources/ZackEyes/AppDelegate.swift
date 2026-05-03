@@ -16,6 +16,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var updateDownloader: UpdateDownloader?
     private var statusBarMenu: StatusBarMenu?
     private var livenessSweepTimer: Timer?
+    private var codexTailer: CodexJsonlTailer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Prevent macOS from auto-terminating this LSUIElement app when no windows are visible
@@ -247,6 +248,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in self?.runLivenessSweep() }
         }
 
+        // 7.5 Codex jsonl tailer. Real-time fallback for codex sessions
+        //     whose owning TUI predates ~/.codex/hooks.json (those processes
+        //     never picked up our hooks and never fire Stop). The tailer
+        //     watches the rollouts and fires a notification on each
+        //     `event_msg.task_complete` line.
+        let tailer = CodexJsonlTailer()
+        tailer.delegate = self
+        tailer.start()
+        codexTailer = tailer
+
         // 8. First-launch welcome — per-version one-shot. Runs last so the
         //    notch controllers are already created and reachable via
         //    forceUiExpand().
@@ -432,14 +443,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             forceUiExpand()
 
         default:
-            NSLog("ZackEyes: event=%@ tool=%@", event.bridgeEvent, event.toolName ?? "-")
+            // Always log the agent so codex/claude bugs can be told apart
+            // from a single Console.app filter ("ZackEyes:").
+            NSLog("ZackEyes: agent=%@ event=%@ tool=%@ sid=%@",
+                  event.agent.rawValue,
+                  event.bridgeEvent,
+                  event.toolName ?? "-",
+                  event.sessionId.map { String($0.prefix(8)) } ?? "-")
 
             // Capture prior state BEFORE handling the event (for Stop detection)
             let priorState: SessionState? = event.sessionId.flatMap { sessionStore.sessions[$0]?.state }
             let priorErrorAt: Date? = event.sessionId.flatMap { sessionStore.sessions[$0]?.errorAt }
-            let hadToolActivity = event.sessionId.flatMap {
-                sessionStore.sessions[$0].map { $0.toolCallCount > 0 }
-            } ?? false
+            let priorToolCount = event.sessionId.flatMap {
+                sessionStore.sessions[$0]?.toolCallCount
+            } ?? 0
+            let priorUserPrompt = event.sessionId.flatMap {
+                sessionStore.sessions[$0]?.lastUserPrompt
+            }
 
             sessionStore.handleEvent(event)
 
@@ -464,16 +484,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 forceUiExpand()
             }
 
-            // Notify on Stop only if the session was actually doing something
+            // Notify on Stop. The session must have done something this
+            // turn — either ran a tool (toolCallCount went up) or had a
+            // user prompt waiting on a reply. The earlier gate only
+            // checked `toolCallCount > 0` over the session lifetime, which
+            // suppressed notifications on chat-only turns where the agent
+            // answers without invoking any tools (common with Codex).
             if event.bridgeEvent == "Stop",
-               hadToolActivity,
-               session.errorMessage == nil,  // don't double-notify on errors
+               session.errorMessage == nil,    // don't double-notify on errors
                priorState == .working || priorState == .waiting {
-                NotificationManager.shared.notifySessionFinished(
-                    sessionId: sid,
-                    projectName: session.displayName,
-                    lastPrompt: session.lastUserPrompt
-                )
+                let didWorkThisTurn = session.toolCallCount > priorToolCount
+                let hasInteraction = priorUserPrompt != nil
+                if didWorkThisTurn || hasInteraction {
+                    NotificationManager.shared.notifySessionFinished(
+                        sessionId: sid,
+                        projectName: session.displayName,
+                        lastPrompt: session.lastUserPrompt
+                    )
+                }
             }
         }
     }
@@ -545,5 +573,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         menuBarFallback?.showPopover()
+    }
+}
+
+// MARK: - CodexJsonlTailerDelegate
+
+extension AppDelegate: CodexJsonlTailerDelegate {
+    /// Tailer detected an `event_msg.task_complete` for a codex session.
+    /// Update SessionStore and fire a notification — but only if the hook
+    /// path isn't already covering this session (to avoid double-notify).
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectTaskComplete event: CodexTaskCompleteEvent) {
+        // If the session already has a `.live` state in our store, hooks
+        // are flowing for it and the existing Stop path will deliver the
+        // notification. Skip the tailer-side notification.
+        if let existing = sessionStore.sessions[event.sessionId], existing.source == .live {
+            return
+        }
+
+        let now = event.completedAt ?? Date()
+        var session = sessionStore.sessions[event.sessionId]
+            ?? SessionInfo(
+                id: event.sessionId,
+                cwd: event.cwd,
+                agent: .codex,
+                state: .idle,
+                startedAt: now
+            )
+        session.agent = .codex
+        if session.cwd == nil { session.cwd = event.cwd }
+        if session.transcriptPath == nil { session.transcriptPath = event.transcriptPath }
+        if let msg = event.lastAgentMessage, !msg.isEmpty {
+            session.lastAssistantMessage = msg
+        }
+        session.state = .idle
+        session.isToolRunning = false
+        session.lastActiveAt = now
+        sessionStore.sessions[event.sessionId] = session
+
+        NotificationManager.shared.notifySessionFinished(
+            sessionId: event.sessionId,
+            projectName: session.displayName,
+            lastPrompt: session.lastUserPrompt
+        )
     }
 }
