@@ -101,6 +101,13 @@ struct TerminalLocatorTests {
         #expect(TerminalLocator.isCodexProcess(args: shim))
     }
 
+    @Test func codexMatchesKnownNodePathsWithSpaces() {
+        let npm = "node /Users/Foo Bar/project/node_modules/@openai/codex/dist/cli.js"
+        let fnm = "node /Users/Foo Bar/.local/state/fnm_multishells/93958_1777963329466/bin/codex"
+        #expect(TerminalLocator.isCodexProcess(args: npm))
+        #expect(TerminalLocator.isCodexProcess(args: fnm))
+    }
+
     @Test func unrelatedCodexNamesDoNotMatch() {
         #expect(!TerminalLocator.isCodexProcess(args: "vim /tmp/codex-notes.md"))
         #expect(!TerminalLocator.isCodexProcess(args: "node /Users/codex/server.js"))

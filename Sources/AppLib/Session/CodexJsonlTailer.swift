@@ -59,6 +59,7 @@ public final class CodexJsonlTailer {
 
     private var watchers: [URL: Watcher] = [:]
     private var rescanTask: Task<Void, Never>?
+    private var isRunning = false
 
     public init(
         codexSessionsDir: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.codex/sessions"),
@@ -75,6 +76,7 @@ public final class CodexJsonlTailer {
             // No codex install — silent no-op, mirror SessionScanner behavior.
             return
         }
+        isRunning = true
         rediscover()
         rescanTask?.cancel()
         rescanTask = Task { [weak self] in
@@ -86,6 +88,7 @@ public final class CodexJsonlTailer {
     }
 
     public func stop() {
+        isRunning = false
         rescanTask?.cancel()
         rescanTask = nil
         for (_, w) in watchers { w.cancel() }
@@ -97,20 +100,34 @@ public final class CodexJsonlTailer {
     /// closes (rename / unlink), so this only ever grows the active set.
     private func rediscover() {
         let cutoff = Date().addingTimeInterval(-Double(recencyHours * 3600))
-        let candidateDays = SessionScanner.candidateDateDirs(rootDir: codexSessionsDir, cutoff: cutoff)
+        let rootDir = codexSessionsDir
+        Task.detached(priority: .utility) { [weak self] in
+            let files = Self.discoverRecentRollouts(rootDir: rootDir, cutoff: cutoff)
+            await MainActor.run { [weak self] in
+                guard let self, self.isRunning else { return }
+                for file in files where self.watchers[file] == nil {
+                    self.attachWatcher(at: file)
+                }
+            }
+        }
+    }
+
+    nonisolated static func discoverRecentRollouts(rootDir: URL, cutoff: Date) -> [URL] {
+        let candidateDays = SessionScanner.candidateDateDirs(rootDir: rootDir, cutoff: cutoff)
         let fm = FileManager.default
+        var result: [URL] = []
         for day in candidateDays {
             guard let files = try? fm.contentsOfDirectory(
                 at: day,
                 includingPropertiesForKeys: [.contentModificationDateKey]
             ) else { continue }
             for file in files where file.pathExtension == "jsonl" {
-                guard watchers[file] == nil else { continue }
                 guard let modDate = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
                       modDate >= cutoff else { continue }
-                attachWatcher(at: file)
+                result.append(file)
             }
         }
+        return result
     }
 
     private func attachWatcher(at url: URL) {

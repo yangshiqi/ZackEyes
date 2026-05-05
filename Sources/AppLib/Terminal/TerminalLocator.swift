@@ -159,34 +159,35 @@ public enum TerminalLocator {
     /// - Anything else → skip. A `node` process running vue-cli-service,
     ///   vite, jest, webpack, etc. is not Claude Code.
     static func isClaudeProcess(args: String) -> Bool {
-        let argv = args.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-        guard let first = argv.first else { return false }
-        let argv0Base = (first as NSString).lastPathComponent
+        guard let argv0Base = firstCommandBasename(args) else { return false }
         if argv0Base == "claude" { return true }
         if argv0Base == "node" {
-            return argv.dropFirst().contains { token in
-                token.contains("/claude-code/")
-                    || token.contains("/claude.js")
-                    || token.hasSuffix("/claude")
-            }
+            return args.contains("/claude-code/")
+                || args.contains("/claude.js")
+                || args.contains("/claude ")
+                || args.hasSuffix("/claude")
         }
         return false
     }
 
     static func isCodexProcess(args: String) -> Bool {
-        let argv = args.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-        guard let first = argv.first else { return false }
-        let argv0Base = (first as NSString).lastPathComponent
+        guard let argv0Base = firstCommandBasename(args) else { return false }
         if argv0Base == "codex" { return true }
         if argv0Base == "node" {
-            return argv.dropFirst().contains { token in
-                // Keep this scoped to the official package path. Generic
-                // `codex.js` or trailing `/codex` can be user scripts.
-                token.contains("/@openai/codex/")
-                    || (token.contains("/fnm_multishells/") && token.hasSuffix("/bin/codex"))
-            }
+            // Keep this scoped to known install paths. Generic `codex.js`
+            // or trailing `/codex` can be user scripts.
+            return args.contains("/@openai/codex/")
+                || (args.contains("/fnm_multishells/") &&
+                    (args.contains("/bin/codex ") || args.hasSuffix("/bin/codex")))
         }
         return false
+    }
+
+    private static func firstCommandBasename(_ args: String) -> String? {
+        guard let first = args.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).first else {
+            return nil
+        }
+        return (String(first) as NSString).lastPathComponent
     }
 
     private static func isAgentProcess(_ agent: AgentKind, args: String) -> Bool {
@@ -285,9 +286,9 @@ public enum TerminalLocator {
         let osc = "\u{001B}]2;\(title)\u{0007}"
         guard let data = osc.data(using: .utf8),
               let fh = FileHandle(forWritingAtPath: tty) else { return false }
+        defer { try? fh.close() }
         do {
             try fh.write(contentsOf: data)
-            try fh.close()
             NSLog("ZackEyes: wrote session title tty=%{public}@ sid=%{public}@", tty, sessionId)
             return true
         } catch {

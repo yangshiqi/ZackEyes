@@ -31,6 +31,38 @@ struct CodexJsonlTailerTests {
         #expect(parsed == "/Users/test/Obsidian Vault")
     }
 
+    @Test func discoverRecentRolloutsReturnsOnlyFreshJsonlFiles() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let day = root
+            .appendingPathComponent("2026")
+            .appendingPathComponent("05")
+            .appendingPathComponent("05")
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+
+        let fresh = day.appendingPathComponent("rollout-2026-05-05T01-02-03-019df6d7-aaaa-bbbb-cccc-dddddddddddd.jsonl")
+        let old = day.appendingPathComponent("rollout-2026-05-05T01-02-03-019df6d7-aaaa-bbbb-cccc-eeeeeeeeeeee.jsonl")
+        let other = day.appendingPathComponent("notes.txt")
+        try "{}\n".write(to: fresh, atomically: true, encoding: .utf8)
+        try "{}\n".write(to: old, atomically: true, encoding: .utf8)
+        try "ignore\n".write(to: other, atomically: true, encoding: .utf8)
+
+        let freshDate = Date(timeIntervalSince1970: 1_777_962_840)
+        let oldDate = freshDate.addingTimeInterval(-7200)
+        try FileManager.default.setAttributes([.modificationDate: freshDate], ofItemAtPath: fresh.path)
+        try FileManager.default.setAttributes([.modificationDate: oldDate], ofItemAtPath: old.path)
+        try FileManager.default.setAttributes([.modificationDate: freshDate], ofItemAtPath: other.path)
+
+        let files = CodexJsonlTailer.discoverRecentRollouts(
+            rootDir: root,
+            cutoff: freshDate.addingTimeInterval(-3600)
+        )
+
+        #expect(files.map(\.standardizedFileURL) == [fresh.standardizedFileURL])
+    }
+
     // MARK: - Single chunk, one task_complete
 
     @Test func parsesTaskStartedEvent() {
