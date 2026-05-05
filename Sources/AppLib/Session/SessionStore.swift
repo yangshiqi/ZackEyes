@@ -332,6 +332,7 @@ public final class SessionStore: ObservableObject {
         transcriptPath: String?,
         completedAt: Date
     ) -> SessionInfo {
+        let didCreateSession = sessions[sessionId] == nil
         var session = sessions[sessionId]
             ?? SessionInfo(
                 id: sessionId,
@@ -346,11 +347,46 @@ public final class SessionStore: ObservableObject {
         if let msg = lastAgentMessage, !msg.isEmpty {
             session.lastAssistantMessage = msg
         }
+        if didCreateSession {
+            session.source = .detected
+        }
         session.state = .idle
         session.isToolRunning = false
         session.lastActiveAt = completedAt
         sessions[sessionId] = session
         return session
+    }
+
+    public func recordCodexTaskStarted(
+        sessionId: String,
+        cwd: String?,
+        transcriptPath: String?,
+        startedAt: Date,
+        turnId: String?
+    ) {
+        let didCreateSession = sessions[sessionId] == nil
+        var session = sessions[sessionId]
+            ?? SessionInfo(
+                id: sessionId,
+                cwd: cwd,
+                agent: .codex,
+                state: .working,
+                startedAt: startedAt
+            )
+        session.agent = .codex
+        if session.cwd == nil { session.cwd = cwd }
+        if session.transcriptPath == nil { session.transcriptPath = transcriptPath }
+        session.currentToolName = "Codex"
+        if let turnId {
+            session.currentToolInput = ["turn_id": turnId]
+        }
+        if didCreateSession {
+            session.source = .detected
+        }
+        session.isToolRunning = true
+        session.state = .working
+        session.lastActiveAt = startedAt
+        sessions[sessionId] = session
     }
 
     /// Import sessions discovered by SessionScanner. These are read-only and

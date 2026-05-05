@@ -16,6 +16,18 @@ struct UsageTrackerCodexTests {
         return tmpDir
     }
 
+    private func currentCodexDayDir(under root: URL) -> URL {
+        SessionScanner.candidateDateDirs(rootDir: root, cutoff: Date()).last!
+    }
+
+    private func currentCodexRolloutName(id: String, hour: Int = 0) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let comps = calendar.dateComponents([.year, .month, .day], from: Date())
+        return String(format: "rollout-%04d-%02d-%02dT%02d-00-00-\(id).jsonl",
+                      comps.year!, comps.month!, comps.day!, hour)
+    }
+
     // MARK: - Decoder
 
     @Test func decodeCodexObservation_canonicalShape() {
@@ -109,17 +121,14 @@ struct UsageTrackerCodexTests {
     @Test func scanLatestCodexRateLimits_returnsMostRecentObservation() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
-        let day = tmpDir
-            .appendingPathComponent("2026")
-            .appendingPathComponent("05")
-            .appendingPathComponent("03")
+        let day = currentCodexDayDir(under: tmpDir)
         try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
 
         let now = Date()
 
         // Older file with stale (low) numbers.
         let oldId = "019dec85-b760-71f2-bca7-b1c463f0d36e"
-        let oldFile = day.appendingPathComponent("rollout-2026-05-03T10-00-00-\(oldId).jsonl")
+        let oldFile = day.appendingPathComponent(currentCodexRolloutName(id: oldId, hour: 10))
         try """
             {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":1.0,"resets_at":1000000000},"secondary":{"used_percent":1.0,"resets_at":2000000000}}}}
             """.write(to: oldFile, atomically: true, encoding: .utf8)
@@ -130,7 +139,7 @@ struct UsageTrackerCodexTests {
 
         // Newer file — its LAST token_count event is what we expect to win.
         let newId = "019dec85-1111-2222-3333-444455556666"
-        let newFile = day.appendingPathComponent("rollout-2026-05-03T14-00-00-\(newId).jsonl")
+        let newFile = day.appendingPathComponent(currentCodexRolloutName(id: newId, hour: 14))
         try """
             {"type":"event_msg","payload":{"type":"task_started"}}
             {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":40.0,"resets_at":1777700000},"secondary":{"used_percent":50.0,"resets_at":1777800000}}}}
@@ -150,13 +159,10 @@ struct UsageTrackerCodexTests {
     @Test func scanLatestCodexRateLimits_returnsNilWhenNoTokenCount() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
-        let day = tmpDir
-            .appendingPathComponent("2026")
-            .appendingPathComponent("05")
-            .appendingPathComponent("03")
+        let day = currentCodexDayDir(under: tmpDir)
         try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
         let id = "019dec85-b760-71f2-bca7-b1c463f0d36e"
-        let file = day.appendingPathComponent("rollout-2026-05-03T14-00-00-\(id).jsonl")
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id, hour: 14))
         try """
             {"type":"session_meta","payload":{"id":"\(id)","cwd":"/proj"}}
             {"type":"event_msg","payload":{"type":"user_message","message":"hi"}}
@@ -168,13 +174,10 @@ struct UsageTrackerCodexTests {
     @Test func scanLatestCodexRateLimits_skipsFilesOlderThan24h() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
-        let day = tmpDir
-            .appendingPathComponent("2026")
-            .appendingPathComponent("05")
-            .appendingPathComponent("01")
+        let day = currentCodexDayDir(under: tmpDir)
         try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
         let id = "019dec85-b760-71f2-bca7-b1c463f0d36e"
-        let file = day.appendingPathComponent("rollout-2026-05-01T14-00-00-\(id).jsonl")
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id, hour: 14))
         try """
             {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":99.0,"resets_at":1}}}}
             """.write(to: file, atomically: true, encoding: .utf8)

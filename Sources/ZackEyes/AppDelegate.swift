@@ -270,51 +270,32 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         maybeShowWelcome()
     }
 
-    /// Discover the claude PID for each detected session and write OSC2 tab
+    /// Discover the agent PID for each detected session and write OSC2 tab
     /// titles so click-to-jump works. Runs after `importDetectedSessions`.
     /// Off-main: lsof/ps subprocesses are slow.
     private func activateDetectedSessions() {
-        let snapshots: [(id: String, cwd: String, transcript: String?, prompt: String?)] =
+        let snapshots: [(id: String, agent: AgentKind, cwd: String, transcript: String?, prompt: String?)] =
             sessionStore.sessions.values
                 .filter { $0.source == .detected }
                 .compactMap { s in
                     guard let cwd = s.cwd else { return nil }
-                    return (s.id, cwd, s.transcriptPath, s.lastUserPrompt)
+                    return (s.id, s.agent, cwd, s.transcriptPath, s.lastUserPrompt)
                 }
         let store = sessionStore!
         Task.detached(priority: .utility) {
             var pidCache: [(String, Int)] = []
             for s in snapshots {
-                guard let pid = TerminalLocator.findClaudePid(
-                    transcriptPath: s.transcript, cwd: s.cwd
+                guard let pid = TerminalLocator.findAgentPid(
+                    agent: s.agent,
+                    transcriptPath: s.transcript,
+                    cwd: s.cwd
                 ) else { continue }
-                guard let tty = TTYUtil.ttyPath(pid: Int32(pid)) else { continue }
-
-                // Write OSC2 title with sid marker
-                let basename = (s.cwd as NSString).lastPathComponent
-                let sidShort = String(s.id.prefix(8))
-                // Sanitize: replace \n\r\t with space, strip C0 control chars + DEL
-                let rawPrompt = s.prompt ?? ""
-                var sanitized = ""
-                for scalar in rawPrompt.unicodeScalars {
-                    if scalar == "\n" || scalar == "\r" || scalar == "\t" {
-                        sanitized.append(" ")
-                    } else if scalar.value < 0x20 || scalar.value == 0x7F {
-                        continue
-                    } else {
-                        sanitized.append(Character(scalar))
-                    }
-                }
-                let prompt = String(sanitized.prefix(30))
-                let title = prompt.isEmpty
-                    ? "\(basename) · ze:\(sidShort)"
-                    : "\(basename) · \(prompt) · ze:\(sidShort)"
-                let osc = "\u{001B}]2;\(title)\u{0007}"
-                if let data = osc.data(using: .utf8),
-                   let fh = FileHandle(forWritingAtPath: tty) {
-                    try? fh.write(contentsOf: data)
-                    try? fh.close()
-                }
+                _ = TerminalLocator.writeSessionTitle(
+                    containingPid: pid,
+                    cwd: s.cwd,
+                    sessionId: s.id,
+                    prompt: s.prompt
+                )
                 pidCache.append((s.id, pid))
             }
             // Cache PIDs on MainActor so click handler skips re-discovery.
@@ -608,6 +589,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - CodexJsonlTailerDelegate
 
 extension AppDelegate: CodexJsonlTailerDelegate {
+    /// Tailer detected an `event_msg.task_started` for a codex session.
+    /// Mark detected/non-hooked sessions as working so the notch avatar uses
+    /// the active animation while Codex is generating.
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectTaskStarted event: CodexTaskStartedEvent) {
+        if let existing = sessionStore.sessions[event.sessionId], existing.source == .live {
+            return
+        }
+
+        sessionStore.recordCodexTaskStarted(
+            sessionId: event.sessionId,
+            cwd: event.cwd,
+            transcriptPath: event.transcriptPath,
+            startedAt: event.startedAt ?? Date(),
+            turnId: event.turnId
+        )
+        activateCodexSession(event.sessionId)
+    }
+
     /// Tailer detected an `event_msg.task_complete` for a codex session.
     /// Delegate the session-state mutation to SessionStore (mirrors the
     /// Stop branch of `handleEvent`), then fire the UI notification.
@@ -633,5 +632,33 @@ extension AppDelegate: CodexJsonlTailerDelegate {
             projectName: session.displayName,
             lastPrompt: session.lastUserPrompt
         )
+    }
+
+    private func activateCodexSession(_ sessionId: String) {
+        guard let session = sessionStore.sessions[sessionId],
+              let cwd = session.cwd else { return }
+        let transcriptPath = session.transcriptPath
+        let prompt = session.lastUserPrompt
+        let store = sessionStore!
+
+        Task.detached(priority: .utility) {
+            guard let pid = TerminalLocator.findAgentPid(
+                agent: .codex,
+                transcriptPath: transcriptPath,
+                cwd: cwd
+            ) else { return }
+            _ = TerminalLocator.writeSessionTitle(
+                containingPid: pid,
+                cwd: cwd,
+                sessionId: sessionId,
+                prompt: prompt
+            )
+            await MainActor.run {
+                if var session = store.sessions[sessionId], session.claudePid == nil {
+                    session.claudePid = pid
+                    store.sessions[sessionId] = session
+                }
+            }
+        }
     }
 }

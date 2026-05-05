@@ -127,6 +127,58 @@ struct SessionStoreTests {
         #expect(store.sessions.count == 1)  // session still exists
     }
 
+    @Test func recordCodexTaskStartedMarksSessionWorking() {
+        let store = SessionStore()
+        let startedAt = Date(timeIntervalSince1970: 1_777_962_840)
+
+        store.recordCodexTaskStarted(
+            sessionId: "codex-1",
+            cwd: "/Users/test/proj",
+            transcriptPath: "/tmp/rollout.jsonl",
+            startedAt: startedAt,
+            turnId: "t1"
+        )
+
+        let session = store.sessions["codex-1"]
+        #expect(session?.agent == .codex)
+        #expect(session?.state == .working)
+        #expect(session?.isToolRunning == true)
+        #expect(session?.currentToolName == "Codex")
+        #expect(session?.currentToolInput?["turn_id"] as? String == "t1")
+        #expect(session?.cwd == "/Users/test/proj")
+        #expect(session?.transcriptPath == "/tmp/rollout.jsonl")
+        #expect(session?.lastActiveAt == startedAt)
+        #expect(session?.source == .detected)
+    }
+
+    @Test func recordCodexTaskCompleteKeepsTailerSessionDetected() {
+        let store = SessionStore()
+        let startedAt = Date(timeIntervalSince1970: 1_777_962_840)
+        let completedAt = startedAt.addingTimeInterval(10)
+
+        store.recordCodexTaskStarted(
+            sessionId: "codex-1",
+            cwd: "/Users/test/proj",
+            transcriptPath: "/tmp/rollout.jsonl",
+            startedAt: startedAt,
+            turnId: "t1"
+        )
+
+        let completed = store.recordCodexTaskComplete(
+            sessionId: "codex-1",
+            cwd: "/Users/test/proj",
+            lastAgentMessage: "done",
+            transcriptPath: "/tmp/rollout.jsonl",
+            completedAt: completedAt
+        )
+
+        #expect(completed.source == .detected)
+        #expect(completed.state == .idle)
+        #expect(completed.isToolRunning == false)
+        #expect(completed.lastAssistantMessage == "done")
+        #expect(store.sessions["codex-1"]?.source == .detected)
+    }
+
     // 8. Multiple sessions tracked independently
     @Test func multipleSessionsTrackedIndependently() {
         let store = SessionStore()

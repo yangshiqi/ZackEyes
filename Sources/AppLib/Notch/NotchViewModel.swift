@@ -63,23 +63,26 @@ public final class NotchViewModel: ObservableObject {
         sessionStore.submitAskUQAnswer(sessionId: sessionId, answers: answers)
     }
 
-/// Click handler: jump to the terminal tab for this session.
+    /// Click handler: jump to the terminal tab for this session.
     /// Runs on a background task so subprocess + AppleScript calls don't block the UI.
     public func activateTerminal(for session: SessionInfo) {
         let cachedPid = session.claudePid
         let transcriptPath = session.transcriptPath
         let cwd = session.cwd
         let sessionId = session.id
+        let agent = session.agent
+        let prompt = session.lastUserPrompt
 
         let isDetected = session.source == .detected
         Task.detached(priority: .userInitiated) { [weak self] in
             var pid = cachedPid
 
-            if pid == nil && !isDetected {
-                // Only do slow PID discovery for live sessions (detected
-                // sessions skip this — findClaudePid takes 1-4s to timeout
-                // and almost always fails for detected sessions anyway).
-                pid = TerminalLocator.findClaudePid(
+            if pid == nil && (!isDetected || agent == .codex) {
+                // Detected Claude sessions skip slow discovery; detected
+                // Codex sessions are jsonl-backed and can often be found by
+                // rollout lsof or codex cwd matching.
+                pid = TerminalLocator.findAgentPid(
+                    agent: agent,
                     transcriptPath: transcriptPath,
                     cwd: cwd
                 )
@@ -94,6 +97,14 @@ public final class NotchViewModel: ObservableObject {
             }
 
             if let pid = pid {
+                if agent == .codex, let cwd {
+                    _ = TerminalLocator.writeSessionTitle(
+                        containingPid: pid,
+                        cwd: cwd,
+                        sessionId: sessionId,
+                        prompt: prompt
+                    )
+                }
                 _ = TerminalLocator.activateTerminal(
                     containingPid: pid,
                     cwd: cwd,
@@ -101,8 +112,8 @@ public final class NotchViewModel: ObservableObject {
                 )
             } else {
                 // No PID (detected session, or live session PID not found).
-                // Jump to Ghostty directly via AX tab matching — instant.
-                TerminalLocator.activateGhosttyDirectly(
+                // Jump directly via terminal AX/cwd matching.
+                TerminalLocator.activateTerminalDirectly(
                     sessionId: sessionId, cwd: cwd
                 )
             }

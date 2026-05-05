@@ -12,7 +12,50 @@ struct CodexJsonlTailerTests {
     private let cwd: String? = "/Users/test/proj"
     private let path = "/tmp/rollout-x.jsonl"
 
+    // MARK: - Session metadata
+
+    @Test func parseSessionMetaCwdHandlesLongFirstLine() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+
+        let file = tmpDir.appendingPathComponent("rollout-x.jsonl")
+        let largeInstructions = String(repeating: "x", count: 20_000)
+        try """
+            {"type":"session_meta","payload":{"id":"\(sid)","cwd":"/Users/test/Obsidian Vault","base_instructions":{"text":"\(largeInstructions)"}}}
+            {"type":"event_msg","payload":{"type":"user_message","message":"hi"}}\n
+            """.write(to: file, atomically: true, encoding: .utf8)
+
+        let parsed = CodexJsonlTailer.parseSessionMetaCwd(at: file)
+        #expect(parsed == "/Users/test/Obsidian Vault")
+    }
+
     // MARK: - Single chunk, one task_complete
+
+    @Test func parsesTaskStartedEvent() {
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"task_started","turn_id":"t1","started_at":"2026-05-05T06:34:00.000Z"}}\n
+            """
+
+        let events = CodexJsonlTailer.parseTaskLifecycleEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+
+        #expect(events.count == 1)
+        guard case let .started(event) = events[0] else {
+            Issue.record("Expected task_started event")
+            return
+        }
+        #expect(event.sessionId == sid)
+        #expect(event.cwd == cwd)
+        #expect(event.turnId == "t1")
+        #expect(event.startedAt?.timeIntervalSince1970 == 1_777_962_840)
+        #expect(event.transcriptPath == path)
+        #expect(pending == "")
+    }
 
     @Test func parsesSingleTaskCompleteEvent() {
         var pending = ""

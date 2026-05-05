@@ -80,4 +80,42 @@ struct TerminalLocatorTests {
         #expect(TerminalLocator.isClaudeProcess(args: "node /usr/local/lib/claude.js"))
         #expect(TerminalLocator.isClaudeProcess(args: "node /opt/anthropic/bin/claude"))
     }
+
+    // MARK: - isCodexProcess
+
+    @Test func nativeCodexBinaryMatches() {
+        #expect(TerminalLocator.isCodexProcess(args: "codex"))
+        #expect(TerminalLocator.isCodexProcess(args: "/usr/local/bin/codex"))
+        #expect(TerminalLocator.isCodexProcess(args: "/opt/homebrew/bin/codex --model gpt-5.5"))
+    }
+
+    @Test func npmInstalledCodexMatches() {
+        let npmGlobal = "node /usr/local/lib/node_modules/@openai/codex/bin/codex.js"
+        let npmLocal = "node /Users/foo/project/node_modules/@openai/codex/dist/cli.js"
+        #expect(TerminalLocator.isCodexProcess(args: npmGlobal))
+        #expect(TerminalLocator.isCodexProcess(args: npmLocal))
+    }
+
+    @Test func fnmShimCodexMatches() {
+        let shim = "node /Users/foo/.local/state/fnm_multishells/93958_1777963329466/bin/codex"
+        #expect(TerminalLocator.isCodexProcess(args: shim))
+    }
+
+    @Test func unrelatedCodexNamesDoNotMatch() {
+        #expect(!TerminalLocator.isCodexProcess(args: "vim /tmp/codex-notes.md"))
+        #expect(!TerminalLocator.isCodexProcess(args: "node /Users/codex/server.js"))
+        #expect(!TerminalLocator.isCodexProcess(args: "node /Users/foo/my-codex-tool/index.js"))
+        #expect(!TerminalLocator.isCodexProcess(args: "node /Users/foo/tools/codex.js"))
+        #expect(!TerminalLocator.isCodexProcess(args: "node /Users/foo/bin/codex"))
+        #expect(!TerminalLocator.isCodexProcess(args: "node"))
+    }
+
+    @Test func sessionTitleIncludesProjectPromptAndMarker() {
+        let title = TerminalLocator.sessionTitle(
+            cwd: "/Users/foo/ccisland",
+            sessionId: "019df6d7-aaaa-bbbb-cccc-dddddddddddd",
+            prompt: "fix codex\njump"
+        )
+        #expect(title == "ccisland · fix codex jump · ze:019df6d7")
+    }
 }
