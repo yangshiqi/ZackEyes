@@ -14,6 +14,18 @@ struct SessionScannerTests {
         return tmpDir
     }
 
+    private func currentCodexDayDir(under root: URL) -> URL {
+        SessionScanner.candidateDateDirs(rootDir: root, cutoff: Date()).last!
+    }
+
+    private func currentCodexRolloutName(id: String) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let comps = calendar.dateComponents([.year, .month, .day], from: Date())
+        return String(format: "rollout-%04d-%02d-%02dT00-00-00-\(id).jsonl",
+                      comps.year!, comps.month!, comps.day!)
+    }
+
     // MARK: - Filename UUID extraction
 
     @Test func extractCodexSessionId_canonicalUUID() {
@@ -39,14 +51,11 @@ struct SessionScannerTests {
         let claudeDir = tmpDir.appendingPathComponent("claude-projects")
         // Codex tree at YYYY/MM/DD
         let codexRoot = tmpDir.appendingPathComponent("codex-sessions")
-        let day = codexRoot
-            .appendingPathComponent("2026")
-            .appendingPathComponent("05")
-            .appendingPathComponent("03")
+        let day = currentCodexDayDir(under: codexRoot)
         try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
 
         let id = "019dec85-b760-71f2-bca7-b1c463f0d36e"
-        let file = day.appendingPathComponent("rollout-2026-05-03T14-27-59-\(id).jsonl")
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id))
         let content = """
             {"timestamp":"2026-05-03T14:27:59.000Z","type":"session_meta","payload":{"id":"\(id)","timestamp":"2026-05-03T14:27:59.000Z","cwd":"/Users/test/proj","cli_version":"0.128.0"}}
             {"timestamp":"2026-05-03T14:28:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"t1","started_at":"2026-05-03T14:28:00.000Z"}}
@@ -73,18 +82,42 @@ struct SessionScannerTests {
         #expect(s.transcriptPath.hasSuffix(file.lastPathComponent))
     }
 
+    @Test func scanCodex_parsesCwdWhenSessionMetaLineExceedsHeadBuffer() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let codexRoot = tmpDir.appendingPathComponent("codex-sessions")
+        let day = currentCodexDayDir(under: codexRoot)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+
+        let id = "019dec85-b760-71f2-bca7-b1c463f0d36e"
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id))
+        let largeInstructions = String(repeating: "x", count: 20_000)
+        let content = """
+            {"type":"session_meta","payload":{"id":"\(id)","cwd":"/Users/test/Obsidian Vault","base_instructions":{"text":"\(largeInstructions)"}}}
+            {"type":"event_msg","payload":{"type":"user_message","message":"hello from codex"}}
+            """
+        try content.write(to: file, atomically: true, encoding: .utf8)
+
+        let scanner = SessionScanner(
+            projectsDir: tmpDir.appendingPathComponent("no-claude"),
+            codexSessionsDir: codexRoot
+        )
+        let results = scanner.scan(recencyMinutes: 24 * 60)
+
+        #expect(results.count == 1)
+        #expect(results[0].cwd == "/Users/test/Obsidian Vault")
+    }
+
     @Test func scanCodex_skipsFilesOlderThanRecencyWindow() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
         let codexRoot = tmpDir.appendingPathComponent("codex-sessions")
-        let day = codexRoot
-            .appendingPathComponent("2026")
-            .appendingPathComponent("05")
-            .appendingPathComponent("03")
+        let day = currentCodexDayDir(under: codexRoot)
         try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
 
         let id = "019dec85-b760-71f2-bca7-b1c463f0d36e"
-        let file = day.appendingPathComponent("rollout-2026-05-03T14-27-59-\(id).jsonl")
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id))
         try """
             {"type":"session_meta","payload":{"id":"\(id)","cwd":"/proj"}}
             """.write(to: file, atomically: true, encoding: .utf8)
@@ -120,13 +153,10 @@ struct SessionScannerTests {
 
         // --- Set up a minimal Codex transcript ---
         let codexRoot = tmpDir.appendingPathComponent("codex-sessions")
-        let day = codexRoot
-            .appendingPathComponent("2026")
-            .appendingPathComponent("05")
-            .appendingPathComponent("03")
+        let day = currentCodexDayDir(under: codexRoot)
         try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
         let codexId = "019dec85-b760-71f2-bca7-b1c463f0d36e"
-        let codexFile = day.appendingPathComponent("rollout-2026-05-03T14-27-59-\(codexId).jsonl")
+        let codexFile = day.appendingPathComponent(currentCodexRolloutName(id: codexId))
         try """
             {"type":"session_meta","payload":{"id":"\(codexId)","cwd":"/Users/test/bar"}}
             {"type":"event_msg","payload":{"type":"user_message","message":"hello from codex"}}
@@ -220,13 +250,10 @@ struct SessionScannerTests {
         // Codex rollout modified 6h ago — outside a tight 30-min codex
         // window even though it's inside the 8h claude window.
         let codexRoot = tmpDir.appendingPathComponent("codex-sessions")
-        let day = codexRoot
-            .appendingPathComponent("2026")
-            .appendingPathComponent("05")
-            .appendingPathComponent("03")
+        let day = currentCodexDayDir(under: codexRoot)
         try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
         let codexId = "019dec85-b760-71f2-bca7-b1c463f0d36e"
-        let codexFile = day.appendingPathComponent("rollout-2026-05-03T08-00-00-\(codexId).jsonl")
+        let codexFile = day.appendingPathComponent(currentCodexRolloutName(id: codexId))
         try """
             {"type":"session_meta","payload":{"id":"\(codexId)","cwd":"/Users/test/bar"}}
             """.write(to: codexFile, atomically: true, encoding: .utf8)

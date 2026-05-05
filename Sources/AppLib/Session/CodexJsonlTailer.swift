@@ -3,11 +3,11 @@ import Shared
 
 /// Real-time fallback for codex sessions whose owning TUI process started
 /// before `~/.codex/hooks.json` was installed (and therefore won't fire any
-/// hooks for the rest of its lifetime). Codex writes turn-completion
-/// signals into the per-session rollout JSONL as
-/// `{"type":"event_msg","payload":{"type":"task_complete",...}}` — we tail
-/// the active rollouts, parse the tail incrementally, and fire a notification
-/// each time a `task_complete` lands.
+/// hooks for the rest of its lifetime). Codex writes turn lifecycle signals
+/// into the per-session rollout JSONL as `event_msg.task_started` /
+/// `event_msg.task_complete` — we tail the active rollouts, parse the tail
+/// incrementally, mark the session working while a turn is active, and fire
+/// a notification each time a `task_complete` lands.
 ///
 /// Kqueue-backed (DispatchSource), so there's no polling cost while idle.
 /// The tailer only attaches to rollouts modified within the last `recencyHours`
@@ -15,7 +15,18 @@ import Shared
 /// from the same long-running codex.
 public protocol CodexJsonlTailerDelegate: AnyObject {
     @MainActor
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectTaskStarted event: CodexTaskStartedEvent)
+
+    @MainActor
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectTaskComplete event: CodexTaskCompleteEvent)
+}
+
+public struct CodexTaskStartedEvent: Sendable {
+    public let sessionId: String
+    public let cwd: String?
+    public let startedAt: Date?
+    public let transcriptPath: String
+    public let turnId: String?
 }
 
 public struct CodexTaskCompleteEvent: Sendable {
@@ -26,6 +37,11 @@ public struct CodexTaskCompleteEvent: Sendable {
     public let durationMs: Int?
     public let transcriptPath: String
     public let turnId: String?
+}
+
+public enum CodexTaskLifecycleEvent: Sendable {
+    case started(CodexTaskStartedEvent)
+    case complete(CodexTaskCompleteEvent)
 }
 
 @MainActor
@@ -43,6 +59,7 @@ public final class CodexJsonlTailer {
 
     private var watchers: [URL: Watcher] = [:]
     private var rescanTask: Task<Void, Never>?
+    private var isRunning = false
 
     public init(
         codexSessionsDir: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.codex/sessions"),
@@ -59,17 +76,19 @@ public final class CodexJsonlTailer {
             // No codex install — silent no-op, mirror SessionScanner behavior.
             return
         }
+        isRunning = true
         rediscover()
         rescanTask?.cancel()
         rescanTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(self?.rescanIntervalSeconds ?? 30))
-                await self?.rediscover()
+                self?.rediscover()
             }
         }
     }
 
     public func stop() {
+        isRunning = false
         rescanTask?.cancel()
         rescanTask = nil
         for (_, w) in watchers { w.cancel() }
@@ -81,24 +100,43 @@ public final class CodexJsonlTailer {
     /// closes (rename / unlink), so this only ever grows the active set.
     private func rediscover() {
         let cutoff = Date().addingTimeInterval(-Double(recencyHours * 3600))
-        let candidateDays = SessionScanner.candidateDateDirs(rootDir: codexSessionsDir, cutoff: cutoff)
+        let rootDir = codexSessionsDir
+        Task.detached(priority: .utility) { [weak self] in
+            let files = Self.discoverRecentRollouts(rootDir: rootDir, cutoff: cutoff)
+            await MainActor.run { [weak self] in
+                guard let self, self.isRunning else { return }
+                for file in files where self.watchers[file] == nil {
+                    self.attachWatcher(at: file)
+                }
+            }
+        }
+    }
+
+    nonisolated static func discoverRecentRollouts(rootDir: URL, cutoff: Date) -> [URL] {
+        let candidateDays = SessionScanner.candidateDateDirs(rootDir: rootDir, cutoff: cutoff)
         let fm = FileManager.default
+        var result: [URL] = []
         for day in candidateDays {
             guard let files = try? fm.contentsOfDirectory(
                 at: day,
                 includingPropertiesForKeys: [.contentModificationDateKey]
             ) else { continue }
             for file in files where file.pathExtension == "jsonl" {
-                guard watchers[file] == nil else { continue }
                 guard let modDate = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
                       modDate >= cutoff else { continue }
-                attachWatcher(at: file)
+                result.append(file)
             }
         }
+        return result
     }
 
     private func attachWatcher(at url: URL) {
-        guard let watcher = Watcher(url: url, onTaskComplete: { [weak self] event in
+        guard let watcher = Watcher(url: url, onTaskStarted: { [weak self] event in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.delegate?.codexTailer(self, didDetectTaskStarted: event)
+            }
+        }, onTaskComplete: { [weak self] event in
             Task { @MainActor in
                 guard let self = self else { return }
                 self.delegate?.codexTailer(self, didDetectTaskComplete: event)
@@ -117,6 +155,65 @@ public final class CodexJsonlTailer {
 // MARK: - Pure parser (testable, nonisolated)
 
 extension CodexJsonlTailer {
+    public nonisolated static func parseTaskLifecycleEvents(
+        chunk: String,
+        pending: inout String,
+        sessionId: String,
+        cwd: String?,
+        transcriptPath: String
+    ) -> [CodexTaskLifecycleEvent] {
+        let combined = pending + chunk
+        let parts = combined.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        guard let last = parts.last else {
+            pending = combined
+            return []
+        }
+        pending = last
+        let completeLines = parts.dropLast()
+
+        var events: [CodexTaskLifecycleEvent] = []
+        for line in completeLines {
+            if line.isEmpty { continue }
+            guard let lineData = line.data(using: .utf8) else { continue }
+            guard let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
+            guard obj["type"] as? String == "event_msg" else { continue }
+            guard let payload = obj["payload"] as? [String: Any] else { continue }
+
+            switch payload["type"] as? String {
+            case "task_started":
+                let turnId = payload["turn_id"] as? String
+                let startedAt = parseCodexDate(payload["started_at"])
+                events.append(.started(CodexTaskStartedEvent(
+                    sessionId: sessionId,
+                    cwd: cwd,
+                    startedAt: startedAt,
+                    transcriptPath: transcriptPath,
+                    turnId: turnId
+                )))
+
+            case "task_complete":
+                let lastMsg = payload["last_agent_message"] as? String
+                let turnId = payload["turn_id"] as? String
+                let completedAt = parseCodexDate(payload["completed_at"])
+                let durationMs = payload["duration_ms"] as? Int
+
+                events.append(.complete(CodexTaskCompleteEvent(
+                    sessionId: sessionId,
+                    cwd: cwd,
+                    lastAgentMessage: lastMsg,
+                    completedAt: completedAt,
+                    durationMs: durationMs,
+                    transcriptPath: transcriptPath,
+                    turnId: turnId
+                )))
+
+            default:
+                continue
+            }
+        }
+        return events
+    }
+
     /// Append `chunk` to `pending` and consume any complete lines, returning
     /// every `event_msg.task_complete` payload found. Trailing partial line
     /// stays in `pending` for the next call.
@@ -127,50 +224,34 @@ extension CodexJsonlTailer {
         cwd: String?,
         transcriptPath: String
     ) -> [CodexTaskCompleteEvent] {
-        let combined = pending + chunk
-        let parts = combined.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
-        // Last element is the partial trailing line; everything before it is
-        // a complete line. (split with omittingEmptySubsequences=false leaves
-        // the trailing "" if the chunk ends in '\n', which becomes an empty
-        // pending — also correct.)
-        guard let last = parts.last else {
-            pending = combined
-            return []
+        parseTaskLifecycleEvents(
+            chunk: chunk,
+            pending: &pending,
+            sessionId: sessionId,
+            cwd: cwd,
+            transcriptPath: transcriptPath
+        ).compactMap { event in
+            if case let .complete(complete) = event { return complete }
+            return nil
         }
-        pending = last
-        let completeLines = parts.dropLast()
+    }
 
-        var events: [CodexTaskCompleteEvent] = []
-        for line in completeLines {
-            if line.isEmpty { continue }
-            guard let lineData = line.data(using: .utf8) else { continue }
-            guard let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
-            guard obj["type"] as? String == "event_msg" else { continue }
-            guard let payload = obj["payload"] as? [String: Any] else { continue }
-            guard payload["type"] as? String == "task_complete" else { continue }
-
-            let lastMsg = payload["last_agent_message"] as? String
-            let turnId = payload["turn_id"] as? String
-            var completedAt: Date? = nil
-            if let raw = payload["completed_at"] as? Double {
-                completedAt = Date(timeIntervalSince1970: raw > 1e12 ? raw / 1000 : raw)
-            } else if let raw = payload["completed_at"] as? Int {
-                let secs = raw > 1_000_000_000_000 ? Double(raw) / 1000 : Double(raw)
-                completedAt = Date(timeIntervalSince1970: secs)
-            }
-            let durationMs = payload["duration_ms"] as? Int
-
-            events.append(CodexTaskCompleteEvent(
-                sessionId: sessionId,
-                cwd: cwd,
-                lastAgentMessage: lastMsg,
-                completedAt: completedAt,
-                durationMs: durationMs,
-                transcriptPath: transcriptPath,
-                turnId: turnId
-            ))
+    private nonisolated static func parseCodexDate(_ raw: Any?) -> Date? {
+        if let raw = raw as? Double {
+            return Date(timeIntervalSince1970: raw > 1e12 ? raw / 1000 : raw)
         }
-        return events
+        if let raw = raw as? Int {
+            let secs = raw > 1_000_000_000_000 ? Double(raw) / 1000 : Double(raw)
+            return Date(timeIntervalSince1970: secs)
+        }
+        if let raw = raw as? String {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = formatter.date(from: raw) { return date }
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter.date(from: raw)
+        }
+        return nil
     }
 }
 
@@ -185,6 +266,7 @@ private final class Watcher: @unchecked Sendable {
     private let queue: DispatchQueue
     private var offset: UInt64
     private var pendingBuffer: String = ""
+    private let onTaskStarted: (CodexTaskStartedEvent) -> Void
     private let onTaskComplete: (CodexTaskCompleteEvent) -> Void
     private let onClosed: (URL) -> Void
     /// Guards `isCancelled` so the MainActor `stop()` path and the
@@ -195,6 +277,7 @@ private final class Watcher: @unchecked Sendable {
 
     init?(
         url: URL,
+        onTaskStarted: @escaping (CodexTaskStartedEvent) -> Void,
         onTaskComplete: @escaping (CodexTaskCompleteEvent) -> Void,
         onClosed: @escaping (URL) -> Void
     ) {
@@ -214,13 +297,14 @@ private final class Watcher: @unchecked Sendable {
         self.sessionId = id
         self.fd = openFd
         self.queue = DispatchQueue(label: "ZackEyes.CodexJsonlTailer.\(id.prefix(8))")
+        self.onTaskStarted = onTaskStarted
         self.onTaskComplete = onTaskComplete
         self.onClosed = onClosed
 
-        // Read session_meta from the head once for cwd. Best-effort — if
-        // the file doesn't have one yet, cwd stays nil (notification falls
-        // back to the session id prefix).
-        self.cwd = Self.parseCwdFromHead(of: url)
+        // Read session_meta once for cwd. Best-effort — if the file doesn't
+        // have one yet, cwd stays nil (notification falls back to the
+        // session id prefix).
+        self.cwd = CodexJsonlTailer.parseSessionMetaCwd(at: url)
 
         // Start tailing FROM CURRENT EOF. We don't want to fire
         // notifications for historical task_complete events that already
@@ -291,7 +375,7 @@ private final class Watcher: @unchecked Sendable {
             guard let data = try handle.readToEnd() else { return }
             offset = endSize
             guard let chunk = String(data: data, encoding: .utf8) else { return }
-            let events = CodexJsonlTailer.parseTaskCompleteEvents(
+            let events = CodexJsonlTailer.parseTaskLifecycleEvents(
                 chunk: chunk,
                 pending: &pendingBuffer,
                 sessionId: sessionId,
@@ -299,27 +383,52 @@ private final class Watcher: @unchecked Sendable {
                 transcriptPath: url.path
             )
             for ev in events {
-                onTaskComplete(ev)
+                switch ev {
+                case .started(let started):
+                    onTaskStarted(started)
+                case .complete(let complete):
+                    onTaskComplete(complete)
+                }
             }
         } catch {
             // Read errors are fatal for this watcher — file may be gone.
             cancel()
         }
     }
+}
 
-    /// Read the head (~4KB) and parse the first `session_meta` line for cwd.
-    private static func parseCwdFromHead(of url: URL) -> String? {
+extension CodexJsonlTailer {
+    /// Parse the `cwd` from Codex's `session_meta` line. Real rollouts can
+    /// put a large `base_instructions` object on that first JSONL line, so a
+    /// fixed small head read can truncate the JSON before `JSONSerialization`
+    /// sees a complete object.
+    nonisolated static func parseSessionMetaCwd(at url: URL) -> String? {
+        guard let line = readFirstLine(of: url, maxBytes: 1_048_576),
+              let lineData = line.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+              obj["type"] as? String == "session_meta",
+              let payload = obj["payload"] as? [String: Any] else {
+            return nil
+        }
+        return payload["cwd"] as? String
+    }
+
+    private nonisolated static func readFirstLine(of url: URL, maxBytes: Int) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
-        guard let data = try? handle.read(upToCount: 4096),
-              let text = String(data: data, encoding: .utf8) else { return nil }
-        for line in text.split(separator: "\n") {
-            guard let lineData = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  obj["type"] as? String == "session_meta",
-                  let payload = obj["payload"] as? [String: Any] else { continue }
-            return payload["cwd"] as? String
+
+        var data = Data()
+        while data.count < maxBytes {
+            guard let chunk = try? handle.read(upToCount: min(8192, maxBytes - data.count)),
+                  !chunk.isEmpty else {
+                break
+            }
+            if let newline = chunk.firstIndex(of: 0x0A) {
+                data.append(chunk[..<newline])
+                break
+            }
+            data.append(chunk)
         }
-        return nil
+        return String(data: data, encoding: .utf8)
     }
 }

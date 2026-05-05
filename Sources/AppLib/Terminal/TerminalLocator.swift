@@ -31,6 +31,18 @@ public enum TerminalLocator {
         _ = AXIsProcessTrustedWithOptions(options)
     }
 
+    /// Find the agent process PID for a session. Tries multiple strategies:
+    /// 1. Use `lsof` on the transcript file (most accurate — file has exactly one writer)
+    /// 2. Scan running agent processes and match by cwd
+    public static func findAgentPid(agent: AgentKind, transcriptPath: String?, cwd: String?) -> Int? {
+        switch agent {
+        case .claude:
+            return findClaudePid(transcriptPath: transcriptPath, cwd: cwd)
+        case .codex:
+            return findCodexPid(transcriptPath: transcriptPath, cwd: cwd)
+        }
+    }
+
     /// Find the claude process PID for a session. Tries multiple strategies:
     /// 1. Use `lsof` on the transcript file (most accurate — file has exactly one writer)
     /// 2. Scan running claude processes and match by cwd
@@ -46,6 +58,24 @@ public enum TerminalLocator {
             return pid
         }
         NSLog("ZackEyes: no claude pid found")
+        return nil
+    }
+
+    /// Find the codex process PID for a session. Codex rollouts usually stay
+    /// near the TUI process that writes them, so lsof may work; cwd matching
+    /// covers the open-append-close cases.
+    public static func findCodexPid(transcriptPath: String?, cwd: String?) -> Int? {
+        NSLog("ZackEyes: findCodexPid transcriptPath=%{public}@ cwd=%{public}@",
+              transcriptPath ?? "nil", cwd ?? "nil")
+        if let path = transcriptPath, let pid = lsofAgentPid(file: path, agent: .codex) {
+            NSLog("ZackEyes: found codex via lsof pid=%d", pid)
+            return pid
+        }
+        if let cwd = cwd, let pid = agentPidByCwd(.codex, cwd) {
+            NSLog("ZackEyes: found codex via cwd match pid=%d", pid)
+            return pid
+        }
+        NSLog("ZackEyes: no codex pid found")
         return nil
     }
 
@@ -85,7 +115,7 @@ public enum TerminalLocator {
     /// `ps -o args` + `isClaudeProcess`. Returns `nil` on subprocess
     /// failure (transient ps error, missing entitlement). Returns empty
     /// array if ps succeeded with zero matches.
-    private static func runningClaudePids() -> [Int]? {
+    private static func runningAgentPids(_ agent: AgentKind) -> [Int]? {
         guard let out = runWithTimeout(
             "/bin/ps", args: ["-ax", "-o", "pid=,args="], timeoutSeconds: 3
         ) else { return nil }
@@ -96,10 +126,14 @@ public enum TerminalLocator {
             guard let pid = Int(trimmed[..<firstSpace]) else { continue }
             let argsStr = String(trimmed[trimmed.index(after: firstSpace)...])
                 .trimmingCharacters(in: .whitespaces)
-            guard isClaudeProcess(args: argsStr) else { continue }
+            guard isAgentProcess(agent, args: argsStr) else { continue }
             pids.append(pid)
         }
         return pids
+    }
+
+    private static func runningClaudePids() -> [Int]? {
+        runningAgentPids(.claude)
     }
 
     /// True iff `args` (as printed by `ps -o args`) belongs to a real
@@ -125,18 +159,42 @@ public enum TerminalLocator {
     /// - Anything else → skip. A `node` process running vue-cli-service,
     ///   vite, jest, webpack, etc. is not Claude Code.
     static func isClaudeProcess(args: String) -> Bool {
-        let argv = args.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
-        guard let first = argv.first else { return false }
-        let argv0Base = (first as NSString).lastPathComponent
+        guard let argv0Base = firstCommandBasename(args) else { return false }
         if argv0Base == "claude" { return true }
         if argv0Base == "node" {
-            return argv.dropFirst().contains { token in
-                token.contains("/claude-code/")
-                    || token.contains("/claude.js")
-                    || token.hasSuffix("/claude")
-            }
+            return args.contains("/claude-code/")
+                || args.contains("/claude.js")
+                || args.contains("/claude ")
+                || args.hasSuffix("/claude")
         }
         return false
+    }
+
+    static func isCodexProcess(args: String) -> Bool {
+        guard let argv0Base = firstCommandBasename(args) else { return false }
+        if argv0Base == "codex" { return true }
+        if argv0Base == "node" {
+            // Keep this scoped to known install paths. Generic `codex.js`
+            // or trailing `/codex` can be user scripts.
+            return args.contains("/@openai/codex/")
+                || (args.contains("/fnm_multishells/") &&
+                    (args.contains("/bin/codex ") || args.hasSuffix("/bin/codex")))
+        }
+        return false
+    }
+
+    private static func firstCommandBasename(_ args: String) -> String? {
+        guard let first = args.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true).first else {
+            return nil
+        }
+        return (String(first) as NSString).lastPathComponent
+    }
+
+    private static func isAgentProcess(_ agent: AgentKind, args: String) -> Bool {
+        switch agent {
+        case .claude: return isClaudeProcess(args: args)
+        case .codex:  return isCodexProcess(args: args)
+        }
     }
 
     /// Batch lsof: get cwd for many PIDs in a single subprocess. Returns
@@ -175,13 +233,83 @@ public enum TerminalLocator {
     }
 
     private static func lsofPid(file: String) -> Int? {
-        guard let out = runWithTimeout("/usr/sbin/lsof", args: ["-t", file], timeoutSeconds: 3) else { return nil }
-        for line in out.split(separator: "\n") {
-            if let pid = Int(line.trimmingCharacters(in: .whitespaces)), pid > 0 {
+        lsofPids(file: file).first
+    }
+
+    private static func lsofAgentPid(file: String, agent: AgentKind) -> Int? {
+        for pid in lsofPids(file: file) {
+            guard let args = processArgs(pid: pid) else { continue }
+            if isAgentProcess(agent, args: args) {
                 return pid
             }
         }
         return nil
+    }
+
+    private static func lsofPids(file: String) -> [Int] {
+        guard let out = runWithTimeout("/usr/sbin/lsof", args: ["-t", file], timeoutSeconds: 3) else {
+            return []
+        }
+        var pids: [Int] = []
+        for line in out.split(separator: "\n") {
+            if let pid = Int(line.trimmingCharacters(in: .whitespaces)), pid > 0 {
+                pids.append(pid)
+            }
+        }
+        return pids
+    }
+
+    private static func processArgs(pid: Int) -> String? {
+        runWithTimeout("/bin/ps", args: ["-p", "\(pid)", "-o", "args="], timeoutSeconds: 2)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func sessionTitle(cwd: String, sessionId: String, prompt: String?) -> String {
+        let basename = (cwd as NSString).lastPathComponent
+        let sidShort = String(sessionId.prefix(8))
+        let cleanPrompt = sanitizeTitlePrompt(prompt ?? "")
+        if cleanPrompt.isEmpty {
+            return "\(basename) · ze:\(sidShort)"
+        }
+        return "\(basename) · \(cleanPrompt) · ze:\(sidShort)"
+    }
+
+    @discardableResult
+    public static func writeSessionTitle(
+        containingPid pid: Int,
+        cwd: String,
+        sessionId: String,
+        prompt: String?
+    ) -> Bool {
+        guard let tty = TTYUtil.ttyPath(pid: Int32(pid)) else { return false }
+        let title = sessionTitle(cwd: cwd, sessionId: sessionId, prompt: prompt)
+        let osc = "\u{001B}]2;\(title)\u{0007}"
+        guard let data = osc.data(using: .utf8),
+              let fh = FileHandle(forWritingAtPath: tty) else { return false }
+        defer { try? fh.close() }
+        do {
+            try fh.write(contentsOf: data)
+            NSLog("ZackEyes: wrote session title tty=%{public}@ sid=%{public}@", tty, sessionId)
+            return true
+        } catch {
+            NSLog("ZackEyes: write session title failed tty=%{public}@ sid=%{public}@ err=%{public}@",
+                  tty, sessionId, "\(error)")
+            return false
+        }
+    }
+
+    private static func sanitizeTitlePrompt(_ input: String) -> String {
+        var sanitized = ""
+        for scalar in input.unicodeScalars {
+            if scalar == "\n" || scalar == "\r" || scalar == "\t" {
+                sanitized.append(" ")
+            } else if scalar.value < 0x20 || scalar.value == 0x7F {
+                continue
+            } else {
+                sanitized.append(Character(scalar))
+            }
+        }
+        return String(sanitized.prefix(30)).trimmingCharacters(in: .whitespaces)
     }
 
     /// Run a subprocess with a timeout. Returns stdout or nil on error/timeout.
@@ -275,8 +403,8 @@ public enum TerminalLocator {
         }
     }
 
-    private static func claudePidByCwd(_ targetCwd: String) -> Int? {
-        guard let pids = runningClaudePids() else {
+    private static func agentPidByCwd(_ agent: AgentKind, _ targetCwd: String) -> Int? {
+        guard let pids = runningAgentPids(agent) else {
             NSLog("ZackEyes: ps command failed or timed out")
             return nil
         }
@@ -285,9 +413,13 @@ public enum TerminalLocator {
         for (pid, cwd) in cwdMap where canonicalize(cwd) == target {
             return pid
         }
-        NSLog("ZackEyes: scanned %d claude candidates, no cwd match for %{public}@",
-              pids.count, targetCwd)
+        NSLog("ZackEyes: scanned %d %{public}@ candidates, no cwd match for %{public}@",
+              pids.count, agent.rawValue, targetCwd)
         return nil
+    }
+
+    private static func claudePidByCwd(_ targetCwd: String) -> Int? {
+        agentPidByCwd(.claude, targetCwd)
     }
 
     private static func processCwd(pid: Int) -> String? {
@@ -355,9 +487,37 @@ public enum TerminalLocator {
         }
     }
 
-    /// PID-less Ghostty jump for idle/detected sessions. Finds Ghostty
-    /// by bundle ID and runs Layer A (sid marker) → Layer A' (cwd basename).
-    /// Does nothing if Ghostty isn't running.
+    /// PID-less terminal jump for idle/detected sessions. Prefer Ghostty
+    /// because it has the strongest session-id matching; then try other
+    /// known terminals with AX/cwd fallback.
+    @discardableResult
+    public static func activateTerminalDirectly(
+        sessionId: String,
+        cwd: String?
+    ) -> Bool {
+        if let app = NSRunningApplication.runningApplications(
+            withBundleIdentifier: "com.mitchellh.ghostty"
+        ).first {
+            if focusGhosttySession(app: app, sessionId: sessionId, cwd: cwd) {
+                _ = app.activate(options: [])
+                return true
+            }
+            if focusByAccessibility(app: app, cwd: cwd) {
+                return true
+            }
+        }
+
+        for app in NSWorkspace.shared.runningApplications {
+            guard let bundleId = app.bundleIdentifier,
+                  knownTerminals.contains(bundleId),
+                  bundleId != "com.mitchellh.ghostty" else { continue }
+            if focusByAccessibility(app: app, cwd: cwd) {
+                return true
+            }
+        }
+        return false
+    }
+
     @discardableResult
     public static func activateGhosttyDirectly(
         sessionId: String,
@@ -366,8 +526,8 @@ public enum TerminalLocator {
         guard let app = NSRunningApplication.runningApplications(
             withBundleIdentifier: "com.mitchellh.ghostty"
         ).first else { return false }
-        _ = app.activate(options: [])
         if focusGhosttySession(app: app, sessionId: sessionId, cwd: cwd) {
+            _ = app.activate(options: [])
             return true
         }
         return focusByAccessibility(app: app, cwd: cwd)
@@ -517,6 +677,7 @@ public enum TerminalLocator {
         NSLog("ZackEyes: matched window with score=%d", bestScore)
 
         // Raise + make main + focused
+        _ = app.activate(options: [])
         AXUIElementPerformAction(window, kAXRaiseAction as CFString)
         AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
         AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, kCFBooleanTrue)

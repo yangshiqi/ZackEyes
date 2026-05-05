@@ -221,16 +221,7 @@ public struct SessionScanner {
             return nil
         }
 
-        // Head: first 4KB is enough for session_meta; that line is line 0.
-        var cwd: String? = nil
-        if let head = readHead(of: url, maxBytes: 4096),
-           let firstLine = head.split(separator: "\n").first,
-           let lineData = firstLine.data(using: .utf8),
-           let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-           obj["type"] as? String == "session_meta",
-           let payload = obj["payload"] as? [String: Any] {
-            cwd = payload["cwd"] as? String
-        }
+        let cwd = CodexJsonlTailer.parseSessionMetaCwd(at: url)
 
         // Tail: last 64KB for user_message events.
         var lastUserPrompt: String? = nil
@@ -274,13 +265,6 @@ public struct SessionScanner {
         let offset = fileSize > maxBytes ? fileSize - maxBytes : 0
         try? handle.seek(toOffset: offset)
         guard let data = try? handle.readToEnd() else { return nil }
-        return String(data: data, encoding: .utf8)
-    }
-
-    private func readHead(of url: URL, maxBytes: Int) -> String? {
-        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
-        defer { try? handle.close() }
-        guard let data = try? handle.read(upToCount: maxBytes) else { return nil }
         return String(data: data, encoding: .utf8)
     }
 }
