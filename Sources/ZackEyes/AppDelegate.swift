@@ -57,6 +57,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         socketServer.setPermissionAbandonedHandler { [weak self] sid in
             NSLog("ZackEyes: permission abandoned for session %@", sid)
             self?.sessionStore.abandonPermission(sessionId: sid)
+            // The popup was force-expanded when the request arrived; the
+            // user just answered in the agent terminal instead, so collapse
+            // it back to compact. The mouse-out / outside-click paths only
+            // fire on actual cursor movement — without an explicit collapse
+            // the panel sits open with stale "no pending" content until the
+            // user happens to move their mouse. forceUiCompact gates on
+            // hasPending, so other sessions still waiting stay expanded.
+            self?.forceUiCompact()
         }
         do {
             try socketServer.start()
@@ -232,8 +240,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // recovers; if it stays broken, the user at least sees their
             // running sessions.
             let cwdCounts = TerminalLocator.runningClaudeCwds()
-            let live = cwdCounts.map { LivenessFilter.filterLiveDetected(detected, cwdCounts: $0) }
-                ?? detected
+            // Codex map is independent — if `ps` for codex fails (nil) we
+            // fall back to "import every detected codex session" rather than
+            // dropping silently. The 60s sweep handles eviction once ps
+            // recovers.
+            let codexCwdCounts = TerminalLocator.runningCodexCwds()
+            let live = cwdCounts.map {
+                LivenessFilter.filterLiveDetected(
+                    detected,
+                    cwdCounts: $0,
+                    codexCwdCounts: codexCwdCounts
+                )
+            } ?? detected
             await MainActor.run {
                 self?.sessionStore.importDetectedSessions(live)
                 NSLog(
@@ -322,50 +340,68 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// grace period so a transient subprocess hiccup can't wipe live
     /// sessions whose hooks are still flowing.
     private func runLivenessSweep() {
-        // --- Codex idle prune (time-based, no `ps` needed) -------------
-        // Codex has no `runningCodexCwds()` analog yet, so we can't ask
-        // "is the owning TUI still alive" the way we do for Claude. Time
-        // is the next-best signal: codex writes `token_count` events on
-        // every turn, so a session whose `lastActiveAt` is older than
-        // the threshold is either closed or the user walked away. A live
-        // codex thread that asks another question post-eviction will
-        // re-appear automatically — `CodexJsonlTailer` is still watching
-        // the rollout, and the next `task_complete` re-creates the
-        // session via `SessionStore.recordCodexTaskComplete`.
-        let codexIdleCutoff = Date().addingTimeInterval(-15 * 60)  // 15 min
-        let staleCodexIds = Set(
-            sessionStore.sessions.values
-                .filter { $0.agent == .codex
-                       && $0.pendingPermission == nil
-                       && $0.lastActiveAt < codexIdleCutoff }
-                .map { $0.id }
-        )
-        if !staleCodexIds.isEmpty {
-            sessionStore.removeSessions(ids: staleCodexIds)
-            NSLog("ZackEyes: pruned %d idle codex sessions", staleCodexIds.count)
-        }
-
-        // --- Claude liveness check (cwd → running `claude` matching) ---
-        // The cwd→count snapshot below matches `claude` argv strictly
-        // (see TerminalLocator); feeding a codex session through it would
-        // always come up "no live owner" and evict the session, which is
-        // why we filter to .claude here.
-        let candidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
+        // Snapshot pruning candidates per agent on the main actor, then
+        // resolve each agent's live-cwd map off-main and call the same
+        // `LivenessFilter.computeDeadIds` for both. Codex now has its own
+        // ps-based liveness signal — when the codex TUI exits the cards
+        // disappear at the next sweep tick instead of lingering for the
+        // legacy 15-min idle window.
+        let claudeCandidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
             guard s.agent == .claude else { return nil }
             guard let cwd = s.cwd, s.pendingPermission == nil else { return nil }
             return LivenessFilter.PruneCandidate(id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt)
         }
-        guard !candidates.isEmpty else { return }
+        let codexCandidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
+            guard s.agent == .codex else { return nil }
+            guard let cwd = s.cwd, s.pendingPermission == nil else { return nil }
+            return LivenessFilter.PruneCandidate(id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt)
+        }
+
+        // Codex sessions with `cwd == nil` (session_meta not yet written, or
+        // parse failure) bypass the ps-based sweep entirely — without this
+        // fallback they'd never be evicted once the codex TUI exits. Keep
+        // the legacy 15-min idle prune for that narrow case so we don't
+        // accumulate zombie cards.
+        let codexIdleCutoff = Date().addingTimeInterval(-15 * 60)
+        let staleNoCwdCodexIds = Set(
+            sessionStore.sessions.values
+                .filter { $0.agent == .codex
+                       && $0.cwd == nil
+                       && $0.pendingPermission == nil
+                       && $0.lastActiveAt < codexIdleCutoff }
+                .map { $0.id }
+        )
+        if !staleNoCwdCodexIds.isEmpty {
+            sessionStore.removeSessions(ids: staleNoCwdCodexIds)
+            NSLog("ZackEyes: pruned %d nil-cwd codex sessions (idle > 15min)",
+                  staleNoCwdCodexIds.count)
+        }
+
+        guard !claudeCandidates.isEmpty || !codexCandidates.isEmpty else { return }
+
         Task.detached(priority: .utility) { [weak self] in
             // ps/lsof off main; @MainActor SessionStore is touched only
             // inside the MainActor.run hop below via self?.sessionStore.
-            let cwdCounts = TerminalLocator.runningClaudeCwds()
             let graceCutoff = Date().addingTimeInterval(-90)
-            let deadIds = LivenessFilter.computeDeadIds(
-                candidates: candidates,
-                cwdCounts: cwdCounts,
-                graceCutoff: graceCutoff
-            )
+            var deadIds = Set<String>()
+
+            if !claudeCandidates.isEmpty {
+                let cwdCounts = TerminalLocator.runningClaudeCwds()
+                deadIds.formUnion(LivenessFilter.computeDeadIds(
+                    candidates: claudeCandidates,
+                    cwdCounts: cwdCounts,
+                    graceCutoff: graceCutoff
+                ))
+            }
+            if !codexCandidates.isEmpty {
+                let cwdCounts = TerminalLocator.runningCodexCwds()
+                deadIds.formUnion(LivenessFilter.computeDeadIds(
+                    candidates: codexCandidates,
+                    cwdCounts: cwdCounts,
+                    graceCutoff: graceCutoff
+                ))
+            }
+
             guard !deadIds.isEmpty else { return }
             await MainActor.run {
                 self?.sessionStore.removeSessions(ids: deadIds)
@@ -462,9 +498,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Capture prior state BEFORE handling the event (for Stop detection)
             let priorState: SessionState? = event.sessionId.flatMap { sessionStore.sessions[$0]?.state }
             let priorErrorAt: Date? = event.sessionId.flatMap { sessionStore.sessions[$0]?.errorAt }
-            let priorToolCount = event.sessionId.flatMap {
-                sessionStore.sessions[$0]?.toolCallCount
-            } ?? 0
             let priorUserPrompt = event.sessionId.flatMap {
                 sessionStore.sessions[$0]?.lastUserPrompt
             }
@@ -493,18 +526,31 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 forceUiExpand()
             }
 
-            // Notify on Stop. The session must have done something this
-            // turn — either ran a tool (toolCallCount went up) or had a
-            // user prompt waiting on a reply. The earlier gate only
-            // checked `toolCallCount > 0` over the session lifetime, which
-            // suppressed notifications on chat-only turns where the agent
-            // answers without invoking any tools (common with Codex).
+            // Notify on Stop when the session showed signs of work — any
+            // ONE of the three independent signals is enough:
+            //
+            // 1. Lifetime tool calls > 0 — covers sessions that were
+            //    running before ZackEyes launched and never fired
+            //    UserPromptSubmit (so `priorUserPrompt` is nil).
+            // 2. User prompt observed this run — the original signal,
+            //    catches chat-only turns once the user has submitted at
+            //    least one prompt that we saw.
+            // 3. Stop event carries `last_assistant_message` — the agent
+            //    actually produced a reply this turn. Strongest "did
+            //    something" signal; works even without tools or observed
+            //    prompts (covers codex Stop, and pre-launch sessions
+            //    finishing their first turn after app start).
+            //
+            // The previous `didWorkThisTurn = toolCount-after > toolCount-before`
+            // check was always false: Stop doesn't change toolCallCount,
+            // so both sides of the comparison were the same captured value.
             if event.bridgeEvent == "Stop",
                session.errorMessage == nil,    // don't double-notify on errors
                priorState == .working || priorState == .waiting {
-                let didWorkThisTurn = session.toolCallCount > priorToolCount
+                let didAnyTooling = session.toolCallCount > 0
                 let hasInteraction = priorUserPrompt != nil
-                if didWorkThisTurn || hasInteraction {
+                let hasAssistantReply = (event.lastAssistantMessage?.isEmpty == false)
+                if didAnyTooling || hasInteraction || hasAssistantReply {
                     NotificationManager.shared.notifySessionFinished(
                         sessionId: sid,
                         agent: session.agent,
