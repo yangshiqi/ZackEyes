@@ -74,6 +74,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 3.5 Usage tracker (reads JSONL transcripts, aggregates 5h/7d tokens)
         usageTracker = UsageTracker()
+        // Real-notch path doesn't go through SimulatedNotchController, so the
+        // tracker would never start its 30s refresh loop and the menu-bar
+        // star would stay white forever. Start it here unconditionally —
+        // the simulated path's `start()` is idempotent (cancels + restarts
+        // the same task), so this is safe whether or not we hit that branch.
+        usageTracker.start(intervalSeconds: 30)
 
         // 4. UI — Notch or Menu Bar (+ simulated notch on notchless Macs)
         // UpdateChecker is ALWAYS created so real-notch users also get
@@ -87,7 +93,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Menu bar icon is ALWAYS shown: on notched Macs it's the only
         // non-CLI surface for Quit / About / Change Hotkey / Theme
         // (real-notch path has no gear menu).
-        let mb = MenuBarFallback(viewModel: viewModel)
+        let mb = MenuBarFallback(viewModel: viewModel, usageTracker: usageTracker)
         mb.setup()
         menuBarFallback = mb
 
