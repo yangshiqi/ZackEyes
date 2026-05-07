@@ -239,19 +239,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // currently firing hooks. The 60s sweep cleans up if ps
             // recovers; if it stays broken, the user at least sees their
             // running sessions.
-            let cwdCounts = TerminalLocator.runningClaudeCwds()
-            // Codex map is independent — if `ps` for codex fails (nil) we
-            // fall back to "import every detected codex session" rather than
-            // dropping silently. The 60s sweep handles eviction once ps
-            // recovers.
-            let codexCwdCounts = TerminalLocator.runningCodexCwds()
-            let live = cwdCounts.map {
-                LivenessFilter.filterLiveDetected(
-                    detected,
-                    cwdCounts: $0,
-                    codexCwdCounts: codexCwdCounts
-                )
-            } ?? detected
+            //
+            // Skip ps/lsof entirely when there's nothing to filter —
+            // saves ~100-200ms of subprocess startup on first launch
+            // for users with no recent jsonl activity.
+            let live: [SessionScanner.DetectedSession]
+            if detected.isEmpty {
+                live = []
+            } else {
+                let cwdCounts = TerminalLocator.runningClaudeCwds()
+                // Codex map is independent — if `ps` for codex fails (nil)
+                // we fall back to "import every detected codex session"
+                // rather than dropping silently. The 60s sweep handles
+                // eviction once ps recovers.
+                let codexCwdCounts = TerminalLocator.runningCodexCwds()
+                live = cwdCounts.map {
+                    LivenessFilter.filterLiveDetected(
+                        detected,
+                        cwdCounts: $0,
+                        codexCwdCounts: codexCwdCounts
+                    )
+                } ?? detected
+            }
             await MainActor.run {
                 self?.sessionStore.importDetectedSessions(live)
                 NSLog(
