@@ -20,22 +20,39 @@ public enum LivenessFilter {
     /// most-recently-modified jsonls. Sessions with `cwd == nil` are dropped
     /// (no signal to match against).
     ///
-    /// **Codex sessions are passed through unchanged.** `cwdCounts` only
-    /// reflects running `claude` processes (see `TerminalLocator`), so it
-    /// would always evaluate to "no live owner" for any Codex session and
-    /// drop them all. We don't have an equivalent `runningCodexCwds()` yet;
-    /// the safer behavior is to import every detected Codex session and
-    /// accept that a stopped Codex run will leave a tombstone until app
-    /// restart. (Same compromise as `runLivenessSweep`.)
+    /// `cwdCounts` is the running-`claude` snapshot (Claude path).
+    /// `codexCwdCounts` is the running-`codex` snapshot. When `nil`, codex
+    /// sessions pass through unchanged — the legacy "we don't know if codex
+    /// is alive" semantics. When non-nil (even empty), codex sessions are
+    /// filtered the same way Claude is: only kept if their cwd appears in
+    /// the snapshot.
     public static func filterLiveDetected(
         _ detected: [SessionScanner.DetectedSession],
-        cwdCounts: [String: Int]
+        cwdCounts: [String: Int],
+        codexCwdCounts: [String: Int]? = nil
     ) -> [SessionScanner.DetectedSession] {
-        let codexPassThrough = detected.filter { $0.agent == .codex }
+        let codex = detected.filter { $0.agent == .codex }
         let claude = detected.filter { $0.agent == .claude }
 
+        let liveClaude = filterByCwd(claude, cwdCounts: cwdCounts)
+        let liveCodex: [SessionScanner.DetectedSession]
+        if let codexCwdCounts = codexCwdCounts {
+            liveCodex = filterByCwd(codex, cwdCounts: codexCwdCounts)
+        } else {
+            liveCodex = codex
+        }
+        return liveClaude + liveCodex
+    }
+
+    /// Per-agent cwd-grouped filter. Drops sessions with no cwd (no signal
+    /// to match against) and keeps the N most-recently-modified jsonls per
+    /// cwd where N is the live process count for that cwd.
+    private static func filterByCwd(
+        _ sessions: [SessionScanner.DetectedSession],
+        cwdCounts: [String: Int]
+    ) -> [SessionScanner.DetectedSession] {
         var grouped: [String: [SessionScanner.DetectedSession]] = [:]
-        for d in claude {
+        for d in sessions {
             guard let cwd = d.cwd else { continue }
             grouped[canonicalize(cwd), default: []].append(d)
         }
@@ -46,7 +63,6 @@ public enum LivenessFilter {
             let sortedDesc = group.sorted { $0.lastModified > $1.lastModified }
             live.append(contentsOf: sortedDesc.prefix(liveCount))
         }
-        live.append(contentsOf: codexPassThrough)
         return live
     }
 

@@ -197,7 +197,28 @@ public final class UsageTracker: ObservableObject {
 
         if let obs = codexObservation {
             applyCodexObservation(obs)
+        } else {
+            // No codex rollout written within the active window → user is
+            // not currently using codex. Clear the codex fields so the bar
+            // disappears instead of pinning to whatever historical or cached
+            // value last landed in the snapshot.
+            clearCodexData()
         }
+    }
+
+    private func clearCodexData() {
+        var s = snapshot
+        // Skip the Published mutation + cache write when nothing changes.
+        if s.codexFiveHourUsedPct == nil
+            && s.codexFiveHourResetsAt == nil
+            && s.codexSevenDayUsedPct == nil
+            && s.codexSevenDayResetsAt == nil { return }
+        s.codexFiveHourUsedPct = nil
+        s.codexFiveHourResetsAt = nil
+        s.codexSevenDayUsedPct = nil
+        s.codexSevenDayResetsAt = nil
+        snapshot = s
+        saveToCache()
     }
 
     private func applyCodexObservation(_ obs: CodexRateLimitObservation) {
@@ -211,22 +232,34 @@ public final class UsageTracker: ObservableObject {
         saveToCache()
     }
 
+    /// Codex rollout-mtime window for "is codex actively running right now".
+    /// A rollout file's mtime advances on every event_msg write, so anything
+    /// older than this is taken as "the user is not currently using codex" —
+    /// we hide the codex usage bar in that case so it tracks current activity
+    /// instead of historical state. 15 min mirrors the codex idle prune in
+    /// AppDelegate.runLivenessSweep.
+    public nonisolated static let codexActiveWindowSeconds: TimeInterval = 15 * 60
+
     /// Walk the date-partitioned codex sessions tree and return the
     /// `rate_limits` payload from the most recent `event_msg.token_count`
     /// event, decoded into a Sendable observation. Returns `nil` if no
-    /// recent event is found. Bounded — only inspects rollouts modified in
-    /// the last 24h, only reads the tail of each file.
-    nonisolated static func scanLatestCodexRateLimits(rootDir: URL) -> CodexRateLimitObservation? {
+    /// rollout has been written within `recentSeconds` (default
+    /// `codexActiveWindowSeconds` = 15 min). Bounded — only reads the tail
+    /// of each candidate file.
+    nonisolated static func scanLatestCodexRateLimits(
+        rootDir: URL,
+        recentSeconds: TimeInterval = codexActiveWindowSeconds
+    ) -> CodexRateLimitObservation? {
         let fm = FileManager.default
-        let cutoff = Date().addingTimeInterval(-24 * 3600)
+        let cutoff = Date().addingTimeInterval(-recentSeconds)
         struct Candidate {
             let url: URL
             let mtime: Date
         }
         var candidates: [Candidate] = []
         // Codex partitions rollouts by UTC date; walk only the YYYY/MM/DD
-        // subdirs that intersect the 24h cutoff (≤ 2 directories) instead
-        // of the entire archive.
+        // subdirs that intersect the cutoff (≤ 2 directories around UTC
+        // midnight) instead of the entire archive.
         for day in SessionScanner.candidateDateDirs(rootDir: rootDir, cutoff: cutoff) {
             guard let files = try? fm.contentsOfDirectory(
                 at: day,

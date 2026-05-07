@@ -101,6 +101,22 @@ public enum TerminalLocator {
     /// We can't just match `comm == "node"` because every Vue/webpack/vite
     /// dev server in a project subdirectory would then masquerade as a
     /// Claude session. See `isClaudeProcess` for the matching rules.
+    /// Snapshot of currently-running Codex CLI processes, keyed by cwd.
+    /// Same nil/empty contract as `runningClaudeCwds`. Used by
+    /// `runLivenessSweep` to evict codex sessions whose owning TUI has
+    /// exited — replaces the previous time-only idle prune so cards
+    /// disappear as soon as the codex process is gone, instead of lingering
+    /// for 15 min after its last rollout write.
+    public static func runningCodexCwds() -> [String: Int]? {
+        guard let pids = runningAgentPids(.codex) else { return nil }
+        let cwdMap = batchProcessCwds(pids: pids)
+        var counts: [String: Int] = [:]
+        for cwd in cwdMap.values {
+            counts[Self.canonicalize(cwd), default: 0] += 1
+        }
+        return counts
+    }
+
     public static func runningClaudeCwds() -> [String: Int]? {
         guard let pids = runningClaudePids() else { return nil }
         let cwdMap = batchProcessCwds(pids: pids)

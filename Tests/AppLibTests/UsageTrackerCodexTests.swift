@@ -171,7 +171,7 @@ struct UsageTrackerCodexTests {
         #expect(obs == nil)
     }
 
-    @Test func scanLatestCodexRateLimits_skipsFilesOlderThan24h() throws {
+    @Test func scanLatestCodexRateLimits_skipsRolloutsOlderThanActiveWindow() throws {
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
         let day = currentCodexDayDir(under: tmpDir)
@@ -181,11 +181,58 @@ struct UsageTrackerCodexTests {
         try """
             {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":99.0,"resets_at":1}}}}
             """.write(to: file, atomically: true, encoding: .utf8)
+        // 30 min old — outside the 15-min active window. Codex isn't running
+        // right now, so we want the bar gone.
         try FileManager.default.setAttributes(
-            [.modificationDate: Date().addingTimeInterval(-48 * 3600)],
+            [.modificationDate: Date().addingTimeInterval(-30 * 60)],
             ofItemAtPath: file.path
         )
         let obs = UsageTracker.scanLatestCodexRateLimits(rootDir: tmpDir)
         #expect(obs == nil)
+    }
+
+    @Test @MainActor func refresh_clearsCodexData_whenNoRecentRollout() async throws {
+        // tmp codex dir has no recent rollout files.
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: tmpDir
+        )
+        // Seed codex fields as if a previous run captured them. After
+        // refresh, since no rollout in tmpDir is within the active window,
+        // they must be cleared so the bar disappears.
+        tracker.updateFromCodexRateLimits([
+            "primary":   ["used_percent": 25.0, "resets_at": 1_777_700_000],
+            "secondary": ["used_percent": 42.0, "resets_at": 1_777_800_000],
+        ])
+        #expect(tracker.snapshot.hasCodexData)
+
+        await tracker.refresh()
+
+        #expect(tracker.snapshot.codexFiveHourUsedPct == nil)
+        #expect(tracker.snapshot.codexSevenDayUsedPct == nil)
+        #expect(!tracker.snapshot.hasCodexData)
+    }
+
+    @Test func scanLatestCodexRateLimits_includesFreshRollout() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let day = currentCodexDayDir(under: tmpDir)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        let id = "019dec85-aaaa-bbbb-cccc-ddddeeeeffff"
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id, hour: 14))
+        try """
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":12.5,"resets_at":1777700000},"secondary":{"used_percent":3.0,"resets_at":1777800000}}}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        // 5 min old — well inside the 15-min active window.
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-5 * 60)],
+            ofItemAtPath: file.path
+        )
+        let obs = UsageTracker.scanLatestCodexRateLimits(rootDir: tmpDir)
+        #expect(obs?.fiveHourUsedPct == 12.5)
+        #expect(obs?.sevenDayUsedPct == 3.0)
     }
 }

@@ -64,24 +64,61 @@ struct LivenessFilterTests {
         #expect(result.map(\.id) == ["a"])
     }
 
-    /// `cwdCounts` only describes running `claude` processes. A Codex
-    /// session in a cwd with no claude must still come through, otherwise
-    /// the user's already-running Codex would never appear in the notch.
-    @Test func filterPassesCodexThroughEvenWithNoClaudeInCwd() {
+    /// When `codexCwdCounts` is omitted (legacy callers, or a `ps` failure
+    /// for the codex snapshot specifically), codex sessions still pass
+    /// through unchanged so already-running Codex doesn't disappear.
+    @Test func filterPassesCodexThroughWhenCodexSnapshotMissing() {
         let now = Date()
         let detected = [
             mkDetected("claude-a", cwd: "/foo", mtime: now, agent: .claude),
             mkDetected("codex-b",  cwd: "/bar", mtime: now, agent: .codex),
             mkDetected("codex-c",  cwd: nil,    mtime: now, agent: .codex),
         ]
-        // Only /foo has a running claude; /bar has no claude (and Codex
-        // wouldn't appear in this snapshot at all).
         let result = LivenessFilter.filterLiveDetected(
             detected, cwdCounts: ["/foo": 1]
+            // codexCwdCounts: nil (default) → codex passes through
         )
         let ids = Set(result.map(\.id))
-        // Codex sessions all pass through, including the one without a cwd.
         #expect(ids == ["claude-a", "codex-b", "codex-c"])
+    }
+
+    /// When `codexCwdCounts` is present, codex sessions are filtered the
+    /// same way Claude is — only kept if a codex process is running in
+    /// the same cwd. This is the path that drops stale codex cards on
+    /// app launch when the codex TUI has already exited.
+    @Test func filterFiltersCodexByCwdWhenSnapshotProvided() {
+        let now = Date()
+        let detected = [
+            mkDetected("claude-a", cwd: "/foo", mtime: now, agent: .claude),
+            mkDetected("codex-live",  cwd: "/bar", mtime: now, agent: .codex),
+            mkDetected("codex-dead",  cwd: "/qux", mtime: now, agent: .codex),
+            mkDetected("codex-no-cwd", cwd: nil, mtime: now, agent: .codex),
+        ]
+        let result = LivenessFilter.filterLiveDetected(
+            detected,
+            cwdCounts: ["/foo": 1],
+            codexCwdCounts: ["/bar": 1]
+        )
+        let ids = Set(result.map(\.id))
+        // codex-dead's cwd has no running codex → dropped.
+        // codex-no-cwd has no cwd to match → dropped.
+        #expect(ids == ["claude-a", "codex-live"])
+    }
+
+    /// Empty (but non-nil) codex snapshot = `ps` succeeded with zero codex
+    /// processes. Every codex session must be evicted at import time.
+    @Test func filterEvictsAllCodexWhenNoCodexProcessesRunning() {
+        let now = Date()
+        let detected = [
+            mkDetected("codex-a", cwd: "/bar", mtime: now, agent: .codex),
+            mkDetected("codex-b", cwd: "/qux", mtime: now, agent: .codex),
+        ]
+        let result = LivenessFilter.filterLiveDetected(
+            detected,
+            cwdCounts: [:],
+            codexCwdCounts: [:]
+        )
+        #expect(result.isEmpty)
     }
 
     // MARK: - computeDeadIds
