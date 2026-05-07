@@ -9,8 +9,7 @@ public class MenuBarFallback: NSObject {
     private var popover: NSPopover?
     private let viewModel: NotchViewModel
     private let usageTracker: UsageTracker
-    private var sessionCancellable: AnyCancellable?
-    private var usageCancellable: AnyCancellable?
+    private var iconCancellable: AnyCancellable?
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
 
@@ -42,15 +41,15 @@ public class MenuBarFallback: NSObject {
         refreshIcon()
 
         // Both inputs (active session + rate-limit snapshot) can change
-        // independently, so subscribe to each. objectWillChange fires
-        // *before* the change applies — hop through the runloop so
-        // refreshIcon sees the new value, not the pre-change one.
-        sessionCancellable = viewModel.sessionStore.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.refreshIcon() }
-        usageCancellable = usageTracker.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.refreshIcon() }
+        // independently. Merge into one subscription — objectWillChange
+        // fires *before* the change applies, so the receive(on:) hop
+        // through the runloop ensures refreshIcon sees the new value.
+        iconCancellable = Publishers.Merge(
+            viewModel.sessionStore.objectWillChange,
+            usageTracker.objectWillChange
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _ in self?.refreshIcon() }
 
         let popover = NSPopover()
         popover.behavior = .transient
@@ -89,8 +88,7 @@ public class MenuBarFallback: NSObject {
     }
 
     public func teardown() {
-        sessionCancellable = nil
-        usageCancellable = nil
+        iconCancellable = nil
         stopClickMonitoring()
         if let statusItem = statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
