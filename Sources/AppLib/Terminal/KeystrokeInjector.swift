@@ -18,6 +18,15 @@ import Shared
 /// no-ops; we surface this by returning `false` so callers can show a
 /// "answer in terminal" reminder instead of leaving the popup pointing
 /// at nothing.
+///
+/// **Targeting** — events are delivered to the terminal *emulator*'s pid
+/// via `CGEvent.postToPid`, not to the system-wide HID tap. This keeps
+/// the keystrokes stuck to the right app even if the user happens to
+/// switch focus during the inter-key gap. The agent process (claude /
+/// codex) doesn't read keyboard events directly — its host terminal does
+/// and writes them to the agent's pty. So we resolve agentPid → owning
+/// terminal app via the existing `TerminalLocator.findTerminalApp` and
+/// post to the terminal app's pid.
 @MainActor
 public enum KeystrokeInjector {
 
@@ -29,22 +38,15 @@ public enum KeystrokeInjector {
         cwd: String?,
         sessionId: String?,
         optionIndex: Int
-    ) -> Bool {
-        guard ensureAccessibilityTrusted() else { return false }
-        guard activateTerminal(pid: agentPid, cwd: cwd, sessionId: sessionId) else {
+    ) async -> Bool {
+        guard let setup = await prepare(agentPid: agentPid, cwd: cwd, sessionId: sessionId) else {
             return false
         }
-        // Brief breather so the activated app actually has key focus
-        // before we post events. Without this, the first keystroke
-        // sometimes lands on the previously-focused window.
-        Thread.sleep(forTimeInterval: 0.12)
-
-        guard let src = CGEventSource(stateID: .hidSystemState) else { return false }
         for _ in 0..<max(0, optionIndex) {
-            postKey(src: src, key: KeyCode.downArrow)
-            Thread.sleep(forTimeInterval: 0.02)
+            postKey(src: setup.src, key: KeyCode.downArrow, toPid: setup.terminalPid)
+            try? await Task.sleep(for: .milliseconds(20))
         }
-        postKey(src: src, key: KeyCode.returnKey)
+        postKey(src: setup.src, key: KeyCode.returnKey, toPid: setup.terminalPid)
         return true
     }
 
@@ -57,26 +59,22 @@ public enum KeystrokeInjector {
         cwd: String?,
         sessionId: String?,
         selectedIndices: [Int]
-    ) -> Bool {
-        guard ensureAccessibilityTrusted() else { return false }
-        guard activateTerminal(pid: agentPid, cwd: cwd, sessionId: sessionId) else {
+    ) async -> Bool {
+        guard let setup = await prepare(agentPid: agentPid, cwd: cwd, sessionId: sessionId) else {
             return false
         }
-        Thread.sleep(forTimeInterval: 0.12)
-
-        guard let src = CGEventSource(stateID: .hidSystemState) else { return false }
         var cursor = 0
         for idx in selectedIndices.sorted() where idx >= 0 {
             let moves = idx - cursor
             for _ in 0..<moves {
-                postKey(src: src, key: KeyCode.downArrow)
-                Thread.sleep(forTimeInterval: 0.02)
+                postKey(src: setup.src, key: KeyCode.downArrow, toPid: setup.terminalPid)
+                try? await Task.sleep(for: .milliseconds(20))
             }
             cursor = idx
-            postKey(src: src, key: KeyCode.space)
-            Thread.sleep(forTimeInterval: 0.02)
+            postKey(src: setup.src, key: KeyCode.space, toPid: setup.terminalPid)
+            try? await Task.sleep(for: .milliseconds(20))
         }
-        postKey(src: src, key: KeyCode.returnKey)
+        postKey(src: setup.src, key: KeyCode.returnKey, toPid: setup.terminalPid)
         return true
     }
 
@@ -90,11 +88,31 @@ public enum KeystrokeInjector {
         public static let downArrow: CGKeyCode = 0x7D
     }
 
-    private static func postKey(src: CGEventSource, key: CGKeyCode) {
+    /// Pre-flight: AX permission, activate terminal tab, resolve terminal pid,
+    /// build CGEventSource, then yield once so the activated app has had a
+    /// runloop tick to actually take key focus before we start posting.
+    private static func prepare(
+        agentPid: Int,
+        cwd: String?,
+        sessionId: String?
+    ) async -> (src: CGEventSource, terminalPid: pid_t)? {
+        guard ensureAccessibilityTrusted() else { return nil }
+        guard activateTerminal(pid: agentPid, cwd: cwd, sessionId: sessionId) else {
+            return nil
+        }
+        guard let termApp = TerminalLocator.findTerminalApp(startingFromPid: agentPid) else {
+            return nil
+        }
+        try? await Task.sleep(for: .milliseconds(120))
+        guard let src = CGEventSource(stateID: .hidSystemState) else { return nil }
+        return (src, termApp.processIdentifier)
+    }
+
+    private static func postKey(src: CGEventSource, key: CGKeyCode, toPid pid: pid_t) {
         CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: true)?
-            .post(tap: .cghidEventTap)
+            .postToPid(pid)
         CGEvent(keyboardEventSource: src, virtualKey: key, keyDown: false)?
-            .post(tap: .cghidEventTap)
+            .postToPid(pid)
     }
 
     private static func ensureAccessibilityTrusted() -> Bool {

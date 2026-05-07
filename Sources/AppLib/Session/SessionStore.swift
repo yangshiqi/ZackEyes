@@ -306,8 +306,8 @@ public final class SessionStore: ObservableObject {
     /// informational mirror, and the user answers each question in the
     /// terminal directly. The PostToolUse hook still closes the popup.
     @discardableResult
-    public func submitAskUQAnswer(sessionId: String, answers: [String: String]) -> Bool {
-        guard var session = sessions[sessionId],
+    public func submitAskUQAnswer(sessionId: String, answers: [String: String]) async -> Bool {
+        guard let session = sessions[sessionId],
               let pending = session.pendingPermission,
               pending.isAskUserQuestion else { return false }
         let questions = pending.questions
@@ -317,6 +317,7 @@ public final class SessionStore: ObservableObject {
             return false
         }
         guard let answerValue = answers[question.text] else { return false }
+        guard let pid = session.claudePid else { return false }
 
         let injected: Bool
         if question.multiSelect {
@@ -326,18 +327,18 @@ public final class SessionStore: ObservableObject {
             let indices = labels.compactMap { label in
                 question.options.firstIndex { $0.label == label }
             }
-            guard !indices.isEmpty,
-                  let pid = session.claudePid else { return false }
-            injected = KeystrokeInjector.sendMultiSelect(
+            guard !indices.isEmpty else { return false }
+            injected = await KeystrokeInjector.sendMultiSelect(
                 agentPid: pid,
                 cwd: session.cwd,
                 sessionId: session.id,
                 selectedIndices: indices
             )
         } else {
-            guard let idx = question.options.firstIndex(where: { $0.label == answerValue }),
-                  let pid = session.claudePid else { return false }
-            injected = KeystrokeInjector.sendSingleSelect(
+            guard let idx = question.options.firstIndex(where: { $0.label == answerValue }) else {
+                return false
+            }
+            injected = await KeystrokeInjector.sendSingleSelect(
                 agentPid: pid,
                 cwd: session.cwd,
                 sessionId: session.id,
@@ -345,15 +346,14 @@ public final class SessionStore: ObservableObject {
             )
         }
 
-        // Clear the popup eagerly when injection succeeded — the user has
-        // committed an answer. On failure (no AX permission, etc.) leave
-        // the popup up so the user can retry from the terminal; PostToolUse
-        // will eventually clear it when CC's UI closes.
-        if injected {
-            session.pendingPermission = nil
-            session.state = .working
-            session.lastActiveAt = Date()
-            sessions[sessionId] = session
+        // Re-fetch the session after the await — between yielding and
+        // resuming, a PostToolUse(AskUQ) could have arrived and cleared
+        // the pending state already. Guard against double-clearing.
+        if injected, var current = sessions[sessionId], current.pendingPermission != nil {
+            current.pendingPermission = nil
+            current.state = .working
+            current.lastActiveAt = Date()
+            sessions[sessionId] = current
         }
         return injected
     }

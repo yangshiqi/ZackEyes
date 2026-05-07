@@ -275,7 +275,7 @@ struct SessionStoreTests {
         #expect(store.aggregateState == .waiting)
     }
 
-    @Test @MainActor func submitAskUQAnswer_returnsFalseWithoutClaudePid() {
+    @Test @MainActor func submitAskUQAnswer_returnsFalseWithoutClaudePid() async {
         // Path 2: keystroke injection needs the agent's PID to know which
         // terminal to activate. Without it, submit returns false and leaves
         // the popup up so the user can fall back to the terminal.
@@ -295,13 +295,13 @@ struct SessionStoreTests {
         store.handlePermissionRequest(sessionId: "s1", permission: pending)
         // claudePid is nil at this point.
 
-        let ok = store.submitAskUQAnswer(sessionId: "s1", answers: ["Pick a color": "red"])
+        let ok = await store.submitAskUQAnswer(sessionId: "s1", answers: ["Pick a color": "red"])
         #expect(ok == false)
         #expect(store.sessions["s1"]?.pendingPermission != nil,
                 "pending stays so the popup keeps pointing at the live AskUQ")
     }
 
-    @Test @MainActor func submitAskUQAnswer_isNoOpForMultiQuestionPopup() {
+    @Test @MainActor func submitAskUQAnswer_isNoOpForMultiQuestionPopup() async {
         // v1 scope: only single-question AskUQ flows through the popup's
         // keystroke path. Multi-question CC AskUQ TUIs vary by terminal
         // (tab navigation), so the popup acts as informational mirror only.
@@ -320,7 +320,7 @@ struct SessionStoreTests {
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
         store.handlePermissionRequest(sessionId: "s1", permission: pending)
 
-        let ok = store.submitAskUQAnswer(sessionId: "s1", answers: ["Q1": "a", "Q2": "b"])
+        let ok = await store.submitAskUQAnswer(sessionId: "s1", answers: ["Q1": "a", "Q2": "b"])
         #expect(ok == false)
         #expect(store.sessions["s1"]?.pendingPermission != nil)
     }
@@ -382,7 +382,7 @@ struct SessionStoreTests {
         #expect(store.sessions["s1"]?.pendingPermission != nil)
     }
 
-    @Test @MainActor func submitAskUQAnswer_isNoOpForPermissionRequest() {
+    @Test @MainActor func submitAskUQAnswer_isNoOpForPermissionRequest() async {
         let store = SessionStore()
         let pending = PendingPermission(
             toolName: "Bash",
@@ -393,15 +393,15 @@ struct SessionStoreTests {
             }
         )
         store.handlePermissionRequest(sessionId: "s1", permission: pending)
-        store.submitAskUQAnswer(sessionId: "s1", answers: ["q": "a"])
+        _ = await store.submitAskUQAnswer(sessionId: "s1", answers: ["q": "a"])
         #expect(store.sessions["s1"]?.pendingPermission != nil, "pending should remain untouched")
         #expect(store.sessions["s1"]?.state == .waiting, "state should remain waiting")
     }
 
-    @Test @MainActor func submitAskUQAnswer_isNoOpForUnknownSession() {
+    @Test @MainActor func submitAskUQAnswer_isNoOpForUnknownSession() async {
         let store = SessionStore()
         // session "ghost" never created — call should be silent no-op
-        store.submitAskUQAnswer(sessionId: "ghost", answers: ["q": "a"])
+        _ = await store.submitAskUQAnswer(sessionId: "ghost", answers: ["q": "a"])
         #expect(store.sessions["ghost"] == nil)
     }
 }
