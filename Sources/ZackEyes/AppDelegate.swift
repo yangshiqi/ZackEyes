@@ -473,10 +473,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             forceUiExpand()
 
         case "PreToolUse" where event.toolName == "AskUserQuestion":
-            guard let responder = responder else {
-                NSLog("ZackEyes: PreToolUse AskUQ received but no responder")
-                return
-            }
+            // Path 2: the bridge already fired-and-forgot, so there's no
+            // socket responder. CC is showing its native terminal UI right
+            // now; the popup is a parallel surface that drives that UI via
+            // keystroke injection (see SessionStore.submitAskUQAnswer +
+            // KeystrokeInjector). The PostToolUse(AskUQ) branch below
+            // closes the popup if the user answered in the terminal first.
             guard let sid = event.sessionId else {
                 NSLog("ZackEyes: PreToolUse AskUQ missing session_id")
                 return
@@ -486,9 +488,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 toolName: event.toolName ?? "AskUserQuestion",
                 toolInput: toolInput,
                 cwd: event.cwd,
-                responder: responder
+                responder: { _ in }   // no-op — see comment above
             )
             NSLog("ZackEyes: PreToolUse AskUQ for tool=AskUserQuestion")
+            // sessionStore.handleEvent (in the default branch) is what
+            // normally captures bridgePpid into claudePid. AskUQ skips the
+            // default branch, so apply the same field-stamping inline so
+            // KeystrokeInjector knows which terminal to activate.
+            sessionStore.handleEvent(event)
             sessionStore.handlePermissionRequest(
                 sessionId: sid, permission: pending, agent: event.agent
             )

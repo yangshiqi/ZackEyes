@@ -216,6 +216,18 @@ public final class SessionStore: ObservableObject {
                 session.tasks = TaskExtractor.extractTasks(fromTranscriptAt: path)
             }
 
+            // Path 2 dual-surface AskUQ: when CC's terminal UI closes (i.e.
+            // the user answered in either surface), CC fires PostToolUse for
+            // AskUserQuestion. Clear any AskUQ popup still open for this
+            // session so it doesn't sit there pointing at a question that's
+            // already been resolved.
+            if event.toolName == "AskUserQuestion",
+               let pending = session.pendingPermission,
+               pending.isAskUserQuestion {
+                session.pendingPermission = nil
+                session.state = .working
+            }
+
             sessions[sid] = session
 
         case "Stop":
@@ -278,26 +290,72 @@ public final class SessionStore: ObservableObject {
         sessions[sessionId] = session
     }
 
-    /// Send AskUserQuestion answers back through the blocking PreToolUse hook.
-    /// `answers` is keyed by question text; for multi-select the value is a
-    /// comma-joined string of selected option labels (verified in spike).
-    public func submitAskUQAnswer(sessionId: String, answers: [String: String]) {
+    /// Submit AskUserQuestion answers chosen in the popup. Path 2: instead
+    /// of replying via the (now closed) socket, drive CC's native terminal
+    /// AskUQ UI by injecting the same keystrokes a human would type. CC
+    /// will fire `PostToolUse(AskUserQuestion)` when its UI closes; the
+    /// popup auto-dismisses on that event regardless of which surface
+    /// answered first.
+    ///
+    /// `answers` is keyed by question text; for multi-select the value is
+    /// a comma-joined string of selected option labels.
+    ///
+    /// **Scope (v1)**: only single-question AskUQ is wired through the
+    /// popup. CC's multi-question TUI uses tab/submit semantics that
+    /// vary by terminal — multi-question prompts keep the popup as an
+    /// informational mirror, and the user answers each question in the
+    /// terminal directly. The PostToolUse hook still closes the popup.
+    @discardableResult
+    public func submitAskUQAnswer(sessionId: String, answers: [String: String]) -> Bool {
         guard var session = sessions[sessionId],
               let pending = session.pendingPermission,
-              pending.isAskUserQuestion else { return }
+              pending.isAskUserQuestion else { return false }
+        let questions = pending.questions
+        guard questions.count == 1, let question = questions.first else {
+            // Multi-question — let the user answer in the terminal. PostToolUse
+            // will dismiss this popup when CC's TUI closes.
+            return false
+        }
+        guard let answerValue = answers[question.text] else { return false }
 
-        // Reconstruct the questions array CC sent us so updatedInput.questions
-        // round-trips intact.
-        let questions = (pending.toolInput["questions"] as? [[String: Any]]) ?? []
-        let response = PreToolUseHookResponse.askUQAnswers(
-            questions: questions, answers: answers
-        )
-        pending.responder(.preToolUse(response))
+        let injected: Bool
+        if question.multiSelect {
+            let labels = answerValue
+                .split(separator: ",", omittingEmptySubsequences: true)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+            let indices = labels.compactMap { label in
+                question.options.firstIndex { $0.label == label }
+            }
+            guard !indices.isEmpty,
+                  let pid = session.claudePid else { return false }
+            injected = KeystrokeInjector.sendMultiSelect(
+                agentPid: pid,
+                cwd: session.cwd,
+                sessionId: session.id,
+                selectedIndices: indices
+            )
+        } else {
+            guard let idx = question.options.firstIndex(where: { $0.label == answerValue }),
+                  let pid = session.claudePid else { return false }
+            injected = KeystrokeInjector.sendSingleSelect(
+                agentPid: pid,
+                cwd: session.cwd,
+                sessionId: session.id,
+                optionIndex: idx
+            )
+        }
 
-        session.pendingPermission = nil
-        session.state = .working
-        session.lastActiveAt = Date()
-        sessions[sessionId] = session
+        // Clear the popup eagerly when injection succeeded — the user has
+        // committed an answer. On failure (no AX permission, etc.) leave
+        // the popup up so the user can retry from the terminal; PostToolUse
+        // will eventually clear it when CC's UI closes.
+        if injected {
+            session.pendingPermission = nil
+            session.state = .working
+            session.lastActiveAt = Date()
+            sessions[sessionId] = session
+        }
+        return injected
     }
 
     /// Resolve the primary pending permission (convenience for single-session UI).

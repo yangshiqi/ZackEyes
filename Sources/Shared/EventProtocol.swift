@@ -281,12 +281,14 @@ public struct PreToolUseHookResponse: Codable, Sendable {
 extension BridgeEvent {
     /// True when this event needs the bridge to wait for an app-side response
     /// (the connection stays open instead of fire-and-forget).
+    ///
+    /// AskUserQuestion is *no longer* blocking: the popup now mirrors CC's
+    /// own terminal AskUQ UI and drives it via keystroke injection
+    /// (see `KeystrokeInjector`), so the bridge fires-and-forgets and the
+    /// socket fd doesn't need to stay open. PermissionRequest still blocks
+    /// because Allow/Deny answers travel back through the socket.
     public var requiresBlockingResponse: Bool {
-        if bridgeEvent == "PermissionRequest" { return true }
-        if bridgeEvent == "PreToolUse" && toolName == "AskUserQuestion" {
-            return true
-        }
-        return false
+        bridgeEvent == "PermissionRequest"
     }
 }
 
