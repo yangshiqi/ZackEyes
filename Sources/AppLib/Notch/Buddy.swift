@@ -39,7 +39,13 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
             ("None 🔇",              "none"),
         ]
         case .silicon: return [
-            ("None 🔇", "none"),
+            ("AGI 🚀",            "agi-altman"),
+            ("More Compute 💰",   "more-compute-jensen"),
+            ("So Back 🔥",        "so-back"),
+            ("Just Tokens 🎯",    "tokens-karpathy"),
+            ("Race to the Top 🏁", "race-to-the-top-dario"),
+            ("Move Fast ⚡",      "move-fast-zuck"),
+            ("None 🔇",           "none"),
         ]
         }
     }

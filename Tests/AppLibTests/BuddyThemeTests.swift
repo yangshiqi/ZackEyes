@@ -49,4 +49,37 @@ final class BuddyThemeTests: XCTestCase {
     func testSiliconTaglinesNo996() {
         XCTAssertFalse(BuddyTheme.silicon.taglines.contains("996 是福报"))
     }
+
+    func testSiliconSoundsCount() {
+        XCTAssertEqual(BuddyTheme.silicon.availableSounds.count, 7)
+    }
+
+    func testSiliconHasNoneSentinel() {
+        let files = BuddyTheme.silicon.availableSounds.map(\.file)
+        XCTAssertTrue(files.contains("none"))
+    }
+
+    func testSiliconDefaultSound() {
+        XCTAssertEqual(BuddyTheme.silicon.defaultSoundFile, "agi-altman")
+    }
+
+    func testSiliconSoundFilenamesUnique() {
+        let files = BuddyTheme.silicon.availableSounds.map(\.file)
+        XCTAssertEqual(files.count, Set(files).count, "duplicate sound filenames")
+    }
+
+    func testSiliconCodableRoundTrip() throws {
+        let encoded = try JSONEncoder().encode(BuddyTheme.silicon)
+        let decoded = try JSONDecoder().decode(BuddyTheme.self, from: encoded)
+        XCTAssertEqual(decoded, .silicon)
+    }
+
+    func testBuddyAssignmentIsDeterministic() {
+        let a = Buddy.from(sessionId: "fixed-session-id", theme: .silicon)
+        let b = Buddy.from(sessionId: "fixed-session-id", theme: .silicon)
+        XCTAssertEqual(a.name, b.name)
+        XCTAssertEqual(a.tagline, b.tagline)
+        XCTAssertTrue(BuddyTheme.silicon.names.contains(a.name))
+        XCTAssertTrue(BuddyTheme.silicon.taglines.contains(a.tagline))
+    }
 }
