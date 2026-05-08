@@ -251,7 +251,45 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
 
     // MARK: - Silicon Valley AI moguls theme
 
-    private static let siliconNames: [String] = []
+    /// Silicon Valley + China AI moguls (34 total). Format: "{flag} {first-name} from {Org}".
+    private static let siliconNames: [String] = [
+        // Silicon Valley / Global (22)
+        "🇺🇸 Sam from OpenAI",
+        "🇺🇸 Greg from OpenAI",
+        "🇮🇱 Ilya from SSI",
+        "🇦🇱 Mira from Thinking Machines",
+        "🇮🇹 Dario from Anthropic",
+        "🇮🇹 Daniela from Anthropic",
+        "🇬🇧 Demis from DeepMind",
+        "🇹🇼 Jensen from Nvidia",
+        "🇿🇦 Elon from xAI",
+        "🇺🇸 Zuck from Meta",
+        "🇮🇳 Sundar from Google",
+        "🇮🇳 Satya from Microsoft",
+        "🇨🇦 Geoff from Toronto",
+        "🇫🇷 Yann from Meta",
+        "🇨🇦 Yoshua from Mila",
+        "🇸🇰 Andrej from Eureka",
+        "🇨🇳 Fei-Fei from Stanford",
+        "🇬🇧 Andrew from DeepLearning.AI",
+        "🇮🇳 Aravind from Perplexity",
+        "🇫🇷 Arthur from Mistral",
+        "🇬🇧 Mustafa from MS AI",
+        "🇮🇱 Noam from Character",
+        // China (12)
+        "🇨🇳 文锋 from DeepSeek",
+        "🇨🇳 植麟 from Moonshot",
+        "🇨🇳 Kai-Fu from 01.AI",
+        "🇨🇳 小川 from Baichuan",
+        "🇨🇳 一鸣 from ByteDance",
+        "🇨🇳 兴兴 from Unitree",
+        "🇨🇳 Robin from Baidu",
+        "🇨🇳 Pony from Tencent",
+        "🇨🇳 Ren from Huawei",
+        "🇨🇳 鸿祎 from 360",
+        "🇨🇳 慧文 from Light Year",
+        "🇨🇳 扬清 from Lepton",
+    ]
 
     private static let siliconTaglines: [String] = []
 }
