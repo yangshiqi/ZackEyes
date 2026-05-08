@@ -291,7 +291,38 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
         "🇨🇳 扬清 from Lepton",
     ]
 
-    private static let siliconTaglines: [String] = []
+    /// Real AI-industry quotes, memes, and shibboleths (29 total).
+    private static let siliconTaglines: [String] = [
+        "AGI is coming",
+        "We need more compute",
+        "Just scale it",
+        "Stochastic parrot",
+        "The bitter lesson",
+        "Attention is all you need",
+        "The more you buy, the more you save",
+        "Software is eating the world",
+        "It's just matmul",
+        "Move fast and break things",
+        "e/acc — accelerate or die",
+        "What's your p(doom)?",
+        "Vibes-based eval",
+        "The model is the product",
+        "We are so back",
+        "It's so over",
+        "Scaling laws don't lie",
+        "Just one more epoch bro",
+        "Backprop through everything",
+        "Race to the top",
+        "Powerful AI",
+        "Genius in a datacenter",
+        "源神，启动！",
+        "把成本打下来",
+        "All in 大模型",
+        "拥抱变化",
+        "卷死他们",
+        "幻觉是特性不是 bug",
+        "百模大战",
+    ]
 }
 
 /// A personality-driven character assigned to each session.
