@@ -8,6 +8,7 @@ public class MenuBarFallback: NSObject {
     private var statusItem: NSStatusItem?
     private var popover: NSPopover?
     private let viewModel: NotchViewModel
+    private let usageTracker: UsageTracker
     private var iconCancellable: AnyCancellable?
     private var globalClickMonitor: Any?
     private var localClickMonitor: Any?
@@ -21,8 +22,9 @@ public class MenuBarFallback: NSObject {
     /// Theme / Quit menu shared across both notch paths.
     public var menuBuilder: (() -> NSMenu)?
 
-    public init(viewModel: NotchViewModel) {
+    public init(viewModel: NotchViewModel, usageTracker: UsageTracker) {
         self.viewModel = viewModel
+        self.usageTracker = usageTracker
         super.init()
     }
 
@@ -36,15 +38,18 @@ public class MenuBarFallback: NSObject {
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
         self.statusItem = statusItem
 
-        updateIcon(for: viewModel.sessionStore.aggregateState)
+        refreshIcon()
 
-        // Observe state changes to update icon
-        iconCancellable = viewModel.sessionStore.objectWillChange
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                self.updateIcon(for: self.viewModel.sessionStore.aggregateState)
-            }
+        // Both inputs (active session + rate-limit snapshot) can change
+        // independently. Merge into one subscription — objectWillChange
+        // fires *before* the change applies, so the receive(on:) hop
+        // through the runloop ensures refreshIcon sees the new value.
+        iconCancellable = Publishers.Merge(
+            viewModel.sessionStore.objectWillChange,
+            usageTracker.objectWillChange
+        )
+        .receive(on: RunLoop.main)
+        .sink { [weak self] _ in self?.refreshIcon() }
 
         let popover = NSPopover()
         popover.behavior = .transient
@@ -56,20 +61,21 @@ public class MenuBarFallback: NSObject {
         self.popover = popover
     }
 
-    private func updateIcon(for state: SessionState) {
+    private func refreshIcon() {
         // Bake the color into the symbol via paletteColors. Setting
         // contentTintColor + isTemplate is unreliable — in Light mode the
         // system overrides template tint to black regardless of what we
         // pass. Palette-rendered images keep the color we asked for.
-        let tint: NSColor
-        switch state {
-        case .waiting:
-            tint = NSColor(red: 0.96, green: 0.65, blue: 0.14, alpha: 1.0)
-        case .working:
-            tint = NSColor(red: 0.31, green: 0.80, blue: 0.77, alpha: 1.0)
-        case .idle, .stopped:
-            tint = .white
-        }
+        //
+        // Color encodes the 5h subscriber-window quota of whichever agent
+        // is "currently working" (see MenuBarIconColor for the priority).
+        // Liveness state isn't reflected here — the notch panel + its
+        // animations carry that signal; the menu bar only has color to
+        // spend, so we spend it on the more durable rate-limit warning.
+        let tint = MenuBarIconColor.tint(
+            primaryAgent: viewModel.sessionStore.primarySession?.agent,
+            snapshot: usageTracker.snapshot
+        )
         let config = NSImage.SymbolConfiguration(paletteColors: [tint])
         guard let image = NSImage(systemSymbolName: "star.fill", accessibilityDescription: "ZackEyes")?
             .withSymbolConfiguration(config) else {

@@ -61,6 +61,15 @@ public final class UsageTracker: ObservableObject {
         }
 
         public var hasRealData: Bool { hasClaudeData || hasCodexData }
+
+        /// 5h-window used-percentage for the given agent, or nil if no data.
+        /// Lets call sites avoid the `agent == .codex ? codex... : ...` ternary.
+        public func fiveHourUsedPct(for agent: AgentKind) -> Double? {
+            switch agent {
+            case .claude: return fiveHourUsedPct
+            case .codex:  return codexFiveHourUsedPct
+            }
+        }
     }
 
     @Published public private(set) var snapshot: Snapshot = .empty
