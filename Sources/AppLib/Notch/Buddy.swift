@@ -4,11 +4,13 @@ import Foundation
 public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
     case rock
     case f1
+    case silicon
 
     public var displayName: String {
         switch self {
-        case .rock: return "Rock Legends"
-        case .f1:   return "F1 2026"
+        case .rock:    return "Rock Legends"
+        case .f1:      return "F1 2026"
+        case .silicon: return "AI 大佬"
         }
     }
 
@@ -36,6 +38,9 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
             ("F1 Radio 🏎️",          "f1-radio"),
             ("None 🔇",              "none"),
         ]
+        case .silicon: return [
+            ("None 🔇", "none"),
+        ]
         }
     }
 
@@ -46,15 +51,17 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
 
     var names: [String] {
         switch self {
-        case .rock: return Self.rockNames
-        case .f1:   return Self.f1Names
+        case .rock:    return Self.rockNames
+        case .f1:      return Self.f1Names
+        case .silicon: return Self.siliconNames
         }
     }
 
     var taglines: [String] {
         switch self {
-        case .rock: return Self.rockTaglines
-        case .f1:   return Self.f1Taglines
+        case .rock:    return Self.rockTaglines
+        case .f1:      return Self.f1Taglines
+        case .silicon: return Self.siliconTaglines
         }
     }
 
@@ -241,6 +248,12 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
         "Is that Glock?",
         "Honestly, what are we doing here",
     ]
+
+    // MARK: - Silicon Valley AI moguls theme
+
+    private static let siliconNames: [String] = []
+
+    private static let siliconTaglines: [String] = []
 }
 
 /// A personality-driven character assigned to each session.
