@@ -4,11 +4,13 @@ import Foundation
 public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
     case rock
     case f1
+    case silicon
 
     public var displayName: String {
         switch self {
-        case .rock: return "Rock Legends"
-        case .f1:   return "F1 2026"
+        case .rock:    return "Rock Legends"
+        case .f1:      return "F1 2026"
+        case .silicon: return "AI 大佬"
         }
     }
 
@@ -36,6 +38,15 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
             ("F1 Radio 🏎️",          "f1-radio"),
             ("None 🔇",              "none"),
         ]
+        case .silicon: return [
+            ("AGI 🚀",            "agi-altman"),
+            ("More Compute 💰",   "more-compute-jensen"),
+            ("So Back 🔥",        "so-back"),
+            ("Just Tokens 🎯",    "tokens-karpathy"),
+            ("Race to the Top 🏁", "race-to-the-top-dario"),
+            ("Move Fast ⚡",      "move-fast-zuck"),
+            ("None 🔇",           "none"),
+        ]
         }
     }
 
@@ -46,15 +57,17 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
 
     var names: [String] {
         switch self {
-        case .rock: return Self.rockNames
-        case .f1:   return Self.f1Names
+        case .rock:    return Self.rockNames
+        case .f1:      return Self.f1Names
+        case .silicon: return Self.siliconNames
         }
     }
 
     var taglines: [String] {
         switch self {
-        case .rock: return Self.rockTaglines
-        case .f1:   return Self.f1Taglines
+        case .rock:    return Self.rockTaglines
+        case .f1:      return Self.f1Taglines
+        case .silicon: return Self.siliconTaglines
         }
     }
 
@@ -240,6 +253,81 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
         "FOR WHAT?!",
         "Is that Glock?",
         "Honestly, what are we doing here",
+    ]
+
+    // MARK: - Silicon Valley AI moguls theme
+
+    /// Silicon Valley + China AI moguls (34 total). Format: "{flag} {first-name} from {Org}".
+    private static let siliconNames: [String] = [
+        // Silicon Valley / Global (22)
+        "🇺🇸 Sam from OpenAI",
+        "🇺🇸 Greg from OpenAI",
+        "🇮🇱 Ilya from SSI",
+        "🇦🇱 Mira from Thinking Machines",
+        "🇮🇹 Dario from Anthropic",
+        "🇮🇹 Daniela from Anthropic",
+        "🇬🇧 Demis from DeepMind",
+        "🇹🇼 Jensen from Nvidia",
+        "🇿🇦 Elon from xAI",
+        "🇺🇸 Zuck from Meta",
+        "🇮🇳 Sundar from Google",
+        "🇮🇳 Satya from Microsoft",
+        "🇨🇦 Geoff from Toronto",
+        "🇫🇷 Yann from Meta",
+        "🇨🇦 Yoshua from Mila",
+        "🇸🇰 Andrej from Eureka",
+        "🇨🇳 Fei-Fei from Stanford",
+        "🇬🇧 Andrew from DeepLearning.AI",
+        "🇮🇳 Aravind from Perplexity",
+        "🇫🇷 Arthur from Mistral",
+        "🇬🇧 Mustafa from MS AI",
+        "🇮🇱 Noam from Character",
+        // China (12)
+        "🇨🇳 文锋 from DeepSeek",
+        "🇨🇳 植麟 from Moonshot",
+        "🇨🇳 Kai-Fu from 01.AI",
+        "🇨🇳 小川 from Baichuan",
+        "🇨🇳 一鸣 from ByteDance",
+        "🇨🇳 兴兴 from Unitree",
+        "🇨🇳 Robin from Baidu",
+        "🇨🇳 Pony from Tencent",
+        "🇨🇳 Ren from Huawei",
+        "🇨🇳 鸿祎 from 360",
+        "🇨🇳 慧文 from Light Year",
+        "🇨🇳 扬清 from Lepton",
+    ]
+
+    /// Real AI-industry quotes, memes, and shibboleths (29 total).
+    private static let siliconTaglines: [String] = [
+        "AGI is coming",
+        "We need more compute",
+        "Just scale it",
+        "Stochastic parrot",
+        "The bitter lesson",
+        "Attention is all you need",
+        "The more you buy, the more you save",
+        "Software is eating the world",
+        "It's just matmul",
+        "Move fast and break things",
+        "e/acc — accelerate or die",
+        "What's your p(doom)?",
+        "Vibes-based eval",
+        "The model is the product",
+        "We are so back",
+        "It's so over",
+        "Scaling laws don't lie",
+        "Just one more epoch bro",
+        "Backprop through everything",
+        "Race to the top",
+        "Powerful AI",
+        "Genius in a datacenter",
+        "源神，启动！",
+        "把成本打下来",
+        "All in 大模型",
+        "拥抱变化",
+        "卷死他们",
+        "幻觉是特性不是 bug",
+        "百模大战",
     ]
 }
 
