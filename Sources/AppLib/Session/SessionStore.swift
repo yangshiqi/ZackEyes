@@ -152,19 +152,6 @@ public final class SessionStore: ObservableObject {
         // statusLine carries per-session context window + model + cost
         applyStatusLineFields(event: event, sid: sid)
 
-        // Capture claude pid + transcript path from bridge if available;
-        // also stamp the session's agent if the existing record doesn't
-        // have one yet (defensive — should already match).
-        if var existing = sessions[sid] {
-            if let ppid = event.bridgePpid, existing.claudePid == nil {
-                existing.claudePid = ppid
-            }
-            if let tp = event.transcriptPath, existing.transcriptPath == nil {
-                existing.transcriptPath = tp
-            }
-            sessions[sid] = existing
-        }
-
         let agent = event.agent
 
         switch event.bridgeEvent {
@@ -262,6 +249,25 @@ public final class SessionStore: ObservableObject {
 
         default:
             break
+        }
+
+        // Post-switch stamp: capture claude pid + transcript path if the
+        // bridge supplied them. Runs after the switch so it covers sessions
+        // that were freshly created in a switch case (e.g. PreToolUse arriving
+        // before any SessionStart, which happens when CC was started before
+        // ZackEyes or after a ZackEyes restart). Without this, AskUQ Submit
+        // dies at GUARD-4 because KeystrokeInjector has no terminal pid.
+        if var existing = sessions[sid] {
+            var dirty = false
+            if let ppid = event.bridgePpid, existing.claudePid == nil {
+                existing.claudePid = ppid
+                dirty = true
+            }
+            if let tp = event.transcriptPath, existing.transcriptPath == nil {
+                existing.transcriptPath = tp
+                dirty = true
+            }
+            if dirty { sessions[sid] = existing }
         }
     }
 

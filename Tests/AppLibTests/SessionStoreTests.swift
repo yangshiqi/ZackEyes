@@ -275,6 +275,37 @@ struct SessionStoreTests {
         #expect(store.aggregateState == .waiting)
     }
 
+    @Test @MainActor func preToolUseAsFirstEventStampsClaudePid() {
+        // Regression: when AskUQ (or any PreToolUse) is the first event the
+        // app sees for a session — i.e. no prior SessionStart, e.g. because
+        // the CC session predated ZackEyes launch — the session was created
+        // without claudePid. Submit-popup keystroke injection then failed at
+        // GUARD-4 ("missing claudePid"), so multi-select Submit silently
+        // did nothing. Stamp ppid on creation.
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreToolUse",
+            sessionId: "fresh-session",
+            toolName: "AskUserQuestion",
+            bridgePpid: 12345
+        ))
+        #expect(store.sessions["fresh-session"]?.claudePid == 12345)
+    }
+
+    @Test @MainActor func userPromptSubmitAsFirstEventStampsClaudePid() {
+        // Same shape as above but UserPromptSubmit — defensive coverage so
+        // if a session's first event is a user message (not SessionStart),
+        // claudePid still lands.
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "UserPromptSubmit",
+            sessionId: "fresh-session-2",
+            userPrompt: "hello",
+            bridgePpid: 67890
+        ))
+        #expect(store.sessions["fresh-session-2"]?.claudePid == 67890)
+    }
+
     @Test @MainActor func submitAskUQAnswer_returnsFalseWithoutClaudePid() async {
         // Path 2: keystroke injection needs the agent's PID to know which
         // terminal to activate. Without it, submit returns false and leaves
