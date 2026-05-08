@@ -190,7 +190,7 @@ With:
     }
 ```
 
-Finally, add empty arrays at the end of the enum (just before the closing `}` on line 244, after the `f1Taglines` array). The arrays are temporary — they get filled in tasks 2 and 3:
+Finally, add two empty arrays inside the enum, immediately after the `f1Taglines` array's closing `]` and *before* the enum's closing `}`. Do **not** add another `}` — the enum closer already exists. The arrays are temporary; they get filled in Tasks 2 and 3:
 
 ```swift
 
@@ -199,8 +199,9 @@ Finally, add empty arrays at the end of the enum (just before the closing `}` on
     private static let siliconNames: [String] = []
 
     private static let siliconTaglines: [String] = []
-}
 ```
+
+(The next line in the file should be the enum's existing `}`.)
 
 - [ ] **Step 4: Run tests to verify pass**
 
@@ -606,6 +607,8 @@ Per-clip acceptance:
 - No background noise drowning the phrase
 
 If a Path A clip cannot be sourced cleanly, swap to its Path B fallback. **Update `Sources/AppLib/Notch/Buddy.swift` `availableSounds` to match the actual filename used** (e.g., if `agi-altman` is impossible, change `"agi-altman"` to `"gpt-bell"` and `"AGI 🚀"` to `"GPT Bell 🔔"`).
+
+> **Test update if slot 1 falls back:** the default sound is whichever entry sits at `availableSounds[0]`. If slot 1 falls back from `agi-altman` to its Path B equivalent, also update the assertion in `testSiliconDefaultSound` (`Tests/AppLibTests/BuddyThemeTests.swift`) to match the new filename. Stage all three changes (mp3 file, `Buddy.swift`, test) in the same commit so name-content-test stay in sync.
 
 - [ ] **Step 2: Verify each file lands at the correct path with correct extension**
 
