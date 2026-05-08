@@ -120,24 +120,12 @@ case "StatusLine":
     exit(0)
 
 case "PreToolUse":
-    // Only AskUserQuestion blocks. Everything else stays fire-and-forget
-    // so we don't slow down the hot path of every tool call.
-    if jsonObject["tool_name"] as? String == "AskUserQuestion" {
-        // 60-second internal soft timeout. CC's hook timeout is 600s
-        // by default — well above ours, so we always exit before CC
-        // kills us. On socket failure / POLLHUP / soft timeout, fall
-        // through to CC's own terminal AskUQ UI.
-        guard let responseData = client.sendAndWaitForResponse(
-            data: payloadData, timeoutSeconds: 60
-        ) else {
-            // Spike #2A decision: f-empty wins. Empty stdout makes CC
-            // fall through to its native AskUQ terminal UI — same
-            // pattern as the PermissionRequest socket-fail path.
-            exit(0)
-        }
-        FileHandle.standardOutput.write(responseData)
-        exit(0)
-    }
+    // Always fire-and-forget. Earlier builds blocked on AskUserQuestion
+    // and answered via the popup, which silenced CC's native terminal
+    // UI — issue user feedback (Path 2): both surfaces should show, and
+    // operating either side dismisses the other. The popup now drives
+    // CC's own AskUQ UI by injecting keystrokes (see KeystrokeInjector
+    // in AppLib), so the bridge no longer needs to block here.
     _ = client.sendFireAndForget(data: payloadData)
     exit(0)
 

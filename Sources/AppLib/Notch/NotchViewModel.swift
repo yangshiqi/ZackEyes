@@ -60,7 +60,13 @@ public final class NotchViewModel: ObservableObject {
     }
 
     public func submitAskUQAnswer(sessionId: String, answers: [String: String]) {
-        sessionStore.submitAskUQAnswer(sessionId: sessionId, answers: answers)
+        // Fire-and-forget: keystroke injection awaits Task.sleep gaps to
+        // keep the main runloop responsive. The popup doesn't need to
+        // observe the return value — success closes the popup eagerly,
+        // failure leaves it up so the user can fall back to the terminal.
+        Task { @MainActor in
+            await sessionStore.submitAskUQAnswer(sessionId: sessionId, answers: answers)
+        }
     }
 
     /// Click handler: jump to the terminal tab for this session.

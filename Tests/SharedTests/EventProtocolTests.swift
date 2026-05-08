@@ -107,7 +107,9 @@ import Foundation
     let post = BridgeEvent(bridgeEvent: "PostToolUse", toolName: "AskUserQuestion")
     let start = BridgeEvent(bridgeEvent: "SessionStart")
     #expect(perm.requiresBlockingResponse == true)
-    #expect(askUQ.requiresBlockingResponse == true)
+    // Path 2: AskUQ no longer blocks — bridge fires-and-forgets so CC's
+    // own terminal AskUQ UI runs in parallel with the popup.
+    #expect(askUQ.requiresBlockingResponse == false)
     #expect(preBash.requiresBlockingResponse == false)
     #expect(post.requiresBlockingResponse == false)
     #expect(start.requiresBlockingResponse == false)
