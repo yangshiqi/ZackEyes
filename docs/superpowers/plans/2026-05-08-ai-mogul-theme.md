@@ -17,7 +17,7 @@
 - [ ] **Verify clean working tree**
 
 ```bash
-cd /Users/ysq/Work/lab/ccisland
+cd <repo-root>
 git status
 ```
 
