@@ -285,10 +285,15 @@ extension BridgeEvent {
     /// AskUserQuestion is *no longer* blocking: the popup now mirrors CC's
     /// own terminal AskUQ UI and drives it via keystroke injection
     /// (see `KeystrokeInjector`), so the bridge fires-and-forgets and the
-    /// socket fd doesn't need to stay open. PermissionRequest still blocks
-    /// because Allow/Deny answers travel back through the socket.
+    /// socket fd doesn't need to stay open. This includes the AskUQ
+    /// `PermissionRequest` companion event — auto-allowing it would short-
+    /// circuit CC's terminal flow, and treating it as blocking on the app
+    /// side would trigger `abandonPermission` (clearing the popup) the
+    /// instant the fire-and-forget bridge closes the connection.
+    /// Regular PermissionRequest still blocks because Allow/Deny answers
+    /// travel back through the socket.
     public var requiresBlockingResponse: Bool {
-        bridgeEvent == "PermissionRequest"
+        bridgeEvent == "PermissionRequest" && toolName != "AskUserQuestion"
     }
 }
 
