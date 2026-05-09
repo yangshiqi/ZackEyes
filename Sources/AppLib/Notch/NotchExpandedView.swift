@@ -450,7 +450,7 @@ struct NotchExpandedView: View {
             HStack(spacing: 4) {
                 Image(systemName: "arrow.up.right.square")
                     .font(.system(size: 10))
-                Text("点击此处回到终端回答")
+                Text("Click to answer in terminal")
                     .font(.system(size: 10, weight: .medium))
             }
             .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.85))
