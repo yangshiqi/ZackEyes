@@ -275,6 +275,48 @@ struct SessionStoreTests {
         #expect(store.aggregateState == .waiting)
     }
 
+    @Test @MainActor func askUQOptionsParseAfterAnyCodableRoundTrip() throws {
+        // Regression: existing AskUQ tests construct toolInput with native
+        // Swift [String: Any] dicts. The real path goes through:
+        //   JSON → BridgeEvent decode → AnyCodable → mapValues { $0.value }
+        // This test exercises that real path and asserts options actually
+        // parse — guards against the symptom "popup shows but no options".
+        let json = """
+        {
+          "_bridge_event": "PreToolUse",
+          "session_id": "s1",
+          "hook_event_name": "PreToolUse",
+          "tool_name": "AskUserQuestion",
+          "tool_input": {
+            "questions": [
+              {
+                "question": "Pick a fruit",
+                "header": "fruit",
+                "multiSelect": true,
+                "options": [
+                  {"label": "Apple", "description": "red"},
+                  {"label": "Banana", "description": "yellow"}
+                ]
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let event = try JSONDecoder().decode(BridgeEvent.self, from: json)
+        let toolInput = event.toolInput?.mapValues { $0.value } ?? [:]
+        let pending = PendingPermission(
+            toolName: event.toolName ?? "AskUserQuestion",
+            toolInput: toolInput,
+            cwd: nil,
+            responder: { _ in }
+        )
+        let questions = pending.questions
+        #expect(questions.count == 1)
+        #expect(questions.first?.options.count == 2,
+                "options must parse from AnyCodable-decoded toolInput")
+        #expect(questions.first?.options.map(\.label) == ["Apple", "Banana"])
+    }
+
     @Test @MainActor func preToolUseAsFirstEventStampsClaudePid() {
         // Regression: when AskUQ (or any PreToolUse) is the first event the
         // app sees for a session — i.e. no prior SessionStart, e.g. because

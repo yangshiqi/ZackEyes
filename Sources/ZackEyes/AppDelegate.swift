@@ -448,11 +448,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch event.bridgeEvent {
         case "PermissionRequest":
-            // PreToolUse path now owns AskUserQuestion. If a stale PermissionRequest
-            // for AskUQ comes through (user with strict allow list), auto-allow so
-            // it doesn't render behind the new clickable PreToolUse flow.
+            // AskUserQuestion: bridge fire-and-forgets these, so there is no
+            // responder to satisfy. The PreToolUse popup is the user-facing
+            // surface; CC's terminal UI runs in parallel as the fallback.
+            // Dropping the event here (instead of auto-allowing) prevents the
+            // empty-answer/PostToolUse short-circuit that was clearing the
+            // popup before the user could click an option.
             if event.toolName == "AskUserQuestion" {
-                responder?(.permission(.allow(message: "Handled by PreToolUse")))
                 return
             }
             guard let responder = responder else {
