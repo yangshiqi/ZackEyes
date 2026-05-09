@@ -275,6 +275,48 @@ struct SessionStoreTests {
         #expect(store.aggregateState == .waiting)
     }
 
+    @Test @MainActor func askUQOptionsParseAfterAnyCodableRoundTrip() throws {
+        // Regression: existing AskUQ tests construct toolInput with native
+        // Swift [String: Any] dicts. The real path goes through:
+        //   JSON → BridgeEvent decode → AnyCodable → mapValues { $0.value }
+        // This test exercises that real path and asserts options actually
+        // parse — guards against the symptom "popup shows but no options".
+        let json = """
+        {
+          "_bridge_event": "PreToolUse",
+          "session_id": "s1",
+          "hook_event_name": "PreToolUse",
+          "tool_name": "AskUserQuestion",
+          "tool_input": {
+            "questions": [
+              {
+                "question": "Pick a fruit",
+                "header": "fruit",
+                "multiSelect": true,
+                "options": [
+                  {"label": "Apple", "description": "red"},
+                  {"label": "Banana", "description": "yellow"}
+                ]
+              }
+            ]
+          }
+        }
+        """.data(using: .utf8)!
+        let event = try JSONDecoder().decode(BridgeEvent.self, from: json)
+        let toolInput = event.toolInput?.mapValues { $0.value } ?? [:]
+        let pending = PendingPermission(
+            toolName: event.toolName ?? "AskUserQuestion",
+            toolInput: toolInput,
+            cwd: nil,
+            responder: { _ in }
+        )
+        let questions = pending.questions
+        #expect(questions.count == 1)
+        #expect(questions.first?.options.count == 2,
+                "options must parse from AnyCodable-decoded toolInput")
+        #expect(questions.first?.options.map(\.label) == ["Apple", "Banana"])
+    }
+
     @Test @MainActor func preToolUseAsFirstEventStampsClaudePid() {
         // Regression: when AskUQ (or any PreToolUse) is the first event the
         // app sees for a session — i.e. no prior SessionStart, e.g. because
@@ -304,56 +346,6 @@ struct SessionStoreTests {
             bridgePpid: 67890
         ))
         #expect(store.sessions["fresh-session-2"]?.claudePid == 67890)
-    }
-
-    @Test @MainActor func submitAskUQAnswer_returnsFalseWithoutClaudePid() async {
-        // Path 2: keystroke injection needs the agent's PID to know which
-        // terminal to activate. Without it, submit returns false and leaves
-        // the popup up so the user can fall back to the terminal.
-        let store = SessionStore()
-        let pending = PendingPermission(
-            toolName: "AskUserQuestion",
-            toolInput: ["questions": [
-                ["question": "Pick a color",
-                 "header": "color",
-                 "multiSelect": false,
-                 "options": [["label": "red", "description": "warm"]]]
-            ]],
-            cwd: "/tmp",
-            responder: { _ in }
-        )
-        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
-        store.handlePermissionRequest(sessionId: "s1", permission: pending)
-        // claudePid is nil at this point.
-
-        let ok = await store.submitAskUQAnswer(sessionId: "s1", answers: ["Pick a color": "red"])
-        #expect(ok == false)
-        #expect(store.sessions["s1"]?.pendingPermission != nil,
-                "pending stays so the popup keeps pointing at the live AskUQ")
-    }
-
-    @Test @MainActor func submitAskUQAnswer_isNoOpForMultiQuestionPopup() async {
-        // v1 scope: only single-question AskUQ flows through the popup's
-        // keystroke path. Multi-question CC AskUQ TUIs vary by terminal
-        // (tab navigation), so the popup acts as informational mirror only.
-        let store = SessionStore()
-        let pending = PendingPermission(
-            toolName: "AskUserQuestion",
-            toolInput: ["questions": [
-                ["question": "Q1", "multiSelect": false,
-                 "options": [["label": "a", "description": ""]]],
-                ["question": "Q2", "multiSelect": false,
-                 "options": [["label": "b", "description": ""]]]
-            ]],
-            cwd: "/tmp",
-            responder: { _ in }
-        )
-        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
-        store.handlePermissionRequest(sessionId: "s1", permission: pending)
-
-        let ok = await store.submitAskUQAnswer(sessionId: "s1", answers: ["Q1": "a", "Q2": "b"])
-        #expect(ok == false)
-        #expect(store.sessions["s1"]?.pendingPermission != nil)
     }
 
     @Test @MainActor func postToolUseAskUQ_clearsPendingPopup() {
@@ -413,26 +405,4 @@ struct SessionStoreTests {
         #expect(store.sessions["s1"]?.pendingPermission != nil)
     }
 
-    @Test @MainActor func submitAskUQAnswer_isNoOpForPermissionRequest() async {
-        let store = SessionStore()
-        let pending = PendingPermission(
-            toolName: "Bash",
-            toolInput: [:],
-            cwd: "/tmp",
-            responder: { _ in
-                #expect(Bool(false), "responder must not fire for non-AskUQ pending")
-            }
-        )
-        store.handlePermissionRequest(sessionId: "s1", permission: pending)
-        _ = await store.submitAskUQAnswer(sessionId: "s1", answers: ["q": "a"])
-        #expect(store.sessions["s1"]?.pendingPermission != nil, "pending should remain untouched")
-        #expect(store.sessions["s1"]?.state == .waiting, "state should remain waiting")
-    }
-
-    @Test @MainActor func submitAskUQAnswer_isNoOpForUnknownSession() async {
-        let store = SessionStore()
-        // session "ghost" never created — call should be silent no-op
-        _ = await store.submitAskUQAnswer(sessionId: "ghost", answers: ["q": "a"])
-        #expect(store.sessions["ghost"] == nil)
-    }
 }

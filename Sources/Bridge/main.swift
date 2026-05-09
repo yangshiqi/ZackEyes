@@ -95,6 +95,17 @@ let client = BridgeSocketClient(path: "/tmp/zackeyes.sock")
 
 switch eventName {
 case "PermissionRequest":
+    // AskUserQuestion is dual-surface (popup + CC's native terminal UI).
+    // We MUST NOT block-and-respond here — sending an "allow" decision
+    // tells CC to skip its terminal UI and treat the tool as auto-handled,
+    // which causes CC to immediately return an empty answer and fire
+    // PostToolUse, clearing the popup before the user can interact.
+    // Fire-and-forget instead so CC falls back to its native flow; the
+    // app still gets the event for awareness via the same socket write.
+    if (jsonObject["tool_name"] as? String) == "AskUserQuestion" {
+        _ = client.sendFireAndForget(data: payloadData)
+        exit(0)
+    }
     // Blocking: send and wait for a response from the app. Pass 0 so the
     // read has no timeout — the user may take as long as they want to
     // answer the question, and we shouldn't abandon the prompt out from

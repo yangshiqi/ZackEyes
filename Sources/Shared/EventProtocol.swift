@@ -282,13 +282,26 @@ extension BridgeEvent {
     /// True when this event needs the bridge to wait for an app-side response
     /// (the connection stays open instead of fire-and-forget).
     ///
-    /// AskUserQuestion is *no longer* blocking: the popup now mirrors CC's
-    /// own terminal AskUQ UI and drives it via keystroke injection
-    /// (see `KeystrokeInjector`), so the bridge fires-and-forgets and the
-    /// socket fd doesn't need to stay open. PermissionRequest still blocks
-    /// because Allow/Deny answers travel back through the socket.
+    /// AskUserQuestion is non-blocking on both PreToolUse and the
+    /// PermissionRequest companion event. The popup is now a notice-only
+    /// surface — it shows the question text and a "Click to answer in
+    /// terminal" CTA, and tapping the session card jumps to the right
+    /// terminal tab; the user answers in CC's native terminal AskUQ UI.
+    /// Two reasons to keep AskUQ off the blocking path:
+    ///
+    /// 1. Auto-allowing the PermissionRequest would short-circuit CC's
+    ///    terminal UI and cause it to return an empty answer immediately,
+    ///    firing PostToolUse and clearing the popup before the user can
+    ///    read or click the CTA.
+    /// 2. Treating it as blocking on the app side puts the SocketServer
+    ///    into a poll loop; when the bridge fire-and-forgets and closes
+    ///    the connection, POLLHUP triggers `abandonPermission`, which
+    ///    clears the popup mid-render.
+    ///
+    /// Regular PermissionRequest still blocks because Allow/Deny answers
+    /// travel back through the socket.
     public var requiresBlockingResponse: Bool {
-        bridgeEvent == "PermissionRequest"
+        bridgeEvent == "PermissionRequest" && toolName != "AskUserQuestion"
     }
 }
 

@@ -13,6 +13,40 @@ import Foundation
     #expect(event.toolName == nil)
 }
 
+@Test func requiresBlockingResponse_regularPermissionRequestBlocks() {
+    let event = BridgeEvent(
+        bridgeEvent: "PermissionRequest",
+        sessionId: "s1",
+        toolName: "Bash"
+    )
+    #expect(event.requiresBlockingResponse == true,
+            "regular permission requests must wait for the app's allow/deny")
+}
+
+@Test func requiresBlockingResponse_askUQPermissionRequestDoesNotBlock() {
+    // Regression: routing AskUQ PermissionRequest as blocking causes the
+    // app's poll loop to fire abandonPermission as soon as the bridge
+    // closes the (fire-and-forget) connection — which clears the popup
+    // before the user can interact. AskUQ uses the PreToolUse popup
+    // surface and CC's terminal UI in parallel; both surfaces are driven
+    // outside this PermissionRequest event.
+    let event = BridgeEvent(
+        bridgeEvent: "PermissionRequest",
+        sessionId: "s1",
+        toolName: "AskUserQuestion"
+    )
+    #expect(event.requiresBlockingResponse == false,
+            "AskUQ PermissionRequest must not block — would trigger abandonPermission")
+}
+
+@Test func requiresBlockingResponse_otherEventsDoNotBlock() {
+    for ev in ["PreToolUse", "PostToolUse", "SessionStart", "Stop"] {
+        let event = BridgeEvent(bridgeEvent: ev, sessionId: "s1")
+        #expect(event.requiresBlockingResponse == false,
+                "\(ev) must be fire-and-forget")
+    }
+}
+
 @Test func decodeBridgeEvent_permissionRequest() throws {
     let json = """
     {"_bridge_event":"PermissionRequest","session_id":"abc","hook_event_name":"PermissionRequest","cwd":"/tmp","tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/test"}}
