@@ -447,14 +447,22 @@ struct NotchExpandedView: View {
                 }
             }
 
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.up.right.square")
-                    .font(.system(size: 10))
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up.right.square.fill")
+                    .font(.system(size: 12, weight: .semibold))
                 Text("Click to answer in terminal")
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 0)
             }
-            .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.85))
-            .padding(.top, 2)
+            .foregroundColor(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.45))
+            )
+            .padding(.top, 4)
         }
         .padding(.top, 6)
         .padding(.leading, 16)
