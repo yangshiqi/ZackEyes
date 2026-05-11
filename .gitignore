@@ -19,3 +19,6 @@ DerivedData/
 
 # Superpowers brainstorm sessions
 .superpowers/
+
+# Claude Code local state (scheduled tasks lock, per-project settings)
+.claude/
