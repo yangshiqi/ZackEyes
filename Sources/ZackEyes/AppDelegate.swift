@@ -525,8 +525,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let priorUserPrompt = event.sessionId.flatMap {
                 sessionStore.sessions[$0]?.lastUserPrompt
             }
+            let priorPendingIsAskUQ: Bool = event.sessionId.flatMap {
+                sessionStore.sessions[$0]?.pendingPermission?.isAskUserQuestion
+            } ?? false
 
             sessionStore.handleEvent(event)
+
+            // PostToolUse(AskUQ) just cleared the popup for this session —
+            // same situation as the permission-abandonment path: the
+            // mouse-driven collapse loop only fires on actual cursor
+            // movement, so without an explicit nudge the panel sits open
+            // with stale "no pending" content until the user moves their
+            // mouse. forceUiCompact gates on hasPending, so other waiting
+            // sessions still keep it expanded.
+            if event.bridgeEvent == "PostToolUse",
+               event.toolName == "AskUserQuestion",
+               priorPendingIsAskUQ,
+               let sid = event.sessionId,
+               sessionStore.sessions[sid]?.pendingPermission == nil {
+                forceUiCompact()
+            }
 
             // Compact is the resting state and is always visible —
             // no SessionStart/SessionEnd panel-state transitions needed.
