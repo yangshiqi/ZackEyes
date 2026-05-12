@@ -49,6 +49,8 @@ public final class NotchWindowController {
     private var panel: NotchPanel?
     private var mouseMonitor: Any?
     private var localMouseMonitor: Any?
+    private var globalClickMonitor: Any?
+    private var localClickMonitor: Any?
     private var screenObserver: NSObjectProtocol?
     private var collapseWorkItem: DispatchWorkItem?
     private var visibility: NotchVisibility
@@ -81,6 +83,7 @@ public final class NotchWindowController {
 
     public func teardown() {
         stopMouseMonitor()
+        stopOutsideClickMonitoring()
         stopScreenObserver()
         panel?.orderOut(nil)
         panel = nil
@@ -179,6 +182,12 @@ public final class NotchWindowController {
         // pill strip — rest of the 280pt host is transparent, and we
         // don't want to swallow clicks into apps below.
         panel?.ignoresMouseEvents = (newState != .expanded)
+
+        if newState == .expanded {
+            startOutsideClickMonitoring()
+        } else {
+            stopOutsideClickMonitoring()
+        }
 
         // Hidden: once collapsed, immediately remove the panel from screen.
         if newState == .compact && visibility == .hidden {
@@ -292,6 +301,51 @@ public final class NotchWindowController {
     private func cancelCollapseWorkItem() {
         collapseWorkItem?.cancel()
         collapseWorkItem = nil
+    }
+
+    // MARK: - Outside-click dismissal
+
+    /// Click-anywhere-outside dismissal for the expanded panel. Only active
+    /// while `currentState == .expanded`. AppDelegate brackets the gear
+    /// NSMenu's `popUp` with stop/start so a click on a menu item doesn't
+    /// race the modal pump and collapse the panel immediately after.
+    public func startOutsideClickMonitoring() {
+        guard currentState == .expanded else { return }
+        stopOutsideClickMonitoring()
+
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updatePanelState(.compact)
+            }
+        }
+
+        localClickMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            guard let self = self else { return event }
+            // Clicks inside our own panel are session-card taps, Allow/Deny
+            // buttons, the gear, etc. — let them through untouched.
+            if let panelWin = self.panel, event.window === panelWin {
+                return event
+            }
+            Task { @MainActor [weak self] in
+                self?.updatePanelState(.compact)
+            }
+            return event
+        }
+    }
+
+    public func stopOutsideClickMonitoring() {
+        if let mon = globalClickMonitor {
+            NSEvent.removeMonitor(mon)
+            globalClickMonitor = nil
+        }
+        if let mon = localClickMonitor {
+            NSEvent.removeMonitor(mon)
+            localClickMonitor = nil
+        }
     }
 
     // MARK: - Screen observer
