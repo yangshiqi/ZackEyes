@@ -369,7 +369,8 @@ public final class SimulatedNotchController {
             if let panelWin = self.panel, event.window === panelWin {
                 return event
             }
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
                 if self.modeStore.hasInteractiveOverlay { return }
                 self.setMode(.compact)
             }
