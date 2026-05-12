@@ -118,12 +118,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Gear in the expanded panel pops the same StatusBarMenu as
             // the status-bar right-click — single source of truth for
             // About / Hotkey / Theme / Quit across both surfaces.
-            wc.showMenu = { [weak statusMenu] view in
+            wc.showMenu = { [weak statusMenu, weak wc] view in
                 guard let menu = statusMenu?.build() else { return }
                 // Anchor at the bottom edge of the gear (AppKit non-flipped:
                 // y=minY is bottom). Matches SimulatedNotchFullView.popGearMenu.
                 let anchor = NSPoint(x: view.bounds.minX, y: view.bounds.minY - 2)
+                // Pause the outside-click monitor: NSMenu.popUp runs a modal
+                // event loop that still pumps our local @MainActor tasks, so
+                // a click on a menu item would otherwise be racing the panel-
+                // collapse handler and snap the notch closed on every gear use.
+                wc?.stopOutsideClickMonitoring()
                 menu.popUp(positioning: nil, at: anchor, in: view)
+                wc?.startOutsideClickMonitoring()
             }
             wc.setup()
             windowController = wc

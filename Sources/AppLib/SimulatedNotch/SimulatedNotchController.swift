@@ -350,8 +350,13 @@ public final class SimulatedNotchController {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
-                // Sticky: don't dismiss while a permission/menu/about overlay is interacting.
-                if self.stickyOpen { return }
+                // Only block outside-click dismissal while a true interactive
+                // overlay (gear NSMenu, About card, Hotkey recorder) is on the
+                // panel — those need explicit clicks to operate. A pending
+                // permission / AskUQ no longer keeps the panel stuck open: an
+                // explicit outside click is a clear "dismiss this" intent, and
+                // for AskUQ the user is heading to the terminal anyway.
+                if self.modeStore.hasInteractiveOverlay { return }
                 self.setMode(.compact)
             }
         }
@@ -364,8 +369,9 @@ public final class SimulatedNotchController {
             if let panelWin = self.panel, event.window === panelWin {
                 return event
             }
-            Task { @MainActor in
-                if self.stickyOpen { return }
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                if self.modeStore.hasInteractiveOverlay { return }
                 self.setMode(.compact)
             }
             return event
