@@ -1,0 +1,117 @@
+---
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+
+const description = 'ZackEyes is local-first by default: no account is required, source code and agent prompts are not uploaded by the website, and feedback is handled through GitHub Issues.';
+const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
+const privacyStructuredData = {
+  '@type': 'PrivacyPolicy',
+  '@id': 'https://zackeyes.app/privacy#policy',
+  name: 'ZackEyes Privacy Notes',
+  url: 'https://zackeyes.app/privacy',
+  description
+};
+---
+
+<SiteLayout
+  title="Privacy - ZackEyes"
+  description={description}
+  canonical="https://zackeyes.app/privacy"
+  structuredData={[privacyStructuredData]}
+>
+  <canvas class="cosmos" id="cosmos" aria-hidden="true"></canvas>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <SiteHeader />
+
+    <main id="top">
+      <section class="policy-hero" aria-labelledby="privacy-title">
+        <div class="policy-shell">
+          <div class="section-eyebrow">Privacy notes</div>
+          <h1 id="privacy-title">Local-first by default.</h1>
+          <p class="policy-lede">
+            ZackEyes does not require an account to show local AI coding agent status. The product is designed around your Mac, your terminal workflow, and explicit public feedback through GitHub.
+          </p>
+
+          <div class="policy-grid" aria-label="Privacy summary">
+            <article class="policy-point">
+              <span>01</span>
+              <h2>No account required</h2>
+              <p>ZackEyes can be downloaded from GitHub Releases and used without creating a ZackEyes account.</p>
+            </article>
+            <article class="policy-point">
+              <span>02</span>
+              <h2>Code stays out of the website</h2>
+              <p>The website does not upload your source code, agent prompts, terminal history, or local project files.</p>
+            </article>
+            <article class="policy-point">
+              <span>03</span>
+              <h2>Public feedback is explicit</h2>
+              <p>Bugs, install issues, compatibility reports, and feature requests are handled through GitHub Issues.</p>
+            </article>
+            <article class="policy-point">
+              <span>04</span>
+              <h2>Analytics</h2>
+              <p>The current website does not add a third-party analytics script. If analytics is introduced later, this page should name the provider and the measured events.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="policy-band" aria-labelledby="data-title">
+        <div class="policy-shell policy-columns">
+          <div>
+            <h2 class="section-title" id="data-title">What leaves your Mac?</h2>
+            <p class="section-copy">
+              The public website and release channel use GitHub infrastructure. When you download the app, you are fetching a DMG from GitHub Releases. When you file feedback, the content you post to GitHub Issues is public unless GitHub or the repository settings say otherwise.
+            </p>
+          </div>
+
+          <div class="policy-list">
+            <article>
+              <h3>Network requests</h3>
+              <p>ZackEyes uses GitHub Releases for installer downloads and update metadata. The app can check the latest release endpoint and download the DMG directly.</p>
+            </article>
+            <article>
+              <h3>GitHub Releases</h3>
+              <p>Used for installer downloads and update metadata. The app can check the latest release endpoint and download the DMG directly.</p>
+            </article>
+            <article>
+              <h3>GitHub Issues</h3>
+              <p>Used for bugs and requests. Include only logs, screenshots, or project details that you are comfortable sharing publicly.</p>
+            </article>
+            <article>
+              <h3>Local agent status</h3>
+              <p>The product is built to surface local Claude Code and Codex CLI status in the macOS notch workflow, not to create a hosted agent dashboard.</p>
+            </article>
+            <article>
+              <h3>Local files and settings</h3>
+              <p>ZackEyes may use local configuration and agent hook files such as `~/.zackeyes`, `~/.claude/settings.json`, and `~/.codex/hooks.json` to connect local agent events to the notch UI.</p>
+            </article>
+            <article>
+              <h3>Delete local data</h3>
+              <p>Quit ZackEyes, delete the app from Applications, remove ZackEyes-managed hook entries containing `zackeyes`, and remove `~/.zackeyes` if you want to clear local ZackEyes settings.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="final-cta compact-cta" aria-labelledby="privacy-feedback-title">
+        <div>
+          <h2 id="privacy-feedback-title">Need to report a privacy concern?</h2>
+          <p>
+            Open a GitHub Issue with the ZackEyes version, macOS version, and the behavior you observed.
+          </p>
+          <div class="final-actions">
+            <a class="button primary" href={issuesUrl}>Open GitHub Issues <span aria-hidden="true">↗</span></a>
+            <a class="button" href="/">Back to product <span aria-hidden="true">←</span></a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <SiteFooter />
+  </div>
+</SiteLayout>

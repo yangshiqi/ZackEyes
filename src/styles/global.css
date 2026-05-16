@@ -122,17 +122,16 @@ a {
 }
 
 .brand-mark {
-  width: 30px;
-  height: 18px;
-  border-radius: 0 0 14px 14px;
-  background: var(--ink);
-  box-shadow: inset 0 -6px 0 #1a1c17, 0 0 0 1px rgba(255, 255, 255, 0.24);
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  filter: drop-shadow(0 0 14px rgba(183, 255, 74, 0.22));
 }
 
 .nav {
   display: flex;
   align-items: center;
-  gap: 22px;
+  gap: 16px;
   color: var(--muted);
   font-size: 13px;
 }
@@ -599,6 +598,8 @@ h1 {
 
 .band,
 .split-band,
+.faq-band,
+.policy-band,
 .final-cta {
   content-visibility: auto;
   contain-intrinsic-size: 780px;
@@ -632,6 +633,28 @@ h1 {
   color: #c8c8bd;
   font-size: 18px;
   line-height: 1.72;
+}
+
+.section-eyebrow {
+  margin-bottom: 16px;
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.section-note {
+  width: min(560px, 100%);
+  margin: 24px 0 0;
+  color: #aeb0a4;
+  font-size: 15px;
+  line-height: 1.7;
+}
+
+.section-note a,
+.footer a,
+.policy-lede a {
+  color: var(--green);
 }
 
 .feature-grid {
@@ -757,6 +780,331 @@ h1 {
   color: var(--orange);
 }
 
+.faq-band {
+  padding: 110px 32px;
+  border-top: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 78% 10%, rgba(183, 255, 74, 0.1), transparent 30rem),
+    rgba(7, 8, 6, 0.76);
+  contain: layout paint;
+}
+
+.faq-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 42px;
+}
+
+.faq-item {
+  min-height: 154px;
+  border: 1px solid rgba(245, 241, 232, 0.14);
+  border-radius: 8px;
+  background: rgba(245, 241, 232, 0.052);
+  overflow: hidden;
+}
+
+.faq-item summary {
+  min-height: 72px;
+  padding: 20px 52px 20px 20px;
+  cursor: pointer;
+  color: var(--ink);
+  font-weight: 820;
+  font-size: 18px;
+  line-height: 1.25;
+  list-style: none;
+  position: relative;
+}
+
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-item summary::after {
+  content: "+";
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(91, 231, 255, 0.34);
+  border-radius: 8px;
+  color: var(--cyan);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.faq-item[open] summary::after {
+  content: "-";
+  color: var(--green);
+  border-color: rgba(183, 255, 74, 0.34);
+}
+
+.faq-item p {
+  margin: 0;
+  padding: 0 20px 22px;
+  color: #bdbdb1;
+  font-size: 15px;
+  line-height: 1.66;
+}
+
+.policy-hero {
+  min-height: 92vh;
+  padding: 134px 32px 90px;
+  display: grid;
+  align-items: center;
+}
+
+.policy-shell {
+  width: min(1120px, 100%);
+  margin: 0 auto;
+}
+
+.policy-hero h1 {
+  width: min(960px, 100%);
+}
+
+.policy-lede {
+  width: min(720px, 100%);
+  margin: 28px 0 0;
+  color: #cfcec4;
+  font-size: 20px;
+  line-height: 1.75;
+}
+
+.policy-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 54px;
+}
+
+.policy-point,
+.policy-list article {
+  border: 1px solid rgba(245, 241, 232, 0.14);
+  border-radius: 8px;
+  background: rgba(245, 241, 232, 0.055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.policy-point {
+  min-height: 214px;
+  padding: 22px;
+}
+
+.policy-point span {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  margin-bottom: 34px;
+  border-radius: 8px;
+  color: #090b07;
+  background: var(--cyan);
+  font-weight: 900;
+  font-size: 14px;
+}
+
+.policy-point:nth-child(2) span {
+  background: var(--green);
+}
+
+.policy-point:nth-child(3) span {
+  background: var(--orange);
+}
+
+.policy-point:nth-child(4) span {
+  background: var(--red);
+}
+
+.policy-point h2,
+.policy-list h3 {
+  margin: 0;
+  font-size: 21px;
+  line-height: 1.2;
+}
+
+.policy-point p,
+.policy-list p {
+  margin: 12px 0 0;
+  color: #bdbdb1;
+  font-size: 15px;
+  line-height: 1.66;
+}
+
+.policy-band {
+  padding: 112px 32px;
+  border-top: 1px solid var(--line);
+  background:
+    linear-gradient(90deg, rgba(91, 231, 255, 0.08), transparent 44%),
+    rgba(12, 13, 10, 0.88);
+  contain: layout paint;
+}
+
+.policy-columns {
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: 44px;
+  align-items: start;
+}
+
+.policy-list {
+  display: grid;
+  gap: 14px;
+}
+
+.policy-list article {
+  padding: 20px;
+}
+
+.compact-page-hero {
+  min-height: 72vh;
+}
+
+.docs-layout {
+  display: grid;
+  grid-template-columns: 0.82fr 1.18fr;
+  gap: 44px;
+  align-items: start;
+}
+
+.step-list,
+.timeline-list {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.step-list li,
+.timeline-item,
+.spec-grid article {
+  border: 1px solid rgba(245, 241, 232, 0.14);
+  border-radius: 8px;
+  background: rgba(245, 241, 232, 0.055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.step-list li {
+  padding: 18px 20px;
+  color: #c9c9be;
+  font-size: 15px;
+  line-height: 1.66;
+}
+
+.step-list strong {
+  color: var(--ink);
+}
+
+.timeline-list {
+  margin-top: 42px;
+}
+
+.timeline-item {
+  padding: 22px;
+}
+
+.timeline-item span,
+.spec-grid span {
+  display: block;
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.timeline-item h3 {
+  margin: 10px 0 0;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.timeline-item p {
+  margin: 12px 0 0;
+  color: #bdbdb1;
+  font-size: 15px;
+  line-height: 1.66;
+}
+
+.release-highlights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.release-detail-list {
+  padding: 16px;
+  border: 1px solid rgba(245, 241, 232, 0.1);
+  border-radius: 8px;
+  background: rgba(5, 6, 5, 0.34);
+}
+
+.release-detail-list h4 {
+  margin: 0;
+  color: var(--green);
+  font-size: 12px;
+  font-weight: 860;
+  text-transform: uppercase;
+}
+
+.release-detail-list ul {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.release-detail-list li {
+  position: relative;
+  padding-left: 14px;
+  color: #c6c6bb;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.release-detail-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.7em;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--cyan);
+}
+
+.spec-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 42px;
+}
+
+.spec-grid article {
+  min-height: 210px;
+  padding: 22px;
+}
+
+.spec-grid strong {
+  display: block;
+  margin-top: 28px;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1.16;
+}
+
+.spec-grid p {
+  margin: 12px 0 0;
+  color: #bdbdb1;
+  font-size: 15px;
+  line-height: 1.66;
+}
+
 .final-cta {
   min-height: 92vh;
   padding: 120px 32px 64px;
@@ -795,6 +1143,50 @@ h1 {
   margin-top: 34px;
 }
 
+.final-actions.align-left {
+  justify-content: flex-start;
+}
+
+.download-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  width: min(860px, 100%);
+  margin: 34px auto 0;
+  text-align: left;
+}
+
+.download-meta div {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(245, 241, 232, 0.14);
+  border-radius: 8px;
+  background: rgba(245, 241, 232, 0.055);
+}
+
+.download-meta dt {
+  color: var(--cyan);
+  font-size: 11px;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.download-meta dd {
+  margin: 8px 0 0;
+  color: #d9d8ce;
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.compact-cta {
+  min-height: 62vh;
+}
+
+.compact-cta h2 {
+  font-size: 74px;
+}
+
 .footer {
   display: flex;
   justify-content: space-between;
@@ -808,7 +1200,9 @@ h1 {
 
 @media (max-width: 980px) {
   .hero-grid,
-  .split-grid {
+  .split-grid,
+  .policy-columns,
+  .docs-layout {
     grid-template-columns: 1fr;
   }
 
@@ -825,12 +1219,24 @@ h1 {
     grid-template-columns: 1fr;
   }
 
+  .faq-list,
+  .policy-grid,
+  .spec-grid,
+  .release-highlights,
+  .download-meta {
+    grid-template-columns: 1fr;
+  }
+
   h1,
   .final-cta h2 {
     font-size: 64px;
   }
 
   .section-title {
+    font-size: 54px;
+  }
+
+  .compact-cta h2 {
     font-size: 54px;
   }
 
@@ -855,6 +1261,9 @@ h1 {
   .hero,
   .band,
   .split-band,
+  .faq-band,
+  .policy-hero,
+  .policy-band,
   .final-cta {
     padding-left: 18px;
     padding-right: 18px;
@@ -868,7 +1277,8 @@ h1 {
   .hero-copy,
   .section-copy,
   .story-caption,
-  .final-cta p {
+  .final-cta p,
+  .policy-lede {
     font-size: 16px;
   }
 
@@ -917,7 +1327,8 @@ h1 {
   .hero-grid,
   .kinetic-stack,
   .section-inner,
-  .split-grid {
+  .split-grid,
+  .policy-shell {
     width: 354px;
     max-width: 100%;
     margin-left: 0;

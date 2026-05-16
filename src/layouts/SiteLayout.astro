@@ -6,18 +6,21 @@ interface Props {
   description?: string;
   canonical?: string;
   image?: string;
+  structuredData?: Record<string, unknown>[];
 }
 
 const {
   title = 'ZackEyes - AI Agent Command Center in the MacBook Notch',
   description = 'ZackEyes turns the MacBook notch into a live command center for Claude Code and Codex CLI sessions, approvals, tasks, and usage pressure.',
   canonical,
-  image = '/og-image.svg'
+  image = '/og-image.svg',
+  structuredData: pageStructuredData = []
 } = Astro.props;
 
 const site = Astro.site?.toString().replace(/\/$/, '') ?? 'https://zackeyes.app';
 const canonicalUrl = canonical ?? new URL(Astro.url.pathname, site).href;
 const imageUrl = new URL(image, site).href;
+const downloadUrl = 'https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.2/ZackEyes-0.4.2.dmg';
 
 const structuredData = {
   '@context': 'https://schema.org',
@@ -44,7 +47,9 @@ const structuredData = {
       name: 'ZackEyes',
       applicationCategory: 'DeveloperApplication',
       operatingSystem: 'macOS',
+      softwareVersion: '0.4.2',
       url: site,
+      downloadUrl,
       description,
       offers: {
         '@type': 'Offer',
@@ -56,10 +61,12 @@ const structuredData = {
         'Codex CLI session visibility',
         'Permission approval prompts',
         'Rate-limit awareness',
+        'Multiple themes',
+        'Real notch and simulated island display modes',
         'macOS notch command center'
       ]
     }
-  ]
+  ].concat(pageStructuredData)
 };
 ---
 

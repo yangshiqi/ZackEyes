@@ -16,6 +16,8 @@ Public website for ZackEyes, a macOS notch command center for Claude Code and Co
 The site is intentionally built as a static-first landing page:
 
 - `src/pages/index.astro` renders the homepage to static HTML at build time.
+- `src/components/SiteHeader.astro` owns the shared top navigation used by all public pages.
+- `src/components/SiteFooter.astro` owns the shared footer links used by all public pages.
 - `src/layouts/SiteLayout.astro` owns the document shell, metadata, canonical URL, social cards, manifest links, and JSON-LD structured data.
 - `src/styles/global.css` contains the Tailwind v4 entry plus the custom visual system for the landing page.
 - `public/` contains crawler and sharing assets that are copied directly into the production output.
@@ -30,6 +32,10 @@ The homepage currently uses no React island and no generated client JavaScript b
 - pnpm 10.28.2 is the pinned package manager, declared in `package.json`.
 - The production target must support static file hosting.
 - The canonical production origin is currently `https://zackeyes.app`; update `astro.config.mjs`, `public/robots.txt`, and LLM text endpoints if the final domain changes.
+- Latest public release: `https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.2/ZackEyes-0.4.2.dmg`.
+- DMG size: 5.2 MB.
+- SHA256: `15d2a92dbac63d81abef17c7e3eba80f27a311eb588e379c711f2a4f3a83c26a`.
+- Issues and feature requests: `https://github.com/yangshiqi/ZackEyes-release/issues`.
 
 ## SEO And GEO Requirements
 
@@ -41,6 +47,32 @@ Every production change should preserve these surfaces:
 - `robots.txt` and sitemap output.
 - `site.webmanifest`, `icon.svg`, and `og-image.svg`.
 - `llms.txt` and `llms-full.txt` for LLM-readable discovery.
+
+## Public Pages
+
+- `/` - product homepage, primary download CTA, FAQ, and download verification.
+- `/docs` - install, uninstall, compatibility, and troubleshooting guide.
+- `/download` - current DMG, compatibility, file size, SHA256, and install path.
+- `/changelog` - public release notes and update history.
+- `/roadmap` - product direction and planned focus areas.
+- `/answers` - direct Q&A page for GEO and AI search.
+- `/security` - local hook write boundaries, Unix socket bridge behavior, and safety model.
+- `/privacy` - local-first privacy notes, network requests, analytics, and local data cleanup.
+- `/llms.txt` and `/llms-full.txt` - crawler-readable product context.
+
+When changing release metadata, update the homepage CTA, `/download`, `/docs`, `/changelog`, `/answers` if relevant, `llms.txt`, `llms-full.txt`, and this README. Keep the DMG size and SHA256 in sync with the public GitHub Release asset.
+
+## Product Content Requirements
+
+The public product story should mention more than agent visibility alone:
+
+- Multiple themes for matching the notch panel to different desktop styles: Rock Legends, F1 2026, and AI moguls.
+- Display modes for real MacBook notches, simulated Dynamic Island-style panels, menu bar use, and external displays.
+- Claude Code and Codex CLI session state, approvals, task progress, completion, and usage pressure.
+- terminal tab jump for iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, and Cursor.
+- Per-session context window usage, model and cost metadata, custom global hotkey, update checker, and in-app DMG download.
+- Local-first hook and Unix socket architecture, with identifiable `zackeyes` hook entries.
+- Public download, verification, and feedback paths through GitHub Releases and GitHub Issues.
 
 ## Performance Requirements
 
@@ -76,6 +108,15 @@ pnpm build
 ## Structure
 
 - `src/pages/index.astro` - static homepage.
+- `src/pages/docs.astro` - install, uninstall, compatibility, and troubleshooting content.
+- `src/pages/download.astro` - current release download, verification, and install content.
+- `src/pages/changelog.astro` - release history.
+- `src/pages/roadmap.astro` - product roadmap.
+- `src/pages/answers.astro` - direct answer content for GEO.
+- `src/pages/security.astro` - local security and safety model.
+- `src/pages/privacy.astro` - privacy notes.
+- `src/components/SiteHeader.astro` - shared top navigation for every public page.
+- `src/components/SiteFooter.astro` - shared footer for every public page.
 - `src/layouts/SiteLayout.astro` - SEO, social, manifest, and structured data shell.
 - `src/styles/global.css` - Tailwind entry and custom landing page CSS.
 - `src/pages/llms.txt.ts` and `src/pages/llms-full.txt.ts` - LLM-readable GEO context.
@@ -86,3 +127,5 @@ pnpm build
 ## Design Direction
 
 The current direction is immersive CSS 3D for the hero, kinetic typography for scroll narrative, and restrained glassmorphism for product UI surfaces. The homepage intentionally ships as static HTML/CSS with one inline script for the canvas background and scroll progress, avoiding generated client JavaScript bundles until a real interactive island is needed.
+
+Logo source: `https://www.logosymbol.com/letter/letter-z-logo-design-with-arrow`. The source is published as CC0 by LogoSymbol; the site uses a ZackEyes-themed recolor in `public/logo-symbol.svg` and `public/icon.svg`.

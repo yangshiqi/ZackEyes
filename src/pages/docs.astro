@@ -1,0 +1,153 @@
+---
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+
+const downloadUrl = 'https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.2/ZackEyes-0.4.2.dmg';
+const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
+const description = 'Install, uninstall, update, and compatibility notes for ZackEyes on macOS 14 and newer, including Claude Code and Codex CLI workflows.';
+const docsStructuredData = [
+  {
+    '@type': 'TechArticle',
+    '@id': 'https://zackeyes.app/docs#compatibility',
+    headline: 'ZackEyes compatibility requirements',
+    description,
+    about: ['macOS 14', 'Apple Silicon', 'Intel Mac', 'Claude Code', 'Codex CLI']
+  },
+  {
+    '@type': 'HowTo',
+    '@id': 'https://zackeyes.app/docs#install',
+    name: 'Install ZackEyes',
+    step: [
+      { '@type': 'HowToStep', name: 'Download the DMG', text: 'Download the latest ZackEyes DMG from GitHub Releases.' },
+      { '@type': 'HowToStep', name: 'Open the installer', text: 'Open the DMG and drag ZackEyes into Applications.' },
+      { '@type': 'HowToStep', name: 'Launch ZackEyes', text: 'Start ZackEyes and keep Claude Code or Codex CLI running in your normal terminal workflow.' }
+    ]
+  }
+];
+---
+
+<SiteLayout
+  title="Docs - ZackEyes"
+  description={description}
+  canonical="https://zackeyes.app/docs"
+  structuredData={docsStructuredData}
+>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <SiteHeader />
+
+    <main id="top">
+      <section class="policy-hero compact-page-hero" aria-labelledby="docs-title">
+        <div class="policy-shell">
+          <div class="section-eyebrow">Setup guide</div>
+          <h1 id="docs-title">Install ZackEyes.</h1>
+          <p class="policy-lede">
+            ZackEyes ships as a universal macOS DMG for Apple Silicon and Intel Macs. The current app target requires macOS 14 or newer.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href={downloadUrl}>Download 0.4.2 <span aria-hidden="true">↓</span></a>
+            <a class="button" href={issuesUrl}>Report install issue <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+      </section>
+
+      <section class="policy-band" aria-labelledby="install-title">
+        <div class="policy-shell docs-layout">
+          <div>
+            <h2 class="section-title" id="install-title">Install.</h2>
+            <p class="section-copy">
+              Use the public release channel for the latest signed installer asset and future update checks.
+            </p>
+          </div>
+          <ol class="step-list">
+            <li><strong>Download the DMG.</strong> Use the latest ZackEyes installer from GitHub Releases.</li>
+            <li><strong>Open the DMG.</strong> Drag ZackEyes into Applications when Finder shows the installer window.</li>
+            <li><strong>Launch the app.</strong> Keep Claude Code or Codex CLI running in your normal terminal; ZackEyes installs the supported hooks when it can find those CLIs.</li>
+            <li><strong>Handle macOS security prompts.</strong> If macOS asks for confirmation on first launch, approve the app from System Settings and reopen it.</li>
+            <li><strong>Review optional permissions.</strong> Accessibility permission enables terminal tab jump. Notifications permission enables macOS alerts for completed turns, rate limits, update availability, and errors.</li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="compat-title">
+        <div class="section-inner">
+          <div class="section-eyebrow">Compatibility</div>
+          <h2 class="section-title" id="compat-title">What is supported.</h2>
+          <div class="spec-grid">
+            <article>
+              <span>macOS</span>
+              <strong>macOS 14+</strong>
+              <p>The Swift package target is `macOS(.v14)`, so Sonoma or newer is the supported baseline.</p>
+            </article>
+            <article>
+              <span>Architecture</span>
+              <strong>Apple Silicon + Intel</strong>
+              <p>The release build uses both `arm64` and `x86_64`, producing a universal macOS app bundle for the DMG.</p>
+            </article>
+            <article>
+              <span>Agents</span>
+              <strong>Claude Code + Codex CLI</strong>
+              <p>ZackEyes installs hooks for whichever CLI it finds and skips missing agents without breaking the terminal workflow.</p>
+            </article>
+            <article>
+              <span>Terminal jump</span>
+              <strong>iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, Cursor</strong>
+              <p>With Accessibility permission, clicking a session card can activate the terminal tab where that agent is running.</p>
+            </article>
+            <article>
+              <span>Controls</span>
+              <strong>Change Hotkey, Show Dynamic Island, Compact display</strong>
+              <p>The app menu lets you change the global hotkey, hide or show the island, and pick whether the compact pill shows Claude or Codex usage.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="policy-band" aria-labelledby="uninstall-title">
+        <div class="policy-shell docs-layout">
+          <div>
+            <h2 class="section-title" id="uninstall-title">Uninstall ZackEyes.</h2>
+            <p class="section-copy">
+              Remove the app bundle first. If you also want to clean local integration state, remove ZackEyes-managed hook entries and local settings.
+            </p>
+          </div>
+          <ol class="step-list">
+            <li><strong>Quit ZackEyes.</strong> Use the menu bar item or Activity Monitor if the app is still running.</li>
+            <li><strong>Remove the app.</strong> Delete ZackEyes from `/Applications`.</li>
+            <li><strong>Review agent hooks.</strong> ZackEyes hook commands contain the literal string `zackeyes`, so they can be identified in `~/.claude/settings.json` and `~/.codex/hooks.json`.</li>
+            <li><strong>Delete local settings if needed.</strong> Remove `~/.zackeyes` only if you want to clear local ZackEyes configuration.</li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="faq-band" id="troubleshooting" aria-labelledby="troubleshooting-title">
+        <div class="section-inner">
+          <div class="section-eyebrow">Troubleshooting</div>
+          <h2 class="section-title" id="troubleshooting-title">Common setup problems.</h2>
+          <div class="faq-list">
+            <details class="faq-item" open>
+              <summary>macOS says ZackEyes cannot be opened</summary>
+              <p>Open System Settings, review the Security prompt for ZackEyes, allow the app, then launch it again from Applications.</p>
+            </details>
+            <details class="faq-item">
+              <summary>Claude or Codex sessions do not appear</summary>
+              <p>Confirm the relevant CLI is installed and start a fresh Claude Code or Codex CLI session. Codex threads that started before hooks were installed may need a new thread for full hook-driven behavior.</p>
+            </details>
+            <details class="faq-item">
+              <summary>Permission requests do not show in the notch</summary>
+              <p>Check that ZackEyes is running and that the agent hook file contains a ZackEyes-managed command. If the app is closed, the agent should fall back to its native terminal prompt.</p>
+            </details>
+            <details class="faq-item">
+              <summary>Reinstall hooks</summary>
+              <p>Quit ZackEyes, remove stale hook entries containing zackeyes from the Claude or Codex hook files if needed, then reopen ZackEyes and start a new agent session.</p>
+            </details>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <SiteFooter />
+  </div>
+</SiteLayout>

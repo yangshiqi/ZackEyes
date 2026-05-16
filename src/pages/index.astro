@@ -1,28 +1,81 @@
 ---
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
 
-const description = 'ZackEyes turns the MacBook notch into a live command center for Claude Code and Codex CLI sessions, approvals, tasks, rate limits, and usage pressure.';
+const description = 'ZackEyes turns the MacBook notch into a live command center for Claude Code and Codex CLI sessions, approvals, tasks, rate limits, terminal tab jump, themes, and display modes.';
+const appVersion = '0.4.2';
+const releaseName = `ZackEyes ${appVersion}`;
+const downloadUrl = `https://github.com/yangshiqi/ZackEyes-release/releases/download/v${appVersion}/ZackEyes-${appVersion}.dmg`;
+const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
+const downloadSize = '5.2 MB DMG';
+const downloadSha256 = '15d2a92dbac63d81abef17c7e3eba80f27a311eb588e379c711f2a4f3a83c26a';
+const faqItems = [
+  {
+    question: 'Which macOS versions does ZackEyes support?',
+    answer: 'ZackEyes is built for modern macOS desktop workflows and distributed as a DMG installer. If you hit a version-specific issue, report your macOS version and Mac model in GitHub Issues.'
+  },
+  {
+    question: 'Does ZackEyes work with Claude Code and Codex CLI?',
+    answer: 'Yes. ZackEyes is designed as a companion for Claude Code and Codex CLI sessions, showing agent state, permission moments, task progress, and usage pressure near the MacBook notch.'
+  },
+  {
+    question: 'Does ZackEyes collect my code or agent prompts?',
+    answer: 'ZackEyes is local-first by default. The website download flow uses GitHub Releases, and feedback goes through GitHub Issues, but the app does not need an account to show local agent status.'
+  },
+  {
+    question: 'Where should I report bugs or feature requests?',
+    answer: 'Use the ZackEyes release repository Issues page for bugs, install problems, compatibility reports, and product requests. Include your ZackEyes version, macOS version, agent CLI, and reproduction steps.'
+  },
+  {
+    question: 'Does ZackEyes work on Macs without a notch?',
+    answer: 'Yes. ZackEyes includes a simulated Dynamic Island-style panel for Macs without a physical notch, so desktop Macs and older MacBooks can still use the same agent awareness workflow.'
+  },
+  {
+    question: 'Does ZackEyes work with external displays?',
+    answer: 'ZackEyes is built for the macOS top-edge workflow. If behavior differs across built-in and external displays, file a GitHub Issue with the display setup and macOS version.'
+  },
+  {
+    question: 'Does ZackEyes support multiple themes?',
+    answer: 'Yes. ZackEyes supports Rock Legends, F1 2026, and AI moguls themes, each with matching buddy names and notification sound choices.'
+  },
+  {
+    question: 'Which terminals can ZackEyes jump to?',
+    answer: 'ZackEyes can jump to the right terminal tab in iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, and Cursor when Accessibility permission is granted.'
+  },
+  {
+    question: 'Why does ZackEyes write Claude and Codex hooks?',
+    answer: 'Hooks let ZackEyes receive local agent lifecycle, permission, task, and completion events without turning into a hosted dashboard. ZackEyes-managed hook commands include the string zackeyes so they can be identified later.'
+  },
+  {
+    question: 'What happens if ZackEyes is closed?',
+    answer: 'The bridge is designed to fail quietly and return control to the terminal workflow. Claude Code and Codex CLI should continue using their native behavior when ZackEyes is not available.'
+  }
+];
+const faqStructuredData = {
+  '@type': 'FAQPage',
+  '@id': 'https://zackeyes.app/#faq',
+  mainEntity: faqItems.map((item) => ({
+    '@type': 'Question',
+    name: item.question,
+    acceptedAnswer: {
+      '@type': 'Answer',
+      text: item.answer
+    }
+  }))
+};
 ---
 
 <SiteLayout
   title="ZackEyes - AI Agent Command Center in the MacBook Notch"
   description={description}
+  structuredData={[faqStructuredData]}
 >
   <canvas class="cosmos" id="cosmos" aria-hidden="true"></canvas>
   <div class="grain" aria-hidden="true"></div>
 
   <div class="site-shell">
-    <header class="topbar">
-      <a class="brand" href="#top" aria-label="ZackEyes home">
-        <span class="brand-mark" aria-hidden="true"></span>
-        <span>ZackEyes</span>
-      </a>
-      <nav class="nav" aria-label="Primary navigation">
-        <a href="#control">Control</a>
-        <a href="#agents">Agents</a>
-        <a class="button" href="#download" aria-label="Open download section">Get app</a>
-      </nav>
-    </header>
+    <SiteHeader />
 
     <main id="top">
       <section class="hero" aria-label="ZackEyes overview">
@@ -37,12 +90,13 @@ const description = 'ZackEyes turns the MacBook notch into a live command center
               ZackEyes turns the MacBook notch into a live command center for Claude Code and Codex CLI: sessions, tasks, rate limits, and permission prompts stay visible without stealing focus.
             </p>
             <div class="hero-actions">
-              <a class="button primary" href="#download">Download for macOS</a>
+              <a class="button primary" href={downloadUrl}>Download for macOS</a>
               <a class="button" href="#control">See the flow</a>
             </div>
             <div class="compat-row" aria-label="Supported agents and features">
               <span class="chip">Claude Code</span>
               <span class="chip">Codex CLI</span>
+              <span class="chip">Multiple themes</span>
               <span class="chip">Permission approvals</span>
             </div>
           </div>
@@ -122,12 +176,42 @@ const description = 'ZackEyes turns the MacBook notch into a live command center
             <article class="feature-card">
               <span class="feature-index">02</span>
               <h3>Permission prompts without context switching</h3>
-              <p>Approve or deny sensitive tool calls from the panel, then return to the work already under your cursor.</p>
+              <p>Approve or deny sensitive tool calls from the panel. Claude AskUserQuestion prompts surface in the island and can send you straight back to the terminal answer path.</p>
             </article>
             <article class="feature-card">
               <span class="feature-index">03</span>
               <h3>Rate limits where they matter</h3>
               <p>See 5-hour and 7-day usage pressure before a turn fails at the worst possible time.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">04</span>
+              <h3>Multiple themes</h3>
+              <p>Choose Rock Legends, F1 2026, or AI moguls themes with matching buddy names and custom notification sounds.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">05</span>
+              <h3>Display modes for real notches, simulated islands, menu bar use, and external displays</h3>
+              <p>Use the physical notch when it exists, switch to a simulated Dynamic Island-style panel when it does not, and keep the same agent signals visible across desktop setups.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">06</span>
+              <h3>Quieter notifications</h3>
+              <p>Tune the product around attention moments: pending approvals, task completion, stalled work, and useful usage pressure.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">07</span>
+              <h3>Jump to the right terminal tab</h3>
+              <p>Click a session card to bring forward the matching iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, or Cursor tab.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">08</span>
+              <h3>Context window usage</h3>
+              <p>See per-session context window pressure, model and cost metadata, and rate-limit tracks when the agent exposes them.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">09</span>
+              <h3>Hotkey and update controls</h3>
+              <p>Use a custom global hotkey, hide or show the island, choose the compact agent display, and install updates through in-app DMG download.</p>
             </article>
           </div>
         </div>
@@ -139,6 +223,9 @@ const description = 'ZackEyes turns the MacBook notch into a live command center
             <h2 class="section-title" id="trust-title">Native hooks. Silent failure. Zero drama.</h2>
             <p class="section-copy">
               The bridge speaks through Unix sockets, keeps agent hooks quiet when the app is closed, and leaves your terminal workflow intact.
+            </p>
+            <p class="section-note">
+              ZackEyes is local-first by default. Read the <a href="/privacy">privacy notes</a> for what the website and app do outside your Mac.
             </p>
           </div>
           <div class="terminal-panel" aria-label="Example terminal event stream">
@@ -160,24 +247,56 @@ const description = 'ZackEyes turns the MacBook notch into a live command center
         </div>
       </section>
 
+      <section class="faq-band" id="faq" aria-labelledby="faq-title">
+        <div class="section-inner">
+          <div class="section-eyebrow">Support signal</div>
+          <h2 class="section-title" id="faq-title">Frequently asked questions.</h2>
+          <p class="section-copy">
+            Clear answers for installation, compatibility, privacy, and where product feedback should go.
+          </p>
+
+          <div class="faq-list">
+            {faqItems.map((item) => (
+              <details class="faq-item">
+                <summary>{item.question}</summary>
+                <p>{item.answer}</p>
+              </details>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <section class="final-cta" id="download" aria-labelledby="download-title">
         <div>
           <h2 id="download-title">Turn the notch into signal.</h2>
           <p>
-            A tiny command center for people who run more than one coding agent and still want their Mac to feel calm.
+            Download {releaseName} for macOS, or use GitHub Issues for problems and feature requests.
           </p>
           <div class="final-actions">
-            <a class="button primary" href="#" aria-label="Download ZackEyes for macOS">Download ZackEyes <span aria-hidden="true">↓</span></a>
-            <a class="button" href="#" aria-label="View ZackEyes source on GitHub">View on GitHub <span aria-hidden="true">↗</span></a>
+            <a class="button primary" href={downloadUrl} aria-label={`Download ${releaseName} for macOS`}>Download ZackEyes <span aria-hidden="true">↓</span></a>
+            <a class="button" href="/docs">Install guide</a>
+            <a class="button" href="/download">Download details</a>
+            <a class="button" href={issuesUrl} aria-label="Open ZackEyes issues and feature requests on GitHub">Issues & requests <span aria-hidden="true">↗</span></a>
           </div>
+          <dl class="download-meta" aria-label="Download verification">
+            <div>
+              <dt>Current version</dt>
+              <dd>{releaseName}</dd>
+            </div>
+            <div>
+              <dt>File</dt>
+              <dd>{downloadSize}</dd>
+            </div>
+            <div>
+              <dt>SHA256</dt>
+              <dd>{downloadSha256}</dd>
+            </div>
+          </dl>
         </div>
       </section>
     </main>
 
-    <footer class="footer">
-      <span>ZackEyes for macOS</span>
-      <span>Claude Code + Codex CLI agent awareness</span>
-    </footer>
+    <SiteFooter />
   </div>
 
   <script is:inline>

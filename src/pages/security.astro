@@ -1,0 +1,122 @@
+---
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+
+const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
+const description = 'ZackEyes security and safety model for local hooks, Unix socket bridge events, backup behavior, failure mode, and auditability.';
+const securityStructuredData = {
+  '@type': 'TechArticle',
+  '@id': 'https://zackeyes.app/security#model',
+  headline: 'ZackEyes security and safety model',
+  description,
+  about: [
+    'local-first macOS app',
+    'Claude Code hooks',
+    'Codex CLI hooks',
+    'Unix socket bridge',
+    'quiet failure mode'
+  ]
+};
+---
+
+<SiteLayout
+  title="Security - ZackEyes"
+  description={description}
+  canonical="https://zackeyes.app/security"
+  structuredData={[securityStructuredData]}
+>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <SiteHeader />
+
+    <main id="top">
+      <section class="policy-hero compact-page-hero" aria-labelledby="security-title">
+        <div class="policy-shell">
+          <div class="section-eyebrow">Local safety model</div>
+          <h1 id="security-title">Security and safety model.</h1>
+          <p class="policy-lede">
+            ZackEyes is local-first by design. It connects Claude Code and Codex CLI events to the macOS notch through identifiable local hooks and a Unix socket bridge, while preserving the terminal workflow if the app is not running.
+          </p>
+        </div>
+      </section>
+
+      <section class="policy-band" aria-labelledby="boundaries-title">
+        <div class="policy-shell policy-columns">
+          <div>
+            <h2 class="section-title" id="boundaries-title">Write boundaries.</h2>
+            <p class="section-copy">
+              ZackEyes-managed hook entries are intended to be visible, reversible, and scoped to the integration files they need.
+            </p>
+          </div>
+          <div class="policy-list">
+            <article>
+              <h3>Backups before hook writes</h3>
+              <p>Every write to `~/.claude/settings.json` and `~/.codex/hooks.json` is preceded by a timestamped backup so users can inspect or restore prior settings.</p>
+            </article>
+            <article>
+              <h3>Small configuration surface</h3>
+              <p>Claude integration changes are limited to hook and status line entries. Codex integration uses `~/.codex/hooks.json` and does not need the CLI config file.</p>
+            </article>
+            <article>
+              <h3>Explicit non-goal</h3>
+              <p>ZackEyes should never read or write `~/.codex/config.toml`. Hook installation should abort instead of guessing if a JSON file cannot be parsed safely.</p>
+            </article>
+            <article>
+              <h3>Identifiable entries</h3>
+              <p>ZackEyes-managed commands contain the literal string `zackeyes`, which makes them searchable in local hook files during audit or uninstall.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="runtime-title">
+        <div class="section-inner">
+          <div class="section-eyebrow">Runtime behavior</div>
+          <h2 class="section-title" id="runtime-title">Bridge and failure mode.</h2>
+          <div class="spec-grid">
+            <article>
+              <span>Bridge</span>
+              <strong>Unix socket</strong>
+              <p>Agent hook events are normalized locally and sent to the macOS app over a Unix socket. The bridge is for local status, not a hosted dashboard.</p>
+            </article>
+            <article>
+              <span>Failure</span>
+              <strong>fail quietly</strong>
+              <p>If ZackEyes is closed or unavailable, controlled failures should write nothing to stdout, exits 0, and return control to Claude Code or Codex CLI.</p>
+            </article>
+            <article>
+              <span>Audit</span>
+              <strong>User removable</strong>
+              <p>Quit ZackEyes, remove hook entries containing `zackeyes`, and delete `~/.zackeyes` only when you want to clear local ZackEyes settings.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="policy-band" aria-labelledby="report-title">
+        <div class="policy-shell docs-layout">
+          <div>
+            <h2 class="section-title" id="report-title">Report a concern.</h2>
+            <p class="section-copy">
+              Use the public issue tracker for install problems, hook behavior, compatibility reports, security concerns, and requests for clearer controls.
+            </p>
+          </div>
+          <div class="policy-list">
+            <article>
+              <h3>What to include</h3>
+              <p>Share your ZackEyes version, macOS version, Mac model, agent CLI, the observed hook file state, and reproduction steps.</p>
+            </article>
+            <article>
+              <h3>Public feedback channel</h3>
+              <p><a href={issuesUrl}>GitHub Issues</a> is the feedback channel for security model questions, bugs, feature requests, and workflow concerns.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <SiteFooter />
+  </div>
+</SiteLayout>
