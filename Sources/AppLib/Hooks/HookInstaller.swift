@@ -24,6 +24,10 @@ public struct HookInstaller {
         "Stop",
         "UserPromptSubmit",
         "Notification",
+        "PreCompact",
+        "PostCompact",
+        "SubagentStart",
+        "SubagentStop",
     ]
 
     private var hookConfig: [String: Any] {

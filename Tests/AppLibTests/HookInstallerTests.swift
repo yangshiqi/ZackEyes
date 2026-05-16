@@ -52,11 +52,13 @@ struct HookInstallerTests {
         #expect(allow == ["Bash"])
         #expect((json["defaultMode"] as? String) == "default")
 
-        // hooks key must exist with all 6 events
+        // hooks key must exist with the Claude lifecycle events we observe.
         let hooks = json["hooks"] as? [String: Any]
         #expect(hooks != nil)
         for event in ["PermissionRequest", "SessionStart", "PreToolUse",
-                      "PostToolUse", "SessionEnd", "Stop"] {
+                      "PostToolUse", "SessionEnd", "Stop",
+                      "PreCompact", "PostCompact",
+                      "SubagentStart", "SubagentStop"] {
             let entries = hooks?[event] as? [[String: Any]]
             #expect(entries != nil, "Missing event: \(event)")
             #expect((entries?.count ?? 0) >= 1)
@@ -407,5 +409,33 @@ struct HookInstallerTests {
         let originalPath = zackDir.appendingPathComponent(".statusline-original").path
         let saved = try String(contentsOfFile: originalPath, encoding: .utf8)
         #expect(saved == "claude-hud --render")
+    }
+
+    // MARK: - Test 11: installs observation-only Claude lifecycle events
+
+    @Test func installsObservationOnlyClaudeLifecycleEvents() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let settingsURL = tmpDir.appendingPathComponent("settings.json")
+        try "{}".write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: "/test/bridge"
+        )
+        try installer.installHooks()
+
+        let data = try Data(contentsOf: settingsURL)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let hooks = json["hooks"] as? [String: Any]
+
+        for event in ["PreCompact", "PostCompact", "SubagentStart", "SubagentStop"] {
+            let entries = hooks?[event] as? [[String: Any]]
+            #expect((entries?.count ?? 0) == 1, "Missing \(event)")
+            let inner = entries?.first?["hooks"] as? [[String: Any]]
+            let cmd = inner?.first?["command"] as? String ?? ""
+            #expect(cmd == "/test/bridge --event \(event) --agent claude")
+        }
     }
 }

@@ -25,7 +25,7 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 |------|------|------|------|
 | **Bridge CLI** | `Bridge/` → 嵌入 `ZackEyes.app/Contents/Helpers/bridge` | 被 Claude Code 和 Codex CLI hook 调用，解析 `--event` + `--agent`，转发事件到主 App，返回权限决策 | 不含 UI 逻辑，不直接读写用户配置文件 |
 | **Main App** | `ZackEyes/` | Socket 监听、会话状态管理、NotchPanel UI、Hook 自动安装（Claude + Codex 各一套）、Codex jsonl 实时 tailer | 不直接与 agent 进程交互（全部通过 Bridge / jsonl tail） |
-| **Launcher Script** | `~/.zackeyes/bin/bridge`（shell 脚本） | 定位 .app 路径，exec 到真实 Bridge 二进制 | 不含业务逻辑，只做路径查找和 exec |
+| **Launcher Script** | `~/.zackeyes/bin/bridge`（shell 脚本） | 定位 .app 路径，exec 到真实 Bridge 二进制。查找顺序：`~/.zackeyes/.app-path` → 常见安装路径 → Spotlight bundle id；找不到时静默 `exit 0` | 不含业务逻辑，只做路径查找和 exec；失败不写 stdout/stderr |
 
 **依赖方向**: Agent → Bridge → Main App（单向）。Main App 不主动连接 Bridge，但会**单向反向读** Codex 的 session jsonl（通过 SessionScanner 启动扫描 + CodexJsonlTailer kqueue 实时监听）。
 
@@ -35,7 +35,7 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 |------|--------|-------|
 | Hook 配置文件 | `~/.claude/settings.json`（`HookInstaller`） | `~/.codex/hooks.json`（`CodexHookInstaller`） |
 | 启用 hooks 的额外 flag | 无（CC 默认） | `[features].hooks` 在 codex `default_enabled: true`，所以**我们也不碰 `config.toml`** |
-| 支持的事件 | 8 个：含 `Notification` / `SessionEnd` / `StatusLine` | 6 个：无 Notification / SessionEnd / StatusLine |
+| 支持的事件 | 12 个：基础 8 个 + compact/subagent lifecycle；另有 `StatusLine` | 6 个：无 Notification / SessionEnd / StatusLine |
 | 5h/7d 配额数据源 | StatusLine hook 的 `rate_limits.{five_hour,seven_day}` | rollout jsonl 的 `event_msg.token_count.rate_limits.{primary,secondary}`（UsageTracker 周期扫描） |
 | Permission 响应 JSON 形状 | `{hookSpecificOutput:{decision:{behavior,message}}}` | 同上（codex 文档形状完全一致，**Bridge 输出不需翻译**） |
 | AskUserQuestion | 支持（PreToolUse 阻塞） | 不支持（codex 不定义此工具） |
