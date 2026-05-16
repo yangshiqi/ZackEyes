@@ -193,6 +193,146 @@ struct HookInstallerTests {
         #expect(saved == "claude-hud --render")
     }
 
+    @Test func installUsesUserStatusLineScriptWhenNoOtherStatusLineExists() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let zackDir = tmpDir.appendingPathComponent(".zackeyes")
+        let bridgeURL = zackDir.appendingPathComponent("bin/bridge")
+        let userStatusLineURL = zackDir.appendingPathComponent("bin/statusline-user")
+        try writeExecutableScript(
+            """
+            #!/bin/sh
+            cat >/dev/null
+            exit 0
+            """,
+            to: bridgeURL
+        )
+        try writeExecutableScript(
+            """
+            #!/bin/sh
+            INPUT=$(cat)
+            printf 'user:%s\\n' "$INPUT"
+            """,
+            to: userStatusLineURL
+        )
+
+        let settingsURL = tmpDir.appendingPathComponent("settings.json")
+        try "{}".write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: bridgeURL.path
+        )
+        try installer.installHooks()
+
+        let data = try Data(contentsOf: settingsURL)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let sl = json["statusLine"] as? [String: Any]
+        let cmd = sl?["command"] as? String ?? ""
+        let muxPath = zackDir.appendingPathComponent("bin/statusline-mux").path
+        #expect(cmd == muxPath)
+
+        let originalPath = zackDir.appendingPathComponent(".statusline-original").path
+        #expect(!FileManager.default.fileExists(atPath: originalPath))
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: muxPath)
+        let stdin = Pipe()
+        let stdout = Pipe()
+        process.standardInput = stdin
+        process.standardOutput = stdout
+        try process.run()
+        stdin.fileHandleForWriting.write(Data("payload".utf8))
+        try stdin.fileHandleForWriting.close()
+        process.waitUntilExit()
+
+        let output = String(
+            data: stdout.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        )
+        #expect(process.terminationStatus == 0)
+        #expect(output == "user:payload\n")
+    }
+
+    @Test func reinstallSwitchesDirectBridgeStatusLineToUserMux() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let zackDir = tmpDir.appendingPathComponent(".zackeyes")
+        let bridgeURL = zackDir.appendingPathComponent("bin/bridge")
+        try writeExecutableScript(
+            """
+            #!/bin/sh
+            cat >/dev/null
+            exit 0
+            """,
+            to: bridgeURL
+        )
+        try writeExecutableScript(
+            """
+            #!/bin/sh
+            printf 'custom\\n'
+            """,
+            to: zackDir.appendingPathComponent("bin/statusline-user")
+        )
+
+        let settingsURL = tmpDir.appendingPathComponent("settings.json")
+        let initial = """
+            {"statusLine":{"type":"command","command":"\(bridgeURL.path) --event StatusLine --agent claude"}}
+            """
+        try initial.write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: bridgeURL.path
+        )
+        try installer.installHooks()
+
+        let data = try Data(contentsOf: settingsURL)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let sl = json["statusLine"] as? [String: Any]
+        let cmd = sl?["command"] as? String ?? ""
+        #expect(cmd == zackDir.appendingPathComponent("bin/statusline-mux").path)
+    }
+
+    @Test func reinstallSwitchesUserMuxBackToDirectBridgeWhenUserScriptRemoved() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let zackDir = tmpDir.appendingPathComponent(".zackeyes")
+        try FileManager.default.createDirectory(
+            at: zackDir.appendingPathComponent("bin"),
+            withIntermediateDirectories: true
+        )
+
+        let bridgePath = zackDir.appendingPathComponent("bin/bridge").path
+        let muxPath = zackDir.appendingPathComponent("bin/statusline-mux").path
+        let settingsURL = tmpDir.appendingPathComponent("settings.json")
+        let initial = """
+            {"statusLine":{"type":"command","command":"\(muxPath)"}}
+            """
+        try initial.write(to: settingsURL, atomically: true, encoding: .utf8)
+        try "#!/bin/sh\nexit 0\n".write(
+            toFile: muxPath,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: bridgePath
+        )
+        try installer.installHooks()
+
+        let data = try Data(contentsOf: settingsURL)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let sl = json["statusLine"] as? [String: Any]
+        let cmd = sl?["command"] as? String ?? ""
+        #expect(cmd == "\(bridgePath) --event StatusLine --agent claude")
+        #expect(!FileManager.default.fileExists(atPath: muxPath))
+    }
+
     // MARK: - Test 6: uninstall restores original statusLine from mux
 
     @Test func uninstallRestoresOriginalStatusLine() throws {

@@ -45,7 +45,7 @@ On first launch ZackEyes will:
 
 1. Read your `~/.claude/settings.json` (skip if Claude Code isn't installed) and your `~/.codex/hooks.json` (skip if Codex CLI isn't installed)
 2. Append its hook entries to whichever exist (without touching anything else, full backup taken). Hook commands carry an `--agent claude|codex` flag so the bridge knows which agent fired which event.
-3. For Claude only: install itself as Claude Code's `statusLine` handler if no other tool already owns it. (Codex doesn't have a statusLine concept; quota data is read directly from Codex's rollout JSONL.)
+3. For Claude only: install itself as Claude Code's `statusLine` handler if no other tool already owns it. If you want visible custom status text, create an executable `~/.zackeyes/bin/statusline-user`; ZackEyes will feed it the same stdin while still updating usage in the background. (Codex doesn't have a statusLine concept; quota data is read directly from Codex's rollout JSONL.)
 4. Drop a launcher script at `~/.zackeyes/bin/bridge`
 
 > **Codex caveat.** Codex caches its hook list when a thread starts, so a Codex TUI launched before ZackEyes won't fire hooks for that thread. ZackEyes still picks it up via `CodexJsonlTailer` (real-time JSONL watcher), so notifications and session cards work without a restart. Open a new Codex thread to get the full hook-driven path (PermissionRequest approval in the notch, etc.).

@@ -112,7 +112,7 @@ Claude Code 周期性触发 statusLine command（每隔几秒）
     → SwiftUI 视图响应式更新（进度条 + 剩余百分比 + reset 倒计时）
 ```
 
-⚠️ 与其他 statusLine 工具（如 Vibe Island）冲突时，HookInstaller 会**保留对方的安装**，不强占。
+⚠️ 与其他 statusLine 工具（如 Vibe Island）冲突时，HookInstaller 会**保留对方的安装**，不强占。没有第三方 statusLine 时，可选的 `~/.zackeyes/bin/statusline-user` 可作为用户自定义显示脚本；ZackEyes mux 会把同一份 stdin 同时喂给后台 bridge 和该脚本，并只透出用户脚本的 stdout。
 
 ### Simulated Notch 状态机
 
@@ -166,7 +166,7 @@ Full 模式下：
 **Hook 安装**
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | Claude 路径——静默安装/卸载 `~/.claude/settings.json` 的 `hooks` + `statusLine`，备份保护，附加合并，所有变更含 `zackeyes` 标识 + `--agent claude` flag |
+| `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | Claude 路径——静默安装/卸载 `~/.claude/settings.json` 的 `hooks` + `statusLine`，备份保护，附加合并，支持可选 `~/.zackeyes/bin/statusline-user` 显示扩展，所有变更含 `zackeyes` 标识 + `--agent claude` flag |
 | `CodexHookInstaller` | `Sources/AppLib/Hooks/CodexHookInstaller.swift` | Codex 路径——静默安装/卸载 `~/.codex/hooks.json` 的 6 个事件，命令含 `--agent codex`。同样的备份 / 解析失败不动 / 用户内容保留契约。**不读不写 `~/.codex/config.toml`**（codex 默认开 hooks）。 |
 
 **Notch UI（真刘海机型）**

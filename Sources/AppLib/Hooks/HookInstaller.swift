@@ -100,14 +100,32 @@ public struct HookInstaller {
             if isStatusLineMuxCommand(cmd) {
                 if let original = readMuxOriginalCommand() {
                     try deployStatusLineMux(originalCommand: original)
+                    settings["statusLine"] = [
+                        "type": "command",
+                        "command": statusLineMuxPath,
+                    ]
+                } else if hasUserStatusLineScript {
+                    try deployStatusLineMux(originalCommand: nil)
+                    settings["statusLine"] = [
+                        "type": "command",
+                        "command": statusLineMuxPath,
+                    ]
+                } else {
+                    cleanupStatusLineMuxFiles()
+                    settings["statusLine"] = [
+                        "type": "command",
+                        "command": "\(bridgePath) --event StatusLine --agent claude",
+                    ]
                 }
+            } else if !isZackEyesCommand(cmd) {
+                // Another tool owns it — wrap with mux
+                try deployStatusLineMux(originalCommand: cmd)
                 settings["statusLine"] = [
                     "type": "command",
                     "command": statusLineMuxPath,
                 ]
-            } else if !isZackEyesCommand(cmd) {
-                // Another tool owns it — wrap with mux
-                try deployStatusLineMux(originalCommand: cmd)
+            } else if hasUserStatusLineScript {
+                try deployStatusLineMux(originalCommand: nil)
                 settings["statusLine"] = [
                     "type": "command",
                     "command": statusLineMuxPath,
@@ -119,6 +137,12 @@ public struct HookInstaller {
                     "command": "\(bridgePath) --event StatusLine --agent claude",
                 ]
             }
+        } else if hasUserStatusLineScript {
+            try deployStatusLineMux(originalCommand: nil)
+            settings["statusLine"] = [
+                "type": "command",
+                "command": statusLineMuxPath,
+            ]
         } else {
             // No one else — install directly
             settings["statusLine"] = [
@@ -173,8 +197,7 @@ public struct HookInstaller {
                 settings.removeValue(forKey: "statusLine")
             }
             // Clean up mux files
-            try? FileManager.default.removeItem(atPath: statusLineMuxPath)
-            try? FileManager.default.removeItem(atPath: statusLineMuxOriginalPath)
+            cleanupStatusLineMuxFiles()
         }
 
         try writeSettings(settings, to: settingsURL)
@@ -260,33 +283,65 @@ public struct HookInstaller {
         zackDir + "/.statusline-original"
     }
 
+    private var statusLineUserPath: String {
+        binDir + "/statusline-user"
+    }
+
+    private var hasUserStatusLineScript: Bool {
+        FileManager.default.isExecutableFile(atPath: statusLineUserPath)
+    }
+
     /// Deploy a mux script that tees stdin to both our bridge and the
     /// original statusLine command. The original's stdout passes through
     /// so the terminal display is unchanged. Forks bridge per tick
     /// (~5ms overhead on macOS, acceptable for a ~2-5s interval).
-    private func deployStatusLineMux(originalCommand: String) throws {
+    private func deployStatusLineMux(originalCommand: String?) throws {
         try FileManager.default.createDirectory(
             atPath: binDir,
             withIntermediateDirectories: true,
             attributes: nil
         )
 
-        // Save the original command so we can restore on uninstall
-        try originalCommand.write(
-            toFile: statusLineMuxOriginalPath,
-            atomically: true,
-            encoding: .utf8
-        )
+        if let originalCommand {
+            // Save the original command so we can restore on uninstall
+            try originalCommand.write(
+                toFile: statusLineMuxOriginalPath,
+                atomically: true,
+                encoding: .utf8
+            )
+        } else {
+            try? FileManager.default.removeItem(atPath: statusLineMuxOriginalPath)
+        }
 
-        // originalCommand is interpolated raw (not quoted) — it's a full
-        // shell command string, evaluated the same way Claude Code does.
+        // originalCommand is interpolated raw (not quoted) when present —
+        // it's a full shell command string, evaluated the same way Claude
+        // Code does. Without an original command, an executable
+        // statusline-user script becomes the visible statusLine renderer.
+        let displayCommand: String
+        if let originalCommand {
+            displayCommand = """
+                printf '%s\\n' "$INPUT" | \(originalCommand)
+                """
+        } else {
+            let escapedUserPath = shellDoubleQuoted(statusLineUserPath)
+            displayCommand = """
+                if [ -x "\(escapedUserPath)" ]; then
+                  printf '%s\\n' "$INPUT" | "\(escapedUserPath)"
+                fi
+                """
+        }
         let script = """
             #!/bin/sh
             INPUT=$(cat)
             printf '%s\\n' "$INPUT" | "\(bridgePath)" --event StatusLine --agent claude 2>/dev/null &
-            printf '%s\\n' "$INPUT" | \(originalCommand)
+            \(displayCommand)
             """
         try deployScript(content: script, to: statusLineMuxPath)
+    }
+
+    private func cleanupStatusLineMuxFiles() {
+        try? FileManager.default.removeItem(atPath: statusLineMuxPath)
+        try? FileManager.default.removeItem(atPath: statusLineMuxOriginalPath)
     }
 
     /// Write a shell script to disk and chmod 755.
