@@ -38,7 +38,7 @@ public struct HookInstaller {
                     "hooks": [
                         [
                             "type": "command",
-                            "command": "\(bridgePath) --event \(event) --agent claude",
+                            "command": bridgeCommand(event: event),
                         ]
                     ]
                 ]
@@ -102,19 +102,19 @@ public struct HookInstaller {
                     try deployStatusLineMux(originalCommand: original)
                     settings["statusLine"] = [
                         "type": "command",
-                        "command": statusLineMuxPath,
+                        "command": statusLineMuxCommand,
                     ]
                 } else if hasUserStatusLineScript {
                     try deployStatusLineMux(originalCommand: nil)
                     settings["statusLine"] = [
                         "type": "command",
-                        "command": statusLineMuxPath,
+                        "command": statusLineMuxCommand,
                     ]
                 } else {
                     cleanupStatusLineMuxFiles()
                     settings["statusLine"] = [
                         "type": "command",
-                        "command": "\(bridgePath) --event StatusLine --agent claude",
+                        "command": bridgeCommand(event: "StatusLine"),
                     ]
                 }
             } else if !isZackEyesCommand(cmd) {
@@ -122,32 +122,32 @@ public struct HookInstaller {
                 try deployStatusLineMux(originalCommand: cmd)
                 settings["statusLine"] = [
                     "type": "command",
-                    "command": statusLineMuxPath,
+                    "command": statusLineMuxCommand,
                 ]
             } else if hasUserStatusLineScript {
                 try deployStatusLineMux(originalCommand: nil)
                 settings["statusLine"] = [
                     "type": "command",
-                    "command": statusLineMuxPath,
+                    "command": statusLineMuxCommand,
                 ]
             } else {
                 // No one else — install directly
                 settings["statusLine"] = [
                     "type": "command",
-                    "command": "\(bridgePath) --event StatusLine --agent claude",
+                    "command": bridgeCommand(event: "StatusLine"),
                 ]
             }
         } else if hasUserStatusLineScript {
             try deployStatusLineMux(originalCommand: nil)
             settings["statusLine"] = [
                 "type": "command",
-                "command": statusLineMuxPath,
+                "command": statusLineMuxCommand,
             ]
         } else {
             // No one else — install directly
             settings["statusLine"] = [
                 "type": "command",
-                "command": "\(bridgePath) --event StatusLine --agent claude",
+                "command": bridgeCommand(event: "StatusLine"),
             ]
         }
 
@@ -279,6 +279,10 @@ public struct HookInstaller {
         binDir + "/statusline-mux"
     }
 
+    private var statusLineMuxCommand: String {
+        quotedShellPath(statusLineMuxPath)
+    }
+
     private var statusLineMuxOriginalPath: String {
         zackDir + "/.statusline-original"
     }
@@ -323,17 +327,17 @@ public struct HookInstaller {
                 printf '%s\\n' "$INPUT" | \(originalCommand)
                 """
         } else {
-            let escapedUserPath = shellDoubleQuoted(statusLineUserPath)
+            let userCommand = quotedShellPath(statusLineUserPath)
             displayCommand = """
-                if [ -x "\(escapedUserPath)" ]; then
-                  printf '%s\\n' "$INPUT" | "\(escapedUserPath)"
+                if [ -x \(userCommand) ]; then
+                  printf '%s\\n' "$INPUT" | \(userCommand)
                 fi
                 """
         }
         let script = """
             #!/bin/sh
             INPUT=$(cat)
-            printf '%s\\n' "$INPUT" | "\(bridgePath)" --event StatusLine --agent claude 2>/dev/null &
+            printf '%s\\n' "$INPUT" | \(quotedShellPath(bridgePath)) --event StatusLine --agent claude 2>/dev/null &
             \(displayCommand)
             """
         try deployScript(content: script, to: statusLineMuxPath)
@@ -362,11 +366,26 @@ public struct HookInstaller {
     // MARK: - Helpers
 
     private func isStatusLineMuxCommand(_ command: String) -> Bool {
-        command == statusLineMuxPath
+        command == statusLineMuxPath || command == statusLineMuxCommand
     }
 
     private func isZackEyesCommand(_ command: String) -> Bool {
-        command.lowercased().contains("zackeyes") || command.contains(bridgePath)
+        command.lowercased().contains("zackeyes")
+            || command.contains(bridgePath)
+            || command.contains(quotedShellPath(bridgePath))
+    }
+
+    private func bridgeCommand(event: String) -> String {
+        "\(quotedShellPath(bridgePath)) --event \(event) --agent claude"
+    }
+
+    private func quotedShellPath(_ value: String) -> String {
+        let homePrefix = "$HOME/"
+        if value.hasPrefix(homePrefix) {
+            let suffix = String(value.dropFirst(homePrefix.count))
+            return "\"$HOME/\(shellDoubleQuoted(suffix))\""
+        }
+        return "\"\(shellDoubleQuoted(value))\""
     }
 
     private func shellDoubleQuoted(_ value: String) -> String {

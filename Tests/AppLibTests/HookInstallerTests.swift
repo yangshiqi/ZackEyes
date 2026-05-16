@@ -231,7 +231,7 @@ struct HookInstallerTests {
         let sl = json["statusLine"] as? [String: Any]
         let cmd = sl?["command"] as? String ?? ""
         let muxPath = zackDir.appendingPathComponent("bin/statusline-mux").path
-        #expect(cmd == muxPath)
+        #expect(cmd == "\"\(muxPath)\"")
 
         let originalPath = zackDir.appendingPathComponent(".statusline-original").path
         #expect(!FileManager.default.fileExists(atPath: originalPath))
@@ -253,6 +253,54 @@ struct HookInstallerTests {
         )
         #expect(process.terminationStatus == 0)
         #expect(output == "user:payload\n")
+    }
+
+    @Test func directStatusLineQuotesBridgePathWithSpaces() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZackEyes Hook Tests")
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let bridgeURL = tmpDir.appendingPathComponent(".zackeyes/bin/bridge")
+        try writeExecutableScript(
+            """
+            #!/bin/sh
+            cat >/dev/null
+            printf 'bridge-ok\\n'
+            """,
+            to: bridgeURL
+        )
+
+        let settingsURL = tmpDir.appendingPathComponent("settings.json")
+        try "{}".write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: bridgeURL.path
+        )
+        try installer.installHooks()
+
+        let data = try Data(contentsOf: settingsURL)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let sl = json["statusLine"] as? [String: Any]
+        let cmd = sl?["command"] as? String ?? ""
+        #expect(cmd == "\"\(bridgeURL.path)\" --event StatusLine --agent claude")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", cmd]
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        try process.run()
+        process.waitUntilExit()
+
+        let output = String(
+            data: stdout.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        )
+        #expect(process.terminationStatus == 0)
+        #expect(output == "bridge-ok\n")
     }
 
     @Test func reinstallSwitchesDirectBridgeStatusLineToUserMux() throws {
@@ -293,7 +341,45 @@ struct HookInstallerTests {
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         let sl = json["statusLine"] as? [String: Any]
         let cmd = sl?["command"] as? String ?? ""
-        #expect(cmd == zackDir.appendingPathComponent("bin/statusline-mux").path)
+        #expect(cmd == "\"\(zackDir.appendingPathComponent("bin/statusline-mux").path)\"")
+    }
+
+    @Test func reinstallRecognizesQuotedStatusLineMuxPath() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZackEyes Hook Tests")
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let zackDir = tmpDir.appendingPathComponent(".zackeyes")
+        try FileManager.default.createDirectory(
+            at: zackDir.appendingPathComponent("bin"),
+            withIntermediateDirectories: true
+        )
+
+        let muxPath = zackDir.appendingPathComponent("bin/statusline-mux").path
+        let settingsURL = tmpDir.appendingPathComponent("settings.json")
+        let initial = """
+            {"statusLine":{"type":"command","command":"\\\"\(muxPath)\\\""}}
+            """
+        try initial.write(to: settingsURL, atomically: true, encoding: .utf8)
+        try "claude-hud --render".write(
+            toFile: zackDir.appendingPathComponent(".statusline-original").path,
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: zackDir.appendingPathComponent("bin/bridge").path
+        )
+        try installer.installHooks()
+
+        let data = try Data(contentsOf: settingsURL)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let sl = json["statusLine"] as? [String: Any]
+        let cmd = sl?["command"] as? String ?? ""
+        #expect(cmd == "\"\(muxPath)\"")
     }
 
     @Test func reinstallSwitchesUserMuxBackToDirectBridgeWhenUserScriptRemoved() throws {
@@ -329,7 +415,7 @@ struct HookInstallerTests {
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         let sl = json["statusLine"] as? [String: Any]
         let cmd = sl?["command"] as? String ?? ""
-        #expect(cmd == "\(bridgePath) --event StatusLine --agent claude")
+        #expect(cmd == "\"\(bridgePath)\" --event StatusLine --agent claude")
         #expect(!FileManager.default.fileExists(atPath: muxPath))
     }
 
@@ -544,7 +630,7 @@ struct HookInstallerTests {
         let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
         let sl = json["statusLine"] as? [String: Any]
         let cmd = sl?["command"] as? String ?? ""
-        #expect(cmd == zackDir.appendingPathComponent("bin/statusline-mux").path)
+        #expect(cmd == "\"\(zackDir.appendingPathComponent("bin/statusline-mux").path)\"")
 
         let originalPath = zackDir.appendingPathComponent(".statusline-original").path
         let saved = try String(contentsOfFile: originalPath, encoding: .utf8)
@@ -575,7 +661,7 @@ struct HookInstallerTests {
             #expect((entries?.count ?? 0) == 1, "Missing \(event)")
             let inner = entries?.first?["hooks"] as? [[String: Any]]
             let cmd = inner?.first?["command"] as? String ?? ""
-            #expect(cmd == "/test/bridge --event \(event) --agent claude")
+            #expect(cmd == "\"/test/bridge\" --event \(event) --agent claude")
         }
     }
 }
