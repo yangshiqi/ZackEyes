@@ -204,6 +204,44 @@ struct SessionStoreTests {
         #expect(session?.source == .detected)
     }
 
+    @Test func recordCodexContextDoesNotReviveIdleSession() {
+        let store = SessionStore()
+        let startedAt = Date(timeIntervalSince1970: 1_777_962_840)
+        let completedAt = startedAt.addingTimeInterval(10)
+        let observedAt = completedAt.addingTimeInterval(5)
+
+        store.recordCodexTaskStarted(
+            sessionId: "codex-idle",
+            cwd: "/Users/test/proj",
+            transcriptPath: "/tmp/rollout.jsonl",
+            startedAt: startedAt,
+            turnId: "t1"
+        )
+        store.recordCodexTaskComplete(
+            sessionId: "codex-idle",
+            cwd: "/Users/test/proj",
+            lastAgentMessage: "done",
+            transcriptPath: "/tmp/rollout.jsonl",
+            completedAt: completedAt
+        )
+
+        store.recordCodexContext(
+            sessionId: "codex-idle",
+            cwd: "/Users/test/proj",
+            contextUsedPct: 12.5,
+            contextWindowSize: 258400,
+            transcriptPath: "/tmp/rollout.jsonl",
+            observedAt: observedAt
+        )
+
+        let session = store.sessions["codex-idle"]
+        #expect(session?.contextUsedPct == 12.5)
+        #expect(session?.contextWindowSize == 258400)
+        #expect(session?.state == .idle)
+        #expect(session?.isToolRunning == false)
+        #expect(session?.lastActiveAt == observedAt)
+    }
+
     // 8. Multiple sessions tracked independently
     @Test func multipleSessionsTrackedIndependently() {
         let store = SessionStore()

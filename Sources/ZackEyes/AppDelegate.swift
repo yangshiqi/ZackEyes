@@ -742,7 +742,9 @@ extension AppDelegate: CodexJsonlTailerDelegate {
             transcriptPath: event.transcriptPath,
             observedAt: Date()
         )
-        activateCodexSession(event.sessionId)
+        if sessionStore.sessions[event.sessionId]?.claudePid == nil {
+            activateCodexSession(event.sessionId)
+        }
     }
 
     private func activateCodexSession(_ sessionId: String) {

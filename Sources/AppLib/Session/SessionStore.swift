@@ -415,8 +415,10 @@ public final class SessionStore: ObservableObject {
         session.contextUsedPct = contextUsedPct
         session.contextWindowSize = contextWindowSize
         session.currentToolName = session.currentToolName ?? "Codex"
-        session.isToolRunning = true
-        session.state = .working
+        if didCreateSession || (session.state != .idle && session.state != .stopped) {
+            session.isToolRunning = true
+            session.state = .working
+        }
         session.lastActiveAt = observedAt
         sessions[sessionId] = session
     }

@@ -40,27 +40,7 @@ public struct CodexTaskCompleteEvent: Sendable {
     public let durationMs: Int?
     public let transcriptPath: String
     public let turnId: String?
-
-    public var shouldNotifyUser: Bool {
-        guard let message = lastAgentMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !message.isEmpty else {
-            return false
-        }
-        return !Self.isInternalDecisionMessage(message)
-    }
-
-    private static func isInternalDecisionMessage(_ message: String) -> Bool {
-        guard let data = message.data(using: .utf8),
-              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let outcome = dict["outcome"] as? String,
-              outcome == "allow" || outcome == "deny" else {
-            return false
-        }
-        if dict.count == 1 { return true }
-        return dict["risk_level"] != nil
-            || dict["user_authorization"] != nil
-            || dict["rationale"] != nil
-    }
+    public let shouldNotifyUser: Bool
 }
 
 public struct CodexTokenCountEvent: Sendable {
@@ -242,7 +222,8 @@ extension CodexJsonlTailer {
                     completedAt: completedAt,
                     durationMs: durationMs,
                     transcriptPath: transcriptPath,
-                    turnId: turnId
+                    turnId: turnId,
+                    shouldNotifyUser: shouldNotifyUser(forTaskCompleteMessage: lastMsg)
                 )))
 
             case "token_count":
@@ -300,6 +281,27 @@ extension CodexJsonlTailer {
             return formatter.date(from: raw)
         }
         return nil
+    }
+
+    private nonisolated static func shouldNotifyUser(forTaskCompleteMessage rawMessage: String?) -> Bool {
+        guard let message = rawMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !message.isEmpty else {
+            return false
+        }
+        return !isInternalDecisionMessage(message)
+    }
+
+    private nonisolated static func isInternalDecisionMessage(_ message: String) -> Bool {
+        guard let data = message.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let outcome = dict["outcome"] as? String,
+              outcome == "allow" || outcome == "deny" else {
+            return false
+        }
+        if dict.count == 1 { return true }
+        return dict["risk_level"] != nil
+            || dict["user_authorization"] != nil
+            || dict["rationale"] != nil
     }
 
     private nonisolated static func parseTokenCountEvent(
