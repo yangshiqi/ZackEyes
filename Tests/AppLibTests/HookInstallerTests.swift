@@ -4,6 +4,24 @@ import Foundation
 
 struct HookInstallerTests {
 
+    private func makeTmpDir() throws -> URL {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        return tmpDir
+    }
+
+    private func writeExecutableScript(_ content: String, to url: URL) throws {
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try content.write(to: url, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: url.path
+        )
+    }
+
     // MARK: - Test 1: mergeIntoEmptySettings
 
     @Test func mergeIntoEmptySettings() throws {
@@ -285,5 +303,109 @@ struct HookInstallerTests {
 
         // hooks key should be absent (was empty after removing our entries)
         #expect(json["hooks"] == nil)
+    }
+
+    // MARK: - Test 8: launcher resolves moved app via marker
+
+    @Test func launcherUsesAppPathMarkerWhenInstalledAppMoved() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let zackDir = tmpDir.appendingPathComponent(".zackeyes")
+        let originalApp = tmpDir.appendingPathComponent("Original.app")
+        let movedApp = tmpDir.appendingPathComponent("Moved.app")
+        let movedBridge = movedApp.appendingPathComponent("Contents/Helpers/bridge")
+        try writeExecutableScript(
+            """
+            #!/bin/sh
+            printf 'moved:%s:%s\\n' "$1" "$2"
+            """,
+            to: movedBridge
+        )
+
+        let installer = HookInstaller(
+            settingsPath: tmpDir.appendingPathComponent("settings.json").path,
+            bridgePath: zackDir.appendingPathComponent("bin/bridge").path
+        )
+        try installer.deployLauncherScript(appPath: originalApp.path)
+
+        try movedApp.path.write(
+            to: zackDir.appendingPathComponent(".app-path"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let process = Process()
+        process.executableURL = zackDir.appendingPathComponent("bin/bridge")
+        process.arguments = ["--event", "SessionStart"]
+        let stdout = Pipe()
+        process.standardOutput = stdout
+        try process.run()
+        process.waitUntilExit()
+
+        let output = String(
+            data: stdout.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        )
+        #expect(process.terminationStatus == 0)
+        #expect(output == "moved:--event:SessionStart\n")
+    }
+
+    // MARK: - Test 9: launcher has silent missing-app fallback
+
+    @Test func launcherScriptFallsBackSilentlyWhenAppCannotBeFound() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let zackDir = tmpDir.appendingPathComponent(".zackeyes")
+        let installer = HookInstaller(
+            settingsPath: tmpDir.appendingPathComponent("settings.json").path,
+            bridgePath: zackDir.appendingPathComponent("bin/bridge").path
+        )
+        try installer.deployLauncherScript(appPath: "/missing/ZackEyes.app")
+
+        let launcher = try String(
+            contentsOf: zackDir.appendingPathComponent("bin/bridge"),
+            encoding: .utf8
+        )
+        #expect(launcher.contains("exit 0"))
+        #expect(!launcher.contains("app not found"))
+        #expect(!launcher.contains("exec \"/missing/ZackEyes.app/Contents/Helpers/bridge\" \"$@\""))
+    }
+
+    // MARK: - Test 10: reinstall preserves statusLine mux
+
+    @Test func reinstallPreservesStatusLineMux() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let zackDir = tmpDir.appendingPathComponent(".zackeyes")
+        try FileManager.default.createDirectory(
+            at: zackDir.appendingPathComponent("bin"),
+            withIntermediateDirectories: true
+        )
+
+        let settingsURL = tmpDir.appendingPathComponent("settings.json")
+        let initial = """
+            {"statusLine":{"type":"command","command":"claude-hud --render"}}
+            """
+        try initial.write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: zackDir.appendingPathComponent("bin/bridge").path
+        )
+        try installer.installHooks()
+        try installer.installHooks()
+
+        let data = try Data(contentsOf: settingsURL)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let sl = json["statusLine"] as? [String: Any]
+        let cmd = sl?["command"] as? String ?? ""
+        #expect(cmd == zackDir.appendingPathComponent("bin/statusline-mux").path)
+
+        let originalPath = zackDir.appendingPathComponent(".statusline-original").path
+        let saved = try String(contentsOfFile: originalPath, encoding: .utf8)
+        #expect(saved == "claude-hud --render")
     }
 }

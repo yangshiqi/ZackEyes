@@ -204,8 +204,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 let appPath = Bundle.main.bundlePath
                 let installer = HookInstaller()
-                try installer.installHooks()
                 try installer.deployLauncherScript(appPath: appPath)
+                try installer.installHooks()
             } catch {
                 NSLog("ZackEyes: Hook installation failed: \(error)")
             }
