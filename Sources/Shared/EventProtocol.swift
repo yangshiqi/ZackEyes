@@ -107,7 +107,7 @@ public struct BridgeEvent: Codable, Sendable {
     public let bridgePpid: Int?
     public let lastAssistantMessage: String?
     public let rateLimits: [String: AnyCodable]?
-    public let contextWindow: [String: AnyCodable]?  // per-session context usage (statusLine only)
+    public let contextWindow: [String: AnyCodable]?  // per-session context usage (Claude statusLine)
     public let model: [String: AnyCodable]?           // {id, display_name}
     public let cost: [String: AnyCodable]?            // {total_cost_usd, total_duration_ms, ...}
 
