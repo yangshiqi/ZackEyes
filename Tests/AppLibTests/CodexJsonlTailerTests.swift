@@ -108,6 +108,70 @@ struct CodexJsonlTailerTests {
         #expect(events[0].completedAt?.timeIntervalSince1970 == 1777795294)
         #expect(events[0].transcriptPath == path)
         #expect(pending == "")
+        #expect(events[0].shouldNotifyUser)
+    }
+
+    @Test func internalApprovalTaskCompleteDoesNotNotifyUser() {
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"task_complete","turn_id":"approval","last_agent_message":"{\\"risk_level\\":\\"low\\",\\"user_authorization\\":\\"high\\",\\"outcome\\":\\"allow\\",\\"rationale\\":\\"Routine cache write.\\"}","completed_at":1777795294,"duration_ms":130735}}\n
+            """
+        let events = CodexJsonlTailer.parseTaskCompleteEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+        #expect(events.count == 1)
+        #expect(events[0].shouldNotifyUser == false)
+    }
+
+    @Test func terseInternalApprovalTaskCompleteDoesNotNotifyUser() {
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"task_complete","turn_id":"approval","last_agent_message":"{\\"outcome\\":\\"allow\\"}","completed_at":1777795294,"duration_ms":130735}}\n
+            """
+        let events = CodexJsonlTailer.parseTaskCompleteEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+        #expect(events.count == 1)
+        #expect(events[0].shouldNotifyUser == false)
+    }
+
+    @Test func emptyTaskCompleteDoesNotNotifyUser() {
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"task_complete","turn_id":"empty","last_agent_message":null,"completed_at":1777795294,"duration_ms":130735}}\n
+            """
+        let events = CodexJsonlTailer.parseTaskCompleteEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+        #expect(events.count == 1)
+        #expect(events[0].shouldNotifyUser == false)
+    }
+
+    @Test func parsesTokenCountContextEvent() {
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":120000,"cached_input_tokens":64000,"output_tokens":4000,"reasoning_output_tokens":1000,"total_tokens":125000},"last_token_usage":{"total_tokens":9000},"model_context_window":250000},"rate_limits":{}}}\n
+            """
+
+        let events = CodexJsonlTailer.parseTaskLifecycleEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+
+        #expect(events.count == 1)
+        guard case let .tokenCount(event) = events.first else {
+            Issue.record("Expected token_count event")
+            return
+        }
+        #expect(event.sessionId == sid)
+        #expect(event.cwd == cwd)
+        #expect(abs(event.contextUsedPct - 3.6) < 0.0001)
+        #expect(event.contextWindowSize == 250000)
+        #expect(event.transcriptPath == path)
+        #expect(pending == "")
     }
 
     // MARK: - Multiple events in one chunk

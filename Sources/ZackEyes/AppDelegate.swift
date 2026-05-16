@@ -720,12 +720,31 @@ extension AppDelegate: CodexJsonlTailerDelegate {
             completedAt: event.completedAt ?? Date()
         )
 
+        guard event.shouldNotifyUser else { return }
+
         NotificationManager.shared.notifySessionFinished(
             sessionId: event.sessionId,
             agent: .codex,
             projectName: session.displayName,
             lastPrompt: session.lastUserPrompt
         )
+    }
+
+    /// Tailer detected Codex's `event_msg.token_count` context metrics.
+    /// Codex hooks do not carry Claude-style `context_window`, so this path
+    /// fills the same SessionInfo fields from rollout JSONL.
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectTokenCount event: CodexTokenCountEvent) {
+        sessionStore.recordCodexContext(
+            sessionId: event.sessionId,
+            cwd: event.cwd,
+            contextUsedPct: event.contextUsedPct,
+            contextWindowSize: event.contextWindowSize,
+            transcriptPath: event.transcriptPath,
+            observedAt: Date()
+        )
+        if sessionStore.sessions[event.sessionId]?.claudePid == nil {
+            activateCodexSession(event.sessionId)
+        }
     }
 
     private func activateCodexSession(_ sessionId: String) {
