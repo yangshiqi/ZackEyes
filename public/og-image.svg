@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-label="ZackEyes AI agent command center">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#050605"/>
+      <stop offset="0.58" stop-color="#10130d"/>
+      <stop offset="1" stop-color="#061315"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <g opacity="0.22">
+    <path d="M0 132h1200M0 252h1200M0 372h1200M0 492h1200M160 0v630M360 0v630M560 0v630M760 0v630M960 0v630" stroke="#f5f1e8" stroke-width="1"/>
+  </g>
+  <rect x="646" y="118" width="386" height="258" rx="22" fill="#11150f" stroke="#f5f1e8" stroke-opacity="0.18"/>
+  <path d="M764 118h150v44c0 41.42-33.58 75-75 75s-75-33.58-75-75v-44Z" fill="#020302"/>
+  <rect x="704" y="186" width="270" height="132" rx="24" fill="#090b09" stroke="#f5f1e8" stroke-opacity="0.2"/>
+  <circle cx="738" cy="230" r="8" fill="#b7ff4a" filter="url(#glow)"/>
+  <text x="760" y="236" font-family="Avenir Next, Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#f5f1e8">Claude Code</text>
+  <circle cx="738" cy="278" r="8" fill="#5be7ff" filter="url(#glow)"/>
+  <text x="760" y="284" font-family="Avenir Next, Helvetica, Arial, sans-serif" font-size="22" font-weight="700" fill="#f5f1e8">Codex CLI</text>
+  <text x="88" y="192" font-family="Arial Narrow, Avenir Next Condensed, sans-serif" font-size="48" font-weight="900" fill="#b7ff4a">ZackEyes</text>
+  <text x="88" y="292" font-family="Arial Narrow, Avenir Next Condensed, sans-serif" font-size="82" font-weight="900" fill="#f5f1e8">Your AI agents</text>
+  <text x="88" y="382" font-family="Arial Narrow, Avenir Next Condensed, sans-serif" font-size="82" font-weight="900" fill="#b7ff4a">in the notch.</text>
+  <text x="92" y="454" font-family="Avenir Next, Helvetica, Arial, sans-serif" font-size="28" fill="#c8c8bd">A macOS command center for Claude Code and Codex CLI.</text>
+</svg>

@@ -1,0 +1,338 @@
+---
+import SiteLayout from '../layouts/SiteLayout.astro';
+
+const description = 'ZackEyes turns the MacBook notch into a live command center for Claude Code and Codex CLI sessions, approvals, tasks, rate limits, and usage pressure.';
+---
+
+<SiteLayout
+  title="ZackEyes - AI Agent Command Center in the MacBook Notch"
+  description={description}
+>
+  <canvas class="cosmos" id="cosmos" aria-hidden="true"></canvas>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="ZackEyes home">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span>ZackEyes</span>
+      </a>
+      <nav class="nav" aria-label="Primary navigation">
+        <a href="#control">Control</a>
+        <a href="#agents">Agents</a>
+        <a class="button" href="#download" aria-label="Open download section">Get app</a>
+      </nav>
+    </header>
+
+    <main id="top">
+      <section class="hero" aria-label="ZackEyes overview">
+        <div class="hero-grid">
+          <div>
+            <div class="kicker"><span class="pulse" aria-hidden="true"></span> macOS native agent panel</div>
+            <h1>
+              <span>Your AI agents</span>
+              <span class="accent">in the notch.</span>
+            </h1>
+            <p class="hero-copy">
+              ZackEyes turns the MacBook notch into a live command center for Claude Code and Codex CLI: sessions, tasks, rate limits, and permission prompts stay visible without stealing focus.
+            </p>
+            <div class="hero-actions">
+              <a class="button primary" href="#download">Download for macOS</a>
+              <a class="button" href="#control">See the flow</a>
+            </div>
+            <div class="compat-row" aria-label="Supported agents and features">
+              <span class="chip">Claude Code</span>
+              <span class="chip">Codex CLI</span>
+              <span class="chip">Permission approvals</span>
+            </div>
+          </div>
+
+          <div class="device-stage" aria-hidden="true">
+            <div class="device">
+              <div class="screen">
+                <div class="menu-strip"></div>
+                <div class="screen-notch"></div>
+                <div class="island">
+                  <div class="island-head">
+                    <div class="status-title">ZackEyes command center</div>
+                    <div class="live-pill"><span class="pulse"></span> LIVE</div>
+                  </div>
+                  <div class="agent-list">
+                    <div class="agent-row">
+                      <div class="agent-icon">C</div>
+                      <div>
+                        <div class="agent-name">Claude Code</div>
+                        <div class="agent-task">Refactoring NotchExpandedView</div>
+                      </div>
+                      <div class="meter"><span></span></div>
+                    </div>
+                    <div class="agent-row">
+                      <div class="agent-icon">X</div>
+                      <div>
+                        <div class="agent-name">Codex CLI</div>
+                        <div class="agent-task">Running bridge tests</div>
+                      </div>
+                      <div class="meter"><span></span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="permission-float">
+                  <div class="permission-title">Permission request</div>
+                  <div class="permission-copy">Allow shell command in current project?</div>
+                  <div class="permission-actions">
+                    <button class="mini-button" type="button">Allow</button>
+                    <button class="mini-button deny" type="button">Deny</button>
+                  </div>
+                </div>
+              </div>
+              <div class="base">
+                <div class="trackpad"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="scroll-story" id="control" aria-label="Kinetic typography story">
+        <div class="story-sticky">
+          <div class="kinetic-stack">
+            <p class="kinetic-line" style="--offset: -16;">Less terminal hunting.</p>
+            <p class="kinetic-line" style="--offset: 22;">More agent awareness.</p>
+            <p class="kinetic-line" style="--offset: -8;">Always in sight.</p>
+            <p class="story-caption">
+              When the agent starts, stalls, asks, finishes, or hits a limit, the signal appears where your eyes already are: the top edge of the screen.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" id="agents" aria-labelledby="agents-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="agents-title">Built for the messy middle of coding with agents.</h2>
+          <p class="section-copy">
+            ZackEyes is not another chat surface. It is a small operating layer for the moments when autonomous tools need your attention, but your editor should stay in front.
+          </p>
+
+          <div class="feature-grid">
+            <article class="feature-card">
+              <span class="feature-index">01</span>
+              <h3>Session state at a glance</h3>
+              <p>Track active Claude and Codex sessions, current tasks, completion, and waiting states from one compact notch panel.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">02</span>
+              <h3>Permission prompts without context switching</h3>
+              <p>Approve or deny sensitive tool calls from the panel, then return to the work already under your cursor.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">03</span>
+              <h3>Rate limits where they matter</h3>
+              <p>See 5-hour and 7-day usage pressure before a turn fails at the worst possible time.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="split-band" aria-labelledby="trust-title">
+        <div class="split-grid">
+          <div>
+            <h2 class="section-title" id="trust-title">Native hooks. Silent failure. Zero drama.</h2>
+            <p class="section-copy">
+              The bridge speaks through Unix sockets, keeps agent hooks quiet when the app is closed, and leaves your terminal workflow intact.
+            </p>
+          </div>
+          <div class="terminal-panel" aria-label="Example terminal event stream">
+            <div class="terminal-top">
+              <span class="dot"></span>
+              <span class="dot"></span>
+              <span class="dot"></span>
+            </div>
+            <pre class="code-lines"><span class="green">$</span> claude code
+<span class="cyan">hook</span> SessionStart -> /tmp/zackeyes.sock
+<span class="cyan">hook</span> PreToolUse -> task visible in notch
+<span class="orange">ask</span> PermissionRequest -> approve from panel
+<span class="cyan">hook</span> Stop -> notify when complete
+
+<span class="green">$</span> codex
+<span class="cyan">jsonl</span> task_started -> live fallback
+<span class="cyan">jsonl</span> task_complete -> done</pre>
+          </div>
+        </div>
+      </section>
+
+      <section class="final-cta" id="download" aria-labelledby="download-title">
+        <div>
+          <h2 id="download-title">Turn the notch into signal.</h2>
+          <p>
+            A tiny command center for people who run more than one coding agent and still want their Mac to feel calm.
+          </p>
+          <div class="final-actions">
+            <a class="button primary" href="/" aria-label="Download ZackEyes for macOS">Download ZackEyes</a>
+            <a class="button" href="/" aria-label="View ZackEyes source on GitHub">View on GitHub</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>ZackEyes for macOS</span>
+      <span>Claude Code + Codex CLI agent awareness</span>
+    </footer>
+  </div>
+
+  <script is:inline>
+    const canvas = document.getElementById("cosmos");
+    const ctx = canvas.getContext("2d");
+    const story = document.querySelector(".scroll-story");
+    const root = document.documentElement;
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const dots = [];
+    let width = 0;
+    let height = 0;
+    let dpr = 1;
+    let animationFrame = 0;
+    let lastCanvasFrame = 0;
+    let scrollFrame = 0;
+    const canvasFrameInterval = 1000 / 30;
+
+    function resizeCanvas() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      dpr = Math.min(window.devicePixelRatio || 1, width < 700 ? 1 : 1.5);
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      seedDots();
+    }
+
+    function seedDots() {
+      dots.length = 0;
+      const count = width < 700 ? 28 : 48;
+      for (let i = 0; i < count; i += 1) {
+        const cyan = Math.random() > 0.5;
+        dots.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          r: 1 + Math.random() * 2.2,
+          vx: -0.12 + Math.random() * 0.24,
+          vy: -0.08 + Math.random() * 0.16,
+          hue: cyan ? "91,231,255" : "183,255,74"
+        });
+      }
+    }
+
+    function drawCosmos(timestamp) {
+      if (reducedMotionQuery.matches || document.hidden) {
+        animationFrame = 0;
+        return;
+      }
+
+      if (timestamp - lastCanvasFrame < canvasFrameInterval) {
+        animationFrame = requestAnimationFrame(drawCosmos);
+        return;
+      }
+
+      lastCanvasFrame = timestamp;
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "rgba(5, 6, 5, 0.22)";
+      ctx.fillRect(0, 0, width, height);
+
+      for (let i = 0; i < dots.length; i += 1) {
+        const dot = dots[i];
+        dot.x += dot.vx;
+        dot.y += dot.vy;
+        if (dot.x < -10) dot.x = width + 10;
+        if (dot.x > width + 10) dot.x = -10;
+        if (dot.y < -10) dot.y = height + 10;
+        if (dot.y > height + 10) dot.y = -10;
+
+        ctx.beginPath();
+        ctx.fillStyle = "rgba(" + dot.hue + ", 0.52)";
+        ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
+        ctx.fill();
+
+        for (let j = i + 1; j < dots.length; j += 1) {
+          const other = dots[j];
+          const dx = dot.x - other.x;
+          const dy = dot.y - other.y;
+          const distanceSquared = dx * dx + dy * dy;
+          if (distanceSquared < 13456) {
+            const alpha = 0.16 - distanceSquared / 608400;
+            ctx.strokeStyle = "rgba(" + dot.hue + "," + alpha + ")";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(dot.x, dot.y);
+            ctx.lineTo(other.x, other.y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      animationFrame = requestAnimationFrame(drawCosmos);
+    }
+
+    function updateStory() {
+      const rect = story.getBoundingClientRect();
+      const total = rect.height - window.innerHeight;
+      const progress = Math.min(1, Math.max(0, -rect.top / total));
+      root.style.setProperty("--story-progress", progress.toFixed(3));
+      scrollFrame = 0;
+    }
+
+    function requestStoryUpdate() {
+      if (scrollFrame) return;
+      scrollFrame = requestAnimationFrame(updateStory);
+    }
+
+    function startCosmos() {
+      if (animationFrame || reducedMotionQuery.matches) return;
+      lastCanvasFrame = 0;
+      animationFrame = requestAnimationFrame(drawCosmos);
+    }
+
+    function stopCosmos() {
+      if (!animationFrame) return;
+      cancelAnimationFrame(animationFrame);
+      animationFrame = 0;
+    }
+
+    function handleMotionPreference() {
+      if (reducedMotionQuery.matches) {
+        stopCosmos();
+        ctx.clearRect(0, 0, width, height);
+        for (const dot of dots) {
+          ctx.beginPath();
+          ctx.fillStyle = "rgba(" + dot.hue + ", 0.38)";
+          ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        startCosmos();
+      }
+    }
+
+    resizeCanvas();
+    handleMotionPreference();
+    updateStory();
+    window.addEventListener("resize", () => {
+      resizeCanvas();
+      requestStoryUpdate();
+      handleMotionPreference();
+    }, { passive: true });
+    window.addEventListener("scroll", requestStoryUpdate, { passive: true });
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        stopCosmos();
+      } else {
+        startCosmos();
+      }
+    });
+    if (typeof reducedMotionQuery.addEventListener === "function") {
+      reducedMotionQuery.addEventListener("change", handleMotionPreference);
+    } else {
+      reducedMotionQuery.addListener(handleMotionPreference);
+    }
+  </script>
+</SiteLayout>
