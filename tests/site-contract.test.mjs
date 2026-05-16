@@ -54,6 +54,8 @@ describe('Astro site contract', () => {
 
     assert.doesNotMatch(page, /client:(load|idle|visible|media|only)/);
     assert.match(page, /<canvas class="cosmos"/);
+    assert.match(page, /const ctx = canvas instanceof HTMLCanvasElement \? canvas\.getContext\("2d"\) : null;/);
+    assert.match(page, /if \(ctx && canvas && story\) \{/);
     assert.match(page, /requestAnimationFrame/);
     assert.match(page, /document\.hidden/);
     assert.match(page, /prefers-reduced-motion/);
@@ -71,5 +73,14 @@ describe('Astro site contract', () => {
     assert.match(page, /Permission prompts without context switching/);
     assert.match(page, /Rate limits where they matter/);
     assert.match(page, /Unix sockets/);
+    assert.match(page, /href="#" aria-label="Download ZackEyes for macOS">Download ZackEyes <span aria-hidden="true">↓<\/span><\/a>/);
+    assert.match(page, /href="#" aria-label="View ZackEyes source on GitHub">View on GitHub <span aria-hidden="true">↗<\/span><\/a>/);
+  });
+
+  it('keeps production output tests defensive', () => {
+    const test = read('tests/build-output.test.mjs');
+
+    assert.match(test, /const cssFile = existsSync\(astroDir\)/);
+    assert.match(test, /cssFile \? statSync\(join\(astroDir, cssFile\)\)\.size : 0/);
   });
 });

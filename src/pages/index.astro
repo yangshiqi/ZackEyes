@@ -167,8 +167,8 @@ const description = 'ZackEyes turns the MacBook notch into a live command center
             A tiny command center for people who run more than one coding agent and still want their Mac to feel calm.
           </p>
           <div class="final-actions">
-            <a class="button primary" href="/" aria-label="Download ZackEyes for macOS">Download ZackEyes</a>
-            <a class="button" href="/" aria-label="View ZackEyes source on GitHub">View on GitHub</a>
+            <a class="button primary" href="#" aria-label="Download ZackEyes for macOS">Download ZackEyes <span aria-hidden="true">↓</span></a>
+            <a class="button" href="#" aria-label="View ZackEyes source on GitHub">View on GitHub <span aria-hidden="true">↗</span></a>
           </div>
         </div>
       </section>
@@ -182,157 +182,160 @@ const description = 'ZackEyes turns the MacBook notch into a live command center
 
   <script is:inline>
     const canvas = document.getElementById("cosmos");
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas instanceof HTMLCanvasElement ? canvas.getContext("2d") : null;
     const story = document.querySelector(".scroll-story");
-    const root = document.documentElement;
-    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const dots = [];
-    let width = 0;
-    let height = 0;
-    let dpr = 1;
-    let animationFrame = 0;
-    let lastCanvasFrame = 0;
-    let scrollFrame = 0;
-    const canvasFrameInterval = 1000 / 30;
 
-    function resizeCanvas() {
-      width = window.innerWidth;
-      height = window.innerHeight;
-      dpr = Math.min(window.devicePixelRatio || 1, width < 700 ? 1 : 1.5);
-      canvas.width = Math.floor(width * dpr);
-      canvas.height = Math.floor(height * dpr);
-      canvas.style.width = width + "px";
-      canvas.style.height = height + "px";
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      seedDots();
-    }
+    if (ctx && canvas && story) {
+      const root = document.documentElement;
+      const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const dots = [];
+      let width = 0;
+      let height = 0;
+      let dpr = 1;
+      let animationFrame = 0;
+      let lastCanvasFrame = 0;
+      let scrollFrame = 0;
+      const canvasFrameInterval = 1000 / 30;
 
-    function seedDots() {
-      dots.length = 0;
-      const count = width < 700 ? 28 : 48;
-      for (let i = 0; i < count; i += 1) {
-        const cyan = Math.random() > 0.5;
-        dots.push({
-          x: Math.random() * width,
-          y: Math.random() * height,
-          r: 1 + Math.random() * 2.2,
-          vx: -0.12 + Math.random() * 0.24,
-          vy: -0.08 + Math.random() * 0.16,
-          hue: cyan ? "91,231,255" : "183,255,74"
-        });
-      }
-    }
-
-    function drawCosmos(timestamp) {
-      if (reducedMotionQuery.matches || document.hidden) {
-        animationFrame = 0;
-        return;
+      function resizeCanvas() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        dpr = Math.min(window.devicePixelRatio || 1, width < 700 ? 1 : 1.5);
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        canvas.style.width = width + "px";
+        canvas.style.height = height + "px";
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        seedDots();
       }
 
-      if (timestamp - lastCanvasFrame < canvasFrameInterval) {
-        animationFrame = requestAnimationFrame(drawCosmos);
-        return;
-      }
-
-      lastCanvasFrame = timestamp;
-      ctx.clearRect(0, 0, width, height);
-      ctx.fillStyle = "rgba(5, 6, 5, 0.22)";
-      ctx.fillRect(0, 0, width, height);
-
-      for (let i = 0; i < dots.length; i += 1) {
-        const dot = dots[i];
-        dot.x += dot.vx;
-        dot.y += dot.vy;
-        if (dot.x < -10) dot.x = width + 10;
-        if (dot.x > width + 10) dot.x = -10;
-        if (dot.y < -10) dot.y = height + 10;
-        if (dot.y > height + 10) dot.y = -10;
-
-        ctx.beginPath();
-        ctx.fillStyle = "rgba(" + dot.hue + ", 0.52)";
-        ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
-        ctx.fill();
-
-        for (let j = i + 1; j < dots.length; j += 1) {
-          const other = dots[j];
-          const dx = dot.x - other.x;
-          const dy = dot.y - other.y;
-          const distanceSquared = dx * dx + dy * dy;
-          if (distanceSquared < 13456) {
-            const alpha = 0.16 - distanceSquared / 608400;
-            ctx.strokeStyle = "rgba(" + dot.hue + "," + alpha + ")";
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(dot.x, dot.y);
-            ctx.lineTo(other.x, other.y);
-            ctx.stroke();
-          }
+      function seedDots() {
+        dots.length = 0;
+        const count = width < 700 ? 28 : 48;
+        for (let i = 0; i < count; i += 1) {
+          const cyan = Math.random() > 0.5;
+          dots.push({
+            x: Math.random() * width,
+            y: Math.random() * height,
+            r: 1 + Math.random() * 2.2,
+            vx: -0.12 + Math.random() * 0.24,
+            vy: -0.08 + Math.random() * 0.16,
+            hue: cyan ? "91,231,255" : "183,255,74"
+          });
         }
       }
 
-      animationFrame = requestAnimationFrame(drawCosmos);
-    }
+      function drawCosmos(timestamp) {
+        if (reducedMotionQuery.matches || document.hidden) {
+          animationFrame = 0;
+          return;
+        }
 
-    function updateStory() {
-      const rect = story.getBoundingClientRect();
-      const total = rect.height - window.innerHeight;
-      const progress = Math.min(1, Math.max(0, -rect.top / total));
-      root.style.setProperty("--story-progress", progress.toFixed(3));
-      scrollFrame = 0;
-    }
+        if (timestamp - lastCanvasFrame < canvasFrameInterval) {
+          animationFrame = requestAnimationFrame(drawCosmos);
+          return;
+        }
 
-    function requestStoryUpdate() {
-      if (scrollFrame) return;
-      scrollFrame = requestAnimationFrame(updateStory);
-    }
-
-    function startCosmos() {
-      if (animationFrame || reducedMotionQuery.matches) return;
-      lastCanvasFrame = 0;
-      animationFrame = requestAnimationFrame(drawCosmos);
-    }
-
-    function stopCosmos() {
-      if (!animationFrame) return;
-      cancelAnimationFrame(animationFrame);
-      animationFrame = 0;
-    }
-
-    function handleMotionPreference() {
-      if (reducedMotionQuery.matches) {
-        stopCosmos();
+        lastCanvasFrame = timestamp;
         ctx.clearRect(0, 0, width, height);
-        for (const dot of dots) {
+        ctx.fillStyle = "rgba(5, 6, 5, 0.22)";
+        ctx.fillRect(0, 0, width, height);
+
+        for (let i = 0; i < dots.length; i += 1) {
+          const dot = dots[i];
+          dot.x += dot.vx;
+          dot.y += dot.vy;
+          if (dot.x < -10) dot.x = width + 10;
+          if (dot.x > width + 10) dot.x = -10;
+          if (dot.y < -10) dot.y = height + 10;
+          if (dot.y > height + 10) dot.y = -10;
+
           ctx.beginPath();
-          ctx.fillStyle = "rgba(" + dot.hue + ", 0.38)";
+          ctx.fillStyle = "rgba(" + dot.hue + ", 0.52)";
           ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
           ctx.fill();
-        }
-      } else {
-        startCosmos();
-      }
-    }
 
-    resizeCanvas();
-    handleMotionPreference();
-    updateStory();
-    window.addEventListener("resize", () => {
-      resizeCanvas();
-      requestStoryUpdate();
-      handleMotionPreference();
-    }, { passive: true });
-    window.addEventListener("scroll", requestStoryUpdate, { passive: true });
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) {
-        stopCosmos();
-      } else {
-        startCosmos();
+          for (let j = i + 1; j < dots.length; j += 1) {
+            const other = dots[j];
+            const dx = dot.x - other.x;
+            const dy = dot.y - other.y;
+            const distanceSquared = dx * dx + dy * dy;
+            if (distanceSquared < 13456) {
+              const alpha = 0.16 - distanceSquared / 608400;
+              ctx.strokeStyle = "rgba(" + dot.hue + "," + alpha + ")";
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(dot.x, dot.y);
+              ctx.lineTo(other.x, other.y);
+              ctx.stroke();
+            }
+          }
+        }
+
+        animationFrame = requestAnimationFrame(drawCosmos);
       }
-    });
-    if (typeof reducedMotionQuery.addEventListener === "function") {
-      reducedMotionQuery.addEventListener("change", handleMotionPreference);
-    } else {
-      reducedMotionQuery.addListener(handleMotionPreference);
+
+      function updateStory() {
+        const rect = story.getBoundingClientRect();
+        const total = rect.height - window.innerHeight;
+        const progress = Math.min(1, Math.max(0, -rect.top / total));
+        root.style.setProperty("--story-progress", progress.toFixed(3));
+        scrollFrame = 0;
+      }
+
+      function requestStoryUpdate() {
+        if (scrollFrame) return;
+        scrollFrame = requestAnimationFrame(updateStory);
+      }
+
+      function startCosmos() {
+        if (animationFrame || reducedMotionQuery.matches) return;
+        lastCanvasFrame = 0;
+        animationFrame = requestAnimationFrame(drawCosmos);
+      }
+
+      function stopCosmos() {
+        if (!animationFrame) return;
+        cancelAnimationFrame(animationFrame);
+        animationFrame = 0;
+      }
+
+      function handleMotionPreference() {
+        if (reducedMotionQuery.matches) {
+          stopCosmos();
+          ctx.clearRect(0, 0, width, height);
+          for (const dot of dots) {
+            ctx.beginPath();
+            ctx.fillStyle = "rgba(" + dot.hue + ", 0.38)";
+            ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        } else {
+          startCosmos();
+        }
+      }
+
+      resizeCanvas();
+      handleMotionPreference();
+      updateStory();
+      window.addEventListener("resize", () => {
+        resizeCanvas();
+        requestStoryUpdate();
+        handleMotionPreference();
+      }, { passive: true });
+      window.addEventListener("scroll", requestStoryUpdate, { passive: true });
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          stopCosmos();
+        } else {
+          startCosmos();
+        }
+      });
+      if (typeof reducedMotionQuery.addEventListener === "function") {
+        reducedMotionQuery.addEventListener("change", handleMotionPreference);
+      } else {
+        reducedMotionQuery.addListener(handleMotionPreference);
+      }
     }
   </script>
 </SiteLayout>

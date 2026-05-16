@@ -18,10 +18,13 @@ describe('production output budgets', { skip: !hasBuild }, () => {
   });
 
   it('keeps HTML and CSS inside static landing page budgets', () => {
+    const astroDir = join(dist, '_astro');
+    const cssFile = existsSync(astroDir) ? readdirSync(astroDir).find((file) => file.endsWith('.css')) : null;
     const htmlBytes = statSync(join(dist, 'index.html')).size;
-    const cssBytes = statSync(join(dist, '_astro', readdirSync(join(dist, '_astro')).find((file) => file.endsWith('.css')))).size;
+    const cssBytes = cssFile ? statSync(join(astroDir, cssFile)).size : 0;
 
     assert.ok(htmlBytes < 25_000, `index.html is ${htmlBytes} bytes`);
+    assert.ok(cssFile, 'Expected a generated CSS asset in dist/_astro');
     assert.ok(cssBytes < 35_000, `homepage CSS is ${cssBytes} bytes`);
   });
 });
