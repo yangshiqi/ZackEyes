@@ -1,0 +1,17 @@
+{
+  "name": "ZackEyes",
+  "short_name": "ZackEyes",
+  "description": "A macOS notch command center for Claude Code and Codex CLI.",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#050605",
+  "theme_color": "#050605",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

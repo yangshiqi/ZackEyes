@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="ZackEyes">
+  <rect width="256" height="256" rx="52" fill="#050605"/>
+  <path d="M52 70h152v42c0 41.97-34.03 76-76 76s-76-34.03-76-76V70Z" fill="#f5f1e8"/>
+  <path d="M82 70h92v31c0 25.41-20.59 46-46 46s-46-20.59-46-46V70Z" fill="#050605"/>
+  <circle cx="101" cy="114" r="10" fill="#5be7ff"/>
+  <circle cx="155" cy="114" r="10" fill="#b7ff4a"/>
+</svg>
