@@ -720,6 +720,8 @@ extension AppDelegate: CodexJsonlTailerDelegate {
             completedAt: event.completedAt ?? Date()
         )
 
+        guard event.shouldNotifyUser else { return }
+
         NotificationManager.shared.notifySessionFinished(
             sessionId: event.sessionId,
             agent: .codex,

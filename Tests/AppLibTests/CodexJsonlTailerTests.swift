@@ -108,6 +108,46 @@ struct CodexJsonlTailerTests {
         #expect(events[0].completedAt?.timeIntervalSince1970 == 1777795294)
         #expect(events[0].transcriptPath == path)
         #expect(pending == "")
+        #expect(events[0].shouldNotifyUser)
+    }
+
+    @Test func internalApprovalTaskCompleteDoesNotNotifyUser() {
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"task_complete","turn_id":"approval","last_agent_message":"{\\"risk_level\\":\\"low\\",\\"user_authorization\\":\\"high\\",\\"outcome\\":\\"allow\\",\\"rationale\\":\\"Routine cache write.\\"}","completed_at":1777795294,"duration_ms":130735}}\n
+            """
+        let events = CodexJsonlTailer.parseTaskCompleteEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+        #expect(events.count == 1)
+        #expect(events[0].shouldNotifyUser == false)
+    }
+
+    @Test func terseInternalApprovalTaskCompleteDoesNotNotifyUser() {
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"task_complete","turn_id":"approval","last_agent_message":"{\\"outcome\\":\\"allow\\"}","completed_at":1777795294,"duration_ms":130735}}\n
+            """
+        let events = CodexJsonlTailer.parseTaskCompleteEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+        #expect(events.count == 1)
+        #expect(events[0].shouldNotifyUser == false)
+    }
+
+    @Test func emptyTaskCompleteDoesNotNotifyUser() {
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"task_complete","turn_id":"empty","last_agent_message":null,"completed_at":1777795294,"duration_ms":130735}}\n
+            """
+        let events = CodexJsonlTailer.parseTaskCompleteEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+        #expect(events.count == 1)
+        #expect(events[0].shouldNotifyUser == false)
     }
 
     @Test func parsesTokenCountContextEvent() {

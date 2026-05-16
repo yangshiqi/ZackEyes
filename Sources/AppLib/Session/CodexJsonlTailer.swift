@@ -40,6 +40,27 @@ public struct CodexTaskCompleteEvent: Sendable {
     public let durationMs: Int?
     public let transcriptPath: String
     public let turnId: String?
+
+    public var shouldNotifyUser: Bool {
+        guard let message = lastAgentMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !message.isEmpty else {
+            return false
+        }
+        return !Self.isInternalDecisionMessage(message)
+    }
+
+    private static func isInternalDecisionMessage(_ message: String) -> Bool {
+        guard let data = message.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let outcome = dict["outcome"] as? String,
+              outcome == "allow" || outcome == "deny" else {
+            return false
+        }
+        if dict.count == 1 { return true }
+        return dict["risk_level"] != nil
+            || dict["user_authorization"] != nil
+            || dict["rationale"] != nil
+    }
 }
 
 public struct CodexTokenCountEvent: Sendable {
