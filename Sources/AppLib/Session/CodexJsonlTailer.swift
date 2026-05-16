@@ -19,6 +19,9 @@ public protocol CodexJsonlTailerDelegate: AnyObject {
 
     @MainActor
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectTaskComplete event: CodexTaskCompleteEvent)
+
+    @MainActor
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectTokenCount event: CodexTokenCountEvent)
 }
 
 public struct CodexTaskStartedEvent: Sendable {
@@ -39,9 +42,18 @@ public struct CodexTaskCompleteEvent: Sendable {
     public let turnId: String?
 }
 
+public struct CodexTokenCountEvent: Sendable {
+    public let sessionId: String
+    public let cwd: String?
+    public let contextUsedPct: Double
+    public let contextWindowSize: Int?
+    public let transcriptPath: String
+}
+
 public enum CodexTaskLifecycleEvent: Sendable {
     case started(CodexTaskStartedEvent)
     case complete(CodexTaskCompleteEvent)
+    case tokenCount(CodexTokenCountEvent)
 }
 
 @MainActor
@@ -141,6 +153,11 @@ public final class CodexJsonlTailer {
                 guard let self = self else { return }
                 self.delegate?.codexTailer(self, didDetectTaskComplete: event)
             }
+        }, onTokenCount: { [weak self] event in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.delegate?.codexTailer(self, didDetectTokenCount: event)
+            }
         }, onClosed: { [weak self] closedURL in
             Task { @MainActor in
                 self?.watchers.removeValue(forKey: closedURL)
@@ -207,6 +224,16 @@ extension CodexJsonlTailer {
                     turnId: turnId
                 )))
 
+            case "token_count":
+                if let event = parseTokenCountEvent(
+                    payload: payload,
+                    sessionId: sessionId,
+                    cwd: cwd,
+                    transcriptPath: transcriptPath
+                ) {
+                    events.append(.tokenCount(event))
+                }
+
             default:
                 continue
             }
@@ -253,6 +280,43 @@ extension CodexJsonlTailer {
         }
         return nil
     }
+
+    private nonisolated static func parseTokenCountEvent(
+        payload: [String: Any],
+        sessionId: String,
+        cwd: String?,
+        transcriptPath: String
+    ) -> CodexTokenCountEvent? {
+        guard let info = payload["info"] as? [String: Any],
+              let lastUsage = info["last_token_usage"] as? [String: Any],
+              let contextTokens = number(lastUsage["total_tokens"]),
+              let window = number(info["model_context_window"]),
+              window > 0 else {
+            return nil
+        }
+
+        let windowSize = Int(window.rounded())
+        return CodexTokenCountEvent(
+            sessionId: sessionId,
+            cwd: cwd,
+            contextUsedPct: (contextTokens / window) * 100,
+            contextWindowSize: windowSize,
+            transcriptPath: transcriptPath
+        )
+    }
+
+    private nonisolated static func number(_ raw: Any?) -> Double? {
+        switch raw {
+        case let value as Double:
+            return value
+        case let value as Int:
+            return Double(value)
+        case let value as NSNumber:
+            return value.doubleValue
+        default:
+            return nil
+        }
+    }
 }
 
 // MARK: - Per-file watcher (kqueue-backed)
@@ -268,6 +332,7 @@ private final class Watcher: @unchecked Sendable {
     private var pendingBuffer: String = ""
     private let onTaskStarted: (CodexTaskStartedEvent) -> Void
     private let onTaskComplete: (CodexTaskCompleteEvent) -> Void
+    private let onTokenCount: (CodexTokenCountEvent) -> Void
     private let onClosed: (URL) -> Void
     /// Guards `isCancelled` so the MainActor `stop()` path and the
     /// DispatchSource event handler (private queue, fires on .delete /
@@ -279,6 +344,7 @@ private final class Watcher: @unchecked Sendable {
         url: URL,
         onTaskStarted: @escaping (CodexTaskStartedEvent) -> Void,
         onTaskComplete: @escaping (CodexTaskCompleteEvent) -> Void,
+        onTokenCount: @escaping (CodexTokenCountEvent) -> Void,
         onClosed: @escaping (URL) -> Void
     ) {
         // Codex session id is encoded in the rollout filename; bail if we
@@ -299,6 +365,7 @@ private final class Watcher: @unchecked Sendable {
         self.queue = DispatchQueue(label: "ZackEyes.CodexJsonlTailer.\(id.prefix(8))")
         self.onTaskStarted = onTaskStarted
         self.onTaskComplete = onTaskComplete
+        self.onTokenCount = onTokenCount
         self.onClosed = onClosed
 
         // Read session_meta once for cwd. Best-effort — if the file doesn't
@@ -388,6 +455,8 @@ private final class Watcher: @unchecked Sendable {
                     onTaskStarted(started)
                 case .complete(let complete):
                     onTaskComplete(complete)
+                case .tokenCount(let tokenCount):
+                    onTokenCount(tokenCount)
                 }
             }
         } catch {

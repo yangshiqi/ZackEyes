@@ -179,6 +179,31 @@ struct SessionStoreTests {
         #expect(store.sessions["codex-1"]?.source == .detected)
     }
 
+    @Test func recordCodexContextPopulatesContextFields() {
+        let store = SessionStore()
+        let observedAt = Date(timeIntervalSince1970: 1_777_962_860)
+
+        store.recordCodexContext(
+            sessionId: "codex-context",
+            cwd: "/Users/test/proj",
+            contextUsedPct: 48.37,
+            contextWindowSize: 258400,
+            transcriptPath: "/tmp/rollout.jsonl",
+            observedAt: observedAt
+        )
+
+        let session = store.sessions["codex-context"]
+        #expect(session?.agent == .codex)
+        #expect(session?.state == .working)
+        #expect(session?.isToolRunning == true)
+        #expect(session?.currentToolName == "Codex")
+        #expect(session?.contextUsedPct == 48.37)
+        #expect(session?.contextWindowSize == 258400)
+        #expect(session?.transcriptPath == "/tmp/rollout.jsonl")
+        #expect(session?.lastActiveAt == observedAt)
+        #expect(session?.source == .detected)
+    }
+
     // 8. Multiple sessions tracked independently
     @Test func multipleSessionsTrackedIndependently() {
         let store = SessionStore()

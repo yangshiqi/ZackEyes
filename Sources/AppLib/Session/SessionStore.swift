@@ -32,7 +32,7 @@ public struct SessionInfo: Identifiable {
     public var errorMessage: String?
     public var errorAt: Date?
 
-    // Per-session context window data (from statusLine — Claude only)
+    // Per-session context window data (Claude statusLine or Codex token_count)
     public var contextUsedPct: Double?
     public var contextWindowSize: Int?
     public var modelDisplayName: String?
@@ -382,6 +382,42 @@ public final class SessionStore: ObservableObject {
         session.isToolRunning = true
         session.state = .working
         session.lastActiveAt = startedAt
+        sessions[sessionId] = session
+    }
+
+    /// Apply Codex's per-rollout `event_msg.token_count.info` context data
+    /// to the same fields Claude statusLine uses, so the popup can share the
+    /// existing context bar. Token-count events imply an active Codex turn,
+    /// so a missing session is created as working.
+    public func recordCodexContext(
+        sessionId: String,
+        cwd: String?,
+        contextUsedPct: Double,
+        contextWindowSize: Int?,
+        transcriptPath: String?,
+        observedAt: Date
+    ) {
+        let didCreateSession = sessions[sessionId] == nil
+        var session = sessions[sessionId]
+            ?? SessionInfo(
+                id: sessionId,
+                cwd: cwd,
+                agent: .codex,
+                state: .working,
+                startedAt: observedAt
+            )
+        session.agent = .codex
+        if session.cwd == nil { session.cwd = cwd }
+        if session.transcriptPath == nil { session.transcriptPath = transcriptPath }
+        if didCreateSession {
+            session.source = .detected
+        }
+        session.contextUsedPct = contextUsedPct
+        session.contextWindowSize = contextWindowSize
+        session.currentToolName = session.currentToolName ?? "Codex"
+        session.isToolRunning = true
+        session.state = .working
+        session.lastActiveAt = observedAt
         sessions[sessionId] = session
     }
 

@@ -728,6 +728,21 @@ extension AppDelegate: CodexJsonlTailerDelegate {
         )
     }
 
+    /// Tailer detected Codex's `event_msg.token_count` context metrics.
+    /// Codex hooks do not carry Claude-style `context_window`, so this path
+    /// fills the same SessionInfo fields from rollout JSONL.
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectTokenCount event: CodexTokenCountEvent) {
+        sessionStore.recordCodexContext(
+            sessionId: event.sessionId,
+            cwd: event.cwd,
+            contextUsedPct: event.contextUsedPct,
+            contextWindowSize: event.contextWindowSize,
+            transcriptPath: event.transcriptPath,
+            observedAt: Date()
+        )
+        activateCodexSession(event.sessionId)
+    }
+
     private func activateCodexSession(_ sessionId: String) {
         guard let session = sessionStore.sessions[sessionId],
               let cwd = session.cwd else { return }

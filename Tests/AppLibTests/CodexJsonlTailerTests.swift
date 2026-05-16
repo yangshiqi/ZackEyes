@@ -110,6 +110,30 @@ struct CodexJsonlTailerTests {
         #expect(pending == "")
     }
 
+    @Test func parsesTokenCountContextEvent() {
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":120000,"cached_input_tokens":64000,"output_tokens":4000,"reasoning_output_tokens":1000,"total_tokens":125000},"last_token_usage":{"total_tokens":9000},"model_context_window":250000},"rate_limits":{}}}\n
+            """
+
+        let events = CodexJsonlTailer.parseTaskLifecycleEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+
+        #expect(events.count == 1)
+        guard case let .tokenCount(event) = events.first else {
+            Issue.record("Expected token_count event")
+            return
+        }
+        #expect(event.sessionId == sid)
+        #expect(event.cwd == cwd)
+        #expect(abs(event.contextUsedPct - 3.6) < 0.0001)
+        #expect(event.contextWindowSize == 250000)
+        #expect(event.transcriptPath == path)
+        #expect(pending == "")
+    }
+
     // MARK: - Multiple events in one chunk
 
     @Test func parsesMultipleTaskCompleteEventsInOrder() {
