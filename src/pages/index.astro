@@ -310,7 +310,7 @@ const faqStructuredData = {
       const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
       const requestIdle = typeof window.requestIdleCallback === "function"
         ? window.requestIdleCallback.bind(window)
-        : (callback) => window.setTimeout(callback, 520);
+        : (callback) => window.setTimeout(callback, 16);
       const cancelIdle = typeof window.cancelIdleCallback === "function"
         ? window.cancelIdleCallback.bind(window)
         : window.clearTimeout.bind(window);
@@ -398,6 +398,7 @@ const faqStructuredData = {
               ctx.lineTo(other.x, other.y);
               ctx.stroke();
               links += 1;
+              // Cap links to bound draws.
               if (links >= 4) break;
             }
           }

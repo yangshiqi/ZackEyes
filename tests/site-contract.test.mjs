@@ -108,7 +108,9 @@ describe('Astro site contract', () => {
     assert.match(page, /requestAnimationFrame/);
     assert.match(page, /document\.hidden/);
     assert.match(page, /requestIdleCallback/);
+    assert.match(page, /window\.setTimeout\(callback, 16\)/);
     assert.match(page, /IntersectionObserver/);
+    assert.match(page, /Cap links to bound draws\./);
     assert.match(page, /prefers-reduced-motion/);
     assert.match(css, /content-visibility:\s*auto/);
     assert.match(css, /font-display:\s*swap/);
