@@ -303,18 +303,27 @@ const faqStructuredData = {
     const canvas = document.getElementById("cosmos");
     const ctx = canvas instanceof HTMLCanvasElement ? canvas.getContext("2d") : null;
     const story = document.querySelector(".scroll-story");
+    const hero = document.querySelector(".hero");
 
     if (ctx && canvas && story) {
       const root = document.documentElement;
       const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+      const requestIdle = typeof window.requestIdleCallback === "function"
+        ? window.requestIdleCallback.bind(window)
+        : (callback) => window.setTimeout(callback, 16);
+      const cancelIdle = typeof window.cancelIdleCallback === "function"
+        ? window.cancelIdleCallback.bind(window)
+        : window.clearTimeout.bind(window);
       const dots = [];
       let width = 0;
       let height = 0;
       let dpr = 1;
       let animationFrame = 0;
+      let idleFrame = 0;
       let lastCanvasFrame = 0;
       let scrollFrame = 0;
-      const canvasFrameInterval = 1000 / 30;
+      let canvasVisible = true;
+      const canvasFrameInterval = 1000 / 24;
 
       function resizeCanvas() {
         width = window.innerWidth;
@@ -330,7 +339,7 @@ const faqStructuredData = {
 
       function seedDots() {
         dots.length = 0;
-        const count = width < 700 ? 28 : 48;
+        const count = width < 700 ? 18 : 32;
         for (let i = 0; i < count; i += 1) {
           const cyan = Math.random() > 0.5;
           dots.push({
@@ -345,7 +354,7 @@ const faqStructuredData = {
       }
 
       function drawCosmos(timestamp) {
-        if (reducedMotionQuery.matches || document.hidden) {
+        if (reducedMotionQuery.matches || document.hidden || !canvasVisible) {
           animationFrame = 0;
           return;
         }
@@ -374,6 +383,7 @@ const faqStructuredData = {
           ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
           ctx.fill();
 
+          let links = 0;
           for (let j = i + 1; j < dots.length; j += 1) {
             const other = dots[j];
             const dx = dot.x - other.x;
@@ -387,6 +397,9 @@ const faqStructuredData = {
               ctx.moveTo(dot.x, dot.y);
               ctx.lineTo(other.x, other.y);
               ctx.stroke();
+              links += 1;
+              // Cap links to bound draws.
+              if (links >= 4) break;
             }
           }
         }
@@ -408,7 +421,7 @@ const faqStructuredData = {
       }
 
       function startCosmos() {
-        if (animationFrame || reducedMotionQuery.matches) return;
+        if (animationFrame || reducedMotionQuery.matches || document.hidden || !canvasVisible) return;
         lastCanvasFrame = 0;
         animationFrame = requestAnimationFrame(drawCosmos);
       }
@@ -419,24 +432,46 @@ const faqStructuredData = {
         animationFrame = 0;
       }
 
+      function scheduleCosmosStart() {
+        if (idleFrame || reducedMotionQuery.matches || document.hidden || !canvasVisible) return;
+        idleFrame = requestIdle(() => {
+          idleFrame = 0;
+          startCosmos();
+        }, { timeout: 900 });
+      }
+
+      function stopScheduledCosmos() {
+        if (!idleFrame) return;
+        cancelIdle(idleFrame);
+        idleFrame = 0;
+      }
+
       function handleMotionPreference() {
         if (reducedMotionQuery.matches) {
+          stopScheduledCosmos();
           stopCosmos();
           ctx.clearRect(0, 0, width, height);
-          for (const dot of dots) {
-            ctx.beginPath();
-            ctx.fillStyle = "rgba(" + dot.hue + ", 0.38)";
-            ctx.arc(dot.x, dot.y, dot.r, 0, Math.PI * 2);
-            ctx.fill();
-          }
         } else {
-          startCosmos();
+          scheduleCosmosStart();
         }
       }
 
       resizeCanvas();
-      handleMotionPreference();
       updateStory();
+      if ("IntersectionObserver" in window && hero) {
+        const heroObserver = new IntersectionObserver((entries) => {
+          canvasVisible = entries.some((entry) => entry.isIntersecting);
+          if (canvasVisible) {
+            scheduleCosmosStart();
+          } else {
+            stopScheduledCosmos();
+            stopCosmos();
+          }
+        }, { rootMargin: "160px 0px" });
+        heroObserver.observe(hero);
+      } else {
+        scheduleCosmosStart();
+      }
       window.addEventListener("resize", () => {
         resizeCanvas();
         requestStoryUpdate();
@@ -447,7 +482,7 @@ const faqStructuredData = {
         if (document.hidden) {
           stopCosmos();
         } else {
-          startCosmos();
+          scheduleCosmosStart();
         }
       });
       if (typeof reducedMotionQuery.addEventListener === "function") {
