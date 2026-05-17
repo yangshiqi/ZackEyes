@@ -96,7 +96,6 @@ a {
   opacity: 0.18;
   background-image:
     repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.025) 0, rgba(255, 255, 255, 0.025) 1px, transparent 1px, transparent 3px);
-  mix-blend-mode: overlay;
 }
 
 .topbar {
@@ -109,8 +108,7 @@ a {
   align-items: center;
   justify-content: space-between;
   padding: 18px 32px;
-  background: linear-gradient(180deg, rgba(5, 6, 5, 0.82), rgba(5, 6, 5, 0));
-  backdrop-filter: blur(12px);
+  background: linear-gradient(180deg, rgba(5, 6, 5, 0.96), rgba(5, 6, 5, 0.78) 62%, rgba(5, 6, 5, 0));
 }
 
 .brand {
@@ -302,13 +300,6 @@ h1 {
   height: 470px;
   transform-style: preserve-3d;
   transform: translate3d(0, 18px, 0) rotateX(58deg) rotateZ(-10deg);
-  animation: drift 8s ease-in-out infinite;
-  will-change: transform;
-}
-
-@keyframes drift {
-  0%, 100% { transform: translate3d(0, 18px, 0) rotateX(58deg) rotateZ(-10deg); }
-  50% { transform: translate3d(0, 0, 0) rotateX(56deg) rotateZ(-7deg); }
 }
 
 .screen {
@@ -365,16 +356,8 @@ h1 {
   transform: translateX(-50%) translateZ(64px);
   border: 1px solid rgba(245, 241, 232, 0.2);
   border-radius: 22px;
-  background: rgba(9, 11, 9, 0.62);
+  background: rgba(9, 11, 9, 0.88);
   box-shadow: 0 32px 70px rgba(0, 0, 0, 0.56), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(18px);
-  animation: islandIn 4.8s ease-in-out infinite;
-  will-change: transform;
-}
-
-@keyframes islandIn {
-  0%, 100% { transform: translateX(-50%) translateZ(64px) scale(1); }
-  50% { transform: translateX(-50%) translateZ(84px) scale(1.025); }
 }
 
 .island-head {
@@ -476,9 +459,8 @@ h1 {
   padding: 14px;
   border: 1px solid rgba(255, 159, 28, 0.36);
   border-radius: 16px;
-  background: rgba(36, 28, 12, 0.66);
+  background: rgba(36, 28, 12, 0.9);
   box-shadow: 0 22px 58px rgba(0, 0, 0, 0.44);
-  backdrop-filter: blur(15px);
   transform: translateZ(120px);
 }
 
@@ -669,8 +651,7 @@ h1 {
   padding: 22px;
   border: 1px solid rgba(245, 241, 232, 0.14);
   border-radius: 8px;
-  background: rgba(245, 241, 232, 0.055);
-  backdrop-filter: blur(14px);
+  background: rgba(245, 241, 232, 0.07);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
@@ -1350,9 +1331,7 @@ h1 {
     scroll-behavior: auto !important;
   }
 
-  .kinetic-line,
-  .device,
-  .island {
+  .kinetic-line {
     will-change: auto;
   }
 }

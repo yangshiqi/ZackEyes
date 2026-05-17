@@ -107,10 +107,18 @@ describe('Astro site contract', () => {
     assert.match(page, /if \(ctx && canvas && story\) \{/);
     assert.match(page, /requestAnimationFrame/);
     assert.match(page, /document\.hidden/);
+    assert.match(page, /requestIdleCallback/);
+    assert.match(page, /IntersectionObserver/);
     assert.match(page, /prefers-reduced-motion/);
     assert.match(css, /content-visibility:\s*auto/);
     assert.match(css, /font-display:\s*swap/);
     assert.doesNotMatch(css, /@import\s+url\(/);
+    assert.doesNotMatch(css, /backdrop-filter/);
+    assert.doesNotMatch(css, /mix-blend-mode/);
+    assert.doesNotMatch(css, /\.device\s*\{[^}]*animation:/s);
+    assert.doesNotMatch(css, /\.island\s*\{[^}]*animation:/s);
+    assert.doesNotMatch(css, /\.device\s*\{[^}]*will-change:/s);
+    assert.doesNotMatch(css, /\.island\s*\{[^}]*will-change:/s);
   });
 
   it('preserves the product story in semantic sections', () => {
