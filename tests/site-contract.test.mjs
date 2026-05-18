@@ -8,6 +8,7 @@ import {
   downloadUrl,
   issuesUrl,
   downloadSha256,
+  downloadSize,
   downloadSizeLabel,
   downloadBytes,
   downloadBytesLabel
@@ -164,7 +165,7 @@ describe('Astro site contract', () => {
     assert.match(page, /\breleaseName\b/);
     assert.match(page, /\bdownloadUrl\b/);
     assert.match(page, /\bissuesUrl\b/);
-    assert.match(page, /\bdownloadSize\b/);
+    assert.match(page, /\bdownloadSizeLabel\b/);
     assert.match(page, /\bdownloadSha256\b/);
     assert.match(page, /href=\{downloadUrl\}>Download for macOS/);
     assert.match(page, /href=\{downloadUrl\} aria-label=\{`Download \$\{releaseName\} for macOS`\}>Download ZackEyes <span aria-hidden="true">↓<\/span><\/a>/);
@@ -187,7 +188,8 @@ describe('Astro site contract', () => {
     assert.equal(typeof downloadBytes, 'number');
     assert.ok(downloadBytes > 0);
     assert.equal(downloadBytesLabel, `${downloadBytes.toLocaleString('en-US')} bytes`);
-    assert.match(downloadSizeLabel, / DMG$/);
+    assert.match(downloadSize, /^[\d.]+ MB$/);
+    assert.equal(downloadSizeLabel, `${downloadSize} DMG`);
 
     // No other source file should hard-code the version / URL / hash —
     // each page must import from the central lib.
@@ -301,7 +303,7 @@ describe('Astro site contract', () => {
     // Version / size / hash / URL are read from ../lib/release.mjs.
     assert.match(page, /from '\.\.\/lib\/release\.mjs'/);
     assert.match(page, /\{releaseName\}/);
-    assert.match(page, /\{downloadSizeLabel/);
+    assert.match(page, /\{downloadSize\}/);
     assert.match(page, /\{downloadBytesLabel\}/);
     assert.match(page, /\{downloadSha256\}/);
     assert.match(page, /\{downloadUrl\}/);

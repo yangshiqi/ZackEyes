@@ -85,10 +85,11 @@ function arg(flag, { required = true } = {}) {
 // ---------- release.mjs ----------
 
 function bumpReleaseMjs({ version, sha256, bytes }) {
-  // "2.8 MB DMG" — one decimal place. macOS Finder shows the same
-  // rounding (binary MB), and the tests assert on this exact format.
-  const sizeMb = (bytes / 1024 / 1024).toFixed(1);
-  const sizeLabel = `${sizeMb} MB DMG`;
+  // Decimal MB (10^6 bytes), matching what macOS Finder has displayed
+  // since 10.6. `downloadSizeLabel` in release.mjs is derived from
+  // `downloadSize`, so the script only rewrites the primitive.
+  const sizeMb = (bytes / 1_000_000).toFixed(1);
+  const size = `${sizeMb} MB`;
 
   const releasePath = 'src/lib/release.mjs';
   const releaseBefore = readFileSync(releasePath, 'utf8');
@@ -113,9 +114,9 @@ function bumpReleaseMjs({ version, sha256, bytes }) {
     `$1${bytes}$2`
   );
   releaseAfter = replace(
-    releaseAfter, 'downloadSizeLabel',
-    /(export const downloadSizeLabel = ')[^']+(';)/,
-    `$1${sizeLabel}$2`
+    releaseAfter, 'downloadSize',
+    /(export const downloadSize = ')[^']+(';)/,
+    `$1${size}$2`
   );
   releaseAfter = replace(
     releaseAfter, 'downloadSha256',
@@ -125,7 +126,7 @@ function bumpReleaseMjs({ version, sha256, bytes }) {
 
   if (releaseAfter !== releaseBefore) {
     writeFileSync(releasePath, releaseAfter);
-    console.log(`bumped release.mjs → v${version} (${sizeLabel}, ${bytes} bytes, sha256 ${sha256})`);
+    console.log(`bumped release.mjs → v${version} (${size} DMG, ${bytes} bytes, sha256 ${sha256})`);
   } else {
     console.log(`release.mjs already at v${version} (${sha256}, ${bytes} bytes) — no change`);
   }
@@ -227,7 +228,10 @@ function updateChangelog({ version, summary, highlights, dateOverride }) {
   const dateLabel = formatDateLabel(dateOverride);
   const entry = renderEntry({ tag, dateLabel, summary, highlights });
 
-  const arrayStart = before.match(/(const releases = \[\n)/);
+  // `\s*` instead of a literal `\n` so the script survives a Prettier
+  // pass that drops the trailing newline or normalises whitespace
+  // between the `[` and the first entry.
+  const arrayStart = before.match(/(const releases = \[\s*)/);
   if (!arrayStart) {
     console.error(`could not find 'const releases = [' in ${path}`);
     exit(1);

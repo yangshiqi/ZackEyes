@@ -2,7 +2,7 @@ import {
   releaseName,
   downloadUrl,
   issuesUrl,
-  downloadSizeLabel,
+  downloadSize,
   downloadSha256
 } from '../lib/release.mjs';
 
@@ -43,7 +43,7 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 - Issues and feature requests: ${issuesUrl}
 
 ## Download verification
-- DMG size: ${downloadSizeLabel.replace(' DMG', '')}.
+- DMG size: ${downloadSize}.
 - SHA256: ${downloadSha256}.
 
 ## Roadmap

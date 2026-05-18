@@ -9,8 +9,12 @@ export const releaseName = `ZackEyes ${appVersion}`;
 
 // DMG metadata — pulled from `shasum -a 256` and `stat -f%z` against the
 // published asset. Verified at release time against the public download.
+// `downloadSize` is in decimal MB (10^6 bytes), matching macOS Finder's
+// file-size display since 10.6; `downloadSizeLabel` and the bytes label
+// derive from it so the bump script only has to rewrite the primitives.
 export const downloadBytes = 2954678;
-export const downloadSizeLabel = '2.8 MB DMG';
+export const downloadSize = '3.0 MB';
+export const downloadSizeLabel = `${downloadSize} DMG`;
 export const downloadBytesLabel = `${downloadBytes.toLocaleString('en-US')} bytes`;
 export const downloadSha256 = '800ffbbe93cf46c99c3a6111ff03c28c8bac8c93e70200710c1d0f0e0227f18b';
 

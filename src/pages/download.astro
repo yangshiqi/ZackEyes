@@ -9,7 +9,7 @@ import {
   releasesUrl,
   issuesUrl,
   downloadBytes,
-  downloadSizeLabel,
+  downloadSize,
   downloadBytesLabel,
   downloadSha256
 } from '../lib/release.mjs';
@@ -85,7 +85,7 @@ const downloadStructuredData = [
             </div>
             <div>
               <dt>File</dt>
-              <dd>DMG, {downloadSizeLabel.replace(' DMG', '')}, {downloadBytesLabel}</dd>
+              <dd>DMG, {downloadSize}, {downloadBytesLabel}</dd>
             </div>
             <div>
               <dt>SHA256</dt>

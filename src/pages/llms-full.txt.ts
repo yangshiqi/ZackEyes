@@ -2,7 +2,7 @@ import {
   releaseName,
   downloadUrl,
   issuesUrl,
-  downloadSizeLabel,
+  downloadSize,
   downloadSha256
 } from '../lib/release.mjs';
 
@@ -41,7 +41,7 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 
 ## Download verification
 - Download page: https://zackeyes.app/download
-- DMG size: ${downloadSizeLabel.replace(' DMG', '')}.
+- DMG size: ${downloadSize}.
 - SHA256: ${downloadSha256}.
 
 ## Uninstall
