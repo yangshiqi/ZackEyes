@@ -37,6 +37,7 @@ The homepage currently uses no React island and no generated client JavaScript b
 - SHA256: `800ffbbe93cf46c99c3a6111ff03c28c8bac8c93e70200710c1d0f0e0227f18b`.
 - Issues and feature requests: `https://github.com/yangshiqi/ZackEyes-release/issues`.
 - Release metadata is centralised in [`src/lib/release.mjs`](src/lib/release.mjs); update that file on each release and every page + test will pick up the new values.
+- `make release` in the ccisland repo triggers the [`bump-version`](.github/workflows/bump-version.yml) workflow here via `gh workflow run`, which rewrites `src/lib/release.mjs` with the new DMG metadata and opens a PR. The PR is intentionally not auto-merged so a changelog entry can be added by hand on the same branch.
 
 ## SEO And GEO Requirements
 
