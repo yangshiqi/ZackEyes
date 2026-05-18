@@ -115,14 +115,17 @@ public enum PermissionRiskLevel: String, Sendable, Equatable {
         let approval = approvalPolicy ?? "on-request"
         let sandbox = sandboxType ?? "workspace-write"
 
+        // Read-only sandbox is structurally harmless — codex literally cannot
+        // mutate the filesystem, so the absence of an interactive gate
+        // ("never") doesn't matter. No badge.
+        if sandbox == "read-only" { return nil }
+
         if approval == "never" && sandbox == "danger-full-access" {
             return .yolo
         }
-        if approval == "never" && (sandbox == "workspace-write" || sandbox == "read-only") {
-            // never + read-only is technically harmless (can't write), but the
-            // user opted INTO no-prompts. Surface it as .auto so the absence of
-            // an interactive gate is visible at a glance.
-            return sandbox == "read-only" ? nil : .auto
+        if approval == "never" && sandbox == "workspace-write" {
+            // Silent edits within the project — surface as .auto.
+            return .auto
         }
         if approval == "on-request" && sandbox == "danger-full-access" {
             // Asks per-command but the approved command runs unsandboxed.

@@ -481,8 +481,10 @@ struct SessionStoreTests {
     @Test func codexPolicyMapping() {
         // Default (on-request + workspace-write) → no badge
         #expect(PermissionRiskLevel.fromCodex(approvalPolicy: "on-request", sandboxType: "workspace-write") == nil)
-        // Read-only is harmless even with `never`
+        // Read-only is structurally harmless — codex cannot mutate the FS
+        // regardless of approval mode, so no badge even with `never`.
         #expect(PermissionRiskLevel.fromCodex(approvalPolicy: "never", sandboxType: "read-only") == nil)
+        #expect(PermissionRiskLevel.fromCodex(approvalPolicy: "on-request", sandboxType: "read-only") == nil)
         // Silent edits = .auto
         #expect(PermissionRiskLevel.fromCodex(approvalPolicy: "never", sandboxType: "workspace-write") == .auto)
         // Asks but no sandbox = .auto
