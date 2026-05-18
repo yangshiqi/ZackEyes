@@ -2,12 +2,19 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
+import {
+  appVersion,
+  releaseName,
+  downloadUrl,
+  issuesUrl,
+  downloadSha256,
+  downloadSize,
+  downloadSizeLabel,
+  downloadBytes,
+  downloadBytesLabel
+} from '../src/lib/release.mjs';
 
 const root = process.cwd();
-const appVersion = '0.4.2';
-const downloadUrl = 'https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.2/ZackEyes-0.4.2.dmg';
-const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
-const downloadSha256 = '15d2a92dbac63d81abef17c7e3eba80f27a311eb588e379c711f2a4f3a83c26a';
 const publicPagePaths = [
   'src/pages/index.astro',
   'src/pages/docs.astro',
@@ -149,16 +156,70 @@ describe('Astro site contract', () => {
     assert.match(page, /custom global hotkey/);
     assert.match(page, /in-app DMG download/);
     assert.match(page, /Unix sockets/);
-    assert.match(page, new RegExp(`const appVersion = '${appVersion}'`));
-    assert.match(page, /const releaseName = `ZackEyes \$\{appVersion\}`;/);
-    assert.match(page, /const downloadUrl = `https:\/\/github\.com\/yangshiqi\/ZackEyes-release\/releases\/download\/v\$\{appVersion\}\/ZackEyes-\$\{appVersion\}\.dmg`;/);
-    assert.ok(page.includes(`const issuesUrl = '${issuesUrl}'`));
+    // Release metadata is sourced from src/lib/release.mjs — verify the
+    // page imports it and consumes the symbols rather than re-asserting
+    // the literal version / hash / size strings (those move with each
+    // release and are covered by the "release metadata" test below).
+    assert.match(page, /from '\.\.\/lib\/release\.mjs'/);
+    assert.match(page, /\bappVersion\b/);
+    assert.match(page, /\breleaseName\b/);
+    assert.match(page, /\bdownloadUrl\b/);
+    assert.match(page, /\bissuesUrl\b/);
+    assert.match(page, /\bdownloadSizeLabel\b/);
+    assert.match(page, /\bdownloadSha256\b/);
     assert.match(page, /href=\{downloadUrl\}>Download for macOS/);
     assert.match(page, /href=\{downloadUrl\} aria-label=\{`Download \$\{releaseName\} for macOS`\}>Download ZackEyes <span aria-hidden="true">↓<\/span><\/a>/);
     assert.match(page, /href=\{issuesUrl\} aria-label="Open ZackEyes issues and feature requests on GitHub">Issues & requests <span aria-hidden="true">↗<\/span><\/a>/);
     assert.match(page, /\{releaseName\}/);
-    assert.match(page, /5\.2 MB DMG/);
-    assert.match(page, new RegExp(downloadSha256));
+  });
+
+  it('release metadata is centralised in src/lib/release.mjs', () => {
+    assert.equal(existsSync(join(root, 'src/lib/release.mjs')), true);
+
+    // Constants must form a self-consistent set: appVersion drives the
+    // download URL, downloadBytes drives the comma-formatted label.
+    assert.match(appVersion, /^\d+\.\d+\.\d+$/);
+    assert.equal(releaseName, `ZackEyes ${appVersion}`);
+    assert.equal(
+      downloadUrl,
+      `https://github.com/yangshiqi/ZackEyes-release/releases/download/v${appVersion}/ZackEyes-${appVersion}.dmg`
+    );
+    assert.match(downloadSha256, /^[0-9a-f]{64}$/);
+    assert.equal(typeof downloadBytes, 'number');
+    assert.ok(downloadBytes > 0);
+    assert.equal(downloadBytesLabel, `${downloadBytes.toLocaleString('en-US')} bytes`);
+    assert.match(downloadSize, /^[\d.]+ MB$/);
+    assert.equal(downloadSizeLabel, `${downloadSize} DMG`);
+
+    // No other source file should hard-code the version / URL / hash —
+    // each page must import from the central lib.
+    const sourcesToScan = [
+      'src/pages/index.astro',
+      'src/pages/download.astro',
+      'src/pages/changelog.astro',
+      'src/pages/docs.astro',
+      'src/pages/answers.astro',
+      'src/pages/privacy.astro',
+      'src/pages/roadmap.astro',
+      'src/pages/security.astro',
+      'src/pages/llms.txt.ts',
+      'src/pages/llms-full.txt.ts',
+      'src/layouts/SiteLayout.astro'
+    ];
+    for (const path of sourcesToScan) {
+      if (!existsSync(join(root, path))) continue;
+      const src = read(path);
+      assert.doesNotMatch(
+        src,
+        /releases\/download\/v\d+\.\d+\.\d+\/ZackEyes-\d+\.\d+\.\d+\.dmg/,
+        `${path} hard-codes a download URL — import downloadUrl from ../lib/release.mjs instead`
+      );
+      assert.doesNotMatch(
+        src,
+        /[0-9a-f]{64}/,
+        `${path} hard-codes a SHA256 — import downloadSha256 from ../lib/release.mjs instead`
+      );
+    }
   });
 
   it('publishes a product roadmap', () => {
@@ -189,7 +250,10 @@ describe('Astro site contract', () => {
     assert.match(page, /release\.highlights\.map/);
     assert.match(page, /GitHub Releases/);
     assert.match(page, /ItemList/);
-    assert.ok(page.includes(downloadUrl));
+    // downloadUrl/sha256/size are imported from ../lib/release.mjs; verify
+    // the page consumes those symbols rather than the literal values.
+    assert.match(page, /from '\.\.\/lib\/release\.mjs'/);
+    assert.match(page, /\{downloadUrl\}/);
   });
 
   it('documents install, uninstall, and compatibility requirements', () => {
@@ -218,7 +282,8 @@ describe('Astro site contract', () => {
     assert.match(page, /Compact display/);
     assert.match(page, /HowTo/);
     assert.match(page, /TechArticle/);
-    assert.ok(page.includes(downloadUrl));
+    assert.match(page, /from '\.\.\/lib\/release\.mjs'/);
+    assert.match(page, /\{downloadUrl\}/);
   });
 
   it('publishes a dedicated download page with verification metadata', () => {
@@ -226,7 +291,6 @@ describe('Astro site contract', () => {
 
     const page = read('src/pages/download.astro');
     assert.match(page, /Download ZackEyes/);
-    assert.match(page, /ZackEyes 0\.4\.2/);
     assert.match(page, /macOS 14/);
     assert.match(page, /Apple Silicon \+ Intel/);
     assert.match(page, /Multiple themes/);
@@ -236,11 +300,14 @@ describe('Astro site contract', () => {
     assert.match(page, /custom notification sounds/);
     assert.match(page, /terminal tab jump/);
     assert.match(page, /custom global hotkey/);
-    assert.match(page, /5\.2 MB/);
-    assert.match(page, /5,416,540 bytes/);
-    assert.match(page, new RegExp(downloadSha256));
-    assert.ok(page.includes(downloadUrl));
-    assert.ok(page.includes(issuesUrl));
+    // Version / size / hash / URL are read from ../lib/release.mjs.
+    assert.match(page, /from '\.\.\/lib\/release\.mjs'/);
+    assert.match(page, /\{releaseName\}/);
+    assert.match(page, /\{downloadSize\}/);
+    assert.match(page, /\{downloadBytesLabel\}/);
+    assert.match(page, /\{downloadSha256\}/);
+    assert.match(page, /\{downloadUrl\}/);
+    assert.match(page, /\{issuesUrl\}/);
     assert.match(page, /SoftwareApplication/);
     assert.match(page, /HowTo/);
   });
@@ -274,7 +341,8 @@ describe('Astro site contract', () => {
     assert.match(page, /Does ZackEyes work with external displays\?/);
     assert.match(page, /Why does ZackEyes write Claude and Codex hooks\?/);
     assert.match(page, /What happens if ZackEyes is closed\?/);
-    assert.match(page, new RegExp(downloadSha256));
+    // FAQ structured data references the SHA256 via the imported variable.
+    assert.match(page, /\{downloadSha256\}/);
     assert.match(page, /FAQPage/);
     assert.match(page, /mainEntity/);
     assert.match(page, /Question/);
@@ -331,8 +399,12 @@ describe('Astro site contract', () => {
     const llms = read('src/pages/llms.txt.ts');
     const llmsFull = read('src/pages/llms-full.txt.ts');
 
-    assert.ok(llms.includes(downloadUrl));
-    assert.ok(llms.includes(issuesUrl));
+    // Both LLM endpoints import release metadata from ../lib/release.mjs
+    // and interpolate it into the response body.
+    assert.match(llms, /from '\.\.\/lib\/release\.mjs'/);
+    assert.match(llms, /\$\{downloadUrl\}/);
+    assert.match(llms, /\$\{issuesUrl\}/);
+    assert.match(llms, /\$\{downloadSha256\}/);
     assert.match(llms, /macOS 14/);
     assert.match(llms, /Apple Silicon/);
     assert.match(llms, /Intel/);
@@ -346,10 +418,11 @@ describe('Astro site contract', () => {
     assert.match(llms, /AI moguls/);
     assert.match(llms, /Roadmap/);
     assert.match(llms, /Direct answers/);
-    assert.match(llms, new RegExp(downloadSha256));
-    assert.ok(llmsFull.includes(downloadUrl));
-    assert.ok(llmsFull.includes(issuesUrl));
-    assert.match(llmsFull, /ZackEyes 0\.4\.2/);
+    assert.match(llmsFull, /from '\.\.\/lib\/release\.mjs'/);
+    assert.match(llmsFull, /\$\{downloadUrl\}/);
+    assert.match(llmsFull, /\$\{issuesUrl\}/);
+    assert.match(llmsFull, /\$\{downloadSha256\}/);
+    assert.match(llmsFull, /\$\{releaseName\}/);
     assert.match(llmsFull, /Install/);
     assert.match(llmsFull, /Uninstall/);
     assert.match(llmsFull, /Compatibility/);
@@ -364,7 +437,6 @@ describe('Astro site contract', () => {
     assert.match(llmsFull, /Unix socket/);
     assert.match(llmsFull, /Roadmap/);
     assert.match(llmsFull, /Direct answers/);
-    assert.match(llmsFull, new RegExp(downloadSha256));
   });
 
   it('documents the website information architecture in README', () => {

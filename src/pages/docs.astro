@@ -2,9 +2,8 @@
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
+import { appVersion, downloadUrl, issuesUrl } from '../lib/release.mjs';
 
-const downloadUrl = 'https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.2/ZackEyes-0.4.2.dmg';
-const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
 const description = 'Install, uninstall, update, and compatibility notes for ZackEyes on macOS 14 and newer, including Claude Code and Codex CLI workflows.';
 const docsStructuredData = [
   {
@@ -47,7 +46,7 @@ const docsStructuredData = [
             ZackEyes ships as a universal macOS DMG for Apple Silicon and Intel Macs. The current app target requires macOS 14 or newer.
           </p>
           <div class="hero-actions">
-            <a class="button primary" href={downloadUrl}>Download 0.4.2 <span aria-hidden="true">↓</span></a>
+            <a class="button primary" href={downloadUrl}>Download {appVersion} <span aria-hidden="true">↓</span></a>
             <a class="button" href={issuesUrl}>Report install issue <span aria-hidden="true">↗</span></a>
           </div>
         </div>

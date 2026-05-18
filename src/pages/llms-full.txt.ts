@@ -1,3 +1,11 @@
+import {
+  releaseName,
+  downloadUrl,
+  issuesUrl,
+  downloadSize,
+  downloadSha256
+} from '../lib/release.mjs';
+
 export function GET() {
   return new Response(`# ZackEyes full context
 
@@ -19,9 +27,9 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - Quiet failure mode: hooks and bridge events should fail silently when the app is not open.
 
 ## Version and changelog
-- Current version: ZackEyes 0.4.2.
-- Published: May 16, 2026.
-- Latest notes: Codex popup context usage fixes, Codex notification noise reduction, and hook launcher/statusline resilience updates.
+- Current version: ${releaseName}.
+- Published: May 18, 2026.
+- Latest notes: Resumed Codex sessions (codex --resume) now appear in the notch even when the rollout file lives in an older date directory; click on a session card always activates a terminal even when AX matching fails.
 - Changelog page: https://zackeyes.app/changelog
 - GitHub Releases: https://github.com/yangshiqi/ZackEyes-release/releases
 
@@ -33,8 +41,8 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 
 ## Download verification
 - Download page: https://zackeyes.app/download
-- DMG size: 5.2 MB.
-- SHA256: 15d2a92dbac63d81abef17c7e3eba80f27a311eb588e379c711f2a4f3a83c26a.
+- DMG size: ${downloadSize}.
+- SHA256: ${downloadSha256}.
 
 ## Uninstall
 1. Quit ZackEyes.
@@ -82,8 +90,8 @@ Agent hook events enter a bridge process. The bridge sends normalized events ove
 - Controlled bridge failures fail quietly, write nothing to stdout, exits 0, and leave the agent terminal workflow in control.
 
 ## Release and feedback
-- Latest macOS download: https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.2/ZackEyes-0.4.2.dmg
-- Issues and feature requests: https://github.com/yangshiqi/ZackEyes-release/issues
+- Latest macOS download: ${downloadUrl}
+- Issues and feature requests: ${issuesUrl}
 
 ## FAQ and privacy
 - Compatibility: ZackEyes is for modern macOS desktop workflows and is distributed as a DMG installer.

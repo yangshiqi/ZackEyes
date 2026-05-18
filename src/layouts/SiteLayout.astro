@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import { appVersion, downloadUrl } from '../lib/release.mjs';
 
 interface Props {
   title?: string;
@@ -20,7 +21,6 @@ const {
 const site = Astro.site?.toString().replace(/\/$/, '') ?? 'https://zackeyes.app';
 const canonicalUrl = canonical ?? new URL(Astro.url.pathname, site).href;
 const imageUrl = new URL(image, site).href;
-const downloadUrl = 'https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.2/ZackEyes-0.4.2.dmg';
 
 const structuredData = {
   '@context': 'https://schema.org',
@@ -47,7 +47,7 @@ const structuredData = {
       name: 'ZackEyes',
       applicationCategory: 'DeveloperApplication',
       operatingSystem: 'macOS',
-      softwareVersion: '0.4.2',
+      softwareVersion: appVersion,
       url: site,
       downloadUrl,
       description,

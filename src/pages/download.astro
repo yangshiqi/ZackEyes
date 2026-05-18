@@ -2,12 +2,19 @@
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
+import {
+  appVersion,
+  releaseName,
+  downloadUrl,
+  releasesUrl,
+  issuesUrl,
+  downloadBytes,
+  downloadSize,
+  downloadBytesLabel,
+  downloadSha256
+} from '../lib/release.mjs';
 
-const downloadUrl = 'https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.2/ZackEyes-0.4.2.dmg';
-const releasesUrl = 'https://github.com/yangshiqi/ZackEyes-release/releases';
-const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
-const description = 'Download ZackEyes 0.4.2 for macOS, verify the DMG checksum, review compatibility, and report install issues or feature requests.';
-const downloadSha256 = '15d2a92dbac63d81abef17c7e3eba80f27a311eb588e379c711f2a4f3a83c26a';
+const description = `Download ${releaseName} for macOS, verify the DMG checksum, review compatibility, and report install issues or feature requests.`;
 const downloadStructuredData = [
   {
     '@type': 'SoftwareApplication',
@@ -15,9 +22,9 @@ const downloadStructuredData = [
     name: 'ZackEyes',
     operatingSystem: 'macOS 14+',
     applicationCategory: 'DeveloperApplication',
-    softwareVersion: '0.4.2',
+    softwareVersion: appVersion,
     downloadUrl,
-    fileSize: '5416540',
+    fileSize: String(downloadBytes),
     processorRequirements: 'Apple Silicon and Intel Mac',
     featureList: [
       'Claude Code and Codex CLI session visibility',
@@ -32,7 +39,7 @@ const downloadStructuredData = [
     '@id': 'https://zackeyes.app/download#install',
     name: 'Download and install ZackEyes',
     step: [
-      { '@type': 'HowToStep', name: 'Download the DMG', text: 'Download ZackEyes 0.4.2 from the public GitHub release asset.' },
+      { '@type': 'HowToStep', name: 'Download the DMG', text: `Download ${releaseName} from the public GitHub release asset.` },
       { '@type': 'HowToStep', name: 'Verify the checksum', text: `Compare the downloaded DMG SHA256 with ${downloadSha256}.` },
       { '@type': 'HowToStep', name: 'Install the app', text: 'Open the DMG, drag ZackEyes into Applications, and launch it on macOS 14 or newer.' }
     ]
@@ -57,10 +64,10 @@ const downloadStructuredData = [
           <div class="section-eyebrow">Current release</div>
           <h1 id="download-page-title">Download ZackEyes.</h1>
           <p class="policy-lede">
-            ZackEyes 0.4.2 is the current public macOS DMG. It supports macOS 14 or newer, Apple Silicon + Intel Macs, Claude Code, Codex CLI, Multiple themes, terminal tab jump, and display modes for real notches or simulated Dynamic Island-style panels.
+            {releaseName} is the current public macOS DMG. It supports macOS 14 or newer, Apple Silicon + Intel Macs, Claude Code, Codex CLI, Multiple themes, terminal tab jump, and display modes for real notches or simulated Dynamic Island-style panels.
           </p>
           <div class="hero-actions">
-            <a class="button primary" href={downloadUrl}>Download ZackEyes 0.4.2 <span aria-hidden="true">↓</span></a>
+            <a class="button primary" href={downloadUrl}>Download {releaseName} <span aria-hidden="true">↓</span></a>
             <a class="button" href={releasesUrl}>All releases <span aria-hidden="true">↗</span></a>
             <a class="button" href={issuesUrl}>Report issue <span aria-hidden="true">↗</span></a>
           </div>
@@ -74,11 +81,11 @@ const downloadStructuredData = [
           <dl class="download-meta expanded">
             <div>
               <dt>Version</dt>
-              <dd>ZackEyes 0.4.2</dd>
+              <dd>{releaseName}</dd>
             </div>
             <div>
               <dt>File</dt>
-              <dd>DMG, 5.2 MB, 5,416,540 bytes</dd>
+              <dd>DMG, {downloadSize}, {downloadBytesLabel}</dd>
             </div>
             <div>
               <dt>SHA256</dt>
