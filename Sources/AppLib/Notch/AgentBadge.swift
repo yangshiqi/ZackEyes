@@ -6,6 +6,11 @@ import Shared
 /// sessions apart at a glance.
 struct AgentBadge: View {
     let agent: AgentKind
+    /// Optional subagent name (codex-only, e.g. "guardian", "review"). When
+    /// present, appears as a separator-divided suffix on the badge:
+    /// `[CODEX • guardian]`. Helps users tell a guardian/reviewer subagent
+    /// thread apart from their main user thread.
+    var subagentLabel: String? = nil
 
     /// Used to tint the PermissionRequest banner so the user knows whose
     /// approval they're acting on without having to scan the card.
@@ -25,6 +30,15 @@ struct AgentBadge: View {
             Text(label)
                 .font(.system(size: 8, weight: .bold))
                 .tracking(0.3)
+            if let subagentLabel, !subagentLabel.isEmpty {
+                Text("•")
+                    .font(.system(size: 8, weight: .bold))
+                    .opacity(0.6)
+                Text(subagentLabel.uppercased())
+                    .font(.system(size: 8, weight: .bold))
+                    .tracking(0.3)
+                    .lineLimit(1)
+            }
         }
         .foregroundColor(Self.accentColor(for: agent))
         .padding(.horizontal, 5)
