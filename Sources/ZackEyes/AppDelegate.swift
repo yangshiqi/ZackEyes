@@ -730,6 +730,17 @@ extension AppDelegate: CodexJsonlTailerDelegate {
         )
     }
 
+    /// Tailer detected Codex's `turn_context.model`. Codex hooks don't carry
+    /// a Claude-style `model.display_name`, so this is our only source.
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectModelChanged event: CodexModelEvent) {
+        sessionStore.setCodexModelDisplayName(
+            sessionId: event.sessionId,
+            cwd: event.cwd,
+            transcriptPath: event.transcriptPath,
+            displayName: event.modelDisplayName
+        )
+    }
+
     /// Tailer detected Codex's `event_msg.token_count` context metrics.
     /// Codex hooks do not carry Claude-style `context_window`, so this path
     /// fills the same SessionInfo fields from rollout JSONL.
