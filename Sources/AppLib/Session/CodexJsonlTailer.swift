@@ -126,10 +126,13 @@ public final class CodexJsonlTailer {
     }
 
     nonisolated static func discoverRecentRollouts(rootDir: URL, cutoff: Date) -> [URL] {
-        let candidateDays = SessionScanner.candidateDateDirs(rootDir: rootDir, cutoff: cutoff)
+        // Walk every YYYY/MM/DD dir, not just today/yesterday. `codex --resume`
+        // keeps writing to the resumed session's original date dir, which can
+        // be arbitrarily old. Filter by the file's own mtime — a stale-named
+        // dir whose contents got freshly modified still belongs in the window.
         let fm = FileManager.default
         var result: [URL] = []
-        for day in candidateDays {
+        for day in SessionScanner.allDateDirs(under: rootDir) {
             guard let files = try? fm.contentsOfDirectory(
                 at: day,
                 includingPropertiesForKeys: [.contentModificationDateKey]

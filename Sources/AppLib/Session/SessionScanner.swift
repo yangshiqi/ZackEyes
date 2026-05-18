@@ -143,16 +143,17 @@ public struct SessionScanner {
 
     // MARK: - Codex (~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl)
 
-    /// Walk only the YYYY/MM/DD subdirectories that could possibly contain
-    /// rollouts within the recency window, instead of the entire history.
-    /// Codex partitions its session log by UTC date (verified against the
-    /// `session_meta.timestamp` field), so once the cutoff is known we can
-    /// enumerate the candidate dirs directly. For an 8h window that's at
-    /// most two paths; for a 24h window at most two; for 7d, eight.
+    /// Walk every `YYYY/MM/DD` subdirectory and pick the rollouts whose
+    /// **file mtime** is within the recency window. Codex partitions new
+    /// sessions by UTC date, but `codex --resume <id>` keeps appending to
+    /// the original session's date dir, which can be arbitrarily old. The
+    /// previous date-window pruning silently dropped those resumed sessions
+    /// even when their files were freshly modified — they'd be invisible to
+    /// the notch until the user started a brand-new codex thread.
     private func scanCodex(rootDir: URL, cutoff: Date) -> [DetectedSession] {
         let fm = FileManager.default
         var results: [DetectedSession] = []
-        for day in Self.candidateDateDirs(rootDir: rootDir, cutoff: cutoff) {
+        for day in Self.allDateDirs(under: rootDir) {
             guard let files = try? fm.contentsOfDirectory(
                 at: day,
                 includingPropertiesForKeys: [.contentModificationDateKey]
@@ -168,30 +169,40 @@ public struct SessionScanner {
         return results
     }
 
-    /// Build the list of `<rootDir>/YYYY/MM/DD` paths whose UTC date
-    /// intersects `[cutoff, now]`. Non-existent dirs are returned anyway —
-    /// the caller's `contentsOfDirectory` simply skips them.
-    static func candidateDateDirs(rootDir: URL, cutoff: Date, now: Date = Date()) -> [URL] {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
-        let startOfCutoff = calendar.startOfDay(for: cutoff)
-        let endDay = calendar.startOfDay(for: now)
-        var current = startOfCutoff
+    /// Enumerate every `<rootDir>/YYYY/MM/DD` directory that exists on disk.
+    /// Used by both the initial scanner and the live tailer because codex's
+    /// `--resume` flow can keep an arbitrarily old date dir active.
+    ///
+    /// Performance: a heavy user with one codex session per day for several
+    /// years lands at <2000 day dirs; the per-dir cost paid by callers is
+    /// one `contentsOfDirectory` + a file-mtime check, so the total walk is
+    /// dominated by file I/O, not by the day-dir count. The non-prod option
+    /// of `find -type d -maxdepth 3` would be slightly faster but adds a
+    /// subprocess dependency we'd rather avoid.
+    static func allDateDirs(under rootDir: URL) -> [URL] {
+        let fm = FileManager.default
         var dirs: [URL] = []
-        while current <= endDay {
-            let comps = calendar.dateComponents([.year, .month, .day], from: current)
-            if let y = comps.year, let m = comps.month, let d = comps.day {
-                dirs.append(
-                    rootDir
-                        .appendingPathComponent(String(format: "%04d", y))
-                        .appendingPathComponent(String(format: "%02d", m))
-                        .appendingPathComponent(String(format: "%02d", d))
-                )
+        let years = (try? fm.contentsOfDirectory(
+            at: rootDir, includingPropertiesForKeys: nil
+        )) ?? []
+        for year in years where isAllDigits(year.lastPathComponent, length: 4) {
+            let months = (try? fm.contentsOfDirectory(
+                at: year, includingPropertiesForKeys: nil
+            )) ?? []
+            for month in months where isAllDigits(month.lastPathComponent, length: 2) {
+                let days = (try? fm.contentsOfDirectory(
+                    at: month, includingPropertiesForKeys: nil
+                )) ?? []
+                for day in days where isAllDigits(day.lastPathComponent, length: 2) {
+                    dirs.append(day)
+                }
             }
-            guard let next = calendar.date(byAdding: .day, value: 1, to: current) else { break }
-            current = next
         }
         return dirs
+    }
+
+    private static func isAllDigits(_ s: String, length: Int) -> Bool {
+        s.count == length && s.allSatisfy { $0 >= "0" && $0 <= "9" }
     }
 
     /// Codex rollout file names embed the session UUID as the trailing
