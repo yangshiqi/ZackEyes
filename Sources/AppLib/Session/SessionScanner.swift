@@ -202,7 +202,7 @@ public struct SessionScanner {
     }
 
     private static func isAllDigits(_ s: String, length: Int) -> Bool {
-        s.count == length && s.unicodeScalars.allSatisfy { ("0"..."9").contains(Character($0)) }
+        s.count == length && s.allSatisfy { $0 >= "0" && $0 <= "9" }
     }
 
     /// Codex rollout file names embed the session UUID as the trailing
