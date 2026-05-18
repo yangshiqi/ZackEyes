@@ -143,10 +143,10 @@ struct NotchExpandedView: View {
 
                 // (User prompt now shown in Row 1.5 above)
 
-                // Row 3: Claude's last reply (Claude: ...)
+                // Row 3: agent's last reply
                 if let reply = session.lastAssistantMessage, !reply.isEmpty {
                     HStack(alignment: .top, spacing: 4) {
-                        Text("Claude:")
+                        Text(session.agent == .codex ? "Codex:" : "Claude:")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.8))
                         Text(truncate(reply, length: 100))

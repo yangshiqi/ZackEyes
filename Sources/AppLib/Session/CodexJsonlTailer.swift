@@ -22,6 +22,9 @@ public protocol CodexJsonlTailerDelegate: AnyObject {
 
     @MainActor
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectTokenCount event: CodexTokenCountEvent)
+
+    @MainActor
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectModelChanged event: CodexModelEvent)
 }
 
 public struct CodexTaskStartedEvent: Sendable {
@@ -51,10 +54,22 @@ public struct CodexTokenCountEvent: Sendable {
     public let transcriptPath: String
 }
 
+/// Codex emits a top-level `turn_context` JSONL row per turn whose payload
+/// carries `model` (the model id actually used for that turn — e.g.
+/// `gpt-5.5`, `codex-auto-review`). Mirrors what Claude's StatusLine hook
+/// provides via `model.display_name`.
+public struct CodexModelEvent: Sendable {
+    public let sessionId: String
+    public let cwd: String?
+    public let modelDisplayName: String
+    public let transcriptPath: String
+}
+
 public enum CodexTaskLifecycleEvent: Sendable {
     case started(CodexTaskStartedEvent)
     case complete(CodexTaskCompleteEvent)
     case tokenCount(CodexTokenCountEvent)
+    case modelChanged(CodexModelEvent)
 }
 
 @MainActor
@@ -162,6 +177,11 @@ public final class CodexJsonlTailer {
                 guard let self = self else { return }
                 self.delegate?.codexTailer(self, didDetectTokenCount: event)
             }
+        }, onModelChanged: { [weak self] event in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.delegate?.codexTailer(self, didDetectModelChanged: event)
+            }
         }, onClosed: { [weak self] closedURL in
             Task { @MainActor in
                 self?.watchers.removeValue(forKey: closedURL)
@@ -197,8 +217,24 @@ extension CodexJsonlTailer {
             if line.isEmpty { continue }
             guard let lineData = line.data(using: .utf8) else { continue }
             guard let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
-            guard obj["type"] as? String == "event_msg" else { continue }
+            let topType = obj["type"] as? String
             guard let payload = obj["payload"] as? [String: Any] else { continue }
+
+            // `turn_context` is a top-level row (not nested under event_msg).
+            // It carries the model id used for the upcoming turn.
+            if topType == "turn_context" {
+                if let model = payload["model"] as? String, !model.isEmpty {
+                    events.append(.modelChanged(CodexModelEvent(
+                        sessionId: sessionId,
+                        cwd: cwd,
+                        modelDisplayName: model,
+                        transcriptPath: transcriptPath
+                    )))
+                }
+                continue
+            }
+
+            guard topType == "event_msg" else { continue }
 
             switch payload["type"] as? String {
             case "task_started":
@@ -359,6 +395,7 @@ private final class Watcher: @unchecked Sendable {
     private let onTaskStarted: (CodexTaskStartedEvent) -> Void
     private let onTaskComplete: (CodexTaskCompleteEvent) -> Void
     private let onTokenCount: (CodexTokenCountEvent) -> Void
+    private let onModelChanged: (CodexModelEvent) -> Void
     private let onClosed: (URL) -> Void
     /// Guards `isCancelled` so the MainActor `stop()` path and the
     /// DispatchSource event handler (private queue, fires on .delete /
@@ -371,6 +408,7 @@ private final class Watcher: @unchecked Sendable {
         onTaskStarted: @escaping (CodexTaskStartedEvent) -> Void,
         onTaskComplete: @escaping (CodexTaskCompleteEvent) -> Void,
         onTokenCount: @escaping (CodexTokenCountEvent) -> Void,
+        onModelChanged: @escaping (CodexModelEvent) -> Void,
         onClosed: @escaping (URL) -> Void
     ) {
         // Codex session id is encoded in the rollout filename; bail if we
@@ -392,12 +430,26 @@ private final class Watcher: @unchecked Sendable {
         self.onTaskStarted = onTaskStarted
         self.onTaskComplete = onTaskComplete
         self.onTokenCount = onTokenCount
+        self.onModelChanged = onModelChanged
         self.onClosed = onClosed
 
         // Read session_meta once for cwd. Best-effort — if the file doesn't
         // have one yet, cwd stays nil (notification falls back to the
         // session id prefix).
         self.cwd = CodexJsonlTailer.parseSessionMetaCwd(at: url)
+
+        // Bootstrap: scan the existing rollout for the first turn_context.model
+        // so resumed sessions show the model name immediately instead of waiting
+        // for the next turn. Best-effort — missing model just stays nil until
+        // the next turn_context arrives.
+        if let initialModel = CodexJsonlTailer.parseInitialTurnContextModel(at: url) {
+            onModelChanged(CodexModelEvent(
+                sessionId: id,
+                cwd: cwd,
+                modelDisplayName: initialModel,
+                transcriptPath: url.path
+            ))
+        }
 
         // Start tailing FROM CURRENT EOF. We don't want to fire
         // notifications for historical task_complete events that already
@@ -483,6 +535,8 @@ private final class Watcher: @unchecked Sendable {
                     onTaskComplete(complete)
                 case .tokenCount(let tokenCount):
                     onTokenCount(tokenCount)
+                case .modelChanged(let modelEvent):
+                    onModelChanged(modelEvent)
                 }
             }
         } catch {
@@ -506,6 +560,42 @@ extension CodexJsonlTailer {
             return nil
         }
         return payload["cwd"] as? String
+    }
+
+    /// Scan the rollout from the start for the first `turn_context.model`.
+    /// Used at watcher-attach time so resumed sessions surface the model
+    /// before the next turn fires. Capped at the head of the file — turn_context
+    /// always appears very early (right after session_meta, before the first
+    /// turn's events), so a small read is sufficient.
+    nonisolated static func parseInitialTurnContextModel(at url: URL) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+
+        // 1 MB matches the session_meta cap. turn_context payloads are small,
+        // but they sit behind session_meta's potentially-huge base_instructions
+        // blob, so we may need to skip past that.
+        let maxBytes = 1_048_576
+        guard let data = try? handle.read(upToCount: maxBytes), !data.isEmpty else {
+            return nil
+        }
+        guard let text = String(data: data, encoding: .utf8) else { return nil }
+
+        // Iterate complete lines only — the last segment is likely truncated.
+        let parts = text.split(separator: "\n", omittingEmptySubsequences: false)
+        let completeLines = parts.dropLast()
+        for line in completeLines {
+            if line.isEmpty { continue }
+            guard let lineData = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
+                  obj["type"] as? String == "turn_context",
+                  let payload = obj["payload"] as? [String: Any],
+                  let model = payload["model"] as? String,
+                  !model.isEmpty else {
+                continue
+            }
+            return model
+        }
+        return nil
     }
 
     private nonisolated static func readFirstLine(of url: URL, maxBytes: Int) -> String? {

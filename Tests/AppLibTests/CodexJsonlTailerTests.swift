@@ -174,6 +174,75 @@ struct CodexJsonlTailerTests {
         #expect(pending == "")
     }
 
+    @Test func parsesTurnContextModelEvent() {
+        var pending = ""
+        let chunk = """
+            {"type":"turn_context","payload":{"cwd":"/proj","model":"gpt-5.5","approval_policy":"manual","turn_id":"t1"}}\n
+            """
+
+        let events = CodexJsonlTailer.parseTaskLifecycleEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+
+        #expect(events.count == 1)
+        guard case let .modelChanged(event) = events.first else {
+            Issue.record("Expected modelChanged event")
+            return
+        }
+        #expect(event.sessionId == sid)
+        #expect(event.cwd == cwd)
+        #expect(event.modelDisplayName == "gpt-5.5")
+        #expect(event.transcriptPath == path)
+        #expect(pending == "")
+    }
+
+    @Test func turnContextWithoutModelIsIgnored() {
+        var pending = ""
+        let chunk = """
+            {"type":"turn_context","payload":{"cwd":"/proj","approval_policy":"manual"}}
+            {"type":"turn_context","payload":{"cwd":"/proj","model":"","turn_id":"t1"}}\n
+            """
+
+        let events = CodexJsonlTailer.parseTaskLifecycleEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+
+        #expect(events.isEmpty)
+    }
+
+    @Test func parseInitialTurnContextModelReadsFromFile() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+
+        let file = tmpDir.appendingPathComponent("rollout-x.jsonl")
+        try """
+            {"type":"session_meta","payload":{"id":"\(sid)","cwd":"/proj"}}
+            {"type":"turn_context","payload":{"cwd":"/proj","model":"gpt-5.5","turn_id":"t1"}}
+            {"type":"event_msg","payload":{"type":"user_message","message":"hi"}}\n
+            """.write(to: file, atomically: true, encoding: .utf8)
+
+        #expect(CodexJsonlTailer.parseInitialTurnContextModel(at: file) == "gpt-5.5")
+    }
+
+    @Test func parseInitialTurnContextModelReturnsNilWhenAbsent() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+
+        let file = tmpDir.appendingPathComponent("rollout-x.jsonl")
+        try """
+            {"type":"session_meta","payload":{"id":"\(sid)","cwd":"/proj"}}
+            {"type":"event_msg","payload":{"type":"user_message","message":"hi"}}\n
+            """.write(to: file, atomically: true, encoding: .utf8)
+
+        #expect(CodexJsonlTailer.parseInitialTurnContextModel(at: file) == nil)
+    }
+
     // MARK: - Multiple events in one chunk
 
     @Test func parsesMultipleTaskCompleteEventsInOrder() {

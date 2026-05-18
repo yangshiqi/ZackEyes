@@ -423,6 +423,34 @@ public final class SessionStore: ObservableObject {
         sessions[sessionId] = session
     }
 
+    /// Apply Codex's per-turn `turn_context.model` to the session. Mirrors
+    /// what `applyStatusLineFields` does for Claude via `model.display_name`.
+    /// Creates a `.detected` session if missing — the watcher attaches at EOF
+    /// and may bootstrap model from a quiescent rollout that never fires a
+    /// streaming token_count, so we can't rely on `recordCodexContext` to
+    /// create the row first.
+    public func setCodexModelDisplayName(
+        sessionId: String,
+        cwd: String?,
+        transcriptPath: String?,
+        displayName: String
+    ) {
+        var session = sessions[sessionId] ?? SessionInfo(
+            id: sessionId,
+            cwd: cwd,
+            agent: .codex,
+            state: .idle,
+            startedAt: Date()
+        )
+        if session.cwd == nil { session.cwd = cwd }
+        if session.transcriptPath == nil { session.transcriptPath = transcriptPath }
+        if sessions[sessionId] == nil {
+            session.source = .detected
+        }
+        session.modelDisplayName = displayName
+        sessions[sessionId] = session
+    }
+
     /// Import sessions discovered by SessionScanner. These are read-only and
     /// marked as `.detected` — user needs to restart them (or open a new
     /// thread, in Codex's case) for live tracking.
