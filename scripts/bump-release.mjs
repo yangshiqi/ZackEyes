@@ -54,6 +54,7 @@ function main() {
   }
 
   bumpReleaseMjs({ version, sha256, bytes });
+  bumpReadme({ version, sha256, bytes });
 
   const notesText = readNotes(notesFile);
   if (notesText) {
@@ -84,51 +85,100 @@ function arg(flag, { required = true } = {}) {
 
 // ---------- release.mjs ----------
 
+// Decimal MB (10^6 bytes) — matches macOS Finder since 10.6. Shared by
+// both `release.mjs` and `README.md` so the rendered "X.X MB" stays in
+// lockstep across surfaces.
+function sizeLabelFromBytes(bytes) {
+  return `${(bytes / 1_000_000).toFixed(1)} MB`;
+}
+
+// In-place regex rewrite that errors out (exit 1) when the pattern
+// doesn't match. We want a missed substitution to surface as a loud
+// failure during the bump rather than a silently-stale field.
+function replaceOrFail(src, label, path, pattern, replacement) {
+  if (!pattern.test(src)) {
+    console.error(`could not find ${label} in ${path}; pattern: ${pattern}`);
+    exit(1);
+  }
+  return src.replace(pattern, replacement);
+}
+
 function bumpReleaseMjs({ version, sha256, bytes }) {
-  // Decimal MB (10^6 bytes), matching what macOS Finder has displayed
-  // since 10.6. `downloadSizeLabel` in release.mjs is derived from
-  // `downloadSize`, so the script only rewrites the primitive.
-  const sizeMb = (bytes / 1_000_000).toFixed(1);
-  const size = `${sizeMb} MB`;
+  // `downloadSizeLabel` in release.mjs is derived from `downloadSize`,
+  // so the script only rewrites the primitive size string.
+  const size = sizeLabelFromBytes(bytes);
 
-  const releasePath = 'src/lib/release.mjs';
-  const releaseBefore = readFileSync(releasePath, 'utf8');
+  const path = 'src/lib/release.mjs';
+  const before = readFileSync(path, 'utf8');
 
-  const replace = (src, label, pattern, replacement) => {
-    if (!pattern.test(src)) {
-      console.error(`could not find ${label} in ${releasePath}; pattern: ${pattern}`);
-      exit(1);
-    }
-    return src.replace(pattern, replacement);
-  };
-
-  let releaseAfter = releaseBefore;
-  releaseAfter = replace(
-    releaseAfter, 'appVersion',
+  let after = before;
+  after = replaceOrFail(
+    after, 'appVersion', path,
     /(export const appVersion = ')[^']+(';)/,
     `$1${version}$2`
   );
-  releaseAfter = replace(
-    releaseAfter, 'downloadBytes',
+  after = replaceOrFail(
+    after, 'downloadBytes', path,
     /(export const downloadBytes = )\d+(;)/,
     `$1${bytes}$2`
   );
-  releaseAfter = replace(
-    releaseAfter, 'downloadSize',
+  after = replaceOrFail(
+    after, 'downloadSize', path,
     /(export const downloadSize = ')[^']+(';)/,
     `$1${size}$2`
   );
-  releaseAfter = replace(
-    releaseAfter, 'downloadSha256',
+  after = replaceOrFail(
+    after, 'downloadSha256', path,
     /(export const downloadSha256 = ')[^']+(';)/,
     `$1${sha256}$2`
   );
 
-  if (releaseAfter !== releaseBefore) {
-    writeFileSync(releasePath, releaseAfter);
+  if (after !== before) {
+    writeFileSync(path, after);
     console.log(`bumped release.mjs → v${version} (${size} DMG, ${bytes} bytes, sha256 ${sha256})`);
   } else {
     console.log(`release.mjs already at v${version} (${sha256}, ${bytes} bytes) — no change`);
+  }
+}
+
+// ---------- README.md ----------
+
+function bumpReadme({ version, sha256, bytes }) {
+  // README has three release-fact lines (DMG URL, size, sha256) plus a
+  // few prose mentions. We rewrite the structured ones so the
+  // site-contract test that asserts README contains the current
+  // downloadSha256 stays green after every bump. The bump script is the
+  // only writer; reviewers may still hand-edit surrounding prose on the
+  // PR branch.
+  const path = 'README.md';
+  const size = sizeLabelFromBytes(bytes);
+  const before = readFileSync(path, 'utf8');
+
+  let after = before;
+  // `- Latest public release: ` + backticked URL + `.`
+  after = replaceOrFail(
+    after, 'README DMG URL', path,
+    /(- Latest public release: `https:\/\/github\.com\/yangshiqi\/ZackEyes-release\/releases\/download\/v)[^`]+(`\.)/,
+    `$1${version}/ZackEyes-${version}.dmg$2`
+  );
+  // `- DMG size: 2.8 MB.`
+  after = replaceOrFail(
+    after, 'README DMG size', path,
+    /(- DMG size: )[\d.]+ MB(\.)/,
+    `$1${size}$2`
+  );
+  // `- SHA256: \`<hash>\`.`
+  after = replaceOrFail(
+    after, 'README SHA256', path,
+    /(- SHA256: `)[0-9a-f]{64}(`\.)/,
+    `$1${sha256}$2`
+  );
+
+  if (after !== before) {
+    writeFileSync(path, after);
+    console.log(`bumped README → v${version} (${size}, sha256 ${sha256})`);
+  } else {
+    console.log(`README already at v${version} — no change`);
   }
 }
 
