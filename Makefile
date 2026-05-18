@@ -127,6 +127,23 @@ endif
 	  --target main \
 	  --title "v$(VERSION)" \
 	  --notes "$${NOTES:-Release v$(VERSION)}"
+	@echo "=== Triggering ZackEyes-website bump-version workflow ==="
+	@# Side-effect step: open a PR on the website repo with the new DMG
+	@# metadata so /download, /llms.txt, JSON-LD, etc. stop pointing at
+	@# the previous release. Non-fatal — a failure here (auth missing,
+	@# workflow not deployed yet, etc.) must not invalidate the release
+	@# we already pushed above; just warn and continue.
+	@SHA256=$$(shasum -a 256 .build/ZackEyes-$(VERSION).dmg | awk '{print $$1}'); \
+	BYTES=$$(stat -f%z .build/ZackEyes-$(VERSION).dmg); \
+	if gh workflow run bump-version.yml \
+	    --repo yangshiqi/ZackEyes-website \
+	    -f version=$(VERSION) \
+	    -f sha256=$$SHA256 \
+	    -f bytes=$$BYTES; then \
+	  echo "   → website PR will open at https://github.com/yangshiqi/ZackEyes-website/pulls"; \
+	else \
+	  echo "   ⚠️  website workflow trigger failed — bump src/lib/release.mjs by hand."; \
+	fi
 	@echo ""
 	@echo "✅ Released v$(VERSION)"
 	@echo "   source:   https://github.com/yangshiqi/ZackEyes/releases/tag/v$(VERSION)"
