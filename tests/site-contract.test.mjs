@@ -43,7 +43,12 @@ describe('Astro site contract', () => {
     assert.match(pkg.dependencies.tailwindcss, /^\^4\./);
 
     const astroConfig = read('astro.config.mjs');
-    assert.match(astroConfig, /build:\s*\{\s*format:\s*['"]file['"]/s);
+    // 'directory' (Astro default) emits /foo/index.html so Vercel can serve
+    // /foo without an .html → clean URL redirect. Pairing with the explicit
+    // `trailingSlash: 'never'` keeps the sitemap and canonical tags
+    // emitting /foo (no trailing slash) — matching the site's nav hrefs.
+    assert.match(astroConfig, /build:\s*\{[\s\S]*?format:\s*['"]directory['"]/s);
+    assert.match(astroConfig, /trailingSlash:\s*['"]never['"]/);
     assert.match(astroConfig, /@astrojs\/sitemap/);
     assert.match(astroConfig, /@tailwindcss\/vite/);
   });
