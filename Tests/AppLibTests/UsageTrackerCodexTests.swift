@@ -17,7 +17,13 @@ struct UsageTrackerCodexTests {
     }
 
     private func currentCodexDayDir(under root: URL) -> URL {
-        SessionScanner.candidateDateDirs(rootDir: root, cutoff: Date()).last!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let comps = calendar.dateComponents([.year, .month, .day], from: Date())
+        return root
+            .appendingPathComponent(String(format: "%04d", comps.year!))
+            .appendingPathComponent(String(format: "%02d", comps.month!))
+            .appendingPathComponent(String(format: "%02d", comps.day!))
     }
 
     private func currentCodexRolloutName(id: String, hour: Int = 0) -> String {

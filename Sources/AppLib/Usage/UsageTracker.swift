@@ -266,10 +266,12 @@ public final class UsageTracker: ObservableObject {
             let mtime: Date
         }
         var candidates: [Candidate] = []
-        // Codex partitions rollouts by UTC date; walk only the YYYY/MM/DD
-        // subdirs that intersect the cutoff (≤ 2 directories around UTC
-        // midnight) instead of the entire archive.
-        for day in SessionScanner.candidateDateDirs(rootDir: rootDir, cutoff: cutoff) {
+        // Walk every YYYY/MM/DD dir, not just the ones whose UTC name
+        // intersects the cutoff. `codex --resume` keeps appending to the
+        // resumed session's original date dir, which can be arbitrarily
+        // old — pruning by dir name silently drops those rollouts even when
+        // their files are mtime-fresh. Filter on the file's own mtime below.
+        for day in SessionScanner.allDateDirs(under: rootDir) {
             guard let files = try? fm.contentsOfDirectory(
                 at: day,
                 includingPropertiesForKeys: [.contentModificationDateKey]

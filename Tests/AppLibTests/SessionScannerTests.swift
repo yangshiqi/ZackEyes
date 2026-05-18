@@ -15,7 +15,13 @@ struct SessionScannerTests {
     }
 
     private func currentCodexDayDir(under root: URL) -> URL {
-        SessionScanner.candidateDateDirs(rootDir: root, cutoff: Date()).last!
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let comps = calendar.dateComponents([.year, .month, .day], from: Date())
+        return root
+            .appendingPathComponent(String(format: "%04d", comps.year!))
+            .appendingPathComponent(String(format: "%02d", comps.month!))
+            .appendingPathComponent(String(format: "%02d", comps.day!))
     }
 
     private func currentCodexRolloutName(id: String) -> String {
@@ -181,46 +187,72 @@ struct SessionScannerTests {
         #expect(results[1].id == claudeId)
     }
 
-    // MARK: - candidateDateDirs (date-window pruning)
+    // MARK: - allDateDirs (filesystem walk)
 
-    @Test func candidateDateDirs_returnsOneDayWhenWindowFitsInDay() {
-        // 2026-05-03 14:00 UTC ± 8h is still within 2026-05-03 (after
-        // start-of-day) — so the result spans 05-03 only.
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let now = calendar.date(from: DateComponents(
-            timeZone: TimeZone(identifier: "UTC"), year: 2026, month: 5, day: 3,
-            hour: 14, minute: 0))!
-        let cutoff = now.addingTimeInterval(-2 * 3600)  // 12:00
-        let root = URL(fileURLWithPath: "/tmp/cdx")
-        let dirs = SessionScanner.candidateDateDirs(rootDir: root, cutoff: cutoff, now: now)
-        #expect(dirs.count == 1)
-        #expect(dirs[0].path == "/tmp/cdx/2026/05/03")
+    /// macOS `temporaryDirectory` returns `/var/folders/...` but
+    /// `FileManager.createDirectory` records `/private/var/folders/...`.
+    /// `contentsOfDirectory` echoes the canonical form back, so callers
+    /// that built paths with raw `.appendingPathComponent` need to
+    /// re-canonicalize before comparing.
+    private static func canonical(_ url: URL) -> String {
+        (url.path as NSString).resolvingSymlinksInPath
     }
 
-    @Test func candidateDateDirs_spansAcrossUTCMidnight() {
-        // now = 2026-05-04 00:30 UTC; cutoff = -8h = 2026-05-03 16:30.
-        // Window touches both 05-03 and 05-04.
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let now = calendar.date(from: DateComponents(
-            timeZone: TimeZone(identifier: "UTC"), year: 2026, month: 5, day: 4,
-            hour: 0, minute: 30))!
-        let cutoff = now.addingTimeInterval(-8 * 3600)
-        let root = URL(fileURLWithPath: "/tmp/cdx")
-        let dirs = SessionScanner.candidateDateDirs(rootDir: root, cutoff: cutoff, now: now)
-        #expect(dirs.count == 2)
-        #expect(dirs[0].path == "/tmp/cdx/2026/05/03")
-        #expect(dirs[1].path == "/tmp/cdx/2026/05/04")
+    @Test func allDateDirs_returnsEveryExistingDayDir() throws {
+        let root = try makeTmpDir()
+        let fm = FileManager.default
+        for path in ["2025/12/30", "2026/01/01", "2026/05/12", "2026/05/18"] {
+            try fm.createDirectory(
+                at: root.appendingPathComponent(path),
+                withIntermediateDirectories: true
+            )
+        }
+        let rootPath = Self.canonical(root)
+        let dirs = SessionScanner.allDateDirs(under: root)
+            .map { Self.canonical($0).replacingOccurrences(of: rootPath, with: "") }
+            .sorted()
+        #expect(dirs == ["/2025/12/30", "/2026/01/01", "/2026/05/12", "/2026/05/18"])
     }
 
-    @Test func candidateDateDirs_doesNotEnumerateWholeArchive() {
-        // 7-day window — should produce 7 or 8 dirs, never the whole year.
-        let now = Date()
-        let cutoff = now.addingTimeInterval(-7 * 86400)
-        let root = URL(fileURLWithPath: "/tmp/cdx")
-        let dirs = SessionScanner.candidateDateDirs(rootDir: root, cutoff: cutoff, now: now)
-        #expect(dirs.count == 7 || dirs.count == 8)
+    @Test func allDateDirs_skipsNonNumericDirs() throws {
+        // Codex tooling occasionally drops sibling files / dirs under the
+        // sessions root (e.g. `.DS_Store`, `tmp/`). Only well-formed
+        // `YYYY/MM/DD` paths should be returned.
+        let root = try makeTmpDir()
+        let fm = FileManager.default
+        try fm.createDirectory(
+            at: root.appendingPathComponent("2026/05/18"),
+            withIntermediateDirectories: true
+        )
+        try fm.createDirectory(
+            at: root.appendingPathComponent("tmp/foo/bar"),
+            withIntermediateDirectories: true
+        )
+        // Strays inside otherwise-valid trees should also be ignored:
+        try fm.createDirectory(
+            at: root.appendingPathComponent("2026/05/.DS_Store"),
+            withIntermediateDirectories: true
+        )
+        let rootPath = Self.canonical(root)
+        let dirs = SessionScanner.allDateDirs(under: root)
+            .map { Self.canonical($0).replacingOccurrences(of: rootPath, with: "") }
+        #expect(dirs == ["/2026/05/18"])
+    }
+
+    @Test func allDateDirs_findsResumedSessionDirOutsideRecencyWindow() throws {
+        // Regression test for `codex --resume` of an old session: the
+        // resumed rollout lives under the *original* date dir, far outside
+        // the recency window, but its jsonl mtime can be fresh. allDateDirs
+        // must include the old dir so scanCodex's mtime filter has a chance
+        // to pick the file up.
+        let root = try makeTmpDir()
+        let oldDayDir = root.appendingPathComponent("2025/01/01")
+        let recentDayDir = root.appendingPathComponent("2026/05/18")
+        try FileManager.default.createDirectory(at: oldDayDir, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: recentDayDir, withIntermediateDirectories: true)
+        let dirs = Set(SessionScanner.allDateDirs(under: root).map(Self.canonical))
+        #expect(dirs.contains(Self.canonical(oldDayDir)))
+        #expect(dirs.contains(Self.canonical(recentDayDir)))
     }
 
     // MARK: - Codex sessions dir absent

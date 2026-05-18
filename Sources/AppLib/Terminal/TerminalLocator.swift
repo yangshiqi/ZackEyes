@@ -511,9 +511,11 @@ public enum TerminalLocator {
         sessionId: String,
         cwd: String?
     ) -> Bool {
+        var firstTerminal: NSRunningApplication?
         if let app = NSRunningApplication.runningApplications(
             withBundleIdentifier: "com.mitchellh.ghostty"
         ).first {
+            firstTerminal = app
             if focusGhosttySession(app: app, sessionId: sessionId, cwd: cwd) {
                 _ = app.activate(options: [])
                 return true
@@ -527,9 +529,17 @@ public enum TerminalLocator {
             guard let bundleId = app.bundleIdentifier,
                   knownTerminals.contains(bundleId),
                   bundleId != "com.mitchellh.ghostty" else { continue }
+            if firstTerminal == nil { firstTerminal = app }
             if focusByAccessibility(app: app, cwd: cwd) {
                 return true
             }
+        }
+
+        // Every focus attempt failed — but the user clicked. Avoid the
+        // "完全没反应" UX by activating at least the first terminal we
+        // could see, so the user can locate the right tab themselves.
+        if let fallback = firstTerminal {
+            _ = fallback.activate(options: [])
         }
         return false
     }
@@ -578,7 +588,6 @@ public enum TerminalLocator {
             return true
         case "com.mitchellh.ghostty":
             if focusGhosttySession(app: app, sessionId: sessionId, cwd: cwd) { return true }
-            // Final fallback: existing AX window-title raise
             return focusByAccessibility(app: app, cwd: cwd)
         case "dev.warp.Warp-Stable", "dev.warp.Warp",
              "io.alacritty",

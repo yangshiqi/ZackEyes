@@ -92,6 +92,7 @@ public final class NotchViewModel: ObservableObject {
                 }
             }
 
+            var activated = false
             if let pid = pid {
                 if agent == .codex, let cwd {
                     _ = TerminalLocator.writeSessionTitle(
@@ -101,14 +102,18 @@ public final class NotchViewModel: ObservableObject {
                         prompt: prompt
                     )
                 }
-                _ = TerminalLocator.activateTerminal(
+                activated = TerminalLocator.activateTerminal(
                     containingPid: pid,
                     cwd: cwd,
                     sessionId: sessionId
                 )
-            } else {
-                // No PID (detected session, or live session PID not found).
-                // Jump directly via terminal AX/cwd matching.
+            }
+            if !activated {
+                // No PID, or the pid-based jump failed (stale pid, walk-up
+                // couldn't reach a known terminal, AX denied, etc.). Fall
+                // through to cwd-based AX matching across every visible
+                // terminal — works as long as the tab title still contains
+                // the cwd basename, even if the agent process is gone.
                 TerminalLocator.activateTerminalDirectly(
                     sessionId: sessionId, cwd: cwd
                 )
