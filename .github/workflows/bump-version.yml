@@ -92,11 +92,11 @@ jobs:
           set -euo pipefail
           BRANCH="release/v${VERSION}-bump"
 
-          # Bail if neither release.mjs nor changelog.astro changed —
-          # avoids "no changes added to commit" when the workflow is
-          # re-run idempotently against the same DMG.
-          if git diff --quiet -- src/lib/release.mjs src/pages/changelog.astro; then
-            echo "release.mjs + changelog.astro already at v${VERSION} — skipping PR"
+          # Bail if none of the bump targets changed — avoids
+          # "no changes added to commit" when the workflow is re-run
+          # idempotently against the same DMG.
+          if git diff --quiet -- src/lib/release.mjs src/pages/changelog.astro README.md; then
+            echo "release.mjs + changelog.astro + README.md already at v${VERSION} — skipping PR"
             exit 0
           fi
 
@@ -111,7 +111,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH"
-          git add src/lib/release.mjs src/pages/changelog.astro
+          git add src/lib/release.mjs src/pages/changelog.astro README.md
 
           MESSAGE=$(printf 'chore: bump release metadata to v%s\n\n- appVersion: %s\n- downloadSha256: %s\n- downloadBytes: %s\n- changelog auto-populated: %s\n\nTriggered by ccisland make release.\n' \
             "$VERSION" "$VERSION" "$SHA256" "$BYTES" "$CHANGELOG_TOUCHED")

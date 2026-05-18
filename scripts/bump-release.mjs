@@ -54,6 +54,7 @@ function main() {
   }
 
   bumpReleaseMjs({ version, sha256, bytes });
+  bumpReadme({ version, sha256, bytes });
 
   const notesText = readNotes(notesFile);
   if (notesText) {
@@ -129,6 +130,56 @@ function bumpReleaseMjs({ version, sha256, bytes }) {
     console.log(`bumped release.mjs → v${version} (${size} DMG, ${bytes} bytes, sha256 ${sha256})`);
   } else {
     console.log(`release.mjs already at v${version} (${sha256}, ${bytes} bytes) — no change`);
+  }
+}
+
+// ---------- README.md ----------
+
+function bumpReadme({ version, sha256, bytes }) {
+  // README has three release-fact lines (DMG URL, size, sha256) plus a
+  // few prose mentions. We rewrite the structured ones so the
+  // site-contract test that asserts README contains the current
+  // downloadSha256 stays green after every bump. The bump script is the
+  // only writer; reviewers may still hand-edit surrounding prose on the
+  // PR branch.
+  const path = 'README.md';
+  const sizeMb = (bytes / 1_000_000).toFixed(1);
+  const size = `${sizeMb} MB`;
+  const before = readFileSync(path, 'utf8');
+
+  const replace = (src, label, pattern, replacement) => {
+    if (!pattern.test(src)) {
+      console.error(`could not find ${label} in ${path}; pattern: ${pattern}`);
+      exit(1);
+    }
+    return src.replace(pattern, replacement);
+  };
+
+  let after = before;
+  // `- Latest public release: ` + backticked URL + `.`
+  after = replace(
+    after, 'README DMG URL',
+    /(- Latest public release: `https:\/\/github\.com\/yangshiqi\/ZackEyes-release\/releases\/download\/v)[^`]+(`\.)/,
+    `$1${version}/ZackEyes-${version}.dmg$2`
+  );
+  // `- DMG size: 2.8 MB.`
+  after = replace(
+    after, 'README DMG size',
+    /(- DMG size: )[\d.]+ MB(\.)/,
+    `$1${size}$2`
+  );
+  // `- SHA256: \`<hash>\`.`
+  after = replace(
+    after, 'README SHA256',
+    /(- SHA256: `)[0-9a-f]{64}(`\.)/,
+    `$1${sha256}$2`
+  );
+
+  if (after !== before) {
+    writeFileSync(path, after);
+    console.log(`bumped README → v${version} (${size}, sha256 ${sha256})`);
+  } else {
+    console.log(`README already at v${version} — no change`);
   }
 }
 

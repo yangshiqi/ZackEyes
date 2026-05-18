@@ -33,7 +33,7 @@ The homepage currently uses no React island and no generated client JavaScript b
 - The production target must support static file hosting.
 - The canonical production origin is currently `https://zackeyes.app`; update `astro.config.mjs`, `public/robots.txt`, and LLM text endpoints if the final domain changes.
 - Latest public release: `https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.3/ZackEyes-0.4.3.dmg`.
-- DMG size: 2.8 MB.
+- DMG size: 3.0 MB.
 - SHA256: `800ffbbe93cf46c99c3a6111ff03c28c8bac8c93e70200710c1d0f0e0227f18b`.
 - Issues and feature requests: `https://github.com/yangshiqi/ZackEyes-release/issues`.
 - Release metadata is centralised in [`src/lib/release.mjs`](src/lib/release.mjs); update that file on each release and every page + test will pick up the new values.
