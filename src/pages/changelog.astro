@@ -9,12 +9,20 @@ const releases = [
   {
     version: 'ZackEyes 0.4.4',
     date: 'Published May 18, 2026',
-    summary: 'Two notch additions for Codex parity with Claude.',
+    summary: 'Two notch additions that close the Codex/Claude visibility gap: model name, agent label, subagent badge, and a cross-agent permission-risk indicator.',
     highlights: [
       {
-        label: 'Notes',
+        label: 'Added',
         items: [
-          // TODO: fill in highlights before merging.
+          'Codex sessions now show the model name (gpt-5.5, codex-auto-review, etc.) next to context-window size in the popup. Codex has no Claude-style StatusLine hook, so the value is parsed from the per-session rollout JSONL — resumed sessions surface the model immediately at attach time, and subsequent turns keep it fresh.',
+          'Subagent badge: guardian / auto-review / other Codex subagent threads now render as [CODEX • GUARDIAN] in the session card, so they are visually distinct from your main user thread instead of looking identical to it.',
+          'Permission-risk badge for both agents: PLAN (blue) for Claude plan mode, AUTO (amber) for Claude acceptEdits or Codex never+workspace-write or Codex on-request+danger-full-access, YOLO (red) for Claude bypassPermissions or Codex never+danger-full-access. Hidden in the default "asks every time" state — the badge job is to catch your eye precisely when the session will not ask.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'The assistant-reply row in the notch popup no longer says "Claude:" for Codex sessions — it now correctly switches to "Codex:" based on the session agent.'
         ]
       }
     ]
