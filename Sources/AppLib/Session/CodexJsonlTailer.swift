@@ -571,20 +571,22 @@ extension CodexJsonlTailer {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
 
-        // 1 MB matches the session_meta cap. turn_context payloads are small,
-        // but they sit behind session_meta's potentially-huge base_instructions
-        // blob, so we may need to skip past that.
-        let maxBytes = 1_048_576
+        // Slightly above the 1 MB session_meta cap so a turn_context line that
+        // sits immediately after a maximally-sized session_meta still lands in
+        // the read.
+        let maxBytes = 1_100_000
         guard let data = try? handle.read(upToCount: maxBytes), !data.isEmpty else {
             return nil
         }
-        guard let text = String(data: data, encoding: .utf8) else { return nil }
+        // String(decoding:as:) replaces invalid UTF-8 sequences with U+FFFD
+        // instead of failing — protects against the read truncating in the
+        // middle of a multi-byte char at the buffer edge.
+        let text = String(decoding: data, as: UTF8.self)
 
-        // Iterate complete lines only — the last segment is likely truncated.
-        let parts = text.split(separator: "\n", omittingEmptySubsequences: false)
-        let completeLines = parts.dropLast()
-        for line in completeLines {
-            if line.isEmpty { continue }
+        // Process every non-empty segment. Partial lines (the trailing segment
+        // when we hit the read cap mid-line, or anything we corrupted with the
+        // replacement char) just fail JSON parse and get skipped silently.
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             guard let lineData = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
                   obj["type"] as? String == "turn_context",
