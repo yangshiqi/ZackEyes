@@ -2,7 +2,7 @@
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
-import { downloadUrl, releasesUrl } from '../lib/release.mjs';
+import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
@@ -183,10 +183,10 @@ const changelogStructuredData = {
           <div class="section-eyebrow">Release channel</div>
           <h1 id="changelog-title">Changelog.</h1>
           <p class="policy-lede">
-            The current public release is ZackEyes 0.4.2. Installers are distributed through GitHub Releases so the app can check `/releases/latest` and download the DMG without GitHub authentication.
+            The current public release is {releaseName}. Installers are distributed through GitHub Releases so the app can check `/releases/latest` and download the DMG without GitHub authentication.
           </p>
           <div class="hero-actions">
-            <a class="button primary" href={downloadUrl}>Download ZackEyes 0.4.2 <span aria-hidden="true">↓</span></a>
+            <a class="button primary" href={downloadUrl}>Download {releaseName} <span aria-hidden="true">↓</span></a>
             <a class="button" href={releasesUrl}>GitHub Releases <span aria-hidden="true">↗</span></a>
           </div>
         </div>
