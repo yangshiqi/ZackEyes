@@ -143,7 +143,7 @@ endif
 	    -f version="$(VERSION)" \
 	    -f sha256="$$SHA256" \
 	    -f bytes="$$BYTES" \
-	    -f notes="$${NOTES:-}"; then \
+	    -f notes="$${NOTES:-Release v$(VERSION)}"; then \
 	  echo "   → website PR will open at https://github.com/yangshiqi/ZackEyes-website/pulls"; \
 	else \
 	  echo "   ⚠️  website workflow trigger failed — bump src/lib/release.mjs by hand."; \
