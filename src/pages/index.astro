@@ -2,14 +2,17 @@
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
+import {
+  appVersion,
+  releaseName,
+  downloadUrl,
+  issuesUrl,
+  downloadSizeLabel,
+  downloadSha256
+} from '../lib/release.mjs';
 
 const description = 'ZackEyes turns the MacBook notch into a live command center for Claude Code and Codex CLI sessions, approvals, tasks, rate limits, terminal tab jump, themes, and display modes.';
-const appVersion = '0.4.2';
-const releaseName = `ZackEyes ${appVersion}`;
-const downloadUrl = `https://github.com/yangshiqi/ZackEyes-release/releases/download/v${appVersion}/ZackEyes-${appVersion}.dmg`;
-const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
-const downloadSize = '5.2 MB DMG';
-const downloadSha256 = '15d2a92dbac63d81abef17c7e3eba80f27a311eb588e379c711f2a4f3a83c26a';
+const downloadSize = downloadSizeLabel;
 const faqItems = [
   {
     question: 'Which macOS versions does ZackEyes support?',

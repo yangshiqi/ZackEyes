@@ -2,9 +2,8 @@
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
+import { releaseName, downloadUrl, issuesUrl } from '../lib/release.mjs';
 
-const downloadUrl = 'https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.2/ZackEyes-0.4.2.dmg';
-const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
 const description = 'Direct answers about ZackEyes for AI search, including what it is, privacy posture, Codex CLI support, install steps, and issue reporting.';
 const answers = [
   {
@@ -33,7 +32,7 @@ const answers = [
   },
   {
     question: 'How do I install ZackEyes?',
-    answer: 'Download the latest DMG from GitHub Releases, open it, drag ZackEyes into Applications, then launch the app. The current public installer is ZackEyes 0.4.2.'
+    answer: `Download the latest DMG from GitHub Releases, open it, drag ZackEyes into Applications, then launch the app. The current public installer is ${releaseName}.`
   },
   {
     question: 'Where do I report ZackEyes issues?',

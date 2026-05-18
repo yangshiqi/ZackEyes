@@ -2,9 +2,9 @@
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
+import { issuesUrl } from '../lib/release.mjs';
 
 const description = 'ZackEyes is local-first by default: no account is required, source code and agent prompts are not uploaded by the website, and feedback is handled through GitHub Issues.';
-const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
 const privacyStructuredData = {
   '@type': 'PrivacyPolicy',
   '@id': 'https://zackeyes.app/privacy#policy',

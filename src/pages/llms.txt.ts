@@ -1,3 +1,11 @@
+import {
+  releaseName,
+  downloadUrl,
+  issuesUrl,
+  downloadSizeLabel,
+  downloadSha256
+} from '../lib/release.mjs';
+
 export function GET() {
   return new Response(`# ZackEyes
 
@@ -13,7 +21,7 @@ ZackEyes is a macOS notch command center for developers who run Claude Code, Cod
 - Uses native hooks and Unix socket bridge events so terminal workflows keep working when the app is closed.
 
 ## Compatibility
-- Current version: ZackEyes 0.4.2.
+- Current version: ${releaseName}.
 - Requires macOS 14 or newer.
 - Release builds target Apple Silicon and Intel Macs.
 - Works with Claude Code and/or Codex CLI when those CLIs are installed.
@@ -31,12 +39,12 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 - Security and safety model: https://zackeyes.app/security
 - Privacy and local-first notes: https://zackeyes.app/privacy
 - Full LLM context: https://zackeyes.app/llms-full.txt
-- Latest macOS download: https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.2/ZackEyes-0.4.2.dmg
-- Issues and feature requests: https://github.com/yangshiqi/ZackEyes-release/issues
+- Latest macOS download: ${downloadUrl}
+- Issues and feature requests: ${issuesUrl}
 
 ## Download verification
-- DMG size: 5.2 MB.
-- SHA256: 15d2a92dbac63d81abef17c7e3eba80f27a311eb588e379c711f2a4f3a83c26a.
+- DMG size: ${downloadSizeLabel.replace(' DMG', '')}.
+- SHA256: ${downloadSha256}.
 
 ## Roadmap
 Roadmap focus areas include more agent support, richer task state, custom notifications, Codex hook compatibility, and privacy/log controls.

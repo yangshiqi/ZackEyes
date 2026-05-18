@@ -2,11 +2,24 @@
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
+import { downloadUrl, releasesUrl } from '../lib/release.mjs';
 
-const downloadUrl = 'https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.4.2/ZackEyes-0.4.2.dmg';
-const releasesUrl = 'https://github.com/yangshiqi/ZackEyes-release/releases';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
+  {
+    version: 'ZackEyes 0.4.3',
+    date: 'Published May 18, 2026',
+    summary: 'Codex resumed-session visibility fix and terminal-jump click resilience.',
+    highlights: [
+      {
+        label: 'Fixed',
+        items: [
+          'Resumed Codex sessions (codex --resume) now surface in the notch even when their rollout file lives in an older YYYY/MM/DD directory; the scanner walks every date directory and filters by file mtime instead of pruning by directory name.',
+          'Click on a session card always lands somewhere: when the cached agent PID is stale or accessibility-matching cannot pick a tab, the click falls back to cwd-based AX matching and finally activates the first running terminal, replacing the silent "完全没反应" failure mode.'
+        ]
+      }
+    ]
+  },
   {
     version: 'ZackEyes 0.4.2',
     date: 'Published May 16, 2026',
