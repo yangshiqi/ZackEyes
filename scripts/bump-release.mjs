@@ -278,10 +278,13 @@ function updateChangelog({ version, summary, highlights, dateOverride }) {
   const dateLabel = formatDateLabel(dateOverride);
   const entry = renderEntry({ tag, dateLabel, summary, highlights });
 
-  // `\s*` instead of a literal `\n` so the script survives a Prettier
-  // pass that drops the trailing newline or normalises whitespace
-  // between the `[` and the first entry.
-  const arrayStart = before.match(/(const releases = \[\s*)/);
+  // Match `const releases = [` followed by exactly one line ending
+  // (allowing both Unix and Windows formats), and prepend the new entry
+  // right after that. Using `\s*` here greedily consumed the next
+  // entry's leading indent, leaving the file with broken indentation
+  // even though it stayed valid JS — the cosmetic regression showed up
+  // in dry-run 26022738802.
+  const arrayStart = before.match(/(const releases = \[\r?\n)/);
   if (!arrayStart) {
     console.error(`could not find 'const releases = [' in ${path}`);
     exit(1);
