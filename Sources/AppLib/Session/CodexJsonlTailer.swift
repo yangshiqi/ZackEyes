@@ -25,6 +25,12 @@ public protocol CodexJsonlTailerDelegate: AnyObject {
 
     @MainActor
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectModelChanged event: CodexModelEvent)
+
+    @MainActor
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectSubagent event: CodexSubagentEvent)
+
+    @MainActor
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectPolicyChanged event: CodexPolicyEvent)
 }
 
 public struct CodexTaskStartedEvent: Sendable {
@@ -65,11 +71,34 @@ public struct CodexModelEvent: Sendable {
     public let transcriptPath: String
 }
 
+/// Codex `turn_context.approval_policy` + `sandbox_policy.type` snapshot
+/// per turn. Raw strings (not pre-mapped to PermissionRiskLevel) so the parser
+/// stays nonisolated/dependency-free; AppDelegate runs the mapper on MainActor.
+public struct CodexPolicyEvent: Sendable {
+    public let sessionId: String
+    public let cwd: String?
+    public let approvalPolicy: String?
+    public let sandboxType: String?
+    public let transcriptPath: String
+}
+
+/// Codex marks subagent-owned rollouts via `session_meta.source.subagent`
+/// (set to a string like `"review"` or a dict `{"other":"guardian"}`). Main
+/// user threads omit the field. We surface the name as a small badge so
+/// guardian / auto-review sessions don't masquerade as the user's main turn.
+public struct CodexSubagentEvent: Sendable {
+    public let sessionId: String
+    public let cwd: String?
+    public let subagentLabel: String
+    public let transcriptPath: String
+}
+
 public enum CodexTaskLifecycleEvent: Sendable {
     case started(CodexTaskStartedEvent)
     case complete(CodexTaskCompleteEvent)
     case tokenCount(CodexTokenCountEvent)
     case modelChanged(CodexModelEvent)
+    case policyChanged(CodexPolicyEvent)
 }
 
 @MainActor
@@ -182,6 +211,16 @@ public final class CodexJsonlTailer {
                 guard let self = self else { return }
                 self.delegate?.codexTailer(self, didDetectModelChanged: event)
             }
+        }, onSubagent: { [weak self] event in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.delegate?.codexTailer(self, didDetectSubagent: event)
+            }
+        }, onPolicyChanged: { [weak self] event in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.delegate?.codexTailer(self, didDetectPolicyChanged: event)
+            }
         }, onClosed: { [weak self] closedURL in
             Task { @MainActor in
                 self?.watchers.removeValue(forKey: closedURL)
@@ -221,13 +260,26 @@ extension CodexJsonlTailer {
             guard let payload = obj["payload"] as? [String: Any] else { continue }
 
             // `turn_context` is a top-level row (not nested under event_msg).
-            // It carries the model id used for the upcoming turn.
+            // It carries the model id + approval/sandbox policy for the
+            // upcoming turn. Emit a model event AND a policy event when the
+            // respective fields are populated — they're independent surfaces.
             if topType == "turn_context" {
                 if let model = payload["model"] as? String, !model.isEmpty {
                     events.append(.modelChanged(CodexModelEvent(
                         sessionId: sessionId,
                         cwd: cwd,
                         modelDisplayName: model,
+                        transcriptPath: transcriptPath
+                    )))
+                }
+                let approval = payload["approval_policy"] as? String
+                let sandboxType = (payload["sandbox_policy"] as? [String: Any])?["type"] as? String
+                if approval != nil || sandboxType != nil {
+                    events.append(.policyChanged(CodexPolicyEvent(
+                        sessionId: sessionId,
+                        cwd: cwd,
+                        approvalPolicy: approval,
+                        sandboxType: sandboxType,
                         transcriptPath: transcriptPath
                     )))
                 }
@@ -396,6 +448,8 @@ private final class Watcher: @unchecked Sendable {
     private let onTaskComplete: (CodexTaskCompleteEvent) -> Void
     private let onTokenCount: (CodexTokenCountEvent) -> Void
     private let onModelChanged: (CodexModelEvent) -> Void
+    private let onSubagent: (CodexSubagentEvent) -> Void
+    private let onPolicyChanged: (CodexPolicyEvent) -> Void
     private let onClosed: (URL) -> Void
     /// Guards `isCancelled` so the MainActor `stop()` path and the
     /// DispatchSource event handler (private queue, fires on .delete /
@@ -409,6 +463,8 @@ private final class Watcher: @unchecked Sendable {
         onTaskComplete: @escaping (CodexTaskCompleteEvent) -> Void,
         onTokenCount: @escaping (CodexTokenCountEvent) -> Void,
         onModelChanged: @escaping (CodexModelEvent) -> Void,
+        onSubagent: @escaping (CodexSubagentEvent) -> Void,
+        onPolicyChanged: @escaping (CodexPolicyEvent) -> Void,
         onClosed: @escaping (URL) -> Void
     ) {
         // Codex session id is encoded in the rollout filename; bail if we
@@ -431,6 +487,8 @@ private final class Watcher: @unchecked Sendable {
         self.onTaskComplete = onTaskComplete
         self.onTokenCount = onTokenCount
         self.onModelChanged = onModelChanged
+        self.onSubagent = onSubagent
+        self.onPolicyChanged = onPolicyChanged
         self.onClosed = onClosed
 
         // Read session_meta once for cwd. Best-effort — if the file doesn't
@@ -438,17 +496,40 @@ private final class Watcher: @unchecked Sendable {
         // session id prefix).
         self.cwd = CodexJsonlTailer.parseSessionMetaCwd(at: url)
 
-        // Bootstrap: scan the existing rollout for the first turn_context.model
-        // so resumed sessions show the model name immediately instead of waiting
-        // for the next turn. Best-effort — missing model just stays nil until
-        // the next turn_context arrives.
-        if let initialModel = CodexJsonlTailer.parseInitialTurnContextModel(at: url) {
-            onModelChanged(CodexModelEvent(
+        // Same first line carries `source.subagent` for subagent threads
+        // (guardian / review / etc). Fire once at attach time — subagent
+        // identity is session-level, never changes mid-rollout.
+        if let subagentLabel = CodexJsonlTailer.parseSessionMetaSubagent(at: url) {
+            onSubagent(CodexSubagentEvent(
                 sessionId: id,
                 cwd: cwd,
-                modelDisplayName: initialModel,
+                subagentLabel: subagentLabel,
                 transcriptPath: url.path
             ))
+        }
+
+        // Bootstrap: scan the existing rollout for the first turn_context so
+        // resumed sessions show model + policy immediately instead of waiting
+        // for the next turn. Best-effort — missing fields stay nil until the
+        // next turn_context arrives via the stream.
+        if let initial = CodexJsonlTailer.parseInitialTurnContext(at: url) {
+            if let initialModel = initial.model {
+                onModelChanged(CodexModelEvent(
+                    sessionId: id,
+                    cwd: cwd,
+                    modelDisplayName: initialModel,
+                    transcriptPath: url.path
+                ))
+            }
+            if initial.approvalPolicy != nil || initial.sandboxType != nil {
+                onPolicyChanged(CodexPolicyEvent(
+                    sessionId: id,
+                    cwd: cwd,
+                    approvalPolicy: initial.approvalPolicy,
+                    sandboxType: initial.sandboxType,
+                    transcriptPath: url.path
+                ))
+            }
         }
 
         // Start tailing FROM CURRENT EOF. We don't want to fire
@@ -537,6 +618,8 @@ private final class Watcher: @unchecked Sendable {
                     onTokenCount(tokenCount)
                 case .modelChanged(let modelEvent):
                     onModelChanged(modelEvent)
+                case .policyChanged(let policyEvent):
+                    onPolicyChanged(policyEvent)
                 }
             }
         } catch {
@@ -552,6 +635,30 @@ extension CodexJsonlTailer {
     /// fixed small head read can truncate the JSON before `JSONSerialization`
     /// sees a complete object.
     nonisolated static func parseSessionMetaCwd(at url: URL) -> String? {
+        guard let payload = readSessionMetaPayload(at: url) else { return nil }
+        return payload["cwd"] as? String
+    }
+
+    /// Extract the subagent label from `session_meta.source.subagent`. Codex
+    /// emits two shapes in the wild — a bare string (e.g. `"review"`) or a
+    /// dict with a single `other` key (`{"other":"guardian"}`) — so we handle
+    /// both. Returns nil for main user threads (no `subagent` key).
+    nonisolated static func parseSessionMetaSubagent(at url: URL) -> String? {
+        guard let payload = readSessionMetaPayload(at: url),
+              let source = payload["source"] as? [String: Any] else {
+            return nil
+        }
+        let raw = source["subagent"]
+        if let s = raw as? String, !s.isEmpty { return s }
+        if let dict = raw as? [String: Any],
+           let other = dict["other"] as? String,
+           !other.isEmpty {
+            return other
+        }
+        return nil
+    }
+
+    private nonisolated static func readSessionMetaPayload(at url: URL) -> [String: Any]? {
         guard let line = readFirstLine(of: url, maxBytes: 1_048_576),
               let lineData = line.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
@@ -559,15 +666,22 @@ extension CodexJsonlTailer {
               let payload = obj["payload"] as? [String: Any] else {
             return nil
         }
-        return payload["cwd"] as? String
+        return payload
     }
 
-    /// Scan the rollout from the start for the first `turn_context.model`.
-    /// Used at watcher-attach time so resumed sessions surface the model
-    /// before the next turn fires. Capped at the head of the file — turn_context
-    /// always appears very early (right after session_meta, before the first
-    /// turn's events), so a small read is sufficient.
-    nonisolated static func parseInitialTurnContextModel(at url: URL) -> String? {
+    /// Subset of the first `turn_context.payload` we care about at watcher
+    /// attach time. Any field can be nil — the rollout may have been written
+    /// without it, or our schema knowledge may have drifted.
+    public struct InitialTurnContext: Sendable, Equatable {
+        public let model: String?
+        public let approvalPolicy: String?
+        public let sandboxType: String?
+    }
+
+    /// Scan the rollout from the start for the first `turn_context` row and
+    /// extract model + policy fields in one pass. Used at watcher-attach time
+    /// so resumed sessions surface this state before the next turn fires.
+    nonisolated static func parseInitialTurnContext(at url: URL) -> InitialTurnContext? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
 
@@ -590,14 +704,28 @@ extension CodexJsonlTailer {
             guard let lineData = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
                   obj["type"] as? String == "turn_context",
-                  let payload = obj["payload"] as? [String: Any],
-                  let model = payload["model"] as? String,
-                  !model.isEmpty else {
+                  let payload = obj["payload"] as? [String: Any] else {
                 continue
             }
-            return model
+            let model = (payload["model"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+            let approval = payload["approval_policy"] as? String
+            let sandbox = (payload["sandbox_policy"] as? [String: Any])?["type"] as? String
+            // Don't return an empty result — keep scanning until we hit a
+            // turn_context that actually carries something useful.
+            if model != nil || approval != nil || sandbox != nil {
+                return InitialTurnContext(
+                    model: model,
+                    approvalPolicy: approval,
+                    sandboxType: sandbox
+                )
+            }
         }
         return nil
+    }
+
+    /// Backward-compatible wrapper used by older callsites and tests.
+    nonisolated static func parseInitialTurnContextModel(at url: URL) -> String? {
+        parseInitialTurnContext(at: url)?.model
     }
 
     private nonisolated static func readFirstLine(of url: URL, maxBytes: Int) -> String? {

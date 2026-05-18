@@ -174,10 +174,77 @@ struct CodexJsonlTailerTests {
         #expect(pending == "")
     }
 
-    @Test func parsesTurnContextModelEvent() {
+    @Test func parsesTurnContextPolicyEvent() {
+        var pending = ""
+        // Single turn_context row that carries both model + policy fields.
+        // The parser should emit BOTH lifecycle events for one row.
+        let chunk = """
+            {"type":"turn_context","payload":{"cwd":"/proj","model":"gpt-5.5","approval_policy":"never","sandbox_policy":{"type":"danger-full-access","network_access":true}}}\n
+            """
+
+        let events = CodexJsonlTailer.parseTaskLifecycleEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+
+        #expect(events.count == 2)
+        guard case let .modelChanged(modelEvent) = events[0] else {
+            Issue.record("Expected modelChanged event first")
+            return
+        }
+        guard case let .policyChanged(policyEvent) = events[1] else {
+            Issue.record("Expected policyChanged event second")
+            return
+        }
+        #expect(modelEvent.modelDisplayName == "gpt-5.5")
+        #expect(policyEvent.approvalPolicy == "never")
+        #expect(policyEvent.sandboxType == "danger-full-access")
+        #expect(policyEvent.sessionId == sid)
+        #expect(policyEvent.cwd == cwd)
+    }
+
+    @Test func turnContextWithOnlyApprovalEmitsPolicyOnly() {
         var pending = ""
         let chunk = """
-            {"type":"turn_context","payload":{"cwd":"/proj","model":"gpt-5.5","approval_policy":"manual","turn_id":"t1"}}\n
+            {"type":"turn_context","payload":{"cwd":"/proj","approval_policy":"on-request"}}\n
+            """
+        let events = CodexJsonlTailer.parseTaskLifecycleEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+        #expect(events.count == 1)
+        guard case let .policyChanged(policyEvent) = events.first else {
+            Issue.record("Expected single policyChanged event")
+            return
+        }
+        #expect(policyEvent.approvalPolicy == "on-request")
+        #expect(policyEvent.sandboxType == nil)
+    }
+
+    @Test func parseInitialTurnContextReturnsCombinedStruct() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+
+        let file = tmpDir.appendingPathComponent("rollout-x.jsonl")
+        try """
+            {"type":"session_meta","payload":{"id":"\(sid)","cwd":"/proj"}}
+            {"type":"turn_context","payload":{"cwd":"/proj","model":"gpt-5.5","approval_policy":"never","sandbox_policy":{"type":"workspace-write"}}}
+            {"type":"event_msg","payload":{"type":"user_message","message":"hi"}}\n
+            """.write(to: file, atomically: true, encoding: .utf8)
+
+        let ctx = try #require(CodexJsonlTailer.parseInitialTurnContext(at: file))
+        #expect(ctx.model == "gpt-5.5")
+        #expect(ctx.approvalPolicy == "never")
+        #expect(ctx.sandboxType == "workspace-write")
+    }
+
+    @Test func parsesTurnContextModelEventOnly() {
+        var pending = ""
+        // Pure model — no policy fields → exactly one event (.modelChanged).
+        let chunk = """
+            {"type":"turn_context","payload":{"cwd":"/proj","model":"gpt-5.5","turn_id":"t1"}}\n
             """
 
         let events = CodexJsonlTailer.parseTaskLifecycleEvents(
@@ -197,10 +264,11 @@ struct CodexJsonlTailerTests {
         #expect(pending == "")
     }
 
-    @Test func turnContextWithoutModelIsIgnored() {
+    @Test func turnContextWithoutModelOrPolicyIsIgnored() {
         var pending = ""
+        // Both rows are devoid of model/approval/sandbox — nothing to emit.
         let chunk = """
-            {"type":"turn_context","payload":{"cwd":"/proj","approval_policy":"manual"}}
+            {"type":"turn_context","payload":{"cwd":"/proj","turn_id":"t0"}}
             {"type":"turn_context","payload":{"cwd":"/proj","model":"","turn_id":"t1"}}\n
             """
 
@@ -226,6 +294,48 @@ struct CodexJsonlTailerTests {
             """.write(to: file, atomically: true, encoding: .utf8)
 
         #expect(CodexJsonlTailer.parseInitialTurnContextModel(at: file) == "gpt-5.5")
+    }
+
+    @Test func parseSessionMetaSubagentHandlesStringShape() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+
+        let file = tmpDir.appendingPathComponent("rollout-x.jsonl")
+        try """
+            {"type":"session_meta","payload":{"id":"\(sid)","cwd":"/proj","source":{"subagent":"review"},"thread_source":"subagent"}}\n
+            """.write(to: file, atomically: true, encoding: .utf8)
+
+        #expect(CodexJsonlTailer.parseSessionMetaSubagent(at: file) == "review")
+    }
+
+    @Test func parseSessionMetaSubagentHandlesObjectShape() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+
+        let file = tmpDir.appendingPathComponent("rollout-x.jsonl")
+        try """
+            {"type":"session_meta","payload":{"id":"\(sid)","cwd":"/proj","source":{"subagent":{"other":"guardian"}},"thread_source":"subagent"}}\n
+            """.write(to: file, atomically: true, encoding: .utf8)
+
+        #expect(CodexJsonlTailer.parseSessionMetaSubagent(at: file) == "guardian")
+    }
+
+    @Test func parseSessionMetaSubagentReturnsNilForMainThread() throws {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+
+        let file = tmpDir.appendingPathComponent("rollout-x.jsonl")
+        try """
+            {"type":"session_meta","payload":{"id":"\(sid)","cwd":"/proj","originator":"codex-tui","thread_source":"user"}}\n
+            """.write(to: file, atomically: true, encoding: .utf8)
+
+        #expect(CodexJsonlTailer.parseSessionMetaSubagent(at: file) == nil)
     }
 
     @Test func parseInitialTurnContextModelReturnsNilWhenAbsent() throws {

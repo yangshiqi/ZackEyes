@@ -38,6 +38,16 @@ public struct SessionInfo: Identifiable {
     public var modelDisplayName: String?
     public var totalCostUSD: Double?
 
+    /// Codex-only: name of the subagent owning this thread when the rollout's
+    /// `session_meta.source.subagent` is populated (e.g. "guardian", "review").
+    /// Nil for the main user thread.
+    public var subagentLabel: String?
+
+    /// Cross-agent permission risk. Nil = default "asks every time" stance
+    /// (no badge). Populated from Claude `permission_mode` hook field, or
+    /// from Codex `turn_context` policy fields.
+    public var permissionRisk: PermissionRiskLevel?
+
     /// Display name — last path component of cwd, or first 8 chars of id
     public var displayName: String {
         if let cwd = cwd, !cwd.isEmpty {
@@ -70,6 +80,56 @@ public struct SessionInfo: Identifiable {
 public enum SessionSource: Sendable {
     case live        // tracked via hooks (real-time)
     case detected    // discovered by scanning ~/.claude/projects/ (read-only)
+}
+
+/// Cross-agent risk classification for the session's current permission stance.
+/// Both Claude (`permission_mode`) and Codex (`turn_context.approval_policy`
+/// + `sandbox_policy.type`) collapse into this enum so the badge UI is
+/// agent-agnostic. Nil = default "asks for permission" stance — no badge.
+public enum PermissionRiskLevel: String, Sendable, Equatable {
+    /// Claude `plan` mode — read-only by design.
+    case plan
+    /// Auto-approves within bounded scope. Claude `acceptEdits`, or Codex
+    /// `never` approval + `workspace-write` sandbox, or Codex `on-request`
+    /// approval + `danger-full-access` (asks per-command but unsandboxed).
+    case auto
+    /// Unconstrained access. Claude `bypassPermissions`, or Codex `never`
+    /// approval + `danger-full-access` sandbox.
+    case yolo
+
+    /// Map Claude's `permission_mode` payload value. Returns nil for the
+    /// default "asks each time" mode.
+    public static func fromClaudeMode(_ raw: String) -> PermissionRiskLevel? {
+        switch raw {
+        case "acceptEdits":       return .auto
+        case "bypassPermissions": return .yolo
+        case "plan":              return .plan
+        default:                  return nil
+        }
+    }
+
+    /// Map Codex's per-turn approval + sandbox combination.
+    public static func fromCodex(approvalPolicy: String?, sandboxType: String?) -> PermissionRiskLevel? {
+        // Default mode is "on-request + workspace-write" — codex asks, scope
+        // is project. No badge needed.
+        let approval = approvalPolicy ?? "on-request"
+        let sandbox = sandboxType ?? "workspace-write"
+
+        if approval == "never" && sandbox == "danger-full-access" {
+            return .yolo
+        }
+        if approval == "never" && (sandbox == "workspace-write" || sandbox == "read-only") {
+            // never + read-only is technically harmless (can't write), but the
+            // user opted INTO no-prompts. Surface it as .auto so the absence of
+            // an interactive gate is visible at a glance.
+            return sandbox == "read-only" ? nil : .auto
+        }
+        if approval == "on-request" && sandbox == "danger-full-access" {
+            // Asks per-command but the approved command runs unsandboxed.
+            return .auto
+        }
+        return nil
+    }
 }
 
 @MainActor
@@ -267,6 +327,17 @@ public final class SessionStore: ObservableObject {
                 existing.transcriptPath = tp
                 dirty = true
             }
+            // Claude-only: stamp permission_mode whenever the payload carries
+            // it. The user can switch modes mid-session (Shift-Tab cycle), so
+            // overwrite on every event — going back to "default" clears the
+            // badge. Codex's equivalent flows through the tailer policy event.
+            if event.agent == .claude, let modeStr = event.permissionMode {
+                let newRisk = PermissionRiskLevel.fromClaudeMode(modeStr)
+                if existing.permissionRisk != newRisk {
+                    existing.permissionRisk = newRisk
+                    dirty = true
+                }
+            }
             if dirty { sessions[sid] = existing }
         }
     }
@@ -448,6 +519,57 @@ public final class SessionStore: ObservableObject {
             session.source = .detected
         }
         session.modelDisplayName = displayName
+        sessions[sessionId] = session
+    }
+
+    /// Apply Codex's per-turn approval+sandbox policy as a unified
+    /// `permissionRisk`. Setting nil clears the badge — happens naturally when
+    /// the user toggles approval/sandbox back to defaults mid-session.
+    public func setCodexPermissionRisk(
+        sessionId: String,
+        cwd: String?,
+        transcriptPath: String?,
+        risk: PermissionRiskLevel?
+    ) {
+        var session = sessions[sessionId] ?? SessionInfo(
+            id: sessionId,
+            cwd: cwd,
+            agent: .codex,
+            state: .idle,
+            startedAt: Date()
+        )
+        if session.cwd == nil { session.cwd = cwd }
+        if session.transcriptPath == nil { session.transcriptPath = transcriptPath }
+        if sessions[sessionId] == nil {
+            session.source = .detected
+        }
+        session.permissionRisk = risk
+        sessions[sessionId] = session
+    }
+
+    /// Apply Codex's `session_meta.source.subagent` to the session. Subagent
+    /// label is session-level (set once from line 1 of the rollout). Mirrors
+    /// `setCodexModelDisplayName` — create-or-update so bootstrap races with
+    /// SessionScanner don't drop the label.
+    public func setCodexSubagentLabel(
+        sessionId: String,
+        cwd: String?,
+        transcriptPath: String?,
+        label: String
+    ) {
+        var session = sessions[sessionId] ?? SessionInfo(
+            id: sessionId,
+            cwd: cwd,
+            agent: .codex,
+            state: .idle,
+            startedAt: Date()
+        )
+        if session.cwd == nil { session.cwd = cwd }
+        if session.transcriptPath == nil { session.transcriptPath = transcriptPath }
+        if sessions[sessionId] == nil {
+            session.source = .detected
+        }
+        session.subagentLabel = label
         sessions[sessionId] = session
     }
 

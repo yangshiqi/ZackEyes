@@ -741,6 +741,33 @@ extension AppDelegate: CodexJsonlTailerDelegate {
         )
     }
 
+    /// Tailer detected Codex's `session_meta.source.subagent`. Session-level,
+    /// fires once at watcher attach time.
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectSubagent event: CodexSubagentEvent) {
+        sessionStore.setCodexSubagentLabel(
+            sessionId: event.sessionId,
+            cwd: event.cwd,
+            transcriptPath: event.transcriptPath,
+            label: event.subagentLabel
+        )
+    }
+
+    /// Tailer detected Codex's per-turn approval/sandbox policy. Map to the
+    /// cross-agent risk enum here (off the parser's nonisolated path) and
+    /// apply to the session. nil = no badge.
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectPolicyChanged event: CodexPolicyEvent) {
+        let risk = PermissionRiskLevel.fromCodex(
+            approvalPolicy: event.approvalPolicy,
+            sandboxType: event.sandboxType
+        )
+        sessionStore.setCodexPermissionRisk(
+            sessionId: event.sessionId,
+            cwd: event.cwd,
+            transcriptPath: event.transcriptPath,
+            risk: risk
+        )
+    }
+
     /// Tailer detected Codex's `event_msg.token_count` context metrics.
     /// Codex hooks do not carry Claude-style `context_window`, so this path
     /// fills the same SessionInfo fields from rollout JSONL.

@@ -468,4 +468,97 @@ struct SessionStoreTests {
         #expect(store.sessions["s1"]?.pendingPermission != nil)
     }
 
+    // MARK: - PermissionRiskLevel mapping
+
+    @Test func claudeModeMapping() {
+        #expect(PermissionRiskLevel.fromClaudeMode("default") == nil)
+        #expect(PermissionRiskLevel.fromClaudeMode("acceptEdits") == .auto)
+        #expect(PermissionRiskLevel.fromClaudeMode("bypassPermissions") == .yolo)
+        #expect(PermissionRiskLevel.fromClaudeMode("plan") == .plan)
+        #expect(PermissionRiskLevel.fromClaudeMode("nonsense") == nil)
+    }
+
+    @Test func codexPolicyMapping() {
+        // Default (on-request + workspace-write) → no badge
+        #expect(PermissionRiskLevel.fromCodex(approvalPolicy: "on-request", sandboxType: "workspace-write") == nil)
+        // Read-only is harmless even with `never`
+        #expect(PermissionRiskLevel.fromCodex(approvalPolicy: "never", sandboxType: "read-only") == nil)
+        // Silent edits = .auto
+        #expect(PermissionRiskLevel.fromCodex(approvalPolicy: "never", sandboxType: "workspace-write") == .auto)
+        // Asks but no sandbox = .auto
+        #expect(PermissionRiskLevel.fromCodex(approvalPolicy: "on-request", sandboxType: "danger-full-access") == .auto)
+        // Silent + unbounded = .yolo
+        #expect(PermissionRiskLevel.fromCodex(approvalPolicy: "never", sandboxType: "danger-full-access") == .yolo)
+        // Nil inputs → default-assumption (on-request + workspace-write) → nil
+        #expect(PermissionRiskLevel.fromCodex(approvalPolicy: nil, sandboxType: nil) == nil)
+    }
+
+    @Test func claudeEventStampsPermissionRisk() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+
+        // Default mode = no badge.
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreToolUse",
+            sessionId: "s1",
+            toolName: "Bash",
+            permissionMode: "default"
+        ))
+        #expect(store.sessions["s1"]?.permissionRisk == nil)
+
+        // Switch to acceptEdits → .auto badge.
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreToolUse",
+            sessionId: "s1",
+            toolName: "Bash",
+            permissionMode: "acceptEdits"
+        ))
+        #expect(store.sessions["s1"]?.permissionRisk == .auto)
+
+        // Switch back to default → badge clears.
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreToolUse",
+            sessionId: "s1",
+            toolName: "Bash",
+            permissionMode: "default"
+        ))
+        #expect(store.sessions["s1"]?.permissionRisk == nil)
+    }
+
+    @Test func codexEventDoesNotStampViaPermissionMode() {
+        // Defensive: codex hook events that happen to carry a permission_mode
+        // field (shouldn't happen, but the agent flag gates us) must not
+        // pollute the codex permissionRisk path — that lives behind the tailer.
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "SessionStart",
+            agent: .codex,
+            sessionId: "s1",
+            cwd: "/tmp"
+        ))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreToolUse",
+            agent: .codex,
+            sessionId: "s1",
+            toolName: "shell",
+            permissionMode: "acceptEdits"  // pretend codex sent it
+        ))
+        #expect(store.sessions["s1"]?.permissionRisk == nil)
+    }
+
+    @Test func setCodexPermissionRiskCreatesDetectedSession() {
+        let store = SessionStore()
+        store.setCodexPermissionRisk(
+            sessionId: "codex-1",
+            cwd: "/proj",
+            transcriptPath: "/tmp/rollout.jsonl",
+            risk: .auto
+        )
+        let session = store.sessions["codex-1"]
+        #expect(session?.permissionRisk == .auto)
+        #expect(session?.source == .detected)
+        #expect(session?.agent == .codex)
+        #expect(session?.cwd == "/proj")
+    }
+
 }

@@ -103,7 +103,11 @@ struct NotchExpandedView: View {
 
                     Spacer(minLength: 4)
 
-                    AgentBadge(agent: session.agent)
+                    AgentBadge(agent: session.agent, subagentLabel: session.subagentLabel)
+
+                    if let risk = session.permissionRisk {
+                        PermissionBadge(risk: risk)
+                    }
 
                     Text(session.displayName)
                         .font(.system(size: 9, weight: .medium))
