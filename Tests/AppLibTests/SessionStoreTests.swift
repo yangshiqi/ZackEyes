@@ -471,6 +471,8 @@ struct SessionStoreTests {
 
         #expect(store.sessions["s1"]?.pendingPermission == nil,
                 "UserPromptSubmit must clear a stale AskUQ popup")
+        #expect(store.sessions["s1"]?.state == .working,
+                "session must drop out of .waiting once the AskUQ clears, otherwise it stays wrongly prioritized in the UI ranking")
         #expect(store.sessions["s1"]?.lastUserPrompt == "actually do this instead")
     }
 

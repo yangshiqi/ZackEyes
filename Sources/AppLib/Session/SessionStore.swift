@@ -256,8 +256,13 @@ public final class SessionStore: ObservableObject {
             // signal that the question is dead — clear here, gated on
             // isAskUserQuestion so blocking PermissionRequests (which need a
             // real socket responder) are never stripped underneath.
+            // Also reset state to .working — handlePermissionRequest left it
+            // at .waiting, and without this the session would stay flagged
+            // as waiting (wrongly prioritized in the UI ranking) even though
+            // there's nothing waiting on the user anymore.
             if session.pendingPermission?.isAskUserQuestion == true {
                 session.pendingPermission = nil
+                session.state = .working
             }
             sessions[sid] = session
 
