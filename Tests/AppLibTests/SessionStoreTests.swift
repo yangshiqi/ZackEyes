@@ -442,6 +442,93 @@ struct SessionStoreTests {
         #expect(store.sessions["s1"]?.state == .working)
     }
 
+    @Test @MainActor func userPromptSubmit_clearsStaleAskUQPopup() {
+        // Reject-by-new-prompt: user ESC'd the in-terminal AskUQ and typed a
+        // new prompt instead of selecting an option. CC does NOT fire
+        // PostToolUse for that path, so the only clearing signal is the
+        // incoming UserPromptSubmit — without this the popup is stranded
+        // until the next Stop (potentially minutes).
+        let store = SessionStore()
+        let pending = PendingPermission(
+            toolName: "AskUserQuestion",
+            toolInput: ["questions": [
+                ["question": "Q?", "multiSelect": false,
+                 "options": [["label": "x", "description": ""]]]
+            ]],
+            cwd: "/tmp",
+            responder: { _ in }
+        )
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+        #expect(store.sessions["s1"]?.pendingPermission != nil)
+
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "UserPromptSubmit",
+            sessionId: "s1",
+            cwd: "/tmp",
+            userPrompt: "actually do this instead"
+        ))
+
+        #expect(store.sessions["s1"]?.pendingPermission == nil,
+                "UserPromptSubmit must clear a stale AskUQ popup")
+        #expect(store.sessions["s1"]?.state == .working,
+                "session must drop out of .waiting once the AskUQ clears, otherwise it stays wrongly prioritized in the UI ranking")
+        #expect(store.sessions["s1"]?.lastUserPrompt == "actually do this instead")
+    }
+
+    @Test @MainActor func userPromptSubmit_doesNotClearBlockingPermission() {
+        // Counter-test for the isAskUserQuestion gate: a non-AskUQ blocking
+        // PermissionRequest (Bash/Edit/etc.) carries a real socket responder.
+        // Clearing it on UserPromptSubmit would leak the bridge socket fd
+        // until POLLHUP and drop the user's pending Allow/Deny gesture.
+        let store = SessionStore()
+        let responder = Box<BridgeResponse>()
+        let pending = PendingPermission(
+            toolName: "Bash",
+            toolInput: ["command": "rm -rf /"],
+            cwd: "/tmp",
+            responder: { responder.value = $0 }
+        )
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "UserPromptSubmit",
+            sessionId: "s1",
+            cwd: "/tmp",
+            userPrompt: "noise"
+        ))
+
+        #expect(store.sessions["s1"]?.pendingPermission != nil,
+                "blocking PermissionRequest must survive UserPromptSubmit")
+        #expect(responder.value == nil,
+                "the socket responder must not be called from the clearing path")
+    }
+
+    @Test @MainActor func stop_clearsStaleAskUQPopup() {
+        // Backstop for UserPromptSubmit: if a turn ends with an AskUQ still
+        // pending (no rejection prompt, no PostToolUse fired — e.g. the
+        // agent self-cancelled), the popup is unresolvable. Stop catches it.
+        let store = SessionStore()
+        let pending = PendingPermission(
+            toolName: "AskUserQuestion",
+            toolInput: ["questions": [
+                ["question": "Q?", "multiSelect": false,
+                 "options": [["label": "x", "description": ""]]]
+            ]],
+            cwd: "/tmp",
+            responder: { _ in }
+        )
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+
+        store.handleEvent(BridgeEvent(bridgeEvent: "Stop", sessionId: "s1", cwd: "/tmp"))
+
+        #expect(store.sessions["s1"]?.pendingPermission == nil,
+                "Stop must clear a stale AskUQ popup")
+        #expect(store.sessions["s1"]?.state == .idle)
+    }
+
     @Test @MainActor func postToolUseOtherTool_doesNotClearAskUQPopup() {
         // Sanity: a PostToolUse for some unrelated tool must not steal the
         // dismiss path from a still-live AskUQ popup.

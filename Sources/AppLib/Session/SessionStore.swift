@@ -248,6 +248,22 @@ public final class SessionStore: ObservableObject {
             session.errorAt = nil
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
+            // Reject-by-new-prompt path: user ESC'd an open AskUQ and typed a
+            // new prompt instead of picking an option. CC synthesizes a
+            // "User rejected tool use" tool_result and does NOT fire
+            // PostToolUse, so the popup-clearing branch in PostToolUse never
+            // runs. Same-session UserPromptSubmit is the earliest reliable
+            // signal that the question is dead — clear here, gated on
+            // isAskUserQuestion so blocking PermissionRequests (which need a
+            // real socket responder) are never stripped underneath.
+            // Also reset state to .working — handlePermissionRequest left it
+            // at .waiting, and without this the session would stay flagged
+            // as waiting (wrongly prioritized in the UI ranking) even though
+            // there's nothing waiting on the user anymore.
+            if session.pendingPermission?.isAskUserQuestion == true {
+                session.pendingPermission = nil
+                session.state = .working
+            }
             sessions[sid] = session
 
         case "PostToolUse":
@@ -296,6 +312,12 @@ public final class SessionStore: ObservableObject {
                 }
             }
             session.lastActiveAt = Date()
+            // Backstop for the UserPromptSubmit branch above: if a turn ends
+            // with a stale AskUQ still pending (no rejection prompt, no
+            // PostToolUse fired), it can never be resolved. Same gate.
+            if session.pendingPermission?.isAskUserQuestion == true {
+                session.pendingPermission = nil
+            }
             sessions[sid] = session
 
         case "Notification":
