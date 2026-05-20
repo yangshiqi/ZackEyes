@@ -15,6 +15,33 @@ import {
 } from '../lib/release.mjs';
 
 const description = 'ZackEyes turns the MacBook notch into a live command center for Claude Code and Codex CLI sessions, approvals, tasks, rate limits, terminal tab jump, themes, and display modes.';
+const screenshots = [
+  {
+    src: '/screenshots/dual-agent-support.webp',
+    alt: 'ZackEyes panel showing Claude Code and Codex CLI sessions together with separate usage tracks.',
+    label: 'Claude plus Codex',
+    title: 'Split usage tracks and badges keep Claude Code and Codex CLI sessions separate.',
+    width: 1008,
+    height: 854
+  },
+  {
+    src: '/screenshots/terminal-confirmation.webp',
+    alt: 'ZackEyes AskUserQuestion prompt with a button that sends the user back to answer in terminal.',
+    label: 'Terminal handoff',
+    title: 'AskUserQuestion moments show the prompt and send you back to the terminal when needed.',
+    width: 1004,
+    height: 910
+  },
+  {
+    src: '/screenshots/compact-display-menu.webp',
+    alt: 'ZackEyes menu showing compact display selection between Claude and Codex.',
+    label: 'Compact display',
+    title: 'Choose which agent owns the collapsed island when both agents are active.',
+    width: 1594,
+    height: 440,
+    variant: 'wide'
+  }
+];
 const faqItems = [
   {
     question: 'Which macOS versions does ZackEyes support?',
@@ -161,6 +188,37 @@ const faqStructuredData = {
             <p class="story-caption">
               When the agent starts, stalls, asks, finishes, or hits a limit, the signal appears where your eyes already are: the top edge of the screen.
             </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="screenshot-band" aria-labelledby="screenshots-title">
+        <div class="section-inner">
+          <div class="section-eyebrow">Product screenshots</div>
+          <h2 class="section-title" id="screenshots-title">Real agent state, not a dashboard fantasy.</h2>
+          <p class="section-copy">
+            These are live ZackEyes surfaces. The panel screenshots show different details in the same workflow; the wide capture shows the compact display switcher in the macOS menu.
+          </p>
+
+          <div class="screenshot-showcase" aria-label="ZackEyes screenshots">
+            {screenshots.map((shot) => (
+              <figure class:list={['screenshot-tile', { 'is-wide': shot.variant === 'wide' }]}>
+                <div class="screenshot-frame">
+                  <img
+                    src={shot.src}
+                    alt={shot.alt}
+                    width={shot.width}
+                    height={shot.height}
+                    loading="lazy"
+                    decoding="async"
+                  />
+                </div>
+                <figcaption>
+                  <span>{shot.label}</span>
+                  {shot.title}
+                </figcaption>
+              </figure>
+            ))}
           </div>
         </div>
       </section>

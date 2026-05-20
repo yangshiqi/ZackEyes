@@ -23,14 +23,11 @@ describe('production output budgets', { skip: !hasBuild }, () => {
     const htmlBytes = statSync(join(dist, 'index.html')).size;
     const cssBytes = cssFile ? statSync(join(astroDir, cssFile)).size : 0;
 
-    // 27 KB ceiling: the previous 25.5 KB margin covered version-string
-    // growth (~100 bytes), but the new "Open source" section on the
-    // homepage (eyebrow + h2 + copy + 3 outbound links) adds ~1 KB of
-    // real content. 27 KB still catches the things this test is here
-    // to catch — accidental React islands, generated JS bundles, or a
-    // <script> blob someone added by accident — while leaving slack
-    // for future version-string growth.
-    assert.ok(htmlBytes < 27_000, `index.html is ${htmlBytes} bytes`);
+    // 30 KB ceiling: the homepage now includes a real product screenshot
+    // section with accessible image metadata. Keep this tight enough to
+    // catch accidental React islands, generated JS bundles, or large inline
+    // blobs while allowing real static marketing content to ship.
+    assert.ok(htmlBytes < 30_000, `index.html is ${htmlBytes} bytes`);
     assert.ok(cssFile, 'Expected a generated CSS asset in dist/_astro');
     assert.ok(cssBytes < 35_000, `homepage CSS is ${cssBytes} bytes`);
   });

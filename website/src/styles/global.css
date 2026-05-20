@@ -590,6 +590,7 @@ h1 {
 
 .band,
 .split-band,
+.screenshot-band,
 .faq-band,
 .policy-band,
 .final-cta {
@@ -647,6 +648,78 @@ h1 {
 .footer a,
 .policy-lede a {
   color: var(--green);
+}
+
+.screenshot-band {
+  padding: 112px 32px;
+  border-top: 1px solid var(--line);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(91, 231, 255, 0.1), transparent 32rem),
+    linear-gradient(180deg, rgba(12, 13, 10, 0.82), rgba(5, 6, 5, 0.76));
+  contain: layout paint;
+}
+
+.screenshot-showcase {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 48px;
+  align-items: start;
+}
+
+.screenshot-tile {
+  margin: 0;
+  min-width: 0;
+  grid-column: span 1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(2, 3, 2, 0.72);
+  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  overflow: hidden;
+}
+
+.screenshot-tile.is-wide {
+  grid-column: span 2;
+}
+
+.screenshot-frame {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1.12 / 1;
+  background: #020302;
+}
+
+.screenshot-tile.is-wide .screenshot-frame {
+  aspect-ratio: auto;
+}
+
+.screenshot-tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.screenshot-tile.is-wide img {
+  height: auto;
+}
+
+.screenshot-tile figcaption {
+  padding: 16px;
+  color: #c8c8bd;
+  font-size: 14px;
+  line-height: 1.55;
+  border-top: 1px solid rgba(245, 241, 232, 0.1);
+  background: rgba(9, 11, 9, 0.92);
+}
+
+.screenshot-tile figcaption span {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--green);
+  font-size: 11px;
+  font-weight: 860;
+  text-transform: uppercase;
 }
 
 .feature-grid {
@@ -1192,9 +1265,15 @@ h1 {
 @media (max-width: 980px) {
   .hero-grid,
   .split-grid,
+  .screenshot-showcase,
   .policy-columns,
   .docs-layout {
     grid-template-columns: 1fr;
+  }
+
+  .screenshot-tile,
+  .screenshot-tile.is-wide {
+    grid-column: auto;
   }
 
   .device-stage {
@@ -1252,6 +1331,7 @@ h1 {
   .hero,
   .band,
   .split-band,
+  .screenshot-band,
   .faq-band,
   .policy-hero,
   .policy-band,
@@ -1303,6 +1383,14 @@ h1 {
     width: 212px;
   }
 
+  .screenshot-showcase {
+    margin-top: 34px;
+  }
+
+  .screenshot-tile figcaption {
+    padding: 14px;
+  }
+
   .kinetic-line {
     font-size: 50px;
   }
@@ -1319,6 +1407,7 @@ h1 {
   .kinetic-stack,
   .section-inner,
   .split-grid,
+  .screenshot-showcase,
   .policy-shell {
     width: 354px;
     max-width: 100%;
