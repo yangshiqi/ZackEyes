@@ -202,7 +202,7 @@ const faqStructuredData = {
 
           <div class="screenshot-showcase" aria-label="ZackEyes screenshots">
             {screenshots.map((shot) => (
-              <figure class={`screenshot-tile ${shot.variant === 'wide' ? 'is-wide' : ''}`}>
+              <figure class:list={['screenshot-tile', { 'is-wide': shot.variant === 'wide' }]}>
                 <div class="screenshot-frame">
                   <img
                     src={shot.src}
