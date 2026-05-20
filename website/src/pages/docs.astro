@@ -2,7 +2,7 @@
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
-import { appVersion, downloadUrl, issuesUrl } from '../lib/release.mjs';
+import { appVersion, downloadUrl, issuesUrl, sourceUrl } from '../lib/release.mjs';
 
 const description = 'Install, uninstall, update, and compatibility notes for ZackEyes on macOS 14 and newer, including Claude Code and Codex CLI workflows.';
 const docsStructuredData = [
@@ -101,6 +101,24 @@ const docsStructuredData = [
               <p>The app menu lets you change the global hotkey, hide or show the island, and pick whether the compact pill shows Claude or Codex usage.</p>
             </article>
           </div>
+        </div>
+      </section>
+
+      <section class="policy-band" aria-labelledby="source-title">
+        <div class="policy-shell docs-layout">
+          <div>
+            <h2 class="section-title" id="source-title">Build from source.</h2>
+            <p class="section-copy">
+              ZackEyes is MIT-licensed and the full app, bridge CLI, and this website live in one monorepo. If you'd rather build the DMG yourself, audit the hook installer, or hack on a feature, clone the repo and run the same Makefile we ship from.
+            </p>
+          </div>
+          <ol class="step-list">
+            <li><strong>Clone the source.</strong> <code>git clone https://github.com/yangshiqi/ZackEyes.git</code></li>
+            <li><strong>Need Xcode Command Line Tools.</strong> <code>xcode-select --install</code> if you haven't already; the build uses Swift 6 from the system toolchain.</li>
+            <li><strong>Build the app.</strong> <code>cd ZackEyes && make app</code> produces a debug bundle. <code>make app-release</code> builds the universal release bundle. <code>make dmg</code> wraps it into a drag-to-Applications DMG.</li>
+            <li><strong>Run the tests.</strong> <code>swift test</code> exercises the bridge, hook installer, socket types, and notch logic in &lt; 2s.</li>
+            <li><strong>Contribute.</strong> Pick a <a href={`${sourceUrl}/contribute`} rel="noopener">good first issue</a>, open a PR. See <a href={sourceUrl} rel="noopener">the repo README</a> for the workflow.</li>
+          </ol>
         </div>
       </section>
 
