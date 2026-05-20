@@ -100,7 +100,7 @@ All notable changes to ZackEyes. Format follows [Keep a Changelog](https://keepa
 
 #### Real subscriber rate limits
 - Bridge installs itself as Claude Code's `statusLine` handler to receive `rate_limits` data via stdin
-- Skips installation if another tool (e.g. Vibe Island) already owns `statusLine` — never breaks existing setups
+- Skips installation if another tool already owns `statusLine` — never breaks existing setups
 - `UsageTracker` parses `five_hour.used_percentage`, `seven_day.used_percentage`, and `resets_at` timestamps
 - Shows real plan usage with reset countdowns (`resets in 3h 36m`, `resets in 2d`)
 - Color thresholds: green (used <50%) → orange (50-85%) → red (>85%)

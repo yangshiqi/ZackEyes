@@ -2,7 +2,7 @@
 
 ## 项目定位
 
-ZackEyes 是 macOS 原生应用，将 MacBook 刘海（Dynamic Island）区域变为 AI 编码代理的实时控制面板。**自 v0.3.0 起同时支持 Claude Code 和 OpenAI Codex CLI**，两边会话并存于同一刘海面板。定位为 Vibe Island 的免费替代品。
+ZackEyes 是 macOS 原生应用，将 MacBook 刘海（Dynamic Island）区域变为 AI 编码代理的实时控制面板。**自 v0.3.0 起同时支持 Claude Code 和 OpenAI Codex CLI**，两边会话并存于同一刘海面板。
 
 ## 组件架构
 
@@ -112,7 +112,7 @@ Claude Code 周期性触发 statusLine command（每隔几秒）
     → SwiftUI 视图响应式更新（进度条 + 剩余百分比 + reset 倒计时）
 ```
 
-⚠️ 与其他 statusLine 工具（如 Vibe Island）冲突时，HookInstaller 会**保留对方的安装**，不强占。没有第三方 statusLine 时，可选的 `~/.zackeyes/bin/statusline-user` 可作为用户自定义显示脚本；ZackEyes mux 会把同一份 stdin 同时喂给后台 bridge 和该脚本，并只透出用户脚本的 stdout。
+⚠️ 与其他 statusLine 工具冲突时，HookInstaller 会**保留对方的安装**，不强占。没有第三方 statusLine 时，可选的 `~/.zackeyes/bin/statusline-user` 可作为用户自定义显示脚本；ZackEyes mux 会把同一份 stdin 同时喂给后台 bridge 和该脚本，并只透出用户脚本的 stdout。
 
 ### Simulated Notch 状态机
 
@@ -318,6 +318,6 @@ ccisland/
 ## Known Risks
 
 详见 [设计文档](docs/superpowers/specs/2026-04-05-zackeyes-mvp-design.md#known-risks):
-- PermissionRequest hook 事件未在官方文档列出（Vibe Island 验证可行）
+- PermissionRequest hook 事件未在官方文档列出（已通过外部实践验证可行）
 - PermissionRequest 响应格式基于逆向推断
 - 已准备 PreToolUse `permissionDecision` 作为 fallback 方案
