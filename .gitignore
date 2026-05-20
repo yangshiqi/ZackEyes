@@ -22,3 +22,6 @@ DerivedData/
 
 # Claude Code local state (scheduled tasks lock, per-project settings)
 .claude/
+
+# Claude Code context cache (per-project, not part of source)
+.context/

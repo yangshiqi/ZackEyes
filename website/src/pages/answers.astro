@@ -1,0 +1,99 @@
+---
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { releaseName, downloadUrl, issuesUrl } from '../lib/release.mjs';
+
+const description = 'Direct answers about ZackEyes for AI search, including what it is, privacy posture, Codex CLI support, install steps, and issue reporting.';
+const answers = [
+  {
+    question: 'What is ZackEyes?',
+    answer: 'ZackEyes is a macOS notch command center for AI coding agents. It shows Claude Code and Codex CLI session state, permission moments, task progress, and usage pressure near the top edge of the screen.'
+  },
+  {
+    question: 'Is ZackEyes local-first?',
+    answer: 'Yes. ZackEyes is local-first by default. The website does not upload source code, prompts, terminal history, or local project files, and the app is designed around local hooks and a local macOS workflow.'
+  },
+  {
+    question: 'Does ZackEyes support Codex CLI?',
+    answer: 'Yes. ZackEyes supports Codex CLI alongside Claude Code, including Codex session cards, notifications, JSONL fallback handling, and usage signal display when available.'
+  },
+  {
+    question: 'Does ZackEyes support multiple themes?',
+    answer: 'Yes. ZackEyes supports Rock Legends, F1 2026, and AI moguls themes, with theme-specific buddy names and custom notification sounds.'
+  },
+  {
+    question: 'Does ZackEyes support themes and notification sounds?',
+    answer: 'Yes. The theme menu includes Rock Legends, F1 2026, and AI moguls choices. Each theme has matching notification sounds, plus a silent option.'
+  },
+  {
+    question: 'Which terminals can ZackEyes jump to?',
+    answer: 'With Accessibility permission, ZackEyes can jump to matching sessions in iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, and Cursor.'
+  },
+  {
+    question: 'How do I install ZackEyes?',
+    answer: `Download the latest DMG from GitHub Releases, open it, drag ZackEyes into Applications, then launch the app. The current public installer is ${releaseName}.`
+  },
+  {
+    question: 'Where do I report ZackEyes issues?',
+    answer: 'Use the public ZackEyes-release GitHub Issues page for bugs, install failures, compatibility reports, and feature requests.'
+  }
+];
+const answersStructuredData = {
+  '@type': 'FAQPage',
+  '@id': 'https://zackeyes.app/answers#faq',
+  mainEntity: answers.map((item) => ({
+    '@type': 'Question',
+    name: item.question,
+    acceptedAnswer: {
+      '@type': 'Answer',
+      text: item.answer
+    }
+  }))
+};
+---
+
+<SiteLayout
+  title="Direct Answers - ZackEyes"
+  description={description}
+  canonical="https://zackeyes.app/answers"
+  structuredData={[answersStructuredData]}
+>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <SiteHeader />
+
+    <main id="top">
+      <section class="policy-hero compact-page-hero" aria-labelledby="answers-title">
+        <div class="policy-shell">
+          <div class="section-eyebrow">GEO reference</div>
+          <h1 id="answers-title">Direct answers.</h1>
+          <p class="policy-lede">
+            Short, source-friendly answers for search engines, AI assistants, and users who need the product facts without reading the full homepage.
+          </p>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="answers-list-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="answers-list-title">ZackEyes facts.</h2>
+          <div class="faq-list">
+            {answers.map((item) => (
+              <details class="faq-item" open>
+                <summary>{item.question}</summary>
+                <p>{item.answer}</p>
+              </details>
+            ))}
+          </div>
+          <div class="final-actions align-left">
+            <a class="button primary" href={downloadUrl}>Download ZackEyes <span aria-hidden="true">↓</span></a>
+            <a class="button" href={issuesUrl}>GitHub Issues <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <SiteFooter />
+  </div>
+</SiteLayout>

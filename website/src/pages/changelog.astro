@@ -1,0 +1,246 @@
+---
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
+
+const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
+const releases = [
+  {
+    version: 'ZackEyes 0.4.4',
+    date: 'Published May 18, 2026',
+    summary: 'Two notch additions that close the Codex/Claude visibility gap: model name, agent label, subagent badge, and a cross-agent permission-risk indicator.',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Codex sessions now show the model name (gpt-5.5, codex-auto-review, etc.) next to context-window size in the popup. Codex has no Claude-style StatusLine hook, so the value is parsed from the per-session rollout JSONL — resumed sessions surface the model immediately at attach time, and subsequent turns keep it fresh.',
+          'Subagent badge: guardian / auto-review / other Codex subagent threads now render as [CODEX • GUARDIAN] in the session card, so they are visually distinct from your main user thread instead of looking identical to it.',
+          'Permission-risk badge for both agents: PLAN (blue) for Claude plan mode, AUTO (amber) for Claude acceptEdits or Codex never+workspace-write or Codex on-request+danger-full-access, YOLO (red) for Claude bypassPermissions or Codex never+danger-full-access. Hidden in the default "asks every time" state — the badge job is to catch your eye precisely when the session will not ask.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'The assistant-reply row in the notch popup no longer says "Claude:" for Codex sessions — it now correctly switches to "Codex:" based on the session agent.'
+        ]
+      }
+    ]
+  },
+  {
+    version: 'ZackEyes 0.4.3',
+    date: 'Published May 18, 2026',
+    summary: 'Codex resumed-session visibility fix and terminal-jump click resilience.',
+    highlights: [
+      {
+        label: 'Fixed',
+        items: [
+          'Resumed Codex sessions (codex --resume) now surface in the notch even when their rollout file lives in an older YYYY/MM/DD directory; the scanner walks every date directory and filters by file mtime instead of pruning by directory name.',
+          'Click on a session card always lands somewhere: when the cached agent PID is stale or accessibility-matching cannot pick a tab, the click falls back to cwd-based AX matching and finally activates the first running terminal, replacing the silent "完全没反应" failure mode.'
+        ]
+      }
+    ]
+  },
+  {
+    version: 'ZackEyes 0.4.2',
+    date: 'Published May 16, 2026',
+    summary: 'Codex popup context usage fixes, Codex notification noise reduction, and hook launcher/statusline resilience updates.',
+    highlights: [
+      {
+        label: 'Fixed',
+        items: [
+          'Codex popup context usage fixes for clearer runtime state in the notch.',
+          'Notification noise reduction so Codex completion signals are less repetitive.'
+        ]
+      },
+      {
+        label: 'Resilience',
+        items: [
+          'Hook launcher and statusline resilience updates for more reliable agent event delivery.',
+          'Keeps the public DMG release channel as the installer source for authenticated-free updates.'
+        ]
+      }
+    ]
+  },
+  {
+    version: 'ZackEyes 0.4.1',
+    date: 'Published May 12, 2026',
+    summary: 'Maintenance release in the public update channel.',
+    highlights: [
+      {
+        label: 'Release channel',
+        items: [
+          'Published as a public GitHub Releases DMG for the in-app updater.',
+          'Kept the no-authentication download path for users outside the private source repository.'
+        ]
+      }
+    ]
+  },
+  {
+    version: 'ZackEyes 0.4.0',
+    date: 'Published May 11, 2026',
+    summary: 'Maintenance release baseline for the 0.4 series.',
+    highlights: [
+      {
+        label: 'Release channel',
+        items: [
+          'Established the 0.4 series public release line.',
+          'Distributed through the same GitHub Releases channel used by the in-app update checker.'
+        ]
+      }
+    ]
+  },
+  {
+    version: 'ZackEyes 0.3.2',
+    date: 'Published May 5, 2026',
+    summary: 'Codex session state fixes and compatibility documentation improvements.',
+    highlights: [
+      {
+        label: 'Fixed',
+        items: [
+          'Codex session state fixes for cards that could get stuck.',
+          'Terminal click-to-jump behavior restored for affected Codex sessions.'
+        ]
+      },
+      {
+        label: 'Docs',
+        items: [
+          'Improved Codex compatibility documentation for the v0.3.0 and v0.3.1 behavior changes.'
+        ]
+      }
+    ]
+  },
+  {
+    version: 'ZackEyes 0.3.1',
+    date: 'Published May 3, 2026',
+    summary: 'Codex session recency and liveness fixes so stale rollout cards no longer pile up in the notch.',
+    highlights: [
+      {
+        label: 'Fixed',
+        items: [
+          'Idle Codex cards are pruned instead of lingering long after the TUI closes.',
+          'Codex sessions with no pending permission and no recent activity are evicted after a short liveness window.'
+        ]
+      },
+      {
+        label: 'Scanner',
+        items: [
+          'Per-agent recency windows: Claude defaults to a longer lifecycle window, while Codex uses a tighter rollout window.',
+          'The JSONL tailer can recreate a Codex session on the next task completion event.'
+        ]
+      }
+    ]
+  },
+  {
+    version: 'ZackEyes 0.3.0',
+    date: 'Published May 3, 2026',
+    summary: 'Added OpenAI Codex CLI as a parallel agent alongside Claude Code, including Codex hooks, JSONL tailing, usage limits, and tagged notifications.',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Both agents in one notch: Claude Code and Codex CLI sessions, permissions, errors, and quota signals share the same Dynamic Island UI.',
+          'Codex hook installation for SessionStart, PreToolUse, PostToolUse, PermissionRequest, Stop, and UserPromptSubmit events.',
+          'CodexJsonlTailer watches already-running Codex rollouts and surfaces task completion without requiring a restart.'
+        ]
+      },
+      {
+        label: 'Interface',
+        items: [
+          'Agent badges identify each card as Claude or Codex.',
+          'Compact display setting lets users choose which agent quota appears in the always-visible pill.'
+        ]
+      }
+    ]
+  },
+  {
+    version: 'ZackEyes 0.2.9',
+    date: 'Published Apr 27, 2026',
+    summary: 'Public release channel and in-app DMG download without a GitHub token.',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'In-app DMG download for new versions.',
+          'Update checker polls the public ZackEyes-release repository instead of private source releases.'
+        ]
+      },
+      {
+        label: 'Removed',
+        items: [
+          'GitHub token requirement for update checks.'
+        ]
+      }
+    ]
+  }
+];
+const changelogStructuredData = {
+  '@type': 'ItemList',
+  '@id': 'https://zackeyes.app/changelog#releases',
+  name: 'ZackEyes release notes',
+  itemListElement: releases.map((release, index) => ({
+    '@type': 'ListItem',
+    position: index + 1,
+    name: release.version,
+    description: [release.summary, ...release.highlights.flatMap((group) => group.items)].join(' ')
+  }))
+};
+---
+
+<SiteLayout
+  title="Changelog - ZackEyes"
+  description={description}
+  canonical="https://zackeyes.app/changelog"
+  structuredData={[changelogStructuredData]}
+>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <SiteHeader />
+
+    <main id="top">
+      <section class="policy-hero compact-page-hero" aria-labelledby="changelog-title">
+        <div class="policy-shell">
+          <div class="section-eyebrow">Release channel</div>
+          <h1 id="changelog-title">Changelog.</h1>
+          <p class="policy-lede">
+            The current public release is {releaseName}. Installers are distributed through GitHub Releases so the app can check `/releases/latest` and download the DMG without GitHub authentication.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href={downloadUrl}>Download {releaseName} <span aria-hidden="true">↓</span></a>
+            <a class="button" href={releasesUrl}>GitHub Releases <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+      </section>
+
+      <section class="policy-band" aria-labelledby="release-title">
+        <div class="policy-shell">
+          <h2 class="section-title" id="release-title">Release notes.</h2>
+          <div class="timeline-list">
+            {releases.map((release) => (
+              <article class="timeline-item">
+                <span>{release.date}</span>
+                <h3>{release.version}</h3>
+                <p>{release.summary}</p>
+                <div class="release-highlights">
+                  {release.highlights.map((group) => (
+                    <section class="release-detail-list" aria-label={`${release.version} ${group.label}`}>
+                      <h4>{group.label}</h4>
+                      <ul>
+                        {group.items.map((item) => (
+                          <li>{item}</li>
+                        ))}
+                      </ul>
+                    </section>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <SiteFooter />
+  </div>
+</SiteLayout>

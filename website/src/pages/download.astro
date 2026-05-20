@@ -1,0 +1,159 @@
+---
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import {
+  appVersion,
+  releaseName,
+  downloadUrl,
+  releasesUrl,
+  issuesUrl,
+  downloadBytes,
+  downloadSize,
+  downloadBytesLabel,
+  downloadSha256
+} from '../lib/release.mjs';
+
+const description = `Download ${releaseName} for macOS, verify the DMG checksum, review compatibility, and report install issues or feature requests.`;
+const downloadStructuredData = [
+  {
+    '@type': 'SoftwareApplication',
+    '@id': 'https://zackeyes.app/download#software',
+    name: 'ZackEyes',
+    operatingSystem: 'macOS 14+',
+    applicationCategory: 'DeveloperApplication',
+    softwareVersion: appVersion,
+    downloadUrl,
+    fileSize: String(downloadBytes),
+    processorRequirements: 'Apple Silicon and Intel Mac',
+    featureList: [
+      'Claude Code and Codex CLI session visibility',
+      'Permission approval awareness',
+      'Rate-limit pressure display',
+      'Multiple themes',
+      'Real notch and simulated island display modes'
+    ]
+  },
+  {
+    '@type': 'HowTo',
+    '@id': 'https://zackeyes.app/download#install',
+    name: 'Download and install ZackEyes',
+    step: [
+      { '@type': 'HowToStep', name: 'Download the DMG', text: `Download ${releaseName} from the public GitHub release asset.` },
+      { '@type': 'HowToStep', name: 'Verify the checksum', text: `Compare the downloaded DMG SHA256 with ${downloadSha256}.` },
+      { '@type': 'HowToStep', name: 'Install the app', text: 'Open the DMG, drag ZackEyes into Applications, and launch it on macOS 14 or newer.' }
+    ]
+  }
+];
+---
+
+<SiteLayout
+  title="Download ZackEyes - macOS DMG"
+  description={description}
+  canonical="https://zackeyes.app/download"
+  structuredData={downloadStructuredData}
+>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <SiteHeader />
+
+    <main id="top">
+      <section class="policy-hero compact-page-hero" aria-labelledby="download-page-title">
+        <div class="policy-shell">
+          <div class="section-eyebrow">Current release</div>
+          <h1 id="download-page-title">Download ZackEyes.</h1>
+          <p class="policy-lede">
+            {releaseName} is the current public macOS DMG. It supports macOS 14 or newer, Apple Silicon + Intel Macs, Claude Code, Codex CLI, Multiple themes, terminal tab jump, and display modes for real notches or simulated Dynamic Island-style panels.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href={downloadUrl}>Download {releaseName} <span aria-hidden="true">↓</span></a>
+            <a class="button" href={releasesUrl}>All releases <span aria-hidden="true">↗</span></a>
+            <a class="button" href={issuesUrl}>Report issue <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="release-title">
+        <div class="section-inner">
+          <div class="section-eyebrow">Verify before opening</div>
+          <h2 class="section-title" id="release-title">Release details.</h2>
+          <dl class="download-meta expanded">
+            <div>
+              <dt>Version</dt>
+              <dd>{releaseName}</dd>
+            </div>
+            <div>
+              <dt>File</dt>
+              <dd>DMG, {downloadSize}, {downloadBytesLabel}</dd>
+            </div>
+            <div>
+              <dt>SHA256</dt>
+              <dd>{downloadSha256}</dd>
+            </div>
+            <div>
+              <dt>macOS</dt>
+              <dd>macOS 14 or newer</dd>
+            </div>
+            <div>
+              <dt>Architecture</dt>
+              <dd>Apple Silicon + Intel</dd>
+            </div>
+            <div>
+              <dt>Feedback</dt>
+              <dd><a href={issuesUrl}>GitHub Issues</a> for bugs, install failures, compatibility reports, and product requests.</dd>
+            </div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="policy-band" aria-labelledby="features-title">
+        <div class="policy-shell docs-layout">
+          <div>
+            <h2 class="section-title" id="features-title">What you get.</h2>
+            <p class="section-copy">
+              The app is built for developers who want agent state visible without keeping a hosted dashboard or second chat surface open.
+            </p>
+          </div>
+          <div class="policy-list">
+            <article>
+              <h3>Agent command center</h3>
+              <p>Claude Code and Codex CLI sessions, task state, permission prompts, completion, and usage pressure stay near the top edge of the screen.</p>
+            </article>
+            <article>
+              <h3>Multiple themes</h3>
+              <p>Choose Rock Legends, F1 2026, or AI moguls themes, then pair them with custom notification sounds or silence.</p>
+            </article>
+            <article>
+              <h3>Flexible display modes</h3>
+              <p>Use the MacBook notch, a simulated island on Macs without a notch, and the same workflow across menu bar and external display setups.</p>
+            </article>
+            <article>
+              <h3>Terminal and hotkey workflow</h3>
+              <p>Use terminal tab jump, a custom global hotkey, compact display selection, and in-app update checks without leaving the current project.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="policy-band" aria-labelledby="install-title">
+        <div class="policy-shell docs-layout">
+          <div>
+            <h2 class="section-title" id="install-title">Install.</h2>
+            <p class="section-copy">
+              The public release channel does not require GitHub authentication. Future app update checks can also use the public latest release endpoint.
+            </p>
+          </div>
+          <ol class="step-list">
+            <li><strong>Download the DMG.</strong> Use the primary button on this page or the GitHub Releases page.</li>
+            <li><strong>Verify the file.</strong> Compare SHA256 with `{downloadSha256}` if your workflow requires checksum validation.</li>
+            <li><strong>Move ZackEyes to Applications.</strong> Open the DMG and drag the app into `/Applications`.</li>
+            <li><strong>Launch ZackEyes.</strong> Start a fresh Claude Code or Codex CLI session so the local hooks can surface events.</li>
+          </ol>
+        </div>
+      </section>
+    </main>
+
+    <SiteFooter />
+  </div>
+</SiteLayout>

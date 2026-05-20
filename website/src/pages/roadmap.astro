@@ -1,0 +1,92 @@
+---
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { issuesUrl } from '../lib/release.mjs';
+
+const description = 'ZackEyes roadmap for agent support, task state, notifications, Codex compatibility, privacy controls, and macOS workflow improvements.';
+const roadmapItems = [
+  {
+    title: 'More agent support',
+    horizon: 'Exploration',
+    copy: 'Keep Claude Code and Codex CLI first-class while evaluating other local AI coding agents that expose reliable lifecycle and permission events.'
+  },
+  {
+    title: 'Richer task state',
+    horizon: 'Planned',
+    copy: 'Make long-running plans, task progress, waiting states, and completion signals easier to scan from the notch panel.'
+  },
+  {
+    title: 'Custom notifications',
+    horizon: 'Planned',
+    copy: 'Let users tune which events are noisy, quiet, time-sensitive, or hidden, especially across Claude and Codex sessions.'
+  },
+  {
+    title: 'Codex hook compatibility',
+    horizon: 'Ongoing',
+    copy: 'Continue improving Codex hook behavior, JSONL fallback handling, and session cleanup for threads started before hook installation.'
+  },
+  {
+    title: 'Privacy and logs controls',
+    horizon: 'Exploration',
+    copy: 'Expose clearer controls for local logs, local settings cleanup, and diagnostics that are safe to share in GitHub Issues.'
+  }
+];
+const roadmapStructuredData = {
+  '@type': 'ItemList',
+  '@id': 'https://zackeyes.app/roadmap#items',
+  name: 'ZackEyes roadmap',
+  itemListElement: roadmapItems.map((item, index) => ({
+    '@type': 'ListItem',
+    position: index + 1,
+    name: item.title,
+    description: item.copy
+  }))
+};
+---
+
+<SiteLayout
+  title="Roadmap - ZackEyes"
+  description={description}
+  canonical="https://zackeyes.app/roadmap"
+  structuredData={[roadmapStructuredData]}
+>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <SiteHeader />
+
+    <main id="top">
+      <section class="policy-hero compact-page-hero" aria-labelledby="roadmap-title">
+        <div class="policy-shell">
+          <div class="section-eyebrow">Product direction</div>
+          <h1 id="roadmap-title">Roadmap.</h1>
+          <p class="policy-lede">
+            ZackEyes is focused on reliable local agent awareness: more agent coverage, sharper session state, quieter notifications, and privacy controls that match a developer desktop workflow.
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href={issuesUrl}>Request a feature <span aria-hidden="true">↗</span></a>
+            <a class="button" href="/changelog">Read changelog</a>
+          </div>
+        </div>
+      </section>
+
+      <section class="policy-band" aria-labelledby="roadmap-items-title">
+        <div class="policy-shell">
+          <h2 class="section-title" id="roadmap-items-title">What is next.</h2>
+          <div class="timeline-list">
+            {roadmapItems.map((item) => (
+              <article class="timeline-item">
+                <span>{item.horizon}</span>
+                <h3>{item.title}</h3>
+                <p>{item.copy}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <SiteFooter />
+  </div>
+</SiteLayout>
