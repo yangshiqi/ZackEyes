@@ -85,14 +85,21 @@ dmg: app-release
 	@echo "✅ $(DMG_PATH)"
 	@du -h $(DMG_PATH) | cut -f1 | xargs -I{} echo "   size: {}"
 
-# Release workflow: bump version in Info.plist, build DMG, commit, tag,
-# push to source repo, then publish DMG to the public release repo.
+# Release workflow: bump version in Info.plist + website/ release
+# metadata, build DMG, commit, tag, push to source repo, then publish
+# DMG to the public release repo.
 # Usage:  make release VERSION=0.3.0
 # Optional: NOTES="changelog text" (defaults to "Release vVERSION")
 #
-# Recovery from partial failure: this target is NOT idempotent. If a step
-# fails after the version bump is committed, do NOT re-run `make release`
-# (the commit/tag steps will fail). Instead:
+# Recovery from partial failure: this target is NOT idempotent.
+#
+# Pre-commit failures (Info.plist bump, DMG build, website/ bump): the
+# working tree is dirty but no commit has been made. Either fix forward
+# (e.g. resolve the issue and re-run the failed step by hand, then run
+# the rest of `release` manually), or `git checkout -- Resources/Info.plist
+# website/` to revert and re-run `make release`.
+#
+# Post-commit failures (push, gh release create):
 #   - Push failed: re-run `git push && git push origin v<VERSION>` manually.
 #   - Source-repo `gh release create` failed: re-run that single command.
 #   - Public-repo `gh release create` failed: re-run that single command,
@@ -114,9 +121,20 @@ endif
 	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" Resources/Info.plist
 	@echo "=== Building DMG (before commit so failures are recoverable) ==="
 	$(MAKE) dmg
+	@echo "=== Bumping website/ release metadata (before commit so failures are recoverable) ==="
+	@# After the website was merged into this repo under website/, the
+	@# old cross-repo `gh workflow run` flow was replaced by a local
+	@# script that rewrites website/src/lib/release.mjs +
+	@# website/README.md + (optionally) website/src/pages/changelog.astro,
+	@# then runs pnpm build + pnpm test to catch consumer breakage. The
+	@# changes are staged and committed together with Info.plist below.
+	@NOTES_FILE=$$(mktemp); \
+	printf '%s' "$${NOTES:-Release v$(VERSION)}" > $$NOTES_FILE; \
+	./Scripts/bump-website-release.sh "$(VERSION)" ".build/ZackEyes-$(VERSION).dmg" "$$NOTES_FILE"; \
+	rm -f $$NOTES_FILE
 	@echo "=== Committing + tagging ==="
-	git add Resources/Info.plist
-	git commit -m "chore: bump version to $(VERSION)"
+	git add Resources/Info.plist website/src/lib/release.mjs website/README.md website/src/pages/changelog.astro
+	git commit -m "chore: release v$(VERSION)"
 	git tag v$(VERSION)
 	git push && git push origin v$(VERSION)
 	@echo "=== Creating release on source repo (empty, internal record) ==="
@@ -127,27 +145,6 @@ endif
 	  --target main \
 	  --title "v$(VERSION)" \
 	  --notes "$${NOTES:-Release v$(VERSION)}"
-	@echo "=== Triggering ZackEyes-website bump-version workflow ==="
-	@# Side-effect step: open a PR on the website repo with the new DMG
-	@# metadata so /download, /llms.txt, JSON-LD, etc. stop pointing at
-	@# the previous release. Pipes the same NOTES the upstream GitHub
-	@# release used, so the website's changelog.astro picks up structured
-	@# entries (summary + label groups) instead of leaving a TODO for the
-	@# reviewer. Non-fatal — a failure here (auth missing, workflow not
-	@# deployed yet, etc.) must not invalidate the release we already
-	@# pushed above; just warn and continue.
-	@SHA256=$$(shasum -a 256 ".build/ZackEyes-$(VERSION).dmg" | awk '{print $$1}'); \
-	BYTES=$$(stat -f%z ".build/ZackEyes-$(VERSION).dmg"); \
-	if gh workflow run bump-version.yml \
-	    --repo yangshiqi/ZackEyes-website \
-	    -f version="$(VERSION)" \
-	    -f sha256="$$SHA256" \
-	    -f bytes="$$BYTES" \
-	    -f notes="$${NOTES:-Release v$(VERSION)}"; then \
-	  echo "   → website PR will open at https://github.com/yangshiqi/ZackEyes-website/pulls"; \
-	else \
-	  echo "   ⚠️  website workflow trigger failed — bump src/lib/release.mjs by hand."; \
-	fi
 	@echo ""
 	@echo "✅ Released v$(VERSION)"
 	@echo "   source:   https://github.com/yangshiqi/ZackEyes/releases/tag/v$(VERSION)"

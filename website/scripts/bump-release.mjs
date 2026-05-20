@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Rewrite `src/lib/release.mjs` with new version/hash/size metadata, and
 // optionally prepend a new entry to `src/pages/changelog.astro` from a
-// release-notes file. Used by `.github/workflows/bump-version.yml`,
-// which is triggered by `make release` over in the ccisland repo after
-// it has uploaded a new DMG to yangshiqi/ZackEyes-release.
+// release-notes file. Invoked from the repo-root release flow at
+// `../Scripts/bump-website-release.sh`, which is itself called by
+// `make release` after a new DMG is built and published to
+// yangshiqi/ZackEyes-release.
 //
 // Usage:
 //   node scripts/bump-release.mjs \
