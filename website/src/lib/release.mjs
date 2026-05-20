@@ -18,9 +18,19 @@ export const downloadSizeLabel = `${downloadSize} DMG`;
 export const downloadBytesLabel = `${downloadBytes.toLocaleString('en-US')} bytes`;
 export const downloadSha256 = '966543f6dddaec0cd8e3a5bd7e2f6c6fb7c0c77dd4bdc6bf1e8734334b6a5679';
 
-// URLs — public-channel only. The source repo (yangshiqi/ZackEyes) holds
-// an empty internal release record; everything user-visible points at the
-// release mirror at yangshiqi/ZackEyes-release.
+// URLs.
+//
+// Public-channel split (intentional):
+// - `yangshiqi/ZackEyes-release` is the user-facing distribution mirror.
+//   That's where the DMG lives and where non-developer users file bug
+//   reports — keeps the source repo's Releases page clean and keeps the
+//   download/issues UX one click away from snapallx-style end users.
+// - `yangshiqi/ZackEyes` is the open-source source repo (MIT, monorepo
+//   with the website under `website/`). Source-code-curious visitors and
+//   would-be contributors land here.
 export const downloadUrl = `https://github.com/yangshiqi/ZackEyes-release/releases/download/v${appVersion}/ZackEyes-${appVersion}.dmg`;
 export const releasesUrl = 'https://github.com/yangshiqi/ZackEyes-release/releases';
 export const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
+export const sourceUrl = 'https://github.com/yangshiqi/ZackEyes';
+export const contributeUrl = `${sourceUrl}/contribute`;
+export const licenseUrl = `${sourceUrl}/blob/master/LICENSE`;

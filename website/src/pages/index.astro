@@ -8,7 +8,10 @@ import {
   downloadUrl,
   issuesUrl,
   downloadSizeLabel,
-  downloadSha256
+  downloadSha256,
+  sourceUrl,
+  contributeUrl,
+  licenseUrl
 } from '../lib/release.mjs';
 
 const description = 'ZackEyes turns the MacBook notch into a live command center for Claude Code and Codex CLI sessions, approvals, tasks, rate limits, terminal tab jump, themes, and display modes.';
@@ -246,6 +249,21 @@ const faqStructuredData = {
 <span class="cyan">jsonl</span> task_started -> live fallback
 <span class="cyan">jsonl</span> task_complete -> done</pre>
           </div>
+        </div>
+      </section>
+
+      <section class="band" id="open-source" aria-labelledby="open-source-title">
+        <div class="section-inner">
+          <div class="section-eyebrow">Open source</div>
+          <h2 class="section-title" id="open-source-title">Read the code that watches your agents.</h2>
+          <p class="section-copy">
+            ZackEyes is MIT-licensed. Every hook installer, socket message, and notch animation lives in the open. Audit it, fork it, ship a competing notch — just don't break Claude Code.
+          </p>
+          <p class="section-note">
+            <a href={sourceUrl} rel="noopener">github.com/yangshiqi/ZackEyes</a> ·
+            <a href={licenseUrl} rel="noopener">MIT License</a> ·
+            <a href={contributeUrl} rel="noopener">Contribute</a>
+          </p>
         </div>
       </section>
 

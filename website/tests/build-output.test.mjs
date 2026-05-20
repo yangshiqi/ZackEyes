@@ -23,12 +23,14 @@ describe('production output budgets', { skip: !hasBuild }, () => {
     const htmlBytes = statSync(join(dist, 'index.html')).size;
     const cssBytes = cssFile ? statSync(join(astroDir, cssFile)).size : 0;
 
-    // 25.5 KB instead of 25 KB so version bumps that grow the rendered
-    // URL (e.g. 0.4.3 → 0.4.10 or 0.10.0) don't blow the budget —
-    // ~3-4 occurrences × a couple extra digits adds <100 bytes and was
-    // pushing right against the previous ceiling. Still tight enough to
-    // catch real bloat (e.g. an accidentally-loaded React island).
-    assert.ok(htmlBytes < 25_500, `index.html is ${htmlBytes} bytes`);
+    // 27 KB ceiling: the previous 25.5 KB margin covered version-string
+    // growth (~100 bytes), but the new "Open source" section on the
+    // homepage (eyebrow + h2 + copy + 3 outbound links) adds ~1 KB of
+    // real content. 27 KB still catches the things this test is here
+    // to catch — accidental React islands, generated JS bundles, or a
+    // <script> blob someone added by accident — while leaving slack
+    // for future version-string growth.
+    assert.ok(htmlBytes < 27_000, `index.html is ${htmlBytes} bytes`);
     assert.ok(cssFile, 'Expected a generated CSS asset in dist/_astro');
     assert.ok(cssBytes < 35_000, `homepage CSS is ${cssBytes} bytes`);
   });
