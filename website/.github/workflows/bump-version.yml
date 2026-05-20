@@ -1,0 +1,131 @@
+name: Bump release metadata
+
+# Triggered by `make release` over in the ccisland repo (or manually from
+# the Actions tab). Rewrites `src/lib/release.mjs` with the new DMG
+# metadata, runs the site contract tests + Astro build, and opens a PR.
+#
+# We open a PR (instead of pushing straight to master) so:
+#   1. The release author can review what the renderer will produce.
+#   2. The changelog entry can be added by hand on the same branch before
+#      merge — the bump script intentionally does not auto-generate
+#      changelog text.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'New ZackEyes version (e.g. 0.4.4)'
+        required: true
+      sha256:
+        description: 'SHA-256 of the DMG (64 hex chars)'
+        required: true
+      bytes:
+        description: 'DMG size in bytes'
+        required: true
+      notes:
+        description: |
+          Release notes (markdown). Used both as the GitHub release body
+          upstream and as the source for the new changelog.astro entry.
+          Permissive format: optional leading paragraph (or `Summary:`
+          line) becomes the summary; `## Label` headers introduce
+          highlight groups; `- item` bullets are highlight items. Leave
+          blank (or pass the default `Release vX.Y.Z` placeholder) to
+          skip the changelog entry and let the reviewer add it by hand.
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    # Inputs land in env vars rather than being interpolated directly into
+    # `run:` blocks. Even though this workflow is dispatch-only (no
+    # external triggers like issue bodies), passing through env keeps the
+    # quoting safe and avoids GH Actions expression injection.
+    env:
+      VERSION: ${{ inputs.version }}
+      SHA256: ${{ inputs.sha256 }}
+      BYTES: ${{ inputs.bytes }}
+      NOTES: ${{ inputs.notes }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Rewrite src/lib/release.mjs (and changelog.astro if notes provided)
+        run: |
+          NOTES_FLAG=""
+          if [ -n "$NOTES" ]; then
+            # Stage notes as a file so multi-line content survives
+            # shell quoting unscathed.
+            printf '%s' "$NOTES" > /tmp/release-notes.md
+            NOTES_FLAG="--notes-file /tmp/release-notes.md"
+          fi
+          node scripts/bump-release.mjs \
+            --version "$VERSION" \
+            --sha256 "$SHA256" \
+            --bytes "$BYTES" \
+            $NOTES_FLAG
+
+      - name: Build site (catches consumer breakage)
+        run: pnpm run build
+
+      - name: Run contract + build-output tests
+        run: pnpm test
+
+      - name: Commit and open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BRANCH="release/v${VERSION}-bump"
+
+          # Bail if none of the bump targets changed — avoids
+          # "no changes added to commit" when the workflow is re-run
+          # idempotently against the same DMG.
+          if git diff --quiet -- src/lib/release.mjs src/pages/changelog.astro README.md; then
+            echo "release.mjs + changelog.astro + README.md already at v${VERSION} — skipping PR"
+            exit 0
+          fi
+
+          # Track whether the changelog got auto-populated. If it didn't
+          # (no NOTES, or NOTES was the GH default placeholder), the PR
+          # body nudges the reviewer to add an entry by hand.
+          CHANGELOG_TOUCHED=0
+          if ! git diff --quiet -- src/pages/changelog.astro; then
+            CHANGELOG_TOUCHED=1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add src/lib/release.mjs src/pages/changelog.astro README.md
+
+          MESSAGE=$(printf 'chore: bump release metadata to v%s\n\n- appVersion: %s\n- downloadSha256: %s\n- downloadBytes: %s\n- changelog auto-populated: %s\n\nTriggered by ccisland make release.\n' \
+            "$VERSION" "$VERSION" "$SHA256" "$BYTES" "$CHANGELOG_TOUCHED")
+          git commit -m "$MESSAGE"
+          git push -u origin "$BRANCH"
+
+          if [ "$CHANGELOG_TOUCHED" = "1" ]; then
+            FOLLOWUP='- [ ] Review the auto-generated `changelog.astro` entry; tighten the wording or split groups if the parser misread the notes.'
+          else
+            FOLLOWUP='- [ ] Add a `ZackEyes '"${VERSION}"'` entry to `src/pages/changelog.astro` with release notes — the trigger ran without NOTES so the changelog was not auto-populated.'
+          fi
+
+          BODY=$(printf 'Auto-generated by the `bump-version` workflow after a new ZackEyes DMG was published on `yangshiqi/ZackEyes-release`.\n\n## What changed\n- `src/lib/release.mjs` now pins `appVersion = '\''%s'\''`, the new SHA-256, and the new byte/MB labels.\n- All consuming pages (`index`, `download`, `changelog`, `docs`, `answers`, `llms.txt`, `llms-full.txt`, `SiteLayout`) re-render automatically — no other source edits needed.\n\n## Manual follow-up before merge\n%s\n- [ ] Verify the rendered `/download` page and `/llms.txt` look right (`pnpm run build && open dist/download.html`).\n\n## Verification on CI\n- `pnpm run build` succeeded\n- `pnpm test` succeeded\n' \
+            "$VERSION" "$FOLLOWUP")
+          gh pr create \
+            --title "chore: bump release.mjs to v$VERSION" \
+            --body "$BODY"
