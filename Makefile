@@ -97,16 +97,20 @@ dmg: app-release
 # tip (which contains both Info.plist + website changes).
 #
 # Order:
-#   1. Sanity checks (VERSION format, on master, clean tree, master == origin/master)
-#   2. Cut release branch chore/release-v<VERSION> off master
-#   3. Bump Info.plist + build DMG + bump website/ metadata (working tree)
-#   4. Commit Info.plist  (release branch only — master untouched)
-#   5. Commit website/ metadata  (release branch only)
-#   6. Push release branch, open PR
-#   7. Upload DMG to ZackEyes-release  (asset live, but website not yet pointing at it)
-#   8. Auto-merge PR  (now Vercel rebuilds with DMG URL guaranteed to resolve)
-#   9. Pull master, tag the merge commit, push tag
-#  10. gh release create on source repo (empty record, attached to the tag)
+#   1. Sanity checks (VERSION format, on master, clean tree)
+#   2. Preflight: refuse if v<VERSION> already exists on origin tags or on
+#      yangshiqi/ZackEyes-release (would block irreversible steps later)
+#   3. Sync check (master == origin/master) — same gate, second time
+#   4. Cut release branch chore/release-v<VERSION> off master
+#   5. Bump Info.plist + build DMG + bump website/ metadata (working tree)
+#   6. Commit Info.plist + commit website/ metadata (release branch only)
+#   7. Push release branch, open PR
+#   8. Re-check master sync (refuse if origin/master moved during build/bump)
+#   9. Upload DMG to ZackEyes-release (asset live; website not yet pointing at it)
+#  10. Auto-merge PR pinned to HEAD SHA via --match-head-commit
+#      (Vercel now rebuilds with DMG URL guaranteed to resolve)
+#  11. Pull master, tag the merge commit, push tag
+#  12. gh release create on source repo (empty record, attached to the tag)
 #
 # Usage:  make release VERSION=0.3.0     (X.Y.Z, no 'v' prefix)
 # Optional: NOTES="changelog text"       (defaults to "Release vVERSION")
@@ -114,20 +118,39 @@ dmg: app-release
 # Recovery from partial failure: this target is NOT idempotent.
 #
 # Pre-push failures (Info.plist bump, DMG build, website bump, commits):
-# nothing on origin yet. To revert fully, including any `git add` staging:
+# nothing on origin yet. To revert fully, including any `git add` staging
+# and the artifact left on disk:
 #     git checkout master
 #     git branch -D chore/release-v<VERSION>
 #     git restore --staged --worktree Resources/Info.plist website/
+#     rm -f .build/ZackEyes-<VERSION>.dmg
+# (`website/node_modules`, `website/dist`, `website/.astro` are gitignored
+# Astro build artifacts — `pnpm` regenerates them, leave them.)
 # Then re-run `make release`.
 #
 # Mid-flow failures (after branch is pushed):
 #   - PR creation failed: `gh pr create --base master --head chore/release-v<VERSION> ...`
 #   - DMG upload to ZackEyes-release failed: re-run that single `gh release create`.
-#   - PR auto-merge failed: merge manually via GitHub UI, then continue with
-#     `git checkout master && git pull --ff-only && git tag v<VERSION> && git push origin v<VERSION>`
-#     followed by the source-repo `gh release create`.
-#   - Tag push failed: re-run `git push origin v<VERSION>` manually.
-#   - Source-repo `gh release create` failed: re-run that single command (the tag is already live).
+#   - PR auto-merge failed (still mergeable): merge manually via GitHub UI, then
+#     continue with `git checkout master && git pull --ff-only && git tag v<VERSION>
+#     && git push origin v<VERSION>` followed by the source-repo `gh release create`.
+#   - PR merged on GitHub but local cleanup raised (network hiccup, etc.): the
+#     server-side merge already happened. Recover with
+#     `git checkout master && git pull --ff-only && git branch -d chore/release-v<VERSION>
+#      && git tag v<VERSION> && git push origin v<VERSION>` then
+#     `gh release create v<VERSION> --title "v<VERSION>" --notes "<NOTES>"`.
+#   - DMG public but PR cannot be merged (conflict, protection change, abandoned
+#     release): the version is now "burned" — the public release at
+#     yangshiqi/ZackEyes-release/v<VERSION> exists but the source tree never
+#     advanced. To free the version number for reuse:
+#     `gh release delete v<VERSION> --repo yangshiqi/ZackEyes-release --yes
+#      --cleanup-tag`. Then close the failing source-repo PR, delete the local
+#     release branch, and start over with the same VERSION.
+#   - Tag push failed (e.g. tag already exists on origin): re-run
+#     `git push origin v<VERSION>` manually. If the remote tag points elsewhere,
+#     delete it first: `git push origin :refs/tags/v<VERSION>` then re-push.
+#   - Source-repo `gh release create` failed: re-run that single command (the
+#     tag is already live).
 release:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release VERSION=0.3.0)
@@ -145,6 +168,20 @@ endif
 	  fi
 	@if [ -n "$$(git status --porcelain)" ]; then \
 	  echo "ERROR: working tree not clean"; git status --short; exit 1; \
+	fi
+	@echo "=== Preflight: version not already taken ==="
+	@# Fail fast if v<VERSION> already exists upstream — either as a source tag
+	@# (would block the post-merge `git push origin v<VERSION>` after the
+	@# irreversible parts) or as a release on ZackEyes-release (would block
+	@# the DMG upload step after the website-bump commit was already made).
+	@if git ls-remote --exit-code --tags origin "refs/tags/v$(VERSION)" >/dev/null 2>&1; then \
+	  echo "ERROR: tag v$(VERSION) already exists on origin. Pick a new version or delete the tag."; exit 1; \
+	fi
+	@if gh release view "v$(VERSION)" --repo yangshiqi/ZackEyes-release >/dev/null 2>&1; then \
+	  echo "ERROR: release v$(VERSION) already exists on yangshiqi/ZackEyes-release."; \
+	  echo "       Either pick a new version, or delete it first with:"; \
+	  echo "         gh release delete v$(VERSION) --repo yangshiqi/ZackEyes-release --yes --cleanup-tag"; \
+	  exit 1; \
 	fi
 	@echo "=== Sync with origin/master ==="
 	git fetch origin master
@@ -183,6 +220,19 @@ endif
 	  --head chore/release-v$(VERSION) \
 	  --title "Release v$(VERSION)" \
 	  --body "$${NOTES:-Release v$(VERSION)}"
+	@echo "=== Re-check master sync (origin/master must not have moved) ==="
+	@# Between the initial sync check at the top and this point, someone
+	@# could have landed a PR on master — making our release-branch's
+	@# merge non-fast-forward. Fail loudly BEFORE the DMG goes public so
+	@# we don't leave a "burned" version on yangshiqi/ZackEyes-release.
+	git fetch origin master
+	@AHEAD=$$(git rev-list --count origin/master..master); \
+	BEHIND=$$(git rev-list --count master..origin/master); \
+	if [ "$$BEHIND" != "0" ]; then \
+	  echo "ERROR: origin/master moved during release (behind=$$BEHIND). Abort before public DMG upload."; \
+	  echo "       Recover: git checkout master && git pull && git branch -D chore/release-v$(VERSION) && rm -f .build/ZackEyes-$(VERSION).dmg, then re-run make release."; \
+	  exit 1; \
+	fi
 	@echo "=== Publish DMG to ZackEyes-release (BEFORE PR merge, so Vercel deploy never points at a 404) ==="
 	gh release create v$(VERSION) .build/ZackEyes-$(VERSION).dmg \
 	  --repo yangshiqi/ZackEyes-release \
@@ -190,7 +240,15 @@ endif
 	  --title "v$(VERSION)" \
 	  --notes "$${NOTES:-Release v$(VERSION)}"
 	@echo "=== Auto-merge release PR (solo admin self-merge; 0 required reviews) ==="
-	gh pr merge chore/release-v$(VERSION) --merge --delete-branch
+	@# `--match-head-commit` makes the merge atomic against the exact SHA
+	@# we computed the DMG hash + website metadata from. If anyone has
+	@# pushed to chore/release-v$(VERSION) between our push and this
+	@# merge call, GitHub refuses the merge instead of silently shipping
+	@# someone else's tip. Defensive — solo dev real-world risk is near
+	@# zero, cost is one extra flag.
+	@HEAD_SHA=$$(git rev-parse HEAD); \
+	echo "Merging chore/release-v$(VERSION) pinned at $$HEAD_SHA"; \
+	gh pr merge chore/release-v$(VERSION) --merge --delete-branch --match-head-commit "$$HEAD_SHA"
 	@echo "=== Pull merged state into local master ==="
 	git checkout master
 	git pull --ff-only origin master
