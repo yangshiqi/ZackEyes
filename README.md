@@ -2,9 +2,9 @@
 
 A native macOS Dynamic Island for AI coding agents. Watches every active **Claude Code** and **OpenAI Codex** session, surfaces permission requests, shows live usage limits, and lets you jump straight to the right terminal tab — all from a small floating panel at the top of the screen.
 
-[![License](https://img.shields.io/github/license/yangshiqi/ZackEyes?color=blue)](./LICENSE)
-[![Last Commit](https://img.shields.io/github/last-commit/yangshiqi/ZackEyes)](https://github.com/yangshiqi/ZackEyes/commits)
-[![Stars](https://img.shields.io/github/stars/yangshiqi/ZackEyes?style=social)](https://github.com/yangshiqi/ZackEyes/stargazers)
+[![License](https://img.shields.io/github/license/yangshiqi/zackeyes?color=blue)](./LICENSE)
+[![Last Commit](https://img.shields.io/github/last-commit/yangshiqi/zackeyes)](https://github.com/yangshiqi/ZackEyes/commits)
+[![Stars](https://img.shields.io/github/stars/yangshiqi/zackeyes?style=social)](https://github.com/yangshiqi/ZackEyes/stargazers)
 
 ![status](https://img.shields.io/badge/status-MVP-green)
 ![platform](https://img.shields.io/badge/platform-macOS%2014%2B-blue)
