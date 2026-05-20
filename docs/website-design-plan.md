@@ -161,7 +161,6 @@ Need final decisions for:
 - GitHub visibility/repo URL once public.
 - App screenshots or generated product renders.
 - Whether the public name stays `ZackEyes` or gets a clearer tagline.
-- Whether to mention "free Vibe Island alternative" directly.
 
 ## Implementation Plan
 
