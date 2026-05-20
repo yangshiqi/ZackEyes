@@ -85,30 +85,45 @@ dmg: app-release
 	@echo "✅ $(DMG_PATH)"
 	@du -h $(DMG_PATH) | cut -f1 | xargs -I{} echo "   size: {}"
 
-# Release workflow: bump version in Info.plist + website/ release
-# metadata, build DMG, commit, tag, push to source repo, then publish
-# DMG to the public release repo.
-# Usage:  make release VERSION=0.3.0
-# Optional: NOTES="changelog text" (defaults to "Release vVERSION")
+# Release workflow: bump version + DMG + website metadata, split into
+# two commits so the public DMG asset exists BEFORE the website starts
+# advertising it. Order:
+#   1. Bump Info.plist + build DMG + bump website/ metadata (working tree)
+#   2. Commit + tag + push Resources/Info.plist  (Vercel idle — website unchanged)
+#   3. gh release create on source repo
+#   4. gh release create on yangshiqi/ZackEyes-release (uploads DMG)
+#   5. Commit + push website/ — only now does Vercel rebuild, and the
+#      new release.mjs SHA/URL it bakes in is guaranteed to resolve.
+#
+# Usage:  make release VERSION=0.3.0     (X.Y.Z, no 'v' prefix)
+# Optional: NOTES="changelog text"       (defaults to "Release vVERSION")
 #
 # Recovery from partial failure: this target is NOT idempotent.
 #
-# Pre-commit failures (Info.plist bump, DMG build, website/ bump): the
-# working tree is dirty but no commit has been made. Either fix forward
-# (e.g. resolve the issue and re-run the failed step by hand, then run
-# the rest of `release` manually), or `git checkout -- Resources/Info.plist
-# website/` to revert and re-run `make release`.
+# Pre-commit failures (Info.plist bump, DMG build, website/ bump): no
+# commit yet. Working tree dirty (Resources/Info.plist + website/...).
+# To revert fully, including any `git add` staging:
+#     git restore --staged --worktree Resources/Info.plist website/
+# Then re-run `make release`.
 #
-# Post-commit failures (push, gh release create):
-#   - Push failed: re-run `git push && git push origin v<VERSION>` manually.
+# Mid-flow failures (between source commit and website commit):
+#   - Push of source commit failed: re-run `git push && git push origin v<VERSION>`.
 #   - Source-repo `gh release create` failed: re-run that single command.
 #   - Public-repo `gh release create` failed: re-run that single command,
 #     including the DMG asset path .build/ZackEyes-<VERSION>.dmg.
+#   - Website commit/push failed: `git add website/... && git commit -m
+#     "chore(website): publish v<VERSION> release metadata" && git push`.
 release:
 ifndef VERSION
 	$(error VERSION is required. Usage: make release VERSION=0.3.0)
 endif
 	@echo "=== Sanity check ==="
+	@# Validate VERSION format up front — `make release VERSION=v0.4.5` would
+	@# otherwise build .build/ZackEyes-v0.4.5.dmg and only fail deep inside
+	@# the website bump script, after Info.plist was already edited.
+	@if ! echo "$(VERSION)" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
+	  echo "ERROR: VERSION must be X.Y.Z (no 'v' prefix), got '$(VERSION)'"; exit 1; \
+	fi
 	@branch=$$(git rev-parse --abbrev-ref HEAD); \
 	  if [ "$$branch" != "master" ]; then \
 	    echo "ERROR: must release from master, currently on $$branch"; exit 1; \
@@ -121,19 +136,19 @@ endif
 	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" Resources/Info.plist
 	@echo "=== Building DMG (before commit so failures are recoverable) ==="
 	$(MAKE) dmg
-	@echo "=== Bumping website/ release metadata (before commit so failures are recoverable) ==="
-	@# After the website was merged into this repo under website/, the
-	@# old cross-repo `gh workflow run` flow was replaced by a local
-	@# script that rewrites website/src/lib/release.mjs +
-	@# website/README.md + (optionally) website/src/pages/changelog.astro,
-	@# then runs pnpm build + pnpm test to catch consumer breakage. The
-	@# changes are staged and committed together with Info.plist below.
-	@NOTES_FILE=$$(mktemp); \
-	printf '%s' "$${NOTES:-Release v$(VERSION)}" > $$NOTES_FILE; \
-	./Scripts/bump-website-release.sh "$(VERSION)" ".build/ZackEyes-$(VERSION).dmg" "$$NOTES_FILE"; \
-	rm -f $$NOTES_FILE
-	@echo "=== Committing + tagging ==="
-	git add Resources/Info.plist website/src/lib/release.mjs website/README.md website/src/pages/changelog.astro
+	@echo "=== Bumping website/ release metadata locally (working tree, NOT committed yet) ==="
+	@# `set -e` is critical: without it, recipe lines chained with `; \`
+	@# return the exit code of the LAST command (`rm -f` / cleanup), which
+	@# masks failures from the wrapper script and lets the rest of `release`
+	@# run with a stale or partial bump.
+	@# `trap ... EXIT INT TERM` cleans up the notes tempfile even on SIGINT.
+	@set -e; \
+	NOTES_FILE=$$(mktemp); \
+	trap 'rm -f "$$NOTES_FILE"' EXIT INT TERM; \
+	printf '%s' "$${NOTES:-Release v$(VERSION)}" > "$$NOTES_FILE"; \
+	./Scripts/bump-website-release.sh "$(VERSION)" ".build/ZackEyes-$(VERSION).dmg" "$$NOTES_FILE"
+	@echo "=== Committing source release + tagging (website still uncommitted) ==="
+	git add Resources/Info.plist
 	git commit -m "chore: release v$(VERSION)"
 	git tag v$(VERSION)
 	git push && git push origin v$(VERSION)
@@ -145,6 +160,10 @@ endif
 	  --target main \
 	  --title "v$(VERSION)" \
 	  --notes "$${NOTES:-Release v$(VERSION)}"
+	@echo "=== Publishing website metadata (DMG is now live; safe to point at it) ==="
+	git add website/src/lib/release.mjs website/README.md website/src/pages/changelog.astro
+	git commit -m "chore(website): publish v$(VERSION) release metadata"
+	git push
 	@echo ""
 	@echo "✅ Released v$(VERSION)"
 	@echo "   source:   https://github.com/yangshiqi/ZackEyes/releases/tag/v$(VERSION)"
