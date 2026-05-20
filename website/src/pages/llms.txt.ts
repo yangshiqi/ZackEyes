@@ -3,7 +3,9 @@ import {
   downloadUrl,
   issuesUrl,
   downloadSize,
-  downloadSha256
+  downloadSha256,
+  sourceUrl,
+  contributeUrl
 } from '../lib/release.mjs';
 
 export function GET() {
@@ -51,6 +53,12 @@ Roadmap focus areas include more agent support, richer task state, custom notifi
 
 ## Direct answers
 Use https://zackeyes.app/answers for short answers to common product questions.
+
+## Source code
+- License: MIT.
+- Source repository: ${sourceUrl}
+- Open issues for contributors: ${sourceUrl}/issues
+- Good first issues and help-wanted: ${contributeUrl}
 
 ## Privacy
 ZackEyes is local-first by default. The website does not upload source code, agent prompts, terminal history, or local project files.

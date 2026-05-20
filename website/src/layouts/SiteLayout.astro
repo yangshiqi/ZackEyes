@@ -1,6 +1,6 @@
 ---
 import '../styles/global.css';
-import { appVersion, downloadUrl } from '../lib/release.mjs';
+import { appVersion, downloadUrl, sourceUrl, releasesUrl } from '../lib/release.mjs';
 
 interface Props {
   title?: string;
@@ -30,7 +30,8 @@ const structuredData = {
       '@id': `${site}/#organization`,
       name: 'ZackEyes',
       url: site,
-      logo: new URL('/icon.svg', site).href
+      logo: new URL('/icon.svg', site).href,
+      sameAs: [sourceUrl, releasesUrl]
     },
     {
       '@type': 'WebSite',

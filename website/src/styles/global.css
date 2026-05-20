@@ -142,6 +142,16 @@ a {
   color: var(--ink);
 }
 
+.nav .nav-icon {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+}
+
+.nav .nav-icon svg {
+  display: block;
+}
+
 .button {
   display: inline-flex;
   align-items: center;

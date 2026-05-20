@@ -3,7 +3,9 @@ import {
   downloadUrl,
   issuesUrl,
   downloadSize,
-  downloadSha256
+  downloadSha256,
+  sourceUrl,
+  contributeUrl
 } from '../lib/release.mjs';
 
 export function GET() {
@@ -91,7 +93,15 @@ Agent hook events enter a bridge process. The bridge sends normalized events ove
 
 ## Release and feedback
 - Latest macOS download: ${downloadUrl}
-- Issues and feature requests: ${issuesUrl}
+- Issues and feature requests (user-facing): ${issuesUrl}
+
+## Source code
+- License: MIT.
+- ZackEyes is open source. The source code, including the macOS app, the bridge CLI, and this website, lives in a single monorepo.
+- Source repository: ${sourceUrl}
+- Developer issues and pull requests: ${sourceUrl}/issues
+- Good first issues and help-wanted: ${contributeUrl}
+- The user-facing download/issues channel (above) intentionally stays separate from the source repo: end users file install/compatibility reports without needing to interact with the codebase.
 
 ## FAQ and privacy
 - Compatibility: ZackEyes is for modern macOS desktop workflows and is distributed as a DMG installer.
