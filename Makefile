@@ -132,11 +132,13 @@ dmg: app-release
 #   - PR creation failed: `gh pr create --base master --head chore/release-v<VERSION> ...`
 #   - DMG upload to ZackEyes-release failed: re-run that single `gh release create`.
 #   - PR auto-merge failed (still mergeable): merge manually via GitHub UI, then
-#     continue with `git checkout master && git pull --ff-only && git tag v<VERSION>
-#     && git push origin v<VERSION>` followed by the source-repo `gh release create`.
+#     continue with `git checkout master && git pull --ff-only origin master
+#     && git tag v<VERSION> && git push origin v<VERSION>` followed by the
+#     source-repo `gh release create`.
 #   - PR merged on GitHub but local cleanup raised (network hiccup, etc.): the
 #     server-side merge already happened. Recover with
-#     `git checkout master && git pull --ff-only && git branch -d chore/release-v<VERSION>
+#     `git checkout master && git pull --ff-only origin master
+#      && git branch -d chore/release-v<VERSION>
 #      && git tag v<VERSION> && git push origin v<VERSION>` then
 #     `gh release create v<VERSION> --title "v<VERSION>" --notes "<NOTES>"`.
 #   - DMG public but PR cannot be merged (conflict, protection change, abandoned
@@ -191,7 +193,14 @@ endif
 	  echo "ERROR: master out of sync with origin (ahead=$$AHEAD behind=$$BEHIND). Pull/push before releasing."; exit 1; \
 	fi
 	@echo "=== Cut release branch chore/release-v$(VERSION) ==="
-	git checkout -b chore/release-v$(VERSION)
+	@# `-B` (force-create) instead of `-b`: makes re-runs after a failed
+	@# attempt clean — a leftover local release branch from a previous
+	@# crash is reset to the current master instead of blocking the
+	@# release with "branch already exists". Combined with the
+	@# `git push --force` below, the local + remote release branch are
+	@# both rewritten to the new HEAD, so the eventual `gh pr merge
+	@# --match-head-commit` still pins to the correct SHA.
+	git checkout -B chore/release-v$(VERSION)
 	@echo "=== Bumping version to $(VERSION) ==="
 	/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $(VERSION)" Resources/Info.plist
 	/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $(VERSION)" Resources/Info.plist
@@ -214,7 +223,10 @@ endif
 	git add website/src/lib/release.mjs website/README.md website/src/pages/changelog.astro
 	git commit -m "chore(website): publish v$(VERSION) release metadata"
 	@echo "=== Push release branch + open PR ==="
-	git push -u origin chore/release-v$(VERSION)
+	@# `--force` pairs with `git checkout -B` above: if a previous failed
+	@# release run already pushed an old version of this branch to origin,
+	@# the new (locally-reset) branch needs to overwrite it.
+	git push -u --force origin chore/release-v$(VERSION)
 	gh pr create \
 	  --base master \
 	  --head chore/release-v$(VERSION) \
