@@ -38,7 +38,7 @@ describe('Astro site contract', () => {
     assert.equal(existsSync(join(root, 'src/styles/global.css')), true);
 
     const pkg = JSON.parse(read('package.json'));
-    assert.match(pkg.dependencies.astro, /^\^5\./);
+    assert.match(pkg.dependencies.astro, /^\^6\./);
     assert.match(pkg.dependencies.react, /^\^19\./);
     assert.match(pkg.dependencies.tailwindcss, /^\^4\./);
 
