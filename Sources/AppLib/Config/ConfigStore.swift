@@ -160,6 +160,41 @@ public final class ConfigStore: Sendable {
         try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
 
+    /// Load the simulated-notch horizontal offset from screen-center, in
+    /// points (positive = right of center, negative = left). Returns 0
+    /// (centered — the original fixed position) on any failure or when the
+    /// field is absent (pre-existing installs).
+    public func loadNotchOffsetX() -> CGFloat {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data),
+              let x = wrapper.notchOffsetX else {
+            return 0
+        }
+        return CGFloat(x)
+    }
+
+    /// Save the simulated-notch horizontal offset. Same defensive contract as
+    /// `saveNotchVisibility` — bail rather than clobber a corrupt file.
+    public func saveNotchOffsetX(_ offset: CGFloat) {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: directory) {
+            try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        }
+        var wrapper: ConfigWrapper
+        if fm.fileExists(atPath: configPath) {
+            guard let data = fm.contents(atPath: configPath),
+                  let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+                return  // corrupt file — don't clobber other fields
+            }
+            wrapper = existing
+        } else {
+            wrapper = ConfigWrapper(hotkey: .default)
+        }
+        wrapper.notchOffsetX = Double(offset)
+        guard let data = try? JSONEncoder().encode(wrapper) else { return }
+        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+    }
+
     /// Save the hotkey config atomically. Preserves other keys.
     /// Creates directory if needed.
     public func save(_ config: HotKeyConfig) {
@@ -189,4 +224,5 @@ private struct ConfigWrapper: Codable {
     var notificationSound: String?      // nil = theme default sound
     var notchVisibility: String?        // nil = .always (default)
     var compactAgent: String?           // nil = .claude (default — agent shown in collapsed simulated notch)
+    var notchOffsetX: Double?           // nil = 0 (centered — simulated notch horizontal offset from screen-center)
 }

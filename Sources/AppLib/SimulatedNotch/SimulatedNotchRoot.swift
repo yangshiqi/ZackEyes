@@ -25,6 +25,11 @@ public final class NotchModeStore: ObservableObject {
     /// True while the hotkey recorder overlay is shown.
     @Published public var isHotkeyRecorderShown: Bool = false
 
+    /// True while the user is repositioning the notch (entered via the gear
+    /// menu's "Move Notch" item). While set, the pill is draggable, hover
+    /// auto-expand is suppressed, and a visual move-cue border is shown.
+    @Published public var isMovingNotch: Bool = false
+
     /// Which agent's 5h/7d quota the *collapsed* simulated notch shows.
     /// (The full panel always shows both when both have data — this only
     /// controls the narrow pill the user stares at all day.) Persisted to

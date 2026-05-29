@@ -363,6 +363,14 @@ struct SimulatedNotchFullView: View {
         showIsland.state = (visibility == .always) ? .on : .off
         menu.addItem(showIsland)
 
+        let moveNotch = NSMenuItem(
+            title: "Move Notch…",
+            action: #selector(GearMenuTarget.moveNotchClicked(_:)),
+            keyEquivalent: ""
+        )
+        moveNotch.target = GearMenuTarget.shared
+        menu.addItem(moveNotch)
+
         let themeMenu = NSMenu()
         let config = ConfigStore()
         let currentTheme = config.loadTheme()
@@ -531,4 +539,5 @@ struct SimulatedNotchFullView: View {
 public extension Notification.Name {
     static let hotkeyConfigChanged = Notification.Name("hotkeyConfigChanged")
     static let notchVisibilityChanged = Notification.Name("notchVisibilityChanged")
+    static let notchMoveModeRequested = Notification.Name("notchMoveModeRequested")
 }
