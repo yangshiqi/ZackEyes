@@ -22,6 +22,10 @@ public struct SessionInfo: Identifiable {
     public var lastUserPrompt: String?
     public var lastAssistantMessage: String?
     public var pendingPermission: PendingPermission?
+    /// Tool names approved via "Allow All" for the rest of this session.
+    /// Session-scoped only — disappears with the SessionInfo when the session
+    /// is removed (liveness sweep / SessionEnd). Never persisted to disk.
+    public var autoAllowedTools: Set<String> = []
     public var startedAt: Date
     public var lastActiveAt: Date
     public var toolCallCount: Int
@@ -396,6 +400,24 @@ public final class SessionStore: ObservableObject {
     public func resolvePrimaryPermission(allow: Bool) {
         guard let primary = primarySession, primary.pendingPermission != nil else { return }
         resolvePermission(sessionId: primary.id, allow: allow)
+    }
+
+    /// "Allow All": approve the current request AND remember the tool name so
+    /// future PermissionRequests for the same tool in this session are
+    /// auto-allowed (see `isToolAutoAllowed` + the short-circuit in
+    /// `AppDelegate.handleEvent`). Session-scoped, never persisted.
+    public func allowAll(sessionId: String) {
+        guard var session = sessions[sessionId], let pending = session.pendingPermission else { return }
+        session.autoAllowedTools.insert(pending.toolName)
+        sessions[sessionId] = session
+        // Send the .allow for the current request + clear pending + go working.
+        resolvePermission(sessionId: sessionId, allow: true)
+    }
+
+    /// True when the given tool was approved via "Allow All" for this session
+    /// and a fresh PermissionRequest should be auto-allowed without a popup.
+    public func isToolAutoAllowed(sessionId: String, toolName: String) -> Bool {
+        sessions[sessionId]?.autoAllowedTools.contains(toolName) ?? false
     }
 
     /// Called when the bridge disconnects without the user responding via ZackEyes
