@@ -273,14 +273,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     )
                 } ?? detected
             }
-            await MainActor.run {
-                self?.sessionStore.importDetectedSessions(live)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.sessionStore.importDetectedSessions(live)
                 NSLog(
                     "ZackEyes: imported %d live sessions (filtered from %d candidates)",
                     live.count, detected.count
                 )
                 // Kick off PID discovery + OSC2 title injection for the imported set
-                self?.activateDetectedSessions()
+                self.activateDetectedSessions()
             }
         }
 
@@ -424,8 +425,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             guard !deadIds.isEmpty else { return }
-            await MainActor.run {
-                self?.sessionStore.removeSessions(ids: deadIds)
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                self.sessionStore.removeSessions(ids: deadIds)
                 NSLog("ZackEyes: liveness sweep pruned %d dead sessions", deadIds.count)
             }
         }
