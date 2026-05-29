@@ -451,21 +451,31 @@ struct NotchExpandedView: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.up.right.square.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("Click to answer in terminal")
-                    .font(.system(size: 12, weight: .semibold))
-                Spacer(minLength: 0)
+            // A real Button (not the card's bubbled .onTapGesture): the card
+            // is wrapped in a ScrollView (NotchCompactView / SimulatedNotchFullView),
+            // where a container-level .onTapGesture competes with scroll
+            // recognition and often never fires — so the CTA "did nothing".
+            // Button hit-testing is coordinated with ScrollView (same reason
+            // Deny/Allow work reliably here), so this guarantees the tap.
+            Button(action: { viewModel.activateTerminal(for: session) }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.right.square.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Click to answer in terminal")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer(minLength: 0)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.45))
+                )
             }
-            .foregroundColor(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.45))
-            )
+            .buttonStyle(.plain)
             .padding(.top, 4)
         }
         .padding(.top, 6)
