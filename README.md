@@ -151,7 +151,7 @@ The product landing page at [zackeyes.app](https://zackeyes.app) lives in [`webs
 ## Documentation
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — component boundaries, data flow, safety model
-- [`CHANGELOG.md`](CHANGELOG.md) — release history
+- [Release notes](https://zackeyes.vercel.app/changelog) — current changelog (source: `website/src/pages/changelog.astro`); [`CHANGELOG.md`](CHANGELOG.md) is frozen at v0.3.x
 - [`docs/superpowers/specs/`](docs/superpowers/specs/) — design specs
 - [`CLAUDE.md`](CLAUDE.md) — agent harness instructions for working on this project
 - [`AGENTS.md`](AGENTS.md) — development workflow
