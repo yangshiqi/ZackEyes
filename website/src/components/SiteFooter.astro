@@ -1,6 +1,10 @@
 ---
 import { sourceUrl } from '../lib/release.mjs';
-import { contributors } from '../lib/contributors.mjs';
+import { getContributors } from '../lib/contributors.mjs';
+
+// Auto-fetched from the GitHub contributors graph at build time (humans only),
+// falling back to a curated list if the API is unreachable.
+const contributors = await getContributors();
 ---
 
 <footer class="footer">
