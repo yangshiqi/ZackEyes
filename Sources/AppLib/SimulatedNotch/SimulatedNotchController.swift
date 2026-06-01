@@ -501,7 +501,12 @@ public final class SimulatedNotchController {
         // to the window that received the down.
         moveDragMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
             guard let self, self.dragGrabOffsetX != nil else { return event }
-            Task { @MainActor [weak self] in self?.handleMoveDrag(NSEvent.mouseLocation) }
+            // Local event monitors fire on the main thread and this closure is
+            // already @MainActor-isolated (sibling monitors mutate state
+            // synchronously), so call directly — no Task hop. Spawning a Task
+            // per drag event deferred each update to the next run-loop turn,
+            // making the pill visibly lag the cursor at 60–120 Hz.
+            self.handleMoveDrag(NSEvent.mouseLocation)
             return nil
         }
 
