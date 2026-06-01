@@ -163,4 +163,52 @@ final class ConfigStoreTests: XCTestCase {
         let after = try? String(contentsOfFile: path, encoding: .utf8)
         XCTAssertEqual(after, garbage)
     }
+
+    // MARK: - Notch offset
+
+    func testNotchOffsetDefaultsToZero() {
+        let store = ConfigStore(directory: tmpDir.path)
+        XCTAssertEqual(store.loadNotchOffsetX(), 0)
+    }
+
+    func testNotchOffsetRoundtrip() {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveNotchOffsetX(-180)
+        XCTAssertEqual(store.loadNotchOffsetX(), -180)
+        store.saveNotchOffsetX(240.5)
+        XCTAssertEqual(store.loadNotchOffsetX(), 240.5)
+    }
+
+    /// Setting the offset must not wipe theme / hotkey / other keys.
+    func testNotchOffsetSavePreservesOtherKeys() {
+        let store = ConfigStore(directory: tmpDir.path)
+        let custom = HotKeyConfig(keyCode: 40, modifiers: [.option, .command])
+        store.save(custom)
+        store.saveTheme(.f1)
+
+        store.saveNotchOffsetX(-120)
+
+        XCTAssertEqual(store.load(), custom)
+        XCTAssertEqual(store.loadTheme(), .f1)
+        XCTAssertEqual(store.loadNotchOffsetX(), -120)
+    }
+
+    func testNotchOffsetDefaultWhenFileCorrupt() {
+        let store = ConfigStore(directory: tmpDir.path)
+        let path = tmpDir.appendingPathComponent("config.json").path
+        try? "not json".write(toFile: path, atomically: true, encoding: .utf8)
+        XCTAssertEqual(store.loadNotchOffsetX(), 0)
+    }
+
+    func testNotchOffsetSaveAbortsWhenFileCorrupt() {
+        let store = ConfigStore(directory: tmpDir.path)
+        let path = tmpDir.appendingPathComponent("config.json").path
+        let garbage = "not json — preserve me"
+        try? garbage.write(toFile: path, atomically: true, encoding: .utf8)
+
+        store.saveNotchOffsetX(99)
+
+        let after = try? String(contentsOfFile: path, encoding: .utf8)
+        XCTAssertEqual(after, garbage)
+    }
 }

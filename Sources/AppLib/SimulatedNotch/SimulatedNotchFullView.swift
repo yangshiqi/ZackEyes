@@ -363,6 +363,34 @@ struct SimulatedNotchFullView: View {
         showIsland.state = (visibility == .always) ? .on : .off
         menu.addItem(showIsland)
 
+        // "Move Notch" groups the two position actions in one dimension:
+        // enter drag-reposition mode, or jump straight back to center.
+        let moveMenu = NSMenu()
+        // Manage enablement ourselves so "Reset to Center" can stay disabled
+        // when already centered (autoenable would re-enable it by default).
+        moveMenu.autoenablesItems = false
+        let reposition = NSMenuItem(
+            title: "Reposition…",
+            action: #selector(GearMenuTarget.moveNotchClicked(_:)),
+            keyEquivalent: ""
+        )
+        reposition.target = GearMenuTarget.shared
+        moveMenu.addItem(reposition)
+
+        let resetPosition = NSMenuItem(
+            title: "Reset to Center",
+            action: #selector(GearMenuTarget.resetPositionClicked(_:)),
+            keyEquivalent: ""
+        )
+        resetPosition.target = GearMenuTarget.shared
+        // Only actionable when the notch has actually been moved.
+        resetPosition.isEnabled = ConfigStore().loadNotchOffsetX() != 0
+        moveMenu.addItem(resetPosition)
+
+        let moveItem = NSMenuItem(title: "Move Notch", action: nil, keyEquivalent: "")
+        moveItem.submenu = moveMenu
+        menu.addItem(moveItem)
+
         let themeMenu = NSMenu()
         let config = ConfigStore()
         let currentTheme = config.loadTheme()
@@ -531,4 +559,6 @@ struct SimulatedNotchFullView: View {
 public extension Notification.Name {
     static let hotkeyConfigChanged = Notification.Name("hotkeyConfigChanged")
     static let notchVisibilityChanged = Notification.Name("notchVisibilityChanged")
+    static let notchMoveModeRequested = Notification.Name("notchMoveModeRequested")
+    static let notchResetPositionRequested = Notification.Name("notchResetPositionRequested")
 }

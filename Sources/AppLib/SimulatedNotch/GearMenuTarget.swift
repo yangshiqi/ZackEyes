@@ -53,6 +53,21 @@ final class GearMenuTarget: NSObject {
         )
     }
 
+    @objc func moveNotchClicked(_ sender: Any?) {
+        // Match sibling handlers: clear the menu-open sticky flag so the
+        // controller's mouse-out collapse isn't blocked, then ask the
+        // controller (which owns panel geometry) to enter reposition mode.
+        modeStore?.isMenuOpen = false
+        NotificationCenter.default.post(name: .notchMoveModeRequested, object: nil)
+    }
+
+    @objc func resetPositionClicked(_ sender: Any?) {
+        // Sibling of moveNotchClicked: jump straight back to centered without
+        // entering drag mode. Controller owns geometry, so just post.
+        modeStore?.isMenuOpen = false
+        NotificationCenter.default.post(name: .notchResetPositionRequested, object: nil)
+    }
+
     @objc func themeClicked(_ sender: Any?) {
         guard let item = sender as? NSMenuItem,
               let rawValue = item.representedObject as? String,

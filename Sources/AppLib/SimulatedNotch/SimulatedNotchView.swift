@@ -28,6 +28,14 @@ struct SimulatedNotchView: View {
         .padding(.horizontal, 14)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(NotchShape(cornerRadius: 14).fill(Color.black))
+        .overlay {
+            // Move-mode cue: an accent border so the user knows the pill is
+            // currently draggable (entered via gear menu → "Move Notch").
+            if modeStore.isMovingNotch {
+                NotchShape(cornerRadius: 14)
+                    .stroke(Color(red: 0.31, green: 0.80, blue: 0.77), lineWidth: 2)
+            }
+        }
         .contentShape(NotchShape(cornerRadius: 14))
         .onTapGesture {
             onTap?()

@@ -29,6 +29,26 @@ public final class SimulatedNotchController {
     private var localClickMonitor: Any?
     private var screenObserver: NSObjectProtocol?
 
+    // ─── Move mode (gear menu → "Move Notch") ───────────────────────────
+    /// Horizontal offset of the notch from screen-center, in points.
+    /// 0 = the original fixed top-center position. Persisted to
+    /// `~/.zackeyes/config.json` and applied to both compact and full frames.
+    private var offsetX: CGFloat = 0
+    /// While dragging in move mode, snap the pill to exact center when its
+    /// left edge lands within this many points of the centered position — so
+    /// the user can recenter precisely by hand (hitting offsetX == 0 exactly
+    /// is otherwise near-impossible with a continuous drag).
+    private let moveSnapThreshold: CGFloat = 10
+    private var moveModeObserver: NSObjectProtocol?
+    private var resetPositionObserver: NSObjectProtocol?
+    private var moveDownMonitor: Any?
+    private var moveDragMonitor: Any?
+    private var moveUpMonitor: Any?
+    private var moveGlobalMonitor: Any?
+    /// When a pill drag is in flight, the horizontal distance between the
+    /// grab point and the panel's left edge. nil when not dragging.
+    private var dragGrabOffsetX: CGFloat?
+
     private var mode: NotchMode {
         get { modeStore.mode }
         set { modeStore.mode = newValue }
@@ -71,12 +91,16 @@ public final class SimulatedNotchController {
         // observes modeStore — otherwise the first frame renders Claude
         // (the default) and snaps to the persisted value on the next tick.
         self.modeStore.compactAgent = ConfigStore().loadCompactAgent()
+        // Restore the persisted horizontal position before the panel is created
+        // so the first frame appears where the user left it.
+        self.offsetX = ConfigStore().loadNotchOffsetX()
     }
 
     public func setup() {
         createPanel()
         observeScreenChanges()
         observeMouseMovement()
+        observeMoveModeRequests()
         usageTracker.start(intervalSeconds: 30)
     }
 
@@ -84,6 +108,9 @@ public final class SimulatedNotchController {
         usageTracker.stop()
         if let mon = mouseMonitor { NSEvent.removeMonitor(mon) }
         stopOutsideClickMonitoring()
+        stopMoveMonitors()
+        if let observer = moveModeObserver { NotificationCenter.default.removeObserver(observer) }
+        if let observer = resetPositionObserver { NotificationCenter.default.removeObserver(observer) }
         if let observer = screenObserver { NotificationCenter.default.removeObserver(observer) }
         panel?.orderOut(nil)
         panel = nil
@@ -154,15 +181,26 @@ public final class SimulatedNotchController {
     // MARK: - Geometry
 
     private func compactFrame(on screen: NSScreen) -> CGRect {
-        let x = screen.frame.midX - compactWidth / 2
+        let baseX = screen.frame.midX - compactWidth / 2 + offsetX
+        let x = clampedX(baseX, width: compactWidth, on: screen)
         let y = screen.frame.maxY - notchHeight
         return CGRect(x: x, y: y, width: compactWidth, height: notchHeight)
     }
 
     private func fullFrame(on screen: NSScreen) -> CGRect {
-        let x = screen.frame.midX - fullWidth / 2
+        let baseX = screen.frame.midX - fullWidth / 2 + offsetX
+        let x = clampedX(baseX, width: fullWidth, on: screen)
         let y = screen.frame.maxY - fullHeight
         return CGRect(x: x, y: y, width: fullWidth, height: fullHeight)
+    }
+
+    /// Clamp a proposed left-edge x so a panel of the given width stays fully
+    /// within the screen's horizontal bounds.
+    private func clampedX(_ x: CGFloat, width: CGFloat, on screen: NSScreen) -> CGFloat {
+        let minX = screen.frame.minX
+        let maxX = screen.frame.maxX - width
+        guard maxX > minX else { return minX }
+        return min(max(x, minX), maxX)
     }
 
     private func currentFrame(on screen: NSScreen) -> CGRect {
@@ -279,6 +317,10 @@ public final class SimulatedNotchController {
     private func handleMouseMove(_ location: NSPoint) {
         guard let panel = panel else { return }
 
+        // While repositioning, the pill must not auto-expand on hover — the
+        // user is dragging it, not interacting with its content.
+        if modeStore.isMovingNotch { return }
+
         // Hover area depends on current mode — for compact pill it's a small
         // box near the notch; for full panel it's the entire panel rect.
         let panelFrame = panel.frame
@@ -387,6 +429,135 @@ public final class SimulatedNotchController {
             NSEvent.removeMonitor(mon)
             localClickMonitor = nil
         }
+    }
+
+    // MARK: - Move mode (gear menu → "Move Notch")
+
+    private func observeMoveModeRequests() {
+        moveModeObserver = NotificationCenter.default.addObserver(
+            forName: .notchMoveModeRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.enterMoveMode() }
+        }
+        resetPositionObserver = NotificationCenter.default.addObserver(
+            forName: .notchResetPositionRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.resetPosition() }
+        }
+    }
+
+    /// Reset the notch to its original centered position. Wired to the gear
+    /// menu's "Reset to Center" item; also the destination the live drag snaps
+    /// to. Persists offsetX = 0 and animates the panel back to center.
+    private func resetPosition() {
+        offsetX = 0
+        ConfigStore().saveNotchOffsetX(0)
+        guard let panel = panel, let screen = primaryScreen() else { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = animationDuration
+            ctx.allowsImplicitAnimation = true
+            panel.animator().setFrame(currentFrame(on: screen), display: true)
+        }
+    }
+
+    /// Enter reposition mode: collapse to the compact pill, suppress hover
+    /// auto-expand, and start watching for drags on the pill. A click anywhere
+    /// outside the pill locks the position and exits.
+    private func enterMoveMode() {
+        guard let panel = panel else { return }
+        // The gear menu lives in the full panel, so we're typically full here.
+        // Collapse to the compact pill — that's the always-visible element the
+        // user wants to position out from under the menu-bar icons.
+        setMode(.compact)
+        // `setMode(.compact)` orders the panel out when visibility == .hidden;
+        // move mode needs the pill on-screen to drag, so force it back.
+        if !panel.isVisible { panel.orderFrontRegardless() }
+        modeStore.isMovingNotch = true
+        startMoveMonitors()
+    }
+
+    private func startMoveMonitors() {
+        stopMoveMonitors()
+
+        // Press on the pill begins a drag; press elsewhere inside our own
+        // windows locks and exits.
+        moveDownMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self else { return event }
+            let loc = NSEvent.mouseLocation
+            if let panel = self.panel, panel.frame.contains(loc) {
+                self.dragGrabOffsetX = loc.x - panel.frame.minX
+                return nil  // consume so tap-to-expand doesn't fire
+            }
+            Task { @MainActor [weak self] in self?.exitMoveMode() }
+            return event
+        }
+
+        // Drag events keep flowing to us after the mouse-down on our window,
+        // even when the cursor leaves the pill — AppKit routes the drag session
+        // to the window that received the down.
+        moveDragMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDragged) { [weak self] event in
+            guard let self, self.dragGrabOffsetX != nil else { return event }
+            // Local event monitors fire on the main thread and this closure is
+            // already @MainActor-isolated (sibling monitors mutate state
+            // synchronously), so call directly — no Task hop. Spawning a Task
+            // per drag event deferred each update to the next run-loop turn,
+            // making the pill visibly lag the cursor at 60–120 Hz.
+            self.handleMoveDrag(NSEvent.mouseLocation)
+            return nil
+        }
+
+        moveUpMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+            self?.dragGrabOffsetX = nil
+            return event
+        }
+
+        // A click in any other app / the desktop locks and exits.
+        moveGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .leftMouseDown) { [weak self] _ in
+            Task { @MainActor [weak self] in self?.exitMoveMode() }
+        }
+    }
+
+    private func handleMoveDrag(_ location: NSPoint) {
+        guard let panel = panel,
+              let screen = primaryScreen(),
+              let grab = dragGrabOffsetX else { return }
+        var x = clampedX(location.x - grab, width: compactWidth, on: screen)
+        // Snap to exact center when close, so a hand-drag can recenter precisely.
+        let centeredX = screen.frame.midX - compactWidth / 2
+        if abs(x - centeredX) <= moveSnapThreshold { x = centeredX }
+        let y = screen.frame.maxY - notchHeight
+        panel.setFrame(CGRect(x: x, y: y, width: compactWidth, height: notchHeight), display: true)
+    }
+
+    /// Lock the current position: persist the offset from screen-center and
+    /// leave move mode. Idempotent — safe if called when not in move mode.
+    private func exitMoveMode() {
+        guard modeStore.isMovingNotch else { return }
+        if let panel = panel, let screen = primaryScreen() {
+            let centeredX = screen.frame.midX - compactWidth / 2
+            offsetX = panel.frame.minX - centeredX
+            ConfigStore().saveNotchOffsetX(offsetX)
+        }
+        dragGrabOffsetX = nil
+        stopMoveMonitors()
+        modeStore.isMovingNotch = false
+        // Restore hidden-mode behaviour: a hidden notch shouldn't linger
+        // on-screen once the user has finished positioning it.
+        if visibility == .hidden, mode != .full { panel?.orderOut(nil) }
+    }
+
+    private func stopMoveMonitors() {
+        for mon in [moveDownMonitor, moveDragMonitor, moveUpMonitor, moveGlobalMonitor] {
+            if let mon { NSEvent.removeMonitor(mon) }
+        }
+        moveDownMonitor = nil
+        moveDragMonitor = nil
+        moveUpMonitor = nil
+        moveGlobalMonitor = nil
     }
 
     // MARK: - Screen changes
