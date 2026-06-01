@@ -7,6 +7,21 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.4.5',
+    date: 'Published June 1, 2026',
+    summary: 'v0.4.5',
+    highlights: [
+      {
+        label: 'Notes',
+        items: [
+          '可移动的模拟灵动岛：齿轮菜单 → Move Notch ▸ Reposition…，拖动调整水平位置以避开菜单栏图标；拖到中线自动吸附居中，或用 Reset to Center 一键复位。位置持久化，重启后恢复。',
+          'Allow All 权限按钮：权限卡片新增「Allow All」，批准当前请求并在本会话内自动放行同一工具，减少重复打断。会话级、按工具名、纯客户端（不写 settings.json）。',
+          '修复 AskUserQuestion 卡片「Click to answer in terminal」点击无反应（ScrollView 内手势冲突，改为真正的 Button）。'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.4.4',
     date: 'Published May 18, 2026',
     summary: 'Two notch additions that close the Codex/Claude visibility gap: model name, agent label, subagent badge, and a cross-agent permission-risk indicator.',
