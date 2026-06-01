@@ -2,6 +2,13 @@
 
 All notable changes to ZackEyes. Format follows [Keep a Changelog](https://keepachangelog.com).
 
+> **Frozen at v0.3.1 — see the website for current release notes.**
+> As of **v0.4.0** the changelog moved to the website:
+> <https://zackeyes.vercel.app/changelog>
+> (source: [`website/src/pages/changelog.astro`](website/src/pages/changelog.astro),
+> published per release via `make release NOTES=...`).
+> This file is retained only as the historical record for **v0.3.x and earlier**.
+
 ## [0.3.1] — 2026-05-03
 
 ### Fixed
