@@ -34,7 +34,13 @@ public final class SimulatedNotchController {
     /// 0 = the original fixed top-center position. Persisted to
     /// `~/.zackeyes/config.json` and applied to both compact and full frames.
     private var offsetX: CGFloat = 0
+    /// While dragging in move mode, snap the pill to exact center when its
+    /// left edge lands within this many points of the centered position — so
+    /// the user can recenter precisely by hand (hitting offsetX == 0 exactly
+    /// is otherwise near-impossible with a continuous drag).
+    private let moveSnapThreshold: CGFloat = 10
     private var moveModeObserver: NSObjectProtocol?
+    private var resetPositionObserver: NSObjectProtocol?
     private var moveDownMonitor: Any?
     private var moveDragMonitor: Any?
     private var moveUpMonitor: Any?
@@ -104,6 +110,7 @@ public final class SimulatedNotchController {
         stopOutsideClickMonitoring()
         stopMoveMonitors()
         if let observer = moveModeObserver { NotificationCenter.default.removeObserver(observer) }
+        if let observer = resetPositionObserver { NotificationCenter.default.removeObserver(observer) }
         if let observer = screenObserver { NotificationCenter.default.removeObserver(observer) }
         panel?.orderOut(nil)
         panel = nil
@@ -434,6 +441,27 @@ public final class SimulatedNotchController {
         ) { [weak self] _ in
             Task { @MainActor in self?.enterMoveMode() }
         }
+        resetPositionObserver = NotificationCenter.default.addObserver(
+            forName: .notchResetPositionRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.resetPosition() }
+        }
+    }
+
+    /// Reset the notch to its original centered position. Wired to the gear
+    /// menu's "Reset to Center" item; also the destination the live drag snaps
+    /// to. Persists offsetX = 0 and animates the panel back to center.
+    private func resetPosition() {
+        offsetX = 0
+        ConfigStore().saveNotchOffsetX(0)
+        guard let panel = panel, let screen = primaryScreen() else { return }
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = animationDuration
+            ctx.allowsImplicitAnimation = true
+            panel.animator().setFrame(currentFrame(on: screen), display: true)
+        }
     }
 
     /// Enter reposition mode: collapse to the compact pill, suppress hover
@@ -492,7 +520,10 @@ public final class SimulatedNotchController {
         guard let panel = panel,
               let screen = primaryScreen(),
               let grab = dragGrabOffsetX else { return }
-        let x = clampedX(location.x - grab, width: compactWidth, on: screen)
+        var x = clampedX(location.x - grab, width: compactWidth, on: screen)
+        // Snap to exact center when close, so a hand-drag can recenter precisely.
+        let centeredX = screen.frame.midX - compactWidth / 2
+        if abs(x - centeredX) <= moveSnapThreshold { x = centeredX }
         let y = screen.frame.maxY - notchHeight
         panel.setFrame(CGRect(x: x, y: y, width: compactWidth, height: notchHeight), display: true)
     }

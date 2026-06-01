@@ -61,6 +61,13 @@ final class GearMenuTarget: NSObject {
         NotificationCenter.default.post(name: .notchMoveModeRequested, object: nil)
     }
 
+    @objc func resetPositionClicked(_ sender: Any?) {
+        // Sibling of moveNotchClicked: jump straight back to centered without
+        // entering drag mode. Controller owns geometry, so just post.
+        modeStore?.isMenuOpen = false
+        NotificationCenter.default.post(name: .notchResetPositionRequested, object: nil)
+    }
+
     @objc func themeClicked(_ sender: Any?) {
         guard let item = sender as? NSMenuItem,
               let rawValue = item.representedObject as? String,
