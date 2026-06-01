@@ -114,6 +114,11 @@ dmg: app-release
 #
 # Usage:  make release VERSION=0.3.0     (X.Y.Z, no 'v' prefix)
 # Optional: NOTES="changelog text"       (defaults to "Release vVERSION")
+#   NOTES is written verbatim into the PUBLIC website changelog
+#   (website/src/pages/changelog.astro), so it MUST be English and structured
+#   into "Added:" / "Fixed:" groups to match the existing entries. A CJK
+#   preflight (Sanity check below) rejects Chinese notes before any
+#   irreversible step.
 #
 # Recovery from partial failure: this target is NOT idempotent.
 #
@@ -163,6 +168,13 @@ endif
 	@# the website bump script, after Info.plist was already edited.
 	@if ! echo "$(VERSION)" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$$'; then \
 	  echo "ERROR: VERSION must be X.Y.Z (no 'v' prefix), got '$(VERSION)'"; exit 1; \
+	fi
+	@# NOTES lands verbatim in the public website changelog, which is English
+	@# with Added:/Fixed: groups. Reject CJK release notes here — before the DMG
+	@# build / website bump / public upload — so Chinese can't leak to the site.
+	@if printf '%s' "$${NOTES:-}" | perl -CSD -ne 'exit 1 if /[\p{Han}\p{Hiragana}\p{Katakana}]/'; then :; else \
+	  echo "ERROR: NOTES contains CJK characters — release notes must be English,"; \
+	  echo "       structured into Added:/Fixed: groups (see website/src/pages/changelog.astro)."; exit 1; \
 	fi
 	@branch=$$(git rev-parse --abbrev-ref HEAD); \
 	  if [ "$$branch" != "master" ]; then \
