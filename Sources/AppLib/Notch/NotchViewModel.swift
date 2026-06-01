@@ -59,6 +59,12 @@ public final class NotchViewModel: ObservableObject {
         sessionStore.resolvePermission(sessionId: sessionId, allow: false)
     }
 
+    /// "Allow All": approve now and auto-allow this tool for the rest of the
+    /// session (see `SessionStore.allowAll`).
+    public func approveAll(sessionId: String) {
+        sessionStore.allowAll(sessionId: sessionId)
+    }
+
     /// Click handler: jump to the terminal tab for this session.
     /// Runs on a background task so subprocess + AppleScript calls don't block the UI.
     public func activateTerminal(for session: SessionInfo) {

@@ -473,9 +473,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("ZackEyes: PermissionRequest missing session_id")
                 return
             }
+            let toolName = event.toolName ?? "Unknown"
+            // "Allow All": a prior click approved this tool for the rest of the
+            // session, so auto-allow without building a pending / expanding the
+            // panel. Same client-side auto-respond pattern as the AskUQ early
+            // return above.
+            if sessionStore.isToolAutoAllowed(sessionId: sid, toolName: toolName) {
+                responder(.permission(.allow(message: "Auto-allowed via ZackEyes (Allow All)")))
+                NSLog("ZackEyes: auto-allowed tool=%@ (Allow All) sid=%@", toolName, sid)
+                return
+            }
             let toolInput = event.toolInput?.mapValues { $0.value } ?? [:]
             let pending = PendingPermission(
-                toolName: event.toolName ?? "Unknown",
+                toolName: toolName,
                 toolInput: toolInput,
                 cwd: event.cwd,
                 responder: responder

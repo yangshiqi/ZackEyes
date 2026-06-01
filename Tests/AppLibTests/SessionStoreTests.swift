@@ -71,6 +71,59 @@ struct SessionStoreTests {
         #expect(store.sessions["s1"]?.pendingPermission == nil)
     }
 
+    // 5a. "Allow All" sends an allow for the current request, clears pending,
+    //     and remembers the tool so future requests for it are auto-allowed.
+    @Test func allowAllApprovesAndRemembersTool() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        let box = Box<BridgeResponse>()
+        let permission = PendingPermission(
+            toolName: "Bash", toolInput: [:], cwd: "/tmp",
+            responder: { box.value = $0 }
+        )
+        store.handlePermissionRequest(sessionId: "s1", permission: permission)
+
+        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Bash") == false)
+        store.allowAll(sessionId: "s1")
+
+        // Current request allowed + pending cleared + back to working
+        if case .permission(let r) = box.value {
+            #expect(r.hookSpecificOutput.decision.behavior == "allow")
+        } else {
+            #expect(Bool(false), "allowAll should send a .permission(allow) response")
+        }
+        #expect(store.sessions["s1"]?.pendingPermission == nil)
+        #expect(store.sessions["s1"]?.state == .working)
+        // Future Bash requests in this session are now auto-allowed
+        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Bash"))
+        // A different tool is NOT auto-allowed
+        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Write") == false)
+    }
+
+    // 5b. Auto-allow is scoped per session: allowing all Bash in s1 must not
+    //     auto-allow Bash in s2.
+    @Test func autoAllowIsScopedPerSession() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/a"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s2", cwd: "/b"))
+        let permission = PendingPermission(
+            toolName: "Bash", toolInput: [:], cwd: "/a", responder: { _ in }
+        )
+        store.handlePermissionRequest(sessionId: "s1", permission: permission)
+        store.allowAll(sessionId: "s1")
+
+        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Bash"))
+        #expect(store.isToolAutoAllowed(sessionId: "s2", toolName: "Bash") == false)
+    }
+
+    @Test func isToolAutoAllowedDefaultsFalse() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Bash") == false)
+        // Unknown session is also false (no crash).
+        #expect(store.isToolAutoAllowed(sessionId: "nope", toolName: "Bash") == false)
+    }
+
     // 5b. resolvePermission(sessionId:allow:) only clears the named session,
     //     leaves other pending sessions intact. Guards the contract relied on
     //     by per-session approval buttons in the notch panel.

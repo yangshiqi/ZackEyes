@@ -451,21 +451,31 @@ struct NotchExpandedView: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.up.right.square.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                Text("Click to answer in terminal")
-                    .font(.system(size: 12, weight: .semibold))
-                Spacer(minLength: 0)
+            // A real Button (not the card's bubbled .onTapGesture): the card
+            // is wrapped in a ScrollView (NotchCompactView / SimulatedNotchFullView),
+            // where a container-level .onTapGesture competes with scroll
+            // recognition and often never fires — so the CTA "did nothing".
+            // Button hit-testing is coordinated with ScrollView (same reason
+            // Deny/Allow work reliably here), so this guarantees the tap.
+            Button(action: { viewModel.activateTerminal(for: session) }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.up.right.square.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("Click to answer in terminal")
+                        .font(.system(size: 12, weight: .semibold))
+                    Spacer(minLength: 0)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.45))
+                )
             }
-            .foregroundColor(.white)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.45))
-            )
+            .buttonStyle(.plain)
             .padding(.top, 4)
         }
         .padding(.top, 6)
@@ -506,6 +516,7 @@ struct NotchExpandedView: View {
         HStack(spacing: 8) {
             denyButton(sessionId: sessionId, isPrimary: isPrimary)
             allowButton(sessionId: sessionId, isPrimary: isPrimary)
+            allowAllButton(sessionId: sessionId, isPrimary: isPrimary)
         }
     }
 
@@ -558,6 +569,36 @@ struct NotchExpandedView: View {
 
         if isPrimary {
             base.keyboardShortcut("y", modifiers: .command)
+        } else {
+            base
+        }
+    }
+
+    @ViewBuilder
+    private func allowAllButton(sessionId: String, isPrimary: Bool) -> some View {
+        let teal = Color(red: 0.31, green: 0.80, blue: 0.77)
+        let base = Button(action: { viewModel.approveAll(sessionId: sessionId) }) {
+            HStack(spacing: 4) {
+                Text("Allow All")
+                if isPrimary {
+                    Text("⇧⌘Y")
+                        .font(.system(size: 8, weight: .regular, design: .monospaced))
+                        .opacity(0.7)
+                }
+            }
+                // Filled (vs Allow Once's translucent fill) to signal the
+                // broader, session-wide scope.
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(.black)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 8)
+                .background(teal)
+                .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+
+        if isPrimary {
+            base.keyboardShortcut("y", modifiers: [.command, .shift])
         } else {
             base
         }
