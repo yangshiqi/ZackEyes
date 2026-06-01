@@ -9,14 +9,19 @@ const releases = [
   {
     version: 'ZackEyes 0.4.5',
     date: 'Published June 1, 2026',
-    summary: 'v0.4.5',
+    summary: 'Reposition the simulated notch out from under menu-bar icons, an Allow All session-scoped permission shortcut, and a fix for the dead "answer in terminal" CTA.',
     highlights: [
       {
-        label: 'Notes',
+        label: 'Added',
         items: [
-          '可移动的模拟灵动岛：齿轮菜单 → Move Notch ▸ Reposition…，拖动调整水平位置以避开菜单栏图标；拖到中线自动吸附居中，或用 Reset to Center 一键复位。位置持久化，重启后恢复。',
-          'Allow All 权限按钮：权限卡片新增「Allow All」，批准当前请求并在本会话内自动放行同一工具，减少重复打断。会话级、按工具名、纯客户端（不写 settings.json）。',
-          '修复 AskUserQuestion 卡片「Click to answer in terminal」点击无反应（ScrollView 内手势冲突，改为真正的 Button）。'
+          'Movable simulated notch: gear menu → Move Notch ▸ Reposition… lets you drag the pill horizontally to clear menu-bar icons it would otherwise sit under. Dragging near the middle snaps it back to exact center, or Reset to Center recenters in one click. The horizontal offset is persisted and restored on the next launch. Macs with a real notch are unaffected — a physical notch is hardware-fixed and centered.',
+          'Allow All permission button: a third choice alongside Deny / Allow Once that approves the current request and auto-allows the same tool for the rest of the session, so back-to-back same-tool prompts (e.g. repeated Bash calls) stop interrupting. Scoped per tool name and per session, and fully client-side — it never writes ~/.claude/settings.json and is cleared on session end or app restart.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'The AskUserQuestion card\'s "Click to answer in terminal" CTA did nothing: it relied on a container-level tap gesture that competes with scroll recognition inside the notch\'s ScrollView and frequently never fired. It is now a real Button, so clicking it reliably jumps to the terminal.'
         ]
       }
     ]
@@ -51,7 +56,7 @@ const releases = [
         label: 'Fixed',
         items: [
           'Resumed Codex sessions (codex --resume) now surface in the notch even when their rollout file lives in an older YYYY/MM/DD directory; the scanner walks every date directory and filters by file mtime instead of pruning by directory name.',
-          'Click on a session card always lands somewhere: when the cached agent PID is stale or accessibility-matching cannot pick a tab, the click falls back to cwd-based AX matching and finally activates the first running terminal, replacing the silent "完全没反应" failure mode.'
+          'Click on a session card always lands somewhere: when the cached agent PID is stale or accessibility-matching cannot pick a tab, the click falls back to cwd-based AX matching and finally activates the first running terminal, replacing the silent "nothing happens at all" failure mode.'
         ]
       }
     ]
