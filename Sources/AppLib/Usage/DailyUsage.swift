@@ -136,6 +136,9 @@ extension UsageTracker {
             let dOutput = sawTotals ? max(0, curOutput - prevOutput) : curOutput
             prevInput = curInput; prevCached = curCached; prevOutput = curOutput; sawTotals = true
 
+            // Drop no-op rows. cached_input_tokens is a subset of input_tokens, so
+            // dCached > 0 implies dInput > 0 — the (dInput + dOutput) > 0 check never
+            // discards a turn whose only growth is cached tokens.
             guard let tsString = obj["timestamp"] as? String,
                   let ts = iso.date(from: tsString) ?? isoNoFrac.date(from: tsString),
                   ts >= cutoff, (dInput + dOutput) > 0 else { continue }
