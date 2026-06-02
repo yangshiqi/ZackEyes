@@ -18,8 +18,6 @@ struct TodayConsumptionRowTests {
         #expect(TodayConsumptionRow.costString(4.2, floor: false) == "$4.20")
         #expect(TodayConsumptionRow.costString(4.2, floor: true) == "≥$4.20")
         #expect(TodayConsumptionRow.costString(nil, floor: false) == nil)
-        #expect(TodayConsumptionRow.costString(4.25, floor: false, compact: true) == "$4.2")
-        #expect(TodayConsumptionRow.costString(4.25, floor: true, compact: true) == "≥$4.2")
     }
 
     @Test func sparklineFractions() {

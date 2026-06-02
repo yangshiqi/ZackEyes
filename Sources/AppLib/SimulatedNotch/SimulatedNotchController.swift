@@ -91,7 +91,6 @@ public final class SimulatedNotchController {
         // observes modeStore — otherwise the first frame renders Claude
         // (the default) and snaps to the persisted value on the next tick.
         self.modeStore.compactAgent = ConfigStore().loadCompactAgent()
-        self.modeStore.showTodayCostInPill = ConfigStore().loadShowTodayCostInPill()
         // Restore the persisted horizontal position before the panel is created
         // so the first frame appears where the user left it.
         self.offsetX = ConfigStore().loadNotchOffsetX()

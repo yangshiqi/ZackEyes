@@ -160,37 +160,6 @@ public final class ConfigStore: Sendable {
         try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
 
-    /// Load whether the collapsed pill appends today's cost. Defaults to `false`.
-    public func loadShowTodayCostInPill() -> Bool {
-        guard let data = FileManager.default.contents(atPath: configPath),
-              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
-            return false
-        }
-        return wrapper.showTodayCostInPill ?? false
-    }
-
-    /// Save the pill-cost preference. Same defensive contract as
-    /// `saveCompactAgent` — bail rather than clobber a corrupt file.
-    public func saveShowTodayCostInPill(_ enabled: Bool) {
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: directory) {
-            try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
-        }
-        var wrapper: ConfigWrapper
-        if fm.fileExists(atPath: configPath) {
-            guard let data = fm.contents(atPath: configPath),
-                  let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
-                return
-            }
-            wrapper = existing
-        } else {
-            wrapper = ConfigWrapper(hotkey: .default)
-        }
-        wrapper.showTodayCostInPill = enabled
-        guard let data = try? JSONEncoder().encode(wrapper) else { return }
-        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
-    }
-
     /// Load the simulated-notch horizontal offset from screen-center, in
     /// points (positive = right of center, negative = left). Returns 0
     /// (centered — the original fixed position) on any failure or when the
@@ -256,5 +225,4 @@ private struct ConfigWrapper: Codable {
     var notchVisibility: String?        // nil = .always (default)
     var compactAgent: String?           // nil = .claude (default — agent shown in collapsed simulated notch)
     var notchOffsetX: Double?           // nil = 0 (centered — simulated notch horizontal offset from screen-center)
-    var showTodayCostInPill: Bool?      // nil = false (default — #84 pill cost suffix off)
 }

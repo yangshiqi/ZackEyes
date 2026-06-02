@@ -68,11 +68,11 @@ struct TodayConsumptionRow: View {
         }
     }
 
-    /// "$4.20" / "≥$4.20" (or compact "$4.2"); nil when `usd` is nil.
-    nonisolated static func costString(_ usd: Double?, floor: Bool, compact: Bool = false) -> String? {
+    /// "$4.20" / "≥$4.20"; nil when `usd` is nil.
+    nonisolated static func costString(_ usd: Double?, floor: Bool) -> String? {
         guard let usd else { return nil }
         let prefix = floor ? "≥$" : "$"
-        return prefix + String(format: compact ? "%.1f" : "%.2f", usd)
+        return prefix + String(format: "%.2f", usd)
     }
 
     /// Each value as a 0...1 fraction of the max; all-zero (or empty) → zeros.

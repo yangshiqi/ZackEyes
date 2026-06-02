@@ -212,26 +212,4 @@ final class ConfigStoreTests: XCTestCase {
         XCTAssertEqual(after, garbage)
     }
 
-    // MARK: - Show today's cost in pill
-
-    func testShowTodayCostInPillDefaultsFalse() {
-        let store = ConfigStore(directory: tmpDir.path)
-        XCTAssertFalse(store.loadShowTodayCostInPill())
-    }
-
-    func testShowTodayCostInPillRoundTrips() {
-        let store = ConfigStore(directory: tmpDir.path)
-        store.saveShowTodayCostInPill(true)
-        XCTAssertTrue(store.loadShowTodayCostInPill())
-        store.saveShowTodayCostInPill(false)
-        XCTAssertFalse(store.loadShowTodayCostInPill())
-    }
-
-    func testSaveShowTodayCostInPillPreservesOtherKeys() {
-        let store = ConfigStore(directory: tmpDir.path)
-        store.saveCompactAgent(.codex)
-        store.saveShowTodayCostInPill(true)
-        XCTAssertEqual(store.loadCompactAgent(), .codex)
-        XCTAssertTrue(store.loadShowTodayCostInPill())
-    }
 }
