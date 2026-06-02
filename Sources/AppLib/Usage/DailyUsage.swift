@@ -110,8 +110,8 @@ extension UsageTracker {
         var sawTotals = false
 
         for line in text.split(separator: "\n") {
-            guard let d = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
+            let d = Data(line.utf8)
+            guard let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
             let type = obj["type"] as? String
             let payload = obj["payload"] as? [String: Any]
 
