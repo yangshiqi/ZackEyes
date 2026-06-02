@@ -14,6 +14,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyManager: HotKeyManager?
     private var updateChecker: UpdateChecker?
     private var updateDownloader: UpdateDownloader?
+    private var pricingStore: PricingStore?
     private var statusBarMenu: StatusBarMenu?
     private var livenessSweepTimer: Timer?
     private var codexTailer: CodexJsonlTailer?
@@ -80,6 +81,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // the simulated path's `start()` is idempotent (cancels + restarts
         // the same task), so this is safe whether or not we hit that branch.
         usageTracker.start(intervalSeconds: 30)
+
+        // 3.6 Pricing table (model→$ snapshot; bundled + 24h remote refresh).
+        // Consumed by token-cost features; safe no-op until then.
+        let ps = PricingStore()
+        pricingStore = ps
+        ps.start()
 
         // 4. UI — Notch or Menu Bar (+ simulated notch on notchless Macs)
         // UpdateChecker is ALWAYS created so real-notch users also get
@@ -436,6 +443,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         livenessSweepTimer?.invalidate()
         updateChecker?.stop()
+        pricingStore?.stop()
         hotKeyManager?.unregister()
         socketServer?.stop()
         windowController?.teardown()
