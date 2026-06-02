@@ -140,4 +140,32 @@ struct DailyUsageTests {
             cutoff: Self.utc.date(byAdding: .day, value: -6, to: Self.utc.startOfDay(for: Self.now))!)
         #expect(tallies.isEmpty)        // 2020 turn is far before the 7-day window
     }
+
+    @Test func codexUnknownModelFallbackWhenNoTurnContext() {
+        // A token_count with NO preceding turn_context → model defaults to "unknown".
+        let text = #"{"type":"event_msg","timestamp":"2026-06-02T03:00:02.000Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":10,"total_tokens":110}}}}"#
+        let tallies = UsageTracker.parseCodexDailyTallies(text: text, calendar: Self.utc,
+            cutoff: Self.utc.date(byAdding: .day, value: -6, to: Self.utc.startOfDay(for: Self.now))!)
+        let day = Self.utc.startOfDay(for: Self.now)
+        #expect(tallies[day]?["unknown"]?.input == 100)
+        #expect(tallies[day]?["unknown"]?.output == 10)
+    }
+
+    @Test func codexModelSwitchMidFileAttributesDeltasCorrectly() {
+        // turn_context(A) → token_count(cum 100/0/10) → turn_context(B) → token_count(cum 300/0/30)
+        // delta1 = 100in/10out → model A ; delta2 = 200in/20out → model B
+        let text = [
+            #"{"type":"turn_context","timestamp":"2026-06-02T03:00:00.000Z","payload":{"model":"model-a"}}"#,
+            #"{"type":"event_msg","timestamp":"2026-06-02T03:00:01.000Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":10,"total_tokens":110}}}}"#,
+            #"{"type":"turn_context","timestamp":"2026-06-02T03:00:02.000Z","payload":{"model":"model-b"}}"#,
+            #"{"type":"event_msg","timestamp":"2026-06-02T03:00:03.000Z","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":300,"cached_input_tokens":0,"output_tokens":30,"total_tokens":330}}}}"#
+        ].joined(separator: "\n")
+        let tallies = UsageTracker.parseCodexDailyTallies(text: text, calendar: Self.utc,
+            cutoff: Self.utc.date(byAdding: .day, value: -6, to: Self.utc.startOfDay(for: Self.now))!)
+        let day = Self.utc.startOfDay(for: Self.now)
+        #expect(tallies[day]?["model-a"]?.input == 100)
+        #expect(tallies[day]?["model-a"]?.output == 10)
+        #expect(tallies[day]?["model-b"]?.input == 200)   // 300-100
+        #expect(tallies[day]?["model-b"]?.output == 20)    // 30-10
+    }
 }
