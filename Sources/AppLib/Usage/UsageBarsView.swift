@@ -28,12 +28,12 @@ struct UsageBarsView<Trailing: View>: View {
             usageBar(label: "7d", usedPct: snap.sevenDayUsedPct, resetsAt: snap.sevenDayResetsAt) {
                 EmptyView()
             }
-            if usageTracker.showTodayConsumption, snap.hasConsumption, let today = snap.dailyUsage.last {
+            if usageTracker.showTodayConsumption, snap.hasConsumption {
                 Rectangle()
                     .fill(Color.white.opacity(0.08))
                     .frame(height: 1)
                     .padding(.vertical, 2)
-                TodayConsumptionRow(today: today, series: snap.dailyUsage.map(\.totalTokens))
+                TodayConsumptionRow(days: snap.dailyUsage)
             }
         }
     }

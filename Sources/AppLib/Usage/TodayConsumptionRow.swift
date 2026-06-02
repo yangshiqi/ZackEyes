@@ -5,8 +5,11 @@ import SwiftUI
 /// (`UsageBarsView`) and simulated-notch (`SimulatedNotchFullView`) headers.
 /// Display-only; all branchable logic is in the tested static helpers below.
 struct TodayConsumptionRow: View {
-    let today: DayUsage
-    let series: [Int]   // 7 daily totalTokens, oldest → today (rightmost = today)
+    let days: [DayUsage]   // 7 local-day buckets, oldest → today (rightmost = today)
+
+    /// Today = the last bucket (callers gate on `hasConsumption`, so `days` is the
+    /// full 7-entry window); fall back to an empty day if somehow empty.
+    private var today: DayUsage { days.last ?? DayUsage(dayStart: .init(timeIntervalSince1970: 0)) }
 
     private static let accent = Color(red: 0.31, green: 0.80, blue: 0.77)
 
@@ -33,10 +36,10 @@ struct TodayConsumptionRow: View {
                 }
             }
             Spacer(minLength: 8)
-            // 7-day daily-token sparkline — fills the empty right area, spanning
-            // both text lines. Rightmost bar = today.
-            SparklineView(values: series)
-                .frame(width: 132, height: 26)
+            // 7-day daily-token sparkline — right of the text block, spanning both
+            // lines. Rightmost bar = today; hover a bar for that day's data.
+            SparklineView(days: days)
+                .frame(width: 104, height: 22)
         }
     }
 
@@ -86,20 +89,39 @@ struct TodayConsumptionRow: View {
     }
 }
 
-/// 7 thin bars, heights normalized to the max; the last bar (today) is brighter.
+/// 7 daily bars, heights normalized to the max; today (last) is brighter.
+/// Each day occupies a full-height, equal-width column so hovering anywhere over
+/// it shows that day's data via a native tooltip.
 struct SparklineView: View {
-    let values: [Int]
+    let days: [DayUsage]
     var body: some View {
-        let fractions = TodayConsumptionRow.sparklineFractions(values)
+        let fractions = TodayConsumptionRow.sparklineFractions(days.map(\.totalTokens))
         GeometryReader { geo in
             HStack(alignment: .bottom, spacing: 3) {
-                ForEach(Array(fractions.enumerated()), id: \.offset) { idx, f in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.white.opacity(idx == fractions.count - 1 ? 0.85 : 0.35))
-                        .frame(height: max(1, f * geo.size.height))
+                ForEach(Array(days.enumerated()), id: \.offset) { idx, day in
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .overlay(alignment: .bottom) {
+                            RoundedRectangle(cornerRadius: 2)
+                                .fill(Color.white.opacity(idx == days.count - 1 ? 0.85 : 0.35))
+                                .frame(height: max(1, fractions[idx] * geo.size.height))
+                        }
+                        .contentShape(Rectangle())
+                        .help(Self.tooltip(for: day, isToday: idx == days.count - 1))
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
+    }
+
+    /// Hover tooltip for one bar: date · total tokens · per-agent split.
+    nonisolated static func tooltip(for day: DayUsage, isToday: Bool) -> String {
+        let c = Calendar.current.dateComponents([.month, .day], from: day.dayStart)
+        let label = isToday ? "Today" : "\(c.month ?? 0)/\(c.day ?? 0)"
+        var s = "\(label) · \(TodayConsumptionRow.humanizeTokens(day.totalTokens)) tok"
+        var parts: [String] = []
+        if day.claudeTokens > 0 { parts.append("C \(TodayConsumptionRow.humanizeTokens(day.claudeTokens))") }
+        if day.codexTokens > 0 { parts.append("X \(TodayConsumptionRow.humanizeTokens(day.codexTokens))") }
+        if !parts.isEmpty { s += "  (\(parts.joined(separator: " · ")))" }
+        return s
     }
 }
