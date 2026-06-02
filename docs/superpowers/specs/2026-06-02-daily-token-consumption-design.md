@@ -79,15 +79,17 @@ public var dailyUsage: [DayUsage]       // exactly 7 entries, oldest → today (
 
 ### Token-total convention (cross-agent)
 
-The "tokens" number is "tokens processed", summed per agent then combined:
-- **Claude:** `input + output + cache_read + cache_creation` (matches the existing
-  `computeSnapshot` convention — cache tokens counted additively).
-- **Codex:** `input_tokens + output_tokens` (Codex's `cached_input_tokens` is a
-  *subset* of `input_tokens`, not additive; `reasoning_output_tokens` is a subset
-  of `output_tokens`).
+The displayed "tokens" number is **`input + output` for both agents** — the real
+work done. (Codex's `cached_input_tokens` is a subset of `input_tokens`, not
+additive.)
 
-These are approximate across providers but correct within each, and fine for a
-glance metric. Cost (below) uses the precise per-component breakdown.
+> **Revised (2026-06-02, real-data feedback):** the headline originally counted
+> Claude as `input + output + cache_read + cache_creation`, but real usage showed
+> that's ~97% `cache_read` — the same cached context re-read every turn — inflating
+> "today" to 800M+ tokens. Cache reuse is not "work done", so it's **excluded from
+> the displayed count** (`DailyUsage.swift` `buildDailyUsage`). Cost (below) still
+> bills **all four components** at their respective rates, and is labeled **"est."**
+> (a theoretical per-API-token figure, not subscription spend).
 
 ## Scan + cost (off-main scan, on-main pricing)
 
