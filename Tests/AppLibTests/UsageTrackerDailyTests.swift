@@ -33,6 +33,7 @@ struct UsageTrackerDailyTests {
         let dayDir = Self.codexDayDir(under: root, now: now)
         try FileManager.default.createDirectory(at: dayDir, withIntermediateDirectories: true)
         let file = dayDir.appendingPathComponent("rollout-x.jsonl")
+        let key = file.resolvingSymlinksInPath().path
         let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let tsString = iso.string(from: now)
         let text = #"{"type":"turn_context","timestamp":"\#(tsString)","payload":{"model":"gpt-5.5"}}"#
@@ -43,12 +44,12 @@ struct UsageTrackerDailyTests {
         let r1 = UsageTracker.scanCodexDailyTokens(rootDir: root, cache: [:], calendar: cal, now: now)
         let today = cal.startOfDay(for: now)
         #expect(r1.merged[today]?["gpt-5.5"]?.input == 100)
-        #expect(r1.cache[file.path] != nil)
+        #expect(r1.cache[key] != nil)
 
         // Re-scan with a cache that returns a SENTINEL tally for the unchanged file →
         // proves the cache is used (file not re-parsed).
         var poisoned = r1.cache
-        poisoned[file.path]?.tallies = [today: ["sentinel": ModelTokenTally(input: 7)]]
+        poisoned[key]?.tallies = [today: ["sentinel": ModelTokenTally(input: 7)]]
         let r2 = UsageTracker.scanCodexDailyTokens(rootDir: root, cache: poisoned, calendar: cal, now: now)
         #expect(r2.merged[today]?["sentinel"]?.input == 7)        // served from cache
         #expect(r2.merged[today]?["gpt-5.5"] == nil)
