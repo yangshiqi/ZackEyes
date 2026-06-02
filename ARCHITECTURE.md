@@ -132,6 +132,16 @@ Full 模式下：
 - 内容变化时 debounced 120ms 重新计算高度并平滑动画
 - 上限为 `screen.visibleFrame.height - 40`，超过则内部 ScrollView 滚动
 
+### Pricing 数据流
+
+```
+PricingStore.start()
+  → loadInitial(): max(version) of {bundled pricing.json, ~/.zackeyes/pricing-cache.json}
+  → 24h Timer + 即刻一次: URLSession GET raw pricing.json
+        → version 严格更新才 atomic 写缓存 + swap table；否则静默保持
+消费方（后续 #84）: pricingStore.price(for: rawModelID) → ModelPrice?
+```
+
 ## 模块职责
 
 | 模块 | 文件 | 职责 |
@@ -222,6 +232,7 @@ Full 模式下：
 | `UpdateDownloader` | `Sources/AppLib/Update/UpdateDownloader.swift` | URLSession 下载 DMG 到 `$TMPDIR`，通过 NSWorkspace 打开使 Finder 挂载；状态栏菜单 + 齿轮菜单 + 通知点击均通过此下载器 |
 | `TerminalLocator` | `Sources/AppLib/Terminal/TerminalLocator.swift` | 进程树遍历 + iTerm2/Terminal AppleScript + Ghostty/Warp/Kitty Accessibility |
 | `UsageTracker` | `Sources/AppLib/Usage/UsageTracker.swift` | 双 agent 配额。Claude 数据来自 statusLine hook 的 `rate_limits.{five_hour,seven_day}`；Codex 数据来自周期扫描 `~/.codex/sessions/` 最新 rollout 的 `event_msg.token_count.rate_limits.{primary,secondary}`。Snapshot 含 claude + codex 平行字段，UI 按需呈现单条或左右切。 |
+| `PricingStore` / `PricingTable` | `Sources/AppLib/Usage/PricingStore.swift`、`PricingTable.swift` | 模型→单价查询（`price(for:)`）。`PricingTable` 纯解析+查找（exact→去日期后缀→alias→nil，仅接受原始 model id）；`PricingStore` 按 `version` 在 bundled 快照 / 磁盘缓存 / 24h 远端拉取间择新，失败静默。无 UI。 |
 
 **App 入口**
 | 模块 | 文件 | 职责 |
