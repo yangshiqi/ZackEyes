@@ -21,6 +21,7 @@ app: build
 	cp Resources/Info.plist $(CONTENTS)/Info.plist
 	cp Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
 	cp Resources/*.mp3 $(RESOURCES)/
+	cp Resources/pricing.json $(RESOURCES)/
 	@# Ad-hoc code signing — gives the app a stable identity so macOS
 	@# persists Accessibility / Apple Events grants across rebuilds.
 	codesign --force --deep --sign - $(APP_BUNDLE) 2>&1 | grep -v "replacing existing signature" || true
@@ -34,6 +35,7 @@ app-release: build-release
 	cp Resources/Info.plist $(CONTENTS)/Info.plist
 	cp Resources/AppIcon.icns $(RESOURCES)/AppIcon.icns
 	cp Resources/*.mp3 $(RESOURCES)/
+	cp Resources/pricing.json $(RESOURCES)/
 	codesign --force --deep --sign - $(APP_BUNDLE) 2>&1 | grep -v "replacing existing signature" || true
 	@echo "Built $(APP_BUNDLE) (release)"
 
