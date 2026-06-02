@@ -193,6 +193,13 @@ struct SimulatedNotchFullView: View {
                     resetsAt: useCodex ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
                 )
             }
+            if snap.hasConsumption, let today = snap.dailyUsage.last {
+                Rectangle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(height: 1)
+                    .padding(.top, 2)
+                TodayConsumptionRow(today: today, series: snap.dailyUsage.map(\.totalTokens))
+            }
         }
     }
 

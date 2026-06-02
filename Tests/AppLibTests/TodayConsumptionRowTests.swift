@@ -35,4 +35,14 @@ struct TodayConsumptionRowTests {
         #expect(TodayConsumptionRow.combinedCost(DayUsage(dayStart: d, claudeCostUSD: nil, codexCostUSD: nil)) == nil)
         #expect(TodayConsumptionRow.combinedCost(DayUsage(dayStart: d, claudeCostUSD: nil, codexCostUSD: 2.5)) == 2.5)
     }
+
+    @Test func hasConsumption() {
+        let d = Date(timeIntervalSince1970: 0)
+        var snap = UsageTracker.Snapshot.empty
+        #expect(snap.hasConsumption == false)
+        snap.dailyUsage = [DayUsage(dayStart: d, claudeTokens: 0, codexTokens: 0)]
+        #expect(snap.hasConsumption == false)
+        snap.dailyUsage = [DayUsage(dayStart: d, claudeTokens: 100, codexTokens: 0)]
+        #expect(snap.hasConsumption == true)
+    }
 }

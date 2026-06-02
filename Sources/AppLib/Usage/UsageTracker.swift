@@ -67,6 +67,12 @@ public final class UsageTracker: ObservableObject {
 
         public var hasRealData: Bool { hasClaudeData || hasCodexData }
 
+        /// True when any of the 7 daily buckets has nonzero consumption — drives
+        /// whether the #84 Today row is shown at all (hidden on fresh installs).
+        public var hasConsumption: Bool {
+            dailyUsage.contains { $0.totalTokens > 0 }
+        }
+
         /// 5h-window used-percentage for the given agent, or nil if no data.
         /// Lets call sites avoid the `agent == .codex ? codex... : ...` ternary.
         public func fiveHourUsedPct(for agent: AgentKind) -> Double? {
