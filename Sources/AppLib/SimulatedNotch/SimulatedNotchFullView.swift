@@ -453,6 +453,15 @@ struct SimulatedNotchFullView: View {
         compactItem.submenu = compactMenu
         menu.addItem(compactItem)
 
+        let pillCost = NSMenuItem(
+            title: "Show today's cost in pill",
+            action: #selector(GearMenuTarget.toggleTodayCostInPillClicked(_:)),
+            keyEquivalent: ""
+        )
+        pillCost.target = GearMenuTarget.shared
+        pillCost.state = ConfigStore().loadShowTodayCostInPill() ? .on : .off
+        menu.addItem(pillCost)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(

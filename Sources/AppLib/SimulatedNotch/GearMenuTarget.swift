@@ -83,6 +83,14 @@ final class GearMenuTarget: NSObject {
         }
     }
 
+    @objc func toggleTodayCostInPillClicked(_ sender: Any?) {
+        modeStore?.isMenuOpen = false
+        let next = !(modeStore?.showTodayCostInPill ?? false)
+        ConfigStore().saveShowTodayCostInPill(next)
+        modeStore?.showTodayCostInPill = next
+        (sender as? NSMenuItem)?.state = next ? .on : .off
+    }
+
     @objc func compactAgentClicked(_ sender: Any?) {
         guard let item = sender as? NSMenuItem,
               let raw = item.representedObject as? String,

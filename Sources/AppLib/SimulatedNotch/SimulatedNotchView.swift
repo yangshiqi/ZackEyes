@@ -83,6 +83,17 @@ struct SimulatedNotchView: View {
             .font(.system(size: 12))
             .foregroundColor(.white.opacity(0.3))
         percentageChip(label: "7d", usedPct: sevenPct, fallbackTokens: snap.tokens7d, scale: .sevenDay)
+        if modeStore.showTodayCostInPill,
+           let today = snap.dailyUsage.last,
+           let cost = TodayConsumptionRow.costString(
+               TodayConsumptionRow.combinedCost(today), floor: today.anyUnpriced, compact: true) {
+            Text("·")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.3))
+            Text(cost)
+                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+        }
     }
 
     @ViewBuilder

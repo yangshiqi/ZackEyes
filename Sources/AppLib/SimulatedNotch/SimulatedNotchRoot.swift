@@ -37,6 +37,10 @@ public final class NotchModeStore: ObservableObject {
     /// by `SimulatedNotchController` at app launch.
     @Published public var compactAgent: AgentKind = .claude
 
+    /// Whether the collapsed pill appends today's cost (#84). Persisted via
+    /// `ConfigStore`; seeded by `SimulatedNotchController` at launch.
+    @Published public var showTodayCostInPill: Bool = false
+
     /// Convenience: any interactive overlay that should keep the panel
     /// open. Used by `SimulatedNotchController` to suppress the
     /// auto-collapse on mouse-out and outside-click handlers.
