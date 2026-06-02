@@ -11,28 +11,32 @@ struct TodayConsumptionRow: View {
     private static let accent = Color(red: 0.31, green: 0.80, blue: 0.77)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 6) {
-                Text("Today")
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.7))
-                Text("\(Self.humanizeTokens(today.totalTokens)) tok")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.85))
-                if let cost = Self.costString(Self.combinedCost(today), floor: today.anyUnpriced) {
-                    Text("· est. \(cost)")
+        HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("Today")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.7))
+                    Text("\(Self.humanizeTokens(today.totalTokens)) tok")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(Self.accent)
+                        .foregroundColor(.white.opacity(0.85))
+                    if let cost = Self.costString(Self.combinedCost(today), floor: today.anyUnpriced) {
+                        Text("· est. \(cost)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(Self.accent)
+                    }
                 }
-                Spacer(minLength: 6)
-                SparklineView(values: series)
-                    .frame(width: 56, height: 12)
+                if let sub = subline {
+                    Text(sub)
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.45))
+                }
             }
-            if let sub = subline {
-                Text(sub)
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.45))
-            }
+            Spacer(minLength: 8)
+            // 7-day daily-token sparkline — fills the empty right area, spanning
+            // both text lines. Rightmost bar = today.
+            SparklineView(values: series)
+                .frame(width: 132, height: 26)
         }
     }
 
@@ -88,10 +92,10 @@ struct SparklineView: View {
     var body: some View {
         let fractions = TodayConsumptionRow.sparklineFractions(values)
         GeometryReader { geo in
-            HStack(alignment: .bottom, spacing: 2) {
+            HStack(alignment: .bottom, spacing: 3) {
                 ForEach(Array(fractions.enumerated()), id: \.offset) { idx, f in
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Color.white.opacity(idx == fractions.count - 1 ? 0.8 : 0.35))
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.white.opacity(idx == fractions.count - 1 ? 0.85 : 0.35))
                         .frame(height: max(1, f * geo.size.height))
                 }
             }
