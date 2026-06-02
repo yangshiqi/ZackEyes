@@ -107,4 +107,37 @@ struct DailyUsageTests {
         #expect(t.codexCostUSD != nil)
         #expect(t.anyUnpriced == false)
     }
+
+    // Real-rollout-shaped fixture: session_meta, turn_context (model), then two
+    // token_count events whose cumulative total_token_usage grows per turn.
+    static func codexRollout() -> String {
+        [
+        #"{"type":"session_meta","timestamp":"2026-06-02T03:00:00.000Z","payload":{"id":"x"}}"#,
+        #"{"type":"turn_context","timestamp":"2026-06-02T03:00:01.000Z","payload":{"model":"gpt-5.5"}}"#,
+        // turn 1: cumulative input=100 (cached 40), output=10
+        #"{"type":"event_msg","timestamp":"2026-06-02T03:00:02.000Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":10,"total_tokens":110},"total_token_usage":{"input_tokens":100,"cached_input_tokens":40,"output_tokens":10,"total_tokens":110}}}}"#,
+        // turn 2: cumulative input=300 (cached 140), output=30 → delta input=200, cached=100, output=20
+        #"{"type":"event_msg","timestamp":"2026-06-02T03:00:03.000Z","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":200,"cached_input_tokens":100,"output_tokens":20,"total_tokens":220},"total_token_usage":{"input_tokens":300,"cached_input_tokens":140,"output_tokens":30,"total_tokens":330}}}}"#
+        ].joined(separator: "\n")
+    }
+
+    @Test func codexDeltaFromCumulativeTotals() {
+        // now 2026-06-02 12:00 UTC; cutoff = startOfDay - 6d, so everything is in-window.
+        let tallies = UsageTracker.parseCodexDailyTallies(text: Self.codexRollout(), calendar: Self.utc,
+            cutoff: Self.utc.date(byAdding: .day, value: -6, to: Self.utc.startOfDay(for: Self.now))!)
+        let day = Self.utc.startOfDay(for: Self.now)
+        let t = tallies[day]?["gpt-5.5"]
+        #expect(t?.input == 300)        // 100 + 200 (per-turn deltas of cumulative input)
+        #expect(t?.cacheRead == 140)    // 40 + 100 (cached deltas)
+        #expect(t?.output == 30)        // 10 + 20
+        #expect(t?.cacheCreate == 0)    // codex has no cache-creation
+    }
+
+    @Test func codexDropsTurnsBeforeCutoff() {
+        let line = #"{"type":"turn_context","timestamp":"2020-01-01T00:00:00.000Z","payload":{"model":"gpt-5.5"}}"#
+            + "\n" + #"{"type":"event_msg","timestamp":"2020-01-01T00:00:01.000Z","payload":{"type":"token_count","info":{"last_token_usage":{},"total_token_usage":{"input_tokens":500,"cached_input_tokens":0,"output_tokens":50,"total_tokens":550}}}}"#
+        let tallies = UsageTracker.parseCodexDailyTallies(text: line, calendar: Self.utc,
+            cutoff: Self.utc.date(byAdding: .day, value: -6, to: Self.utc.startOfDay(for: Self.now))!)
+        #expect(tallies.isEmpty)        // 2020 turn is far before the 7-day window
+    }
 }

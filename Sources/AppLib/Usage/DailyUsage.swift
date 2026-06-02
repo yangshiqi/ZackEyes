@@ -94,4 +94,55 @@ extension UsageTracker {
             return u
         }
     }
+
+    /// Parse ONE codex rollout's text into per-local-day, per-model tallies.
+    /// Per-turn token deltas are derived from the **cumulative** `total_token_usage`
+    /// component diffs (robust by construction — does not trust `last_token_usage`).
+    /// Model is the most recent `turn_context.payload.model` seen in the file.
+    nonisolated static func parseCodexDailyTallies(
+        text: String, calendar: Calendar, cutoff: Date
+    ) -> [Date: [String: ModelTokenTally]] {
+        let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let isoNoFrac = ISO8601DateFormatter()
+        var out: [Date: [String: ModelTokenTally]] = [:]
+        var currentModel = "unknown"
+        var prevInput = 0, prevCached = 0, prevOutput = 0
+        var sawTotals = false
+
+        for line in text.split(separator: "\n") {
+            guard let d = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
+            let type = obj["type"] as? String
+            let payload = obj["payload"] as? [String: Any]
+
+            if type == "turn_context", let m = payload?["model"] as? String {
+                currentModel = m; continue
+            }
+            guard type == "event_msg",
+                  (payload?["type"] as? String) == "token_count",
+                  let info = payload?["info"] as? [String: Any],
+                  let totals = info["total_token_usage"] as? [String: Any] else { continue }
+
+            let curInput = (totals["input_tokens"] as? Int) ?? prevInput
+            let curCached = (totals["cached_input_tokens"] as? Int) ?? prevCached
+            let curOutput = (totals["output_tokens"] as? Int) ?? prevOutput
+            // First totals row in this file establishes the baseline (= the turn's own usage).
+            let dInput = sawTotals ? max(0, curInput - prevInput) : curInput
+            let dCached = sawTotals ? max(0, curCached - prevCached) : curCached
+            let dOutput = sawTotals ? max(0, curOutput - prevOutput) : curOutput
+            prevInput = curInput; prevCached = curCached; prevOutput = curOutput; sawTotals = true
+
+            guard let tsString = obj["timestamp"] as? String,
+                  let ts = iso.date(from: tsString) ?? isoNoFrac.date(from: tsString),
+                  ts >= cutoff, (dInput + dOutput) > 0 else { continue }
+
+            let day = calendar.startOfDay(for: ts)
+            var tally = out[day]?[currentModel] ?? ModelTokenTally()
+            tally.input += dInput
+            tally.cacheRead += dCached
+            tally.output += dOutput
+            out[day, default: [:]][currentModel] = tally
+        }
+        return out
+    }
 }
