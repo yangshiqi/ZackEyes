@@ -368,6 +368,60 @@ public final class UsageTracker: ObservableObject {
         return obs
     }
 
+    // MARK: - Codex Daily Token Scan
+
+    /// Cached parse of one rollout file, keyed by identity `(mtime, size)`.
+    struct FileTally: Sendable {
+        var mtime: Date
+        var size: UInt64
+        var tallies: [Date: [String: ModelTokenTally]]
+    }
+
+    /// Full-window Codex daily-token scan with a per-file parse cache. Walks all
+    /// date dirs (codex --resume appends to old dirs), skips files untouched within
+    /// the 7-day window, and reuses cached tallies for files whose `(mtime,size)`
+    /// is unchanged — so steady-state cost ≈ the active rollout. Returns the merged
+    /// tallies plus the refreshed cache (the caller stores the cache on @MainActor).
+    nonisolated static func scanCodexDailyTokens(
+        rootDir: URL,
+        cache: [String: FileTally],
+        calendar: Calendar,
+        now: Date
+    ) -> (merged: [Date: [String: ModelTokenTally]], cache: [String: FileTally]) {
+        let dailyCutoff = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now))
+            ?? now.addingTimeInterval(-7 * 86400)
+        let fm = FileManager.default
+        var newCache: [String: FileTally] = [:]
+        var merged: [Date: [String: ModelTokenTally]] = [:]
+
+        for dayDir in SessionScanner.allDateDirs(under: rootDir) {
+            guard let files = try? fm.contentsOfDirectory(
+                at: dayDir, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
+            ) else { continue }
+            for file in files where file.pathExtension == "jsonl" {
+                guard let vals = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
+                      let mtime = vals.contentModificationDate,
+                      let size = vals.fileSize else { continue }
+                if mtime < dailyCutoff { continue }   // file untouched within the window
+                // Use the symlink-resolved path as cache key so that entries
+                // created with /var/... (FileManager.temporaryDirectory) and
+                // those returned by contentsOfDirectory (/private/var/...) match.
+                let key = file.resolvingSymlinksInPath().path
+                let tallies: [Date: [String: ModelTokenTally]]
+                if let hit = cache[key], hit.mtime == mtime, hit.size == UInt64(size) {
+                    tallies = hit.tallies               // cache hit — no re-parse
+                } else if let text = try? String(contentsOf: file, encoding: .utf8) {
+                    tallies = parseCodexDailyTallies(text: text, calendar: calendar, cutoff: dailyCutoff)
+                } else {
+                    tallies = [:]
+                }
+                newCache[key] = FileTally(mtime: mtime, size: UInt64(size), tallies: tallies)
+                mergeTallies(&merged, tallies)
+            }
+        }
+        return (merged, newCache)
+    }
+
     // MARK: - Computation
 
     // `ClaudeScanResult` + `computeSnapshot` are internal (not private) so

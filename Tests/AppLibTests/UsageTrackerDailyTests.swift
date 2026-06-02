@@ -21,6 +21,39 @@ struct UsageTrackerDailyTests {
         """
     }
 
+    private static func codexDayDir(under root: URL, now: Date) -> URL {
+        var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!
+        let comps = c.dateComponents([.year, .month, .day], from: now)
+        return root.appendingPathComponent(String(format: "%04d/%02d/%02d", comps.year!, comps.month!, comps.day!))
+    }
+
+    @Test func codexScanReadsRolloutAndCacheIsHonored() throws {
+        let now = Date()
+        let root = try Self.tmpDir()
+        let dayDir = Self.codexDayDir(under: root, now: now)
+        try FileManager.default.createDirectory(at: dayDir, withIntermediateDirectories: true)
+        let file = dayDir.appendingPathComponent("rollout-x.jsonl")
+        let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let tsString = iso.string(from: now)
+        let text = #"{"type":"turn_context","timestamp":"\#(tsString)","payload":{"model":"gpt-5.5"}}"#
+            + "\n" + #"{"type":"event_msg","timestamp":"\#(tsString)","payload":{"type":"token_count","info":{"last_token_usage":{},"total_token_usage":{"input_tokens":100,"cached_input_tokens":0,"output_tokens":10,"total_tokens":110}}}}"#
+        try text.write(to: file, atomically: true, encoding: .utf8)
+
+        let cal = Calendar.current
+        let r1 = UsageTracker.scanCodexDailyTokens(rootDir: root, cache: [:], calendar: cal, now: now)
+        let today = cal.startOfDay(for: now)
+        #expect(r1.merged[today]?["gpt-5.5"]?.input == 100)
+        #expect(r1.cache[file.path] != nil)
+
+        // Re-scan with a cache that returns a SENTINEL tally for the unchanged file →
+        // proves the cache is used (file not re-parsed).
+        var poisoned = r1.cache
+        poisoned[file.path]?.tallies = [today: ["sentinel": ModelTokenTally(input: 7)]]
+        let r2 = UsageTracker.scanCodexDailyTokens(rootDir: root, cache: poisoned, calendar: cal, now: now)
+        #expect(r2.merged[today]?["sentinel"]?.input == 7)        // served from cache
+        #expect(r2.merged[today]?["gpt-5.5"] == nil)
+    }
+
     @Test func claudeMidnightSplitsByLocalDay() throws {
         // now = 2026-06-02 12:00 Shanghai. Two messages straddle local midnight:
         //  23:30 on 06-01 Shanghai (== 15:30Z) and 00:30 on 06-02 Shanghai (== 16:30Z 06-01).
