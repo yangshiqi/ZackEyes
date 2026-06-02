@@ -193,6 +193,13 @@ struct SimulatedNotchFullView: View {
                     resetsAt: useCodex ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
                 )
             }
+            if usageTracker.showTodayConsumption, snap.hasConsumption, let today = snap.dailyUsage.last {
+                Rectangle()
+                    .fill(Color.white.opacity(0.08))
+                    .frame(height: 1)
+                    .padding(.top, 2)
+                TodayConsumptionRow(today: today, series: snap.dailyUsage.map(\.totalTokens))
+            }
         }
     }
 
@@ -446,6 +453,15 @@ struct SimulatedNotchFullView: View {
         compactItem.submenu = compactMenu
         menu.addItem(compactItem)
 
+        let todayConsumption = NSMenuItem(
+            title: "Show today's consumption",
+            action: #selector(GearMenuTarget.toggleTodayConsumptionClicked(_:)),
+            keyEquivalent: ""
+        )
+        todayConsumption.target = GearMenuTarget.shared
+        todayConsumption.state = usageTracker.showTodayConsumption ? .on : .off
+        menu.addItem(todayConsumption)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(
@@ -460,6 +476,7 @@ struct SimulatedNotchFullView: View {
         GearMenuTarget.shared.dmgURL = updateChecker.dmgURL
         GearMenuTarget.shared.releaseURL = updateChecker.releaseURL
         GearMenuTarget.shared.modeStore = modeStore
+        GearMenuTarget.shared.usageTracker = usageTracker
 
         // Anchor in window coordinates, relative to the gear's NSView.
         // popUp(positioning:at:in:) interprets `at` in the coordinate

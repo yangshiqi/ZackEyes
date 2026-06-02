@@ -36,6 +36,20 @@ public final class UsageTracker: ObservableObject {
         // Last time we received fresh rate_limits data from any source
         public var lastUpdated: Date?
 
+        // #84 — per-local-day consumption (tokens + cost), 7 entries oldest→today.
+        // NOT trusted from cache (cleared on load, rebuilt by refresh) to avoid a
+        // stale "today" after midnight.
+        public var dailyUsage: [DayUsage] = []
+
+        // `dailyUsage` is intentionally excluded from Codable: it is rebuilt on
+        // every refresh and must never restore a stale "today" — and omitting it
+        // keeps pre-#84 usage-cache.json (without this key) decodable on upgrade.
+        private enum CodingKeys: String, CodingKey {
+            case fiveHourUsedPct, fiveHourResetsAt, sevenDayUsedPct, sevenDayResetsAt
+            case codexFiveHourUsedPct, codexFiveHourResetsAt, codexSevenDayUsedPct, codexSevenDayResetsAt
+            case tokens5h, tokens7d, messages5h, messages7d, lastUpdated
+        }
+
         public static let empty = Snapshot(
             fiveHourUsedPct: nil,
             fiveHourResetsAt: nil,
@@ -62,6 +76,12 @@ public final class UsageTracker: ObservableObject {
 
         public var hasRealData: Bool { hasClaudeData || hasCodexData }
 
+        /// True when any of the 7 daily buckets has nonzero consumption — drives
+        /// whether the #84 Today row is shown at all (hidden on fresh installs).
+        public var hasConsumption: Bool {
+            dailyUsage.contains { $0.totalTokens > 0 }
+        }
+
         /// 5h-window used-percentage for the given agent, or nil if no data.
         /// Lets call sites avoid the `agent == .codex ? codex... : ...` ternary.
         public func fiveHourUsedPct(for agent: AgentKind) -> Double? {
@@ -73,6 +93,19 @@ public final class UsageTracker: ObservableObject {
     }
 
     @Published public private(set) var snapshot: Snapshot = .empty
+
+    /// User preference (#84): whether the expanded "Today" consumption row is
+    /// shown. Default true; seeded from `ConfigStore` by `AppDelegate`, toggled
+    /// from the gear menu. Both expanded notch headers observe this.
+    @Published public var showTodayConsumption: Bool = true
+
+    /// Pricing source for daily cost (both `@MainActor`; read after the detached
+    /// scan returns). Weak so it never extends the store's lifetime.
+    public weak var pricingStore: PricingStore?
+
+    /// Per-file Codex daily-scan parse cache, keyed by file path. Lives on the
+    /// main actor; passed by value into the detached scan and replaced on return.
+    private var codexDailyCache: [String: FileTally] = [:]
 
     /// Path where we persist the last received rate_limits snapshot so the UI
     /// can show meaningful data immediately on next launch instead of "no data".
@@ -158,7 +191,9 @@ public final class UsageTracker: ObservableObject {
               let cached = try? JSONDecoder().decode(Snapshot.self, from: data) else {
             return
         }
-        snapshot = cached
+        var restored = cached
+        restored.dailyUsage = []   // #84: never trust a persisted (possibly stale) "today"
+        snapshot = restored
     }
 
     /// Persist the snapshot's rate_limits fields so we can restore them on next launch.
@@ -189,19 +224,37 @@ public final class UsageTracker: ObservableObject {
     public func refresh() async {
         let dir = projectsDir
         let codexDir = codexSessionsDir
-        let estimated = await Task.detached(priority: .utility) {
-            Self.computeSnapshot(projectsDir: dir)
+        let cal = Calendar.current
+        let scanNow = Date()
+        let claudeScan = await Task.detached(priority: .utility) {
+            Self.computeSnapshot(projectsDir: dir, calendar: cal, now: scanNow)
         }.value
+        let estimated = claudeScan.snapshot
         let codexObservation = await Task.detached(priority: .utility) { () -> CodexRateLimitObservation? in
             guard let codexDir else { return nil }
             return Self.scanLatestCodexRateLimits(rootDir: codexDir)
         }.value
+
+        // #84 daily token scan (Codex), with the per-file parse cache.
+        let codexCacheSnapshot = codexDailyCache
+        let codexDaily = await Task.detached(priority: .utility) {
+            () -> (merged: [Date: [String: ModelTokenTally]], cache: [String: FileTally])? in
+            guard let codexDir else { return nil }
+            return Self.scanCodexDailyTokens(rootDir: codexDir, cache: codexCacheSnapshot, calendar: cal, now: scanNow)
+        }.value
+        if let codexDaily { codexDailyCache = codexDaily.cache }
 
         var merged = snapshot
         merged.tokens5h = estimated.tokens5h
         merged.tokens7d = estimated.tokens7d
         merged.messages5h = estimated.messages5h
         merged.messages7d = estimated.messages7d
+        merged.dailyUsage = Self.buildDailyUsage(
+            claude: claudeScan.daily,
+            codex: codexDaily?.merged ?? [:],
+            pricing: pricingStore?.table ?? .empty,
+            calendar: cal, now: scanNow
+        )
         self.snapshot = merged
 
         if let obs = codexObservation {
@@ -363,58 +416,123 @@ public final class UsageTracker: ObservableObject {
         return obs
     }
 
+    // MARK: - Codex Daily Token Scan
+
+    /// Cached parse of one rollout file, keyed by identity `(mtime, size)`.
+    struct FileTally: Sendable {
+        var mtime: Date
+        var size: UInt64
+        var tallies: [Date: [String: ModelTokenTally]]
+    }
+
+    /// Full-window Codex daily-token scan with a per-file parse cache. Walks all
+    /// date dirs (codex --resume appends to old dirs), skips files untouched within
+    /// the 7-day window, and reuses cached tallies for files whose `(mtime,size)`
+    /// is unchanged — so steady-state cost ≈ the active rollout. Returns the merged
+    /// tallies plus the refreshed cache (the caller stores the cache on @MainActor).
+    nonisolated static func scanCodexDailyTokens(
+        rootDir: URL,
+        cache: [String: FileTally],
+        calendar: Calendar,
+        now: Date
+    ) -> (merged: [Date: [String: ModelTokenTally]], cache: [String: FileTally]) {
+        let dailyCutoff = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now))
+            ?? now.addingTimeInterval(-7 * 86400)
+        let fm = FileManager.default
+        var newCache: [String: FileTally] = [:]
+        var merged: [Date: [String: ModelTokenTally]] = [:]
+
+        for dayDir in SessionScanner.allDateDirs(under: rootDir) {
+            guard let files = try? fm.contentsOfDirectory(
+                at: dayDir, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
+            ) else { continue }
+            for file in files where file.pathExtension == "jsonl" {
+                guard let vals = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
+                      let mtime = vals.contentModificationDate,
+                      let size = vals.fileSize else { continue }
+                if mtime < dailyCutoff { continue }   // file untouched within the window
+                // Use the symlink-resolved path as cache key so that entries
+                // created with /var/... (FileManager.temporaryDirectory) and
+                // those returned by contentsOfDirectory (/private/var/...) match.
+                let key = file.resolvingSymlinksInPath().path
+                let tallies: [Date: [String: ModelTokenTally]]
+                if let hit = cache[key], hit.mtime == mtime, hit.size == UInt64(size) {
+                    tallies = hit.tallies               // cache hit — no re-parse
+                } else if let text = try? String(contentsOf: file, encoding: .utf8) {
+                    tallies = parseCodexDailyTallies(text: text, calendar: calendar, cutoff: dailyCutoff)
+                } else {
+                    tallies = [:]
+                }
+                newCache[key] = FileTally(mtime: mtime, size: UInt64(size), tallies: tallies)
+                mergeTallies(&merged, tallies)
+            }
+        }
+        return (merged, newCache)
+    }
+
     // MARK: - Computation
 
-    private nonisolated static func computeSnapshot(projectsDir: URL) -> Snapshot {
-        let now = Date()
+    // `ClaudeScanResult` + `computeSnapshot` are internal (not private) so
+    // AppLibTests can drive them directly via `@testable import AppLib`.
+    /// Result of one Claude transcript scan: the 5h/7d estimate plus per-local-day
+    /// token tallies (for the #84 Today row).
+    struct ClaudeScanResult: Sendable {
+        var snapshot: Snapshot
+        var daily: [Date: [String: ModelTokenTally]]
+    }
+
+    nonisolated static func computeSnapshot(
+        projectsDir: URL,
+        calendar: Calendar = .current,
+        now: Date = Date()
+    ) -> ClaudeScanResult {
         let cutoff5h = now.addingTimeInterval(-5 * 3600)
         let cutoff7d = now.addingTimeInterval(-7 * 86400)
+        // Daily window: the 7 local days ending today (startOfDay(today) - 6 days).
+        let dailyCutoff = calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: now)) ?? cutoff7d
+        // Keep any file touched within the wider of the two windows.
+        let fileCutoff = min(cutoff7d, dailyCutoff)
 
         let fm = FileManager.default
         guard let projectDirs = try? fm.contentsOfDirectory(
-            at: projectsDir,
-            includingPropertiesForKeys: [.contentModificationDateKey]
-        ) else { return .empty }
+            at: projectsDir, includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else { return ClaudeScanResult(snapshot: .empty, daily: [:]) }
 
         var tokens5h = 0, tokens7d = 0, msgs5h = 0, msgs7d = 0
+        var daily: [Date: [String: ModelTokenTally]] = [:]
 
         for projectDir in projectDirs {
             guard let files = try? fm.contentsOfDirectory(
-                at: projectDir,
-                includingPropertiesForKeys: [.contentModificationDateKey]
+                at: projectDir, includingPropertiesForKeys: [.contentModificationDateKey]
             ) else { continue }
-
             for file in files where file.pathExtension == "jsonl" {
-                // Quick filter: skip files whose mtime is older than the 7d window
                 if let attrs = try? fm.attributesOfItem(atPath: file.path),
-                   let mod = attrs[.modificationDate] as? Date,
-                   mod < cutoff7d {
+                   let mod = attrs[.modificationDate] as? Date, mod < fileCutoff {
                     continue
                 }
-
                 parseFile(at: file, cutoff5h: cutoff5h, cutoff7d: cutoff7d,
+                          dailyCutoff: dailyCutoff, calendar: calendar,
                           tokens5h: &tokens5h, tokens7d: &tokens7d,
-                          msgs5h: &msgs5h, msgs7d: &msgs7d)
+                          msgs5h: &msgs5h, msgs7d: &msgs7d, daily: &daily)
             }
         }
 
-        return Snapshot(
-            fiveHourUsedPct: nil,
-            fiveHourResetsAt: nil,
-            sevenDayUsedPct: nil,
-            sevenDayResetsAt: nil,
-            tokens5h: tokens5h,
-            tokens7d: tokens7d,
-            messages5h: msgs5h,
-            messages7d: msgs7d
+        let snapshot = Snapshot(
+            fiveHourUsedPct: nil, fiveHourResetsAt: nil,
+            sevenDayUsedPct: nil, sevenDayResetsAt: nil,
+            tokens5h: tokens5h, tokens7d: tokens7d,
+            messages5h: msgs5h, messages7d: msgs7d
         )
+        return ClaudeScanResult(snapshot: snapshot, daily: daily)
     }
 
     private nonisolated static func parseFile(
         at url: URL,
         cutoff5h: Date, cutoff7d: Date,
+        dailyCutoff: Date, calendar: Calendar,
         tokens5h: inout Int, tokens7d: inout Int,
-        msgs5h: inout Int, msgs7d: inout Int
+        msgs5h: inout Int, msgs7d: inout Int,
+        daily: inout [Date: [String: ModelTokenTally]]
     ) {
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else { return }
@@ -451,6 +569,16 @@ public final class UsageTracker: ObservableObject {
             if ts >= cutoff5h {
                 tokens5h += total
                 msgs5h += 1
+            }
+
+            // #84 per-local-day tally (subset of the 7d window, by local calendar day).
+            if ts >= dailyCutoff {
+                let model = (msg["model"] as? String) ?? "unknown"
+                let day = calendar.startOfDay(for: ts)
+                var tally = daily[day]?[model] ?? ModelTokenTally()
+                tally.input += input; tally.output += output
+                tally.cacheRead += cacheRead; tally.cacheCreate += cacheCreate
+                daily[day, default: [:]][model] = tally
             }
         }
     }

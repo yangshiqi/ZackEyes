@@ -211,4 +211,28 @@ final class ConfigStoreTests: XCTestCase {
         let after = try? String(contentsOfFile: path, encoding: .utf8)
         XCTAssertEqual(after, garbage)
     }
+
+    // MARK: - Show Today Consumption
+
+    func testShowTodayConsumptionDefaultsTrue() {
+        let store = ConfigStore(directory: tmpDir.path)
+        XCTAssertTrue(store.loadShowTodayConsumption())   // default ON
+    }
+
+    func testShowTodayConsumptionRoundTrips() {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveShowTodayConsumption(false)
+        XCTAssertFalse(store.loadShowTodayConsumption())
+        store.saveShowTodayConsumption(true)
+        XCTAssertTrue(store.loadShowTodayConsumption())
+    }
+
+    func testSaveShowTodayConsumptionPreservesOtherKeys() {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveCompactAgent(.codex)
+        store.saveShowTodayConsumption(false)
+        XCTAssertEqual(store.loadCompactAgent(), .codex)
+        XCTAssertFalse(store.loadShowTodayConsumption())
+    }
+
 }
