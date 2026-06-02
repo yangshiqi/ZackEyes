@@ -53,7 +53,7 @@ struct TodayConsumptionRow: View {
             return (s.hasSuffix(".0") ? String(s.dropLast(2)) : s) + "M"
         }
         if n >= 10_000 {
-            return "\(Int((Double(n) / 1000).rounded()))K"
+            return "\(n / 1000)K"   // truncate (avoids 999_999 → "1000K")
         }
         return "\(n)"
     }

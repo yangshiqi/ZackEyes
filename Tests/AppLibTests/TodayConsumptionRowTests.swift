@@ -11,6 +11,7 @@ struct TodayConsumptionRowTests {
         #expect(TodayConsumptionRow.humanizeTokens(12_000) == "12K")
         #expect(TodayConsumptionRow.humanizeTokens(1234) == "1234")
         #expect(TodayConsumptionRow.humanizeTokens(0) == "0")
+        #expect(TodayConsumptionRow.humanizeTokens(999_999) == "999K")
     }
 
     @Test func costString() {
@@ -32,5 +33,6 @@ struct TodayConsumptionRowTests {
         #expect(TodayConsumptionRow.combinedCost(DayUsage(dayStart: d, claudeCostUSD: 1.0, codexCostUSD: 2.0)) == 3.0)
         #expect(TodayConsumptionRow.combinedCost(DayUsage(dayStart: d, claudeCostUSD: 1.5, codexCostUSD: nil)) == 1.5)
         #expect(TodayConsumptionRow.combinedCost(DayUsage(dayStart: d, claudeCostUSD: nil, codexCostUSD: nil)) == nil)
+        #expect(TodayConsumptionRow.combinedCost(DayUsage(dayStart: d, claudeCostUSD: nil, codexCostUSD: 2.5)) == 2.5)
     }
 }
