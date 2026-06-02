@@ -73,20 +73,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("ZackEyes: Failed to start socket server: \(error)")
         }
 
-        // 3.5 Usage tracker (reads JSONL transcripts, aggregates 5h/7d tokens)
+        // 3.5 Pricing table (must exist + be wired before the usage tracker starts,
+        // so the first daily refresh prices against the loaded bundled/cache table).
+        let ps = PricingStore()
+        pricingStore = ps
+        ps.start()
+
+        // 3.6 Usage tracker (5h/7d quota + #84 daily consumption). Pricing wired in
+        // so daily cost is available from the first refresh.
         usageTracker = UsageTracker()
+        usageTracker.pricingStore = ps
         // Real-notch path doesn't go through SimulatedNotchController, so the
         // tracker would never start its 30s refresh loop and the menu-bar
         // star would stay white forever. Start it here unconditionally —
         // the simulated path's `start()` is idempotent (cancels + restarts
         // the same task), so this is safe whether or not we hit that branch.
         usageTracker.start(intervalSeconds: 30)
-
-        // 3.6 Pricing table (model→$ snapshot; bundled + 24h remote refresh).
-        // Consumed by token-cost features; safe no-op until then.
-        let ps = PricingStore()
-        pricingStore = ps
-        ps.start()
 
         // 4. UI — Notch or Menu Bar (+ simulated notch on notchless Macs)
         // UpdateChecker is ALWAYS created so real-notch users also get
