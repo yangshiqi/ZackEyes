@@ -67,4 +67,19 @@ struct PricingTableTests {
         #expect(t.version == "")
         #expect(t.price(for: "claude-opus-4-8") == nil)
     }
+
+    @Test func bundledResourceFileParsesAndHasCoreModels() throws {
+        // Locate Resources/pricing.json relative to this test file (repo root
+        // is three dirs up from Tests/AppLibTests/).
+        let repoRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // AppLibTests
+            .deletingLastPathComponent()  // Tests
+            .deletingLastPathComponent()  // repo root
+        let url = repoRoot.appendingPathComponent("Resources/pricing.json")
+        let data = try Data(contentsOf: url)
+        let table = try PricingTable(data: data)
+        #expect(!table.version.isEmpty)
+        #expect(table.price(for: "claude-opus-4-8") != nil)
+        #expect(table.price(for: "gpt-5.5") != nil)
+    }
 }
