@@ -18,12 +18,15 @@ service consumed later by #84.
 
 - One pure value type `ModelPrice` (four per-token unit prices).
 - One pure, testable `PricingTable` (parse + lookup; no Bundle, no network).
-- One thin `PricingStore` shell (`@MainActor ObservableObject`) mirroring
-  `UpdateChecker`: bundled load → disk-cache overlay → 24h `URLSession` refresh,
-  silent on failure.
-- One bundled `Resources/pricing.json` (trimmed, curated) + Makefile copy step.
+- One thin `PricingStore` shell (`@MainActor ObservableObject`): version-gated
+  load (bundled vs disk cache) → 24h `URLSession` refresh that only replaces on a
+  strictly newer `version`, silent on failure. Cache path / bundle bytes / fetcher
+  are all injected for testability.
+- One bundled `Resources/pricing.json` (trimmed, curated) + Makefile copy step
+  (both assembly paths).
 - `AppDelegate` wires `PricingStore.start()` alongside the existing services.
-- XCTest (`Testing` framework) for parse / lookup / fallback paths.
+- XCTest (`Testing` framework): `PricingTable` parse/lookup/contract, `PricingStore`
+  version-gated load + monotonic refresh.
 
 **Out of scope:**
 
@@ -72,9 +75,10 @@ dictated by how #84 will bill the two agents:
 
 ```swift
 public struct PricingTable: Sendable {
+    public let version: String                // pricing.json `version`; "" if absent
     public init(data: Data) throws            // parse curated pricing.json
     public func price(for model: String) -> ModelPrice?
-    public static let empty: PricingTable     // no models → every lookup nil
+    public static let empty: PricingTable      // version "", no models → every lookup nil
 }
 ```
 
@@ -82,6 +86,8 @@ public struct PricingTable: Sendable {
   JSON `Data`.
 - `init(data:)` throws on malformed JSON so the shell can keep its prior table
   rather than swapping in garbage.
+- `version` is parsed out and exposed so `PricingStore` can do monotonic
+  version-gated selection (see below). An absent/empty `version` sorts lowest.
 - **Lookup order in `price(for:)`:**
   1. Exact key match.
   2. Date-suffix stripped: drop a trailing `-YYYYMMDD` or `-YYYY-MM-DD` and retry
@@ -92,6 +98,28 @@ public struct PricingTable: Sendable {
 - **No broad prefix/fuzzy matching.** Returning the *wrong* price silently is
   worse than returning `nil` (which #84 renders as "no `$`", never `$0`). Matching
   stays explicit and curated.
+
+#### Model-ID contract (hard requirement — Codex review #2/#3)
+
+`price(for:)` accepts a **raw provider model identifier only**, exactly as the
+agent emits it in its own logs:
+
+- **Claude:** the `model` field on each assistant line in
+  `~/.claude/projects/**/*.jsonl` — e.g. `claude-opus-4-8`.
+- **Codex:** `turn_context.payload.model` in the rollout jsonl — e.g. `gpt-5.5`.
+
+A **display name must never be passed in.** The app's existing
+`SessionInfo.modelDisplayName` comes from the statusLine `model.display_name`
+field (`SessionStore.swift:690`, e.g. "Opus 4.8") and is **not** a valid key —
+feeding it yields `nil` (correct: "no `$`", never a wrong `$`). Because the
+matching is exact-only, a display name can't accidentally collide with a price.
+
+**Consequence for #84 (flagged here, built there):** today nothing stores the raw
+Claude model ID — `UsageTracker.parseFile` reads only `usage`
+(`UsageTracker.swift:438`), and `SessionStore` keeps only the display name. So
+#84's per-day scan must additionally capture the raw `message.model` (Claude) and
+`turn_context.payload.model` (Codex) alongside token counts. #82 only defines and
+enforces this contract; the extraction is #84 scope.
 
 ### `pricing.json` — curated, trimmed, compact schema
 
@@ -114,41 +142,64 @@ names, because we hand-curate the file:
   This makes exact-match the common path.
 - Trimmed to the `claude-*` and `gpt-5*`/codex families plus a little headroom.
   A few KB.
-- `version` is informational (date string), surfaced in logs/cache only.
+- `version` is **load-bearing** (Codex review #1/#8/#11): an ISO date string
+  (`YYYY-MM-DD`) compared lexicographically to decide which of bundled / cache /
+  remote tables wins. Every price change MUST bump it. A correction that keeps
+  the same `version` will be ignored by the monotonic refresh below — by design.
 - The example numbers above are **placeholders** — real values are filled from
   the current LiteLLM snapshot at implementation time. They are not load-bearing
   for the design.
 
-### `PricingStore` — thin shell (mirrors `UpdateChecker`)
+### `PricingStore` — thin shell
+
+Borrows the **timer + silent-`URLSession`-failure** shape from `UpdateChecker`,
+and the **atomic disk-write + defensive-read** shape from `ConfigStore` /
+`UsageTracker`. It is *not* a clone of `UpdateChecker` (which has no cache, no
+atomic write, no bundled fallback — Codex review #7).
 
 ```swift
 @MainActor public final class PricingStore: ObservableObject {
     @Published public private(set) var table: PricingTable
+
     public func price(for model: String) -> ModelPrice? { table.price(for: model) }
-    public init(checkInterval: TimeInterval = 24 * 3600,
-                bundledData: @Sendable () -> Data? = { /* Bundle.main pricing.json */ })
+
+    public init(
+        checkInterval: TimeInterval = 24 * 3600,
+        cacheURL: URL = /* ~/.zackeyes/pricing-cache.json */,
+        bundledData: @Sendable () -> Data? = { /* Bundle.main pricing.json */ },
+        fetch: @Sendable () async -> Data? = { /* URLSession GET of the raw URL */ }
+    )
     public func start()
     public func stop()
 }
 ```
 
-- **Load order on `start()`:** disk cache (`~/.zackeyes/pricing-cache.json`, if
-  present and parseable) → bundled `pricing.json` via the injected `bundledData`
-  closure → `PricingTable.empty`. The disk cache is the last *successful* remote
-  fetch, so it is preferred over the (older) bundled snapshot whenever it parses.
-  Age is **not** a load gate — `start()` also fires a refresh immediately, so any
-  staleness self-heals within one fetch; the 24h interval governs only the
-  *recurring* refresh, not loading.
-- **Refresh** (`Timer`, every `checkInterval`, plus once on `start()`): `URLSession`
-  GET the curated raw URL. On HTTP 200 **and** successful `PricingTable(data:)`:
-  write the bytes to the disk cache (atomic) and swap `@Published table`. On **any**
-  failure (network error, non-200, parse failure): do nothing — keep the current
-  table, retry on the next tick. Identical control flow to `UpdateChecker.check()`.
-- The `bundledData` closure is injected so `PricingStore` is unit-testable without
-  an assembled `.app` bundle (the same pattern `WelcomeTrigger` uses to stay
-  Bundle-free in tests).
-- Network failure cannot pollute the UI because #82 renders nothing; #84 reads
-  only the in-memory `table`.
+All three external seams — `cacheURL`, `bundledData`, `fetch` — are injected, so
+every path is unit-testable with a temp cache dir, inline bundle bytes, and a stub
+fetcher, with **no real network and no writes to the real `~/.zackeyes`**
+(Codex review #4/#5; `cacheURL` mirrors `ConfigStore.init(directory:)`).
+
+- **Version-gated load on `start()`** (Codex review #1/#8): parse *both* the disk
+  cache (`cacheURL`) and the bundled snapshot, then pick the one with the higher
+  `version` that parses. If only one parses, use it; if neither, `PricingTable.empty`.
+  This fixes the "stale cache shadows a fresher bundled snapshot forever when
+  offline" bug — after an app update ships newer bundled prices, they win until the
+  network confirms something newer still.
+- **Monotonic refresh** (`Timer`, every `checkInterval`, plus once on `start()`):
+  `await fetch()` → parse → **replace only if `fetched.version > table.version`**.
+  On success, atomically write the bytes to `cacheURL` and swap `@Published table`.
+  On any failure (nil data, parse error, or non-newer version): keep the current
+  table, retry next tick (Codex review #11 — parse-success alone must not let an
+  older or rolled-back remote file overwrite good data).
+- **Concurrency** (Codex review #6): `await fetch()` suspends the main actor
+  without blocking it (`URLSession` work runs off-main); the JSON parse and atomic
+  write are a few KB, bounded, and run on the main actor after the await — no
+  `Task.detached` needed at this size. `PricingTable`/`ModelPrice` are value types,
+  trivially `Sendable`; the injected closures are `@Sendable`.
+- Network failure can't pollute #82 (no UI). The honest risk is **downstream**:
+  #84 will read this table, so a *stale-but-parseable* cache could surface a wrong
+  cost. Version-gated load + monotonic refresh is what bounds that risk (Codex
+  review #8).
 
 ### Remote source & bundling
 
@@ -174,17 +225,15 @@ to it in #82; #84 will inject it where the cost math runs.
 
 ```
 start()
-  → load disk cache (present & parseable?) ──yes──> table = cached
-        │ no
-        └──> load bundled pricing.json ──ok──> table = bundled
-                  │ missing/corrupt
-                  └──> table = .empty
+  → parse cache (cacheURL) and parse bundled → table = higher-version of the two
+        that parse; if neither parses → table = .empty
   → schedule 24h timer + fire once now
-        → URLSession GET raw URL
-            → 200 + PricingTable(data:) ok → write disk cache + swap table
-            → any failure → keep table, retry next tick (silent)
+        → await fetch() → parse → fetched.version > table.version ?
+              yes → atomic-write cacheURL + swap @Published table
+              no / nil / parse-fail → keep table, retry next tick (silent)
 
-#84 (later): pricingStore.price(for: model) → ModelPrice? → cost math
+#84 (later): pricingStore.price(for: rawModelID) → ModelPrice? → cost math
+              (rawModelID = message.model | turn_context.payload.model, NOT display name)
 ```
 
 ## Files touched
@@ -193,11 +242,12 @@ start()
 |------|--------|
 | `Sources/AppLib/Usage/ModelPrice.swift` (new) | `ModelPrice` struct |
 | `Sources/AppLib/Usage/PricingTable.swift` (new) | pure parse + lookup |
-| `Sources/AppLib/Usage/PricingStore.swift` (new) | bundled/cache/remote shell |
+| `Sources/AppLib/Usage/PricingStore.swift` (new) | shell: injected cache/bundle/fetch seams, version-gated load + monotonic refresh |
 | `Resources/pricing.json` (new) | curated trimmed snapshot |
-| `Makefile` | `cp Resources/pricing.json $(RESOURCES)/` in `app` + release targets |
+| `Makefile` | add `cp Resources/pricing.json $(RESOURCES)/` to **both** copy blocks — `app` (`Makefile:21-23`) **and** the universal release target (`Makefile:34-36`); missing either silently ships no table (Codex review #10) |
 | `Sources/ZackEyes/AppDelegate.swift` | construct + `start()`/`stop()` `PricingStore` |
-| `Tests/AppLibTests/PricingTableTests.swift` (new) | parse/lookup/fallback tests |
+| `Tests/AppLibTests/PricingTableTests.swift` (new) | parse / lookup / fallback tests |
+| `Tests/AppLibTests/PricingStoreTests.swift` (new) | version-gated load + monotonic refresh, via injected cache/bundle/fetch |
 | `ARCHITECTURE.md` | add `PricingStore`/`PricingTable` to the module table + a pricing-data-flow note |
 
 New code lives in `Sources/AppLib/Usage/` next to `UsageTracker`/`UsageBarsView`,
@@ -207,18 +257,26 @@ since pricing is conceptually part of the usage subsystem.
 
 `PricingTable` (pure, the bulk of coverage):
 - Parse a canonical `pricing.json` fixture → known models return the expected
-  `ModelPrice` (all four fields).
+  `ModelPrice` (all four fields); `version` parsed.
 - Exact-match lookup.
 - Date-suffix-strip lookup (`claude-haiku-4-5-20251001` → `claude-haiku-4-5`).
 - Alias lookup.
 - Missing model → `nil`.
+- **Display name → `nil`** (the model-ID contract: e.g. `"Opus 4.8"` must not
+  resolve to a price).
 - Malformed JSON → `init(data:)` throws.
-- Empty/`{"models":{}}` JSON → every lookup `nil` (no crash).
+- Empty/`{"models":{}}` JSON → every lookup `nil` (no crash); absent `version` → `""`.
 
-`PricingStore` (shell, injected `bundledData`, no real network):
-- A parseable disk cache is preferred over bundled.
-- Corrupt disk cache falls back to bundled.
-- Missing bundled + missing cache → `.empty` table, `price(for:)` returns `nil`.
+`PricingStore` (shell — injected `cacheURL` (temp dir), `bundledData`, `fetch`; no
+real network, no real `~/.zackeyes`):
+- **Version-gated load:** newer-version cache beats older bundled; newer-version
+  bundled beats older cache (the post-app-update case); equal version → either is
+  fine (no wrong price either way).
+- Corrupt cache → falls back to bundled; corrupt bundled + valid cache → cache.
+- Missing bundled + missing cache → `.empty`, `price(for:)` returns `nil`.
+- **Monotonic refresh:** injected `fetch` returning a newer-version table → swaps
+  `table` and writes `cacheURL`; older-or-equal version → no swap, no write;
+  nil / unparseable fetch → no swap, prior table retained.
 
 ## Invariant & constraint checklist
 
@@ -236,10 +294,12 @@ since pricing is conceptually part of the usage subsystem.
 - **Remote URL form:** raw file on `main` of `ZackEyes-release`, not a release
   asset — lets a price change be a single commit.
 - **Matching:** exact → date-strip → alias → `nil`; no fuzzy prefix matching.
-- **Disk-cache freshness:** not gated on load — the cache (last good remote
-  fetch) is always preferred over bundled when it parses; a refresh fires on
-  `start()` to correct any staleness. The 24h interval is the recurring-refresh
-  cadence only.
+  `price(for:)` takes raw provider model IDs only; display names → `nil`.
+- **Cache vs bundled vs remote:** **version-gated** — always load/keep the
+  higher-`version` table that parses; refresh replaces only on a strictly newer
+  `version` (revised from the earlier "cache always wins", which shadowed a fresher
+  bundled snapshot after an app update — Codex review #1/#8/#11). The 24h interval
+  is the recurring-refresh cadence; `start()` also fires once.
 
 ## Known risks
 
@@ -248,6 +308,13 @@ since pricing is conceptually part of the usage subsystem.
   no `$` for it. Mitigation: the curated keys match observed strings exactly, the
   alias map is the escape hatch, and remote refresh ships new models without an app
   update.
-- **Codex model identification depends on `turn_context.payload.model`** being
-  present in the rollout. This is #84's concern (it extracts the model); #82 only
-  needs to price whatever string it's handed.
+- **Raw model IDs aren't captured yet.** Pricing needs the raw ID, but the app
+  currently stores only `modelDisplayName` and `UsageTracker.parseFile` reads only
+  `usage`. #84 must extend its scan to capture `message.model` (Claude) and
+  `turn_context.payload.model` (Codex). #82 enforces the contract (`price(for:)`
+  rejects display names → `nil`); #84 owns the extraction. Flagged so #84 isn't
+  surprised (Codex review #2).
+- **`version` hygiene is operational, not enforced by code.** A price change that
+  forgets to bump `version` is silently ignored by the monotonic refresh. Mitigation:
+  document it at the curation point; an optional `make pricing` regen step (deferred)
+  would stamp the date automatically.
