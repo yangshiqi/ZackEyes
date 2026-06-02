@@ -46,10 +46,14 @@ struct PricingTableTests {
         #expect(t.price(for: "Opus 4.8") == nil)
     }
 
-    @Test func nonDateTrailingNotStripped() throws {
-        // "claude-opus-4-8" must not be mangled by the date-suffix stripper.
-        let t = try PricingTable(data: Self.json)
-        #expect(t.price(for: "claude-opus-4-8")?.inputPerToken == 1.5e-5)
+    @Test func stripDateSuffixHandlesBothFormsAndLeavesNonDates() {
+        // 8-digit YYYYMMDD form
+        #expect(PricingTable.stripDateSuffix("claude-haiku-4-5-20251001") == "claude-haiku-4-5")
+        // dashed YYYY-MM-DD form
+        #expect(PricingTable.stripDateSuffix("claude-haiku-4-5-2025-10-01") == "claude-haiku-4-5")
+        // non-date trailing segments must NOT be stripped
+        #expect(PricingTable.stripDateSuffix("claude-opus-4-8") == "claude-opus-4-8")
+        #expect(PricingTable.stripDateSuffix("gpt-5.5") == "gpt-5.5")
     }
 
     @Test func malformedThrows() {

@@ -37,6 +37,8 @@ public struct PricingTable: Sendable {
         if let p = models[model] { return p }
         let stripped = Self.stripDateSuffix(model)
         if stripped != model, let p = models[stripped] { return p }
+        // Alias keys are canonical raw IDs (no date suffix); date-stripping is
+        // intentionally not re-applied to the alias lookup.
         if let canonical = aliases[model], let p = models[canonical] { return p }
         return nil
     }
@@ -63,5 +65,17 @@ private struct PricingFile: Decodable {
         let output: Double
         let cache_read: Double
         let cache_creation: Double
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            input          = try c.decode(Double.self, forKey: .input)
+            output         = try c.decode(Double.self, forKey: .output)
+            cache_read     = try c.decodeIfPresent(Double.self, forKey: .cache_read) ?? 0
+            cache_creation = try c.decodeIfPresent(Double.self, forKey: .cache_creation) ?? 0
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case input, output, cache_read, cache_creation
+        }
     }
 }
