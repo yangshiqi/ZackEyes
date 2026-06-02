@@ -47,8 +47,9 @@ extension UsageTracker {
 
     /// Pure cost fold (nonisolated; called from `@MainActor refresh()`). Builds
     /// exactly 7 zero-filled local-day buckets ending at `now`'s local day,
-    /// folds tokens and `PricingTable` cost. `*CostUSD` is nil iff that agent had
-    /// no priced tokens that day; `anyUnpriced` is set if some tokens lacked a price.
+    /// folds tokens and `PricingTable` cost. `*CostUSD` is nil only when EVERY model
+    /// for that agent lacked a price entry; if ≥1 model was priced it holds the
+    /// partial sum, and `anyUnpriced` then signals the total is a floor (≥ actual).
     nonisolated static func buildDailyUsage(
         claude: [Date: [String: ModelTokenTally]],
         codex: [Date: [String: ModelTokenTally]],

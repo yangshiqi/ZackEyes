@@ -5,7 +5,11 @@ import Foundation
 struct DailyUsageTests {
     // Fixed clock so "today" is deterministic. 2026-06-02 12:00 UTC.
     static let now = Date(timeIntervalSince1970: 1_780_401_600)
-    static var utc: Calendar { var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "UTC")!; return c }
+    static let utc: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "UTC")!
+        return c
+    }()
 
     static func pricing() -> PricingTable {
         let json = """
@@ -72,5 +76,35 @@ struct DailyUsageTests {
         ]
         let days = UsageTracker.buildDailyUsage(claude: claude, codex: [:], pricing: Self.pricing(), calendar: Self.utc, now: Self.now)
         #expect(days.allSatisfy { $0.claudeTokens == 0 })   // 30-day-old bucket not in the 7-day window
+    }
+
+    @Test func tokensThreeDaysAgoLandInCorrectBucket() {
+        let threeDaysAgo = Self.utc.date(byAdding: .day, value: -3, to: Self.utc.startOfDay(for: Self.now))!
+        let claude: [Date: [String: ModelTokenTally]] = [
+            threeDaysAgo: ["claude-opus-4-8": ModelTokenTally(input: 50, output: 5, cacheRead: 0, cacheCreate: 0)]
+        ]
+        let days = UsageTracker.buildDailyUsage(claude: claude, codex: [:], pricing: .empty,
+                                                calendar: Self.utc, now: Self.now)
+        #expect(days.count == 7)
+        #expect(days[3].claudeTokens == 55)   // index 3 == today-3 (oldest→today)
+        #expect(days[6].claudeTokens == 0)    // today empty
+    }
+
+    @Test func combinedClaudeAndCodexSameDay() {
+        let today = Self.utc.startOfDay(for: Self.now)
+        let claude: [Date: [String: ModelTokenTally]] = [
+            today: ["claude-opus-4-8": ModelTokenTally(input: 100, output: 10, cacheRead: 0, cacheCreate: 0)]
+        ]
+        let codex: [Date: [String: ModelTokenTally]] = [
+            today: ["gpt-5.5": ModelTokenTally(input: 200, output: 20, cacheRead: 0, cacheCreate: 0)]
+        ]
+        let t = UsageTracker.buildDailyUsage(claude: claude, codex: codex, pricing: Self.pricing(),
+                                             calendar: Self.utc, now: Self.now).last!
+        #expect(t.claudeTokens == 110)
+        #expect(t.codexTokens == 220)
+        #expect(t.totalTokens == 330)
+        #expect(t.claudeCostUSD != nil)
+        #expect(t.codexCostUSD != nil)
+        #expect(t.anyUnpriced == false)
     }
 }
