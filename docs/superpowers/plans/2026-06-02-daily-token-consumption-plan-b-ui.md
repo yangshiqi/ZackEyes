@@ -360,6 +360,12 @@ git commit -m "feat(notch): show Today row in the simulated-notch header (#84)"
 
 ---
 
+> **Tasks B5–B7 were implemented then REVERTED (2026-06-02, product feedback):** the
+> collapsed pill must keep its original 5h/7d display and show no consumption. The
+> pill cost toggle (config flag + store flag + gear item + compact-pill append) was
+> removed in commit `024dfca`. B1–B4 and B8 (the expanded Today row + data wiring +
+> docs) stand. The B5–B7 text below is kept for the record only.
+
 ## Task B5: `ConfigStore.showTodayCostInPill` flag
 
 **Files:**

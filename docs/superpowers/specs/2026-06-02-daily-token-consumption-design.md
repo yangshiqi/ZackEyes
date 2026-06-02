@@ -225,6 +225,14 @@ C 1.1M · X 0.3M                            ← per-agent subline (omit a zero a
 
 ## Pill cost toggle
 
+> **Superseded (2026-06-02, product feedback):** this section was implemented then
+> **removed**. The collapsed Dynamic Island pill must keep its original 5h/7d quota
+> display and show NO consumption/cost — the consumption axis lives only in the
+> expanded full-view Today row. The `showTodayCostInPill` config flag, the
+> `NotchModeStore` flag, the gear-menu item, and the compact-pill append were all
+> reverted (commit `024dfca`). The text below is kept as a record of the original
+> decision.
+
 - `ConfigStore`: add `showTodayCostInPill: Bool?` to `ConfigWrapper` (nil ⇒ false)
   with `loadShowTodayCostInPill()` / `saveShowTodayCostInPill(_:)`, using the same
   defensive contract as `saveCompactAgent` (bail rather than clobber a corrupt
