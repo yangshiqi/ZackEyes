@@ -83,6 +83,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // so daily cost is available from the first refresh.
         usageTracker = UsageTracker()
         usageTracker.pricingStore = ps
+        usageTracker.showTodayConsumption = ConfigStore().loadShowTodayConsumption()
         // Real-notch path doesn't go through SimulatedNotchController, so the
         // tracker would never start its 30s refresh loop and the menu-bar
         // star would stay white forever. Start it here unconditionally —

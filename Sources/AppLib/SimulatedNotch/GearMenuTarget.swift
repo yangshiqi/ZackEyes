@@ -12,6 +12,7 @@ import Shared
 final class GearMenuTarget: NSObject {
     static let shared = GearMenuTarget()
     weak var modeStore: NotchModeStore?
+    weak var usageTracker: UsageTracker?
     var releaseURL: URL?
     var dmgURL: URL?
     var downloader: UpdateDownloader?
@@ -93,6 +94,14 @@ final class GearMenuTarget: NSObject {
         for sibling in item.menu?.items ?? [] {
             sibling.state = (sibling.representedObject as? String == raw) ? .on : .off
         }
+    }
+
+    @objc func toggleTodayConsumptionClicked(_ sender: Any?) {
+        modeStore?.isMenuOpen = false
+        let next = !(usageTracker?.showTodayConsumption ?? true)
+        ConfigStore().saveShowTodayConsumption(next)
+        usageTracker?.showTodayConsumption = next
+        (sender as? NSMenuItem)?.state = next ? .on : .off
     }
 
     @objc func soundClicked(_ sender: Any?) {

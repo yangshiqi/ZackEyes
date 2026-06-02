@@ -195,6 +195,36 @@ public final class ConfigStore: Sendable {
         try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
 
+    /// Load whether the expanded Today consumption row is shown. Defaults to `true`.
+    public func loadShowTodayConsumption() -> Bool {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+            return true
+        }
+        return wrapper.showTodayConsumption ?? true
+    }
+
+    /// Save the Today-row preference. Same defensive contract as `saveCompactAgent`.
+    public func saveShowTodayConsumption(_ enabled: Bool) {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: directory) {
+            try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        }
+        var wrapper: ConfigWrapper
+        if fm.fileExists(atPath: configPath) {
+            guard let data = fm.contents(atPath: configPath),
+                  let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+                return
+            }
+            wrapper = existing
+        } else {
+            wrapper = ConfigWrapper(hotkey: .default)
+        }
+        wrapper.showTodayConsumption = enabled
+        guard let data = try? JSONEncoder().encode(wrapper) else { return }
+        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+    }
+
     /// Save the hotkey config atomically. Preserves other keys.
     /// Creates directory if needed.
     public func save(_ config: HotKeyConfig) {
@@ -225,4 +255,5 @@ private struct ConfigWrapper: Codable {
     var notchVisibility: String?        // nil = .always (default)
     var compactAgent: String?           // nil = .claude (default — agent shown in collapsed simulated notch)
     var notchOffsetX: Double?           // nil = 0 (centered — simulated notch horizontal offset from screen-center)
+    var showTodayConsumption: Bool?     // nil = true (default — show the #84 Today row)
 }

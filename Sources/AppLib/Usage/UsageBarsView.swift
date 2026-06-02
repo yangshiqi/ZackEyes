@@ -28,7 +28,7 @@ struct UsageBarsView<Trailing: View>: View {
             usageBar(label: "7d", usedPct: snap.sevenDayUsedPct, resetsAt: snap.sevenDayResetsAt) {
                 EmptyView()
             }
-            if snap.hasConsumption, let today = snap.dailyUsage.last {
+            if usageTracker.showTodayConsumption, snap.hasConsumption, let today = snap.dailyUsage.last {
                 Rectangle()
                     .fill(Color.white.opacity(0.08))
                     .frame(height: 1)

@@ -94,6 +94,11 @@ public final class UsageTracker: ObservableObject {
 
     @Published public private(set) var snapshot: Snapshot = .empty
 
+    /// User preference (#84): whether the expanded "Today" consumption row is
+    /// shown. Default true; seeded from `ConfigStore` by `AppDelegate`, toggled
+    /// from the gear menu. Both expanded notch headers observe this.
+    @Published public var showTodayConsumption: Bool = true
+
     /// Pricing source for daily cost (both `@MainActor`; read after the detached
     /// scan returns). Weak so it never extends the store's lifetime.
     public weak var pricingStore: PricingStore?
