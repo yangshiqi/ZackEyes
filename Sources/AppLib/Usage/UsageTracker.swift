@@ -195,6 +195,8 @@ public final class UsageTracker: ObservableObject {
             Self.computeSnapshot(projectsDir: dir, calendar: cal, now: scanNow)
         }.value
         let estimated = claudeScan.snapshot
+        // TODO(#84 Plan A5): fold claudeScan.daily + the Codex daily scan into
+        // snapshot.dailyUsage here (priced via pricingStore on the main actor).
         let codexObservation = await Task.detached(priority: .utility) { () -> CodexRateLimitObservation? in
             guard let codexDir else { return nil }
             return Self.scanLatestCodexRateLimits(rootDir: codexDir)
@@ -368,6 +370,8 @@ public final class UsageTracker: ObservableObject {
 
     // MARK: - Computation
 
+    // `ClaudeScanResult` + `computeSnapshot` are internal (not private) so
+    // AppLibTests can drive them directly via `@testable import AppLib`.
     /// Result of one Claude transcript scan: the 5h/7d estimate plus per-local-day
     /// token tallies (for the #84 Today row).
     struct ClaudeScanResult: Sendable {

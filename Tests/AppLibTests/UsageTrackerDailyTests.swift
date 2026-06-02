@@ -10,9 +10,11 @@ struct UsageTrackerDailyTests {
         return d
     }
     // A Shanghai (UTC+8) calendar to prove buckets use the LOCAL day boundary.
-    private static var shanghai: Calendar {
-        var c = Calendar(identifier: .gregorian); c.timeZone = TimeZone(identifier: "Asia/Shanghai")!; return c
-    }
+    private static let shanghai: Calendar = {
+        var c = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "Asia/Shanghai")!
+        return c
+    }()
     private static func claudeLine(ts: String, model: String, input: Int, output: Int) -> String {
         """
         {"type":"assistant","timestamp":"\(ts)","message":{"model":"\(model)","usage":{"input_tokens":\(input),"output_tokens":\(output),"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
