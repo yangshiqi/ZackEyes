@@ -37,7 +37,7 @@ struct DailyUsageTests {
         ]
         let days = UsageTracker.buildDailyUsage(claude: claude, codex: [:], pricing: Self.pricing(), calendar: Self.utc, now: Self.now)
         let t = days.last!
-        #expect(t.claudeTokens == 1160)                 // 100+10+1000+50
+        #expect(t.claudeTokens == 110)                  // input + output only (cache excluded from count)
         // 100*1e-5 + 10*1e-4 + 1000*1e-6 + 50*2e-5 = 0.001+0.001+0.001+0.001 = 0.004
         #expect(abs((t.claudeCostUSD ?? -1) - 0.004) < 1e-12)
         #expect(t.codexCostUSD == nil)
@@ -149,6 +149,15 @@ struct DailyUsageTests {
         let day = Self.utc.startOfDay(for: Self.now)
         #expect(tallies[day]?["unknown"]?.input == 100)
         #expect(tallies[day]?["unknown"]?.output == 10)
+    }
+
+    @Test func claudeTokensExcludeCacheFromCount() {
+        let today = Self.utc.startOfDay(for: Self.now)
+        let claude: [Date: [String: ModelTokenTally]] = [
+            today: ["claude-opus-4-8": ModelTokenTally(input: 5, output: 3, cacheRead: 9_999, cacheCreate: 7_777)]
+        ]
+        let t = UsageTracker.buildDailyUsage(claude: claude, codex: [:], pricing: .empty, calendar: Self.utc, now: Self.now).last!
+        #expect(t.claudeTokens == 8)    // 5 + 3 only; cache_read/creation NOT counted
     }
 
     @Test func codexModelSwitchMidFileAttributesDeltasCorrectly() {

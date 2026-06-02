@@ -20,7 +20,7 @@ struct TodayConsumptionRow: View {
                     .font(.system(size: 11, weight: .medium))
                     .foregroundColor(.white.opacity(0.85))
                 if let cost = Self.costString(Self.combinedCost(today), floor: today.anyUnpriced) {
-                    Text("· \(cost)")
+                    Text("· est. \(cost)")
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(Self.accent)
                 }

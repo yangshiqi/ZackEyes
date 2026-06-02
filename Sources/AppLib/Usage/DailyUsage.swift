@@ -66,7 +66,7 @@ extension UsageTracker {
             if let models = claude[day] {
                 var cost = 0.0, priced = false
                 for (model, t) in models {
-                    u.claudeTokens += t.input + t.output + t.cacheRead + t.cacheCreate
+                    u.claudeTokens += t.input + t.output   // cache_read/creation excluded from the displayed count (they are cache reuse); still billed in cost below
                     if let p = pricing.price(for: model) {
                         cost += Double(t.input) * p.inputPerToken
                               + Double(t.output) * p.outputPerToken
