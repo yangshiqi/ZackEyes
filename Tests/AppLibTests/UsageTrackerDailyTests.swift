@@ -81,6 +81,27 @@ struct UsageTrackerDailyTests {
         #expect(abs((day?.claudeCostUSD ?? -1) - 0.02) < 1e-12)
     }
 
+    @Test func oldUsageCacheWithoutDailyUsageStillDecodes() throws {
+        // Simulate an OLD usage-cache.json written before `dailyUsage` existed:
+        // it has the 5h/7d rate-limit fields but NO "dailyUsage" key.
+        let oldJSON = """
+        {"fiveHourUsedPct":42.0,"sevenDayUsedPct":71.0,"tokens5h":0,"tokens7d":0,"messages5h":0,"messages7d":0}
+        """
+        let snap = try JSONDecoder().decode(UsageTracker.Snapshot.self, from: Data(oldJSON.utf8))
+        #expect(snap.fiveHourUsedPct == 42.0)     // rate-limit fields restored (not dropped)
+        #expect(snap.sevenDayUsedPct == 71.0)
+        #expect(snap.dailyUsage.isEmpty)           // missing key → default [], no throw
+    }
+
+    @Test func snapshotDoesNotPersistDailyUsage() throws {
+        let d = Date(timeIntervalSince1970: 0)
+        var snap = UsageTracker.Snapshot.empty
+        snap.dailyUsage = [DayUsage(dayStart: d, claudeTokens: 100)]
+        let data = try JSONEncoder().encode(snap)
+        let json = String(data: data, encoding: .utf8) ?? ""
+        #expect(!json.contains("dailyUsage"))      // not persisted
+    }
+
     @Test func claudeMidnightSplitsByLocalDay() throws {
         // now = 2026-06-02 12:00 Shanghai. Two messages straddle local midnight:
         //  23:30 on 06-01 Shanghai (== 15:30Z) and 00:30 on 06-02 Shanghai (== 16:30Z 06-01).

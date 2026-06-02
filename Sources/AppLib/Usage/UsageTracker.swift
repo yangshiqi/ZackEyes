@@ -41,6 +41,15 @@ public final class UsageTracker: ObservableObject {
         // stale "today" after midnight.
         public var dailyUsage: [DayUsage] = []
 
+        // `dailyUsage` is intentionally excluded from Codable: it is rebuilt on
+        // every refresh and must never restore a stale "today" — and omitting it
+        // keeps pre-#84 usage-cache.json (without this key) decodable on upgrade.
+        private enum CodingKeys: String, CodingKey {
+            case fiveHourUsedPct, fiveHourResetsAt, sevenDayUsedPct, sevenDayResetsAt
+            case codexFiveHourUsedPct, codexFiveHourResetsAt, codexSevenDayUsedPct, codexSevenDayResetsAt
+            case tokens5h, tokens7d, messages5h, messages7d, lastUpdated
+        }
+
         public static let empty = Snapshot(
             fiveHourUsedPct: nil,
             fiveHourResetsAt: nil,
