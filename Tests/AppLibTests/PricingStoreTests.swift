@@ -63,6 +63,7 @@ struct PricingStoreTests {
 
     @Test func refreshSwapsOnNewerVersionAndWritesCache() async {
         let cache = Self.tmpCacheURL()
+        defer { try? FileManager.default.removeItem(at: cache.deletingLastPathComponent()) }
         let store = PricingStore(
             cacheURL: cache,
             bundledData: { Self.json(version: "2026-01-01", opusInput: 1e-9) },

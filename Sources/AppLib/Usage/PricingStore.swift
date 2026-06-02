@@ -61,10 +61,12 @@ public final class PricingStore: ObservableObject {
         guard let data = await fetch(),
               let fetched = try? PricingTable(data: data),
               fetched.version > table.version else { return }
+        // In-memory table always wins; persisting to the cache is best-effort
+        // (a write failure just means next launch falls back to bundled).
+        table = fetched
         try? FileManager.default.createDirectory(
             at: cacheURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? data.write(to: cacheURL, options: .atomic)
-        table = fetched
     }
 
     // MARK: - Default seams (replaced in tests)

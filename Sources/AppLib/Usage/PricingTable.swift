@@ -3,8 +3,11 @@ import Foundation
 /// Pure model→price lookup parsed from a curated `pricing.json`.
 /// No Bundle, no network — fully unit-testable with inline `Data`.
 public struct PricingTable: Sendable {
-    /// `pricing.json` `version` (ISO date string); "" if absent. Used by
-    /// `PricingStore` for monotonic version-gated selection.
+    /// `pricing.json` `version` (ISO date string, e.g. "2026-06-02"); "" if
+    /// absent. Used by `PricingStore` for monotonic version-gated selection.
+    /// Compared lexicographically as a String — for well-formed ISO-8601 dates
+    /// this equals chronological order, and "" (empty/absent) sorts lowest by
+    /// design. Do NOT replace with Date parsing.
     public let version: String
     private let models: [String: ModelPrice]
     private let aliases: [String: String]
