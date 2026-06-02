@@ -55,6 +55,32 @@ struct UsageTrackerDailyTests {
         #expect(r2.merged[today]?["gpt-5.5"] == nil)
     }
 
+    @Test func refreshPopulatesSevenDayUsageWithCost() async throws {
+        let now = Date()
+        let projects = try Self.tmpDir()
+        let proj = projects.appendingPathComponent("p"); try FileManager.default.createDirectory(at: proj, withIntermediateDirectories: true)
+        let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let line = """
+        {"type":"assistant","timestamp":"\(iso.string(from: now))","message":{"model":"claude-opus-4-8","usage":{"input_tokens":1000,"output_tokens":100,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}}
+        """
+        try line.write(to: proj.appendingPathComponent("s.jsonl"), atomically: true, encoding: .utf8)
+
+        let tracker = UsageTracker(projectsDir: projects, codexSessionsDir: nil)
+        let store = PricingStore(cacheURL: FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString),
+                                 bundledData: { Data(#"{"version":"t","models":{"claude-opus-4-8":{"input":1e-5,"output":1e-4,"cache_read":0,"cache_creation":0}}}"#.utf8) },
+                                 fetch: { nil })
+        store.loadInitial()
+        tracker.pricingStore = store
+
+        await tracker.refresh()
+        let today = Calendar.current.startOfDay(for: now)
+        let day = tracker.snapshot.dailyUsage.first { $0.dayStart == today }
+        #expect(tracker.snapshot.dailyUsage.count == 7)
+        #expect(day?.claudeTokens == 1100)
+        // 1000*1e-5 + 100*1e-4 = 0.01 + 0.01 = 0.02
+        #expect(abs((day?.claudeCostUSD ?? -1) - 0.02) < 1e-12)
+    }
+
     @Test func claudeMidnightSplitsByLocalDay() throws {
         // now = 2026-06-02 12:00 Shanghai. Two messages straddle local midnight:
         //  23:30 on 06-01 Shanghai (== 15:30Z) and 00:30 on 06-02 Shanghai (== 16:30Z 06-01).

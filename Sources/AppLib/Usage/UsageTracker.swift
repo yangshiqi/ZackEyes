@@ -36,6 +36,11 @@ public final class UsageTracker: ObservableObject {
         // Last time we received fresh rate_limits data from any source
         public var lastUpdated: Date?
 
+        // #84 — per-local-day consumption (tokens + cost), 7 entries oldest→today.
+        // NOT trusted from cache (cleared on load, rebuilt by refresh) to avoid a
+        // stale "today" after midnight.
+        public var dailyUsage: [DayUsage] = []
+
         public static let empty = Snapshot(
             fiveHourUsedPct: nil,
             fiveHourResetsAt: nil,
@@ -73,6 +78,14 @@ public final class UsageTracker: ObservableObject {
     }
 
     @Published public private(set) var snapshot: Snapshot = .empty
+
+    /// Pricing source for daily cost (both `@MainActor`; read after the detached
+    /// scan returns). Weak so it never extends the store's lifetime.
+    public weak var pricingStore: PricingStore?
+
+    /// Per-file Codex daily-scan parse cache, keyed by file path. Lives on the
+    /// main actor; passed by value into the detached scan and replaced on return.
+    private var codexDailyCache: [String: FileTally] = [:]
 
     /// Path where we persist the last received rate_limits snapshot so the UI
     /// can show meaningful data immediately on next launch instead of "no data".
@@ -158,7 +171,9 @@ public final class UsageTracker: ObservableObject {
               let cached = try? JSONDecoder().decode(Snapshot.self, from: data) else {
             return
         }
-        snapshot = cached
+        var restored = cached
+        restored.dailyUsage = []   // #84: never trust a persisted (possibly stale) "today"
+        snapshot = restored
     }
 
     /// Persist the snapshot's rate_limits fields so we can restore them on next launch.
@@ -195,18 +210,31 @@ public final class UsageTracker: ObservableObject {
             Self.computeSnapshot(projectsDir: dir, calendar: cal, now: scanNow)
         }.value
         let estimated = claudeScan.snapshot
-        // TODO(#84 Plan A5): fold claudeScan.daily + the Codex daily scan into
-        // snapshot.dailyUsage here (priced via pricingStore on the main actor).
         let codexObservation = await Task.detached(priority: .utility) { () -> CodexRateLimitObservation? in
             guard let codexDir else { return nil }
             return Self.scanLatestCodexRateLimits(rootDir: codexDir)
         }.value
+
+        // #84 daily token scan (Codex), with the per-file parse cache.
+        let codexCacheSnapshot = codexDailyCache
+        let codexDaily = await Task.detached(priority: .utility) {
+            () -> (merged: [Date: [String: ModelTokenTally]], cache: [String: FileTally])? in
+            guard let codexDir else { return nil }
+            return Self.scanCodexDailyTokens(rootDir: codexDir, cache: codexCacheSnapshot, calendar: cal, now: scanNow)
+        }.value
+        if let codexDaily { codexDailyCache = codexDaily.cache }
 
         var merged = snapshot
         merged.tokens5h = estimated.tokens5h
         merged.tokens7d = estimated.tokens7d
         merged.messages5h = estimated.messages5h
         merged.messages7d = estimated.messages7d
+        merged.dailyUsage = Self.buildDailyUsage(
+            claude: claudeScan.daily,
+            codex: codexDaily?.merged ?? [:],
+            pricing: pricingStore?.table ?? .empty,
+            calendar: cal, now: scanNow
+        )
         self.snapshot = merged
 
         if let obs = codexObservation {
