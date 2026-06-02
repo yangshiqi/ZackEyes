@@ -40,9 +40,9 @@ public struct PricingTable: Sendable {
         if let p = models[model] { return p }
         let stripped = Self.stripDateSuffix(model)
         if stripped != model, let p = models[stripped] { return p }
-        // Alias keys are canonical raw IDs (no date suffix); date-stripping is
-        // intentionally not re-applied to the alias lookup.
-        if let canonical = aliases[model], let p = models[canonical] { return p }
+        // Alias keys are canonical raw IDs (no date suffix); look up via the
+        // date-stripped ID so an aliased model passed with a date suffix resolves.
+        if let canonical = aliases[stripped], let p = models[canonical] { return p }
         return nil
     }
 

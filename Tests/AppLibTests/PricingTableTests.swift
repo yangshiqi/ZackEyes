@@ -33,6 +33,7 @@ struct PricingTableTests {
     @Test func aliasLookup() throws {
         let t = try PricingTable(data: Self.json)
         #expect(t.price(for: "claude-opus-latest")?.inputPerToken == 1.5e-5)
+        #expect(t.price(for: "claude-opus-latest-20260602")?.inputPerToken == 1.5e-5)
     }
 
     @Test func missingModelIsNil() throws {
