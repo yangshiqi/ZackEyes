@@ -49,7 +49,7 @@ diff ~/.claude/settings.json ~/.claude/settings.json.backup.*  # 确认只改了
 - Bridge 任何代码路径 → 受控失败时 exit(0) 静默；永不 exit(2)（旧版文档写的 exit(1) 已失效，Claude Code 新版会把它显示成 hook error）
 - NSPanel 相关变更 → 手动验证不抢焦点、不挡菜单栏点击
 - HookInstaller 变更 → 先备份一份 settings.json，测完恢复
-- 新代码应有测试覆盖（XCTest）
+- 新代码应有测试覆盖（Swift Testing 为主：`import Testing` / `@Test` / `#expect`；个别既有文件用 XCTest，跟随同目录约定）
 
 ## 进度追踪
 

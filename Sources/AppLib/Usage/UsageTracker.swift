@@ -500,6 +500,11 @@ public final class UsageTracker: ObservableObject {
 
         var tokens5h = 0, tokens7d = 0, msgs5h = 0, msgs7d = 0
         var daily: [Date: [String: ModelTokenTally]] = [:]
+        // #88: Claude Code splits one API response across multiple JSONL lines
+        // that share a `message.id` and each repeat the SAME `usage`. Dedup by
+        // id GLOBALLY across all files (resume/fork can replay an id) so totals
+        // aren't ~2x inflated.
+        var seenMessageIDs = Set<String>()
 
         for projectDir in projectDirs {
             guard let files = try? fm.contentsOfDirectory(
@@ -513,7 +518,8 @@ public final class UsageTracker: ObservableObject {
                 parseFile(at: file, cutoff5h: cutoff5h, cutoff7d: cutoff7d,
                           dailyCutoff: dailyCutoff, calendar: calendar,
                           tokens5h: &tokens5h, tokens7d: &tokens7d,
-                          msgs5h: &msgs5h, msgs7d: &msgs7d, daily: &daily)
+                          msgs5h: &msgs5h, msgs7d: &msgs7d, daily: &daily,
+                          seenMessageIDs: &seenMessageIDs)
             }
         }
 
@@ -532,7 +538,8 @@ public final class UsageTracker: ObservableObject {
         dailyCutoff: Date, calendar: Calendar,
         tokens5h: inout Int, tokens7d: inout Int,
         msgs5h: inout Int, msgs7d: inout Int,
-        daily: inout [Date: [String: ModelTokenTally]]
+        daily: inout [Date: [String: ModelTokenTally]],
+        seenMessageIDs: inout Set<String>
     ) {
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else { return }
@@ -557,6 +564,13 @@ public final class UsageTracker: ObservableObject {
             guard (obj["type"] as? String) == "assistant",
                   let msg = obj["message"] as? [String: Any],
                   let usage = msg["usage"] as? [String: Any] else { continue }
+
+            // #88: skip a repeated `message.id` — its usage was already counted.
+            // Lines without an id are NOT collapsed (each counts on its own).
+            // `insert(_:).inserted` is false when the id was already present →
+            // skip the repeated line in a single hash operation.
+            if let id = msg["id"] as? String, !id.isEmpty,
+               !seenMessageIDs.insert(id).inserted { continue }
 
             let input = (usage["input_tokens"] as? Int) ?? 0
             let output = (usage["output_tokens"] as? Int) ?? 0
