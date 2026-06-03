@@ -7,6 +7,18 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.5.1',
+    date: 'Published June 3, 2026',
+    highlights: [
+      {
+        label: 'Fixed',
+        items: [
+          'Daily token totals were inflated by cache reuse. Claude now counts input + output + cache-creation and excludes cache reads; Codex excludes its cached-input reuse. The Today row and 7-day sparkline now show distinct tokens processed, so Claude and Codex are directly comparable.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.5.0',
     date: 'Published June 3, 2026',
     highlights: [
