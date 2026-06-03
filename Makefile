@@ -114,6 +114,11 @@ dmg: app-release
 #  11. Pull master, tag the merge commit, push tag
 #  12. gh release create on source repo (empty record, attached to the tag)
 #
+# After release (manual project housekeeping — NOT automated by this target):
+#   - Close the v<VERSION> GitHub milestone (its issues are already closed by
+#     the feature-PR merges; closing the milestone marks the version shipped).
+#   - Tick that version's items in the Roadmap tracking issue (#92).
+#
 # Usage:  make release VERSION=0.3.0     (X.Y.Z, no 'v' prefix)
 # Optional: NOTES="changelog text"       (defaults to "Release vVERSION")
 #   NOTES is written verbatim into the PUBLIC website changelog
