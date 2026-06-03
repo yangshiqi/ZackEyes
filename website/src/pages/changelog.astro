@@ -7,6 +7,26 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.5.0',
+    date: 'Published June 3, 2026',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Daily token & cost consumption — a "Today" row in the expanded panel with a 7-day sparkline, covering both Claude Code and Codex.',
+          'Bundled model pricing table with periodic refresh, converting token usage to USD locally (works offline, no API key).',
+          'Per-session cost for Codex — session cards now show $ next to context %, matching Claude.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'Token over-counting: Claude Code splits a single API response across multiple transcript lines that repeat the same usage. Usage is now de-duplicated by message id, correcting Today / 5h / 7d token and cost figures (previously inflated roughly 2x).'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.4.5',
     date: 'Published June 1, 2026',
     summary: 'Reposition the simulated notch out from under menu-bar icons, an Allow All session-scoped permission shortcut, and a fix for the dead "answer in terminal" CTA.',
