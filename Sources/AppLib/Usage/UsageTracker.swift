@@ -567,10 +567,10 @@ public final class UsageTracker: ObservableObject {
 
             // #88: skip a repeated `message.id` — its usage was already counted.
             // Lines without an id are NOT collapsed (each counts on its own).
-            if let id = msg["id"] as? String, !id.isEmpty {
-                if seenMessageIDs.contains(id) { continue }
-                seenMessageIDs.insert(id)
-            }
+            // `insert(_:).inserted` is false when the id was already present →
+            // skip the repeated line in a single hash operation.
+            if let id = msg["id"] as? String, !id.isEmpty,
+               !seenMessageIDs.insert(id).inserted { continue }
 
             let input = (usage["input_tokens"] as? Int) ?? 0
             let output = (usage["output_tokens"] as? Int) ?? 0
