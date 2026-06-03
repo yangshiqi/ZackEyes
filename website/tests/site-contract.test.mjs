@@ -232,10 +232,13 @@ describe('Astro site contract', () => {
 
     const page = read('src/pages/roadmap.astro');
     assert.match(page, /Roadmap/);
+    assert.match(page, /Quota burn-rate prediction/);
+    assert.match(page, /Completion recaps and quieter alerts/);
+    assert.match(page, /Per-session permission rules/);
+    assert.match(page, /Hook health and event resilience/);
+    assert.match(page, /Process and session insight/);
     assert.match(page, /More agent support/);
-    assert.match(page, /Richer task state/);
-    assert.match(page, /Custom notifications/);
-    assert.match(page, /Codex hook compatibility/);
+    assert.match(page, /Codex/);
     assert.match(page, /ItemList/);
   });
 
