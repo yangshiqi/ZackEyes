@@ -58,6 +58,12 @@ public struct CodexTokenCountEvent: Sendable {
     public let contextUsedPct: Double
     public let contextWindowSize: Int?
     public let transcriptPath: String
+    // #78: cumulative session token components from `info.total_token_usage`
+    // (nil if absent). `cached` is a subset of `input`. Used to compute the
+    // per-session Codex cost so cards show `$` like Claude's.
+    public let cumulativeInput: Int?
+    public let cumulativeCached: Int?
+    public let cumulativeOutput: Int?
 }
 
 /// Codex emits a top-level `turn_context` JSONL row per turn whose payload
@@ -410,12 +416,21 @@ extension CodexJsonlTailer {
         }
 
         let windowSize = Int(window.rounded())
+        // #78: cumulative session totals (for per-session cost). Optional —
+        // some token_count rows carry only last_token_usage.
+        let totals = info["total_token_usage"] as? [String: Any]
+        let cumInput = totals.flatMap { number($0["input_tokens"]) }.map { Int($0.rounded()) }
+        let cumCached = totals.flatMap { number($0["cached_input_tokens"]) }.map { Int($0.rounded()) }
+        let cumOutput = totals.flatMap { number($0["output_tokens"]) }.map { Int($0.rounded()) }
         return CodexTokenCountEvent(
             sessionId: sessionId,
             cwd: cwd,
             contextUsedPct: (contextTokens / window) * 100,
             contextWindowSize: windowSize,
-            transcriptPath: transcriptPath
+            transcriptPath: transcriptPath,
+            cumulativeInput: cumInput,
+            cumulativeCached: cumCached,
+            cumulativeOutput: cumOutput
         )
     }
 

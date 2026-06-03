@@ -83,6 +83,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // so daily cost is available from the first refresh.
         usageTracker = UsageTracker()
         usageTracker.pricingStore = ps
+        // #78: let SessionStore price Codex per-session cost (raw model id →
+        // ModelPrice) without coupling it to PricingStore/Bundle.
+        sessionStore.codexPriceLookup = { [weak ps] model in ps?.price(for: model) }
         usageTracker.showTodayConsumption = ConfigStore().loadShowTodayConsumption()
         // Real-notch path doesn't go through SimulatedNotchController, so the
         // tracker would never start its 30s refresh loop and the menu-bar
@@ -800,7 +803,10 @@ extension AppDelegate: CodexJsonlTailerDelegate {
             contextUsedPct: event.contextUsedPct,
             contextWindowSize: event.contextWindowSize,
             transcriptPath: event.transcriptPath,
-            observedAt: Date()
+            observedAt: Date(),
+            cumulativeInput: event.cumulativeInput,
+            cumulativeCached: event.cumulativeCached,
+            cumulativeOutput: event.cumulativeOutput
         )
         if sessionStore.sessions[event.sessionId]?.claudePid == nil {
             activateCodexSession(event.sessionId)

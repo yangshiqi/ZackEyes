@@ -146,6 +146,11 @@ public final class SessionStore: ObservableObject {
 
     public init() {}
 
+    /// #78: injected Codex price lookup (raw model id → ModelPrice). Set by
+    /// AppDelegate from PricingStore so SessionStore stays decoupled from
+    /// Bundle/network. nil → no per-session Codex cost computed.
+    public var codexPriceLookup: ((String) -> ModelPrice?)?
+
     // MARK: - Computed views
 
     /// The "primary" session shown in the UI. Priority:
@@ -513,7 +518,10 @@ public final class SessionStore: ObservableObject {
         contextUsedPct: Double,
         contextWindowSize: Int?,
         transcriptPath: String?,
-        observedAt: Date
+        observedAt: Date,
+        cumulativeInput: Int? = nil,
+        cumulativeCached: Int? = nil,
+        cumulativeOutput: Int? = nil
     ) {
         let didCreateSession = sessions[sessionId] == nil
         var session = sessions[sessionId]
@@ -538,6 +546,22 @@ public final class SessionStore: ObservableObject {
             session.state = .working
         }
         session.lastActiveAt = observedAt
+
+        // #78: per-session Codex cost from cumulative totals × price. The raw
+        // model id lives in `modelDisplayName` for codex (set from
+        // turn_context.model). `cached` is a subset of `input` — mirrors the
+        // codex branch of `buildDailyUsage`. Unknown model / missing tokens →
+        // leave totalCostUSD unchanged (no $, consistent with "unpriced").
+        if let model = session.modelDisplayName,
+           let price = codexPriceLookup?(model),
+           let input = cumulativeInput, let output = cumulativeOutput {
+            let cached = cumulativeCached ?? 0
+            let uncached = max(0, input - cached)
+            session.totalCostUSD = Double(uncached) * price.inputPerToken
+                + Double(cached) * price.cacheReadPerToken
+                + Double(output) * price.outputPerToken
+        }
+
         sessions[sessionId] = session
     }
 
