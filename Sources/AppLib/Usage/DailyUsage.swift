@@ -83,9 +83,12 @@ extension UsageTracker {
             if let models = codex[day] {
                 var cost = 0.0, priced = false
                 for (model, t) in models {
-                    u.codexTokens += t.input + t.output    // cached is a subset of input
+                    // Codex's input_tokens INCLUDES cached_input (stored in cacheRead),
+                    // which is cache reuse — the analogue of Claude's cache_read. Exclude
+                    // it so the count is distinct tokens, same convention as Claude above.
+                    let uncached = max(0, t.input - t.cacheRead)
+                    u.codexTokens += uncached + t.output
                     if let p = pricing.price(for: model) {
-                        let uncached = max(0, t.input - t.cacheRead)
                         cost += Double(uncached) * p.inputPerToken
                               + Double(t.cacheRead) * p.cacheReadPerToken
                               + Double(t.output) * p.outputPerToken

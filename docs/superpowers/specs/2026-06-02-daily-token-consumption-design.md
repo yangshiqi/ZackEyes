@@ -86,9 +86,14 @@ The displayed "tokens" number is **distinct tokens processed, counted once**:
   (`input_tokens` / `cache_creation` / `cache_read`) are disjoint buckets of one
   turn's input; a token is counted once when first sent (as `input` or
   `cache_creation`), never again on the re-reads (`cache_read`).
-- **Codex:** `input + output` — Codex's `input_tokens` already *includes*
-  `cached_input_tokens`, so this is already "all distinct input + output" (the
-  analogue of Claude's `input + cache_creation + output`).
+- **Codex:** `(input − cache_read) + output` — Codex's `input_tokens` *includes*
+  `cached_input_tokens` (stored in `cacheRead`), which is cache reuse — the
+  analogue of Claude's `cache_read`. We subtract it so the count is distinct
+  tokens, the **same convention as Claude**, and reuse a lot (real data: codex
+  input was ~93% cached). `input − cache_read` (uncached) is the analogue of
+  Claude's `input + cache_creation` (all newly-processed input); Codex has no
+  separate cache-creation bucket. This is the same `uncached` quantity the cost
+  fold below already uses.
 
 > **History:** originally `input + output + cache_read + cache_creation`, but real
 > data was ~97% `cache_read` (reuse) inflating "today" to 800M+. First fix dropped
@@ -96,6 +101,11 @@ The displayed "tokens" number is **distinct tokens processed, counted once**:
 > genuinely-new tokens — under-counting ~9× (e.g. 1.6M shown vs 14.8M real on
 > 2026-06-03). Final: include `cache_creation`, exclude only `cache_read`. Cost
 > (below) still bills **all four** components at their rates, labeled **"est."**
+>
+> **Codex follow-up (2026-06-03):** Codex was left at `input + output`, but its
+> `input_tokens` includes `cached_input_tokens` (~93% on real data) — the same
+> reuse inflation. Brought in line: `max(0, input − cache_read) + output`, so C and
+> X both mean "distinct tokens, reuse excluded" and are comparable.
 
 ## Scan + cost (off-main scan, on-main pricing)
 
@@ -160,7 +170,7 @@ nonisolated static func buildDailyUsage(
 Pure function (injected `pricing`/`calendar`/`now` — no clock, no files, no
 `PricingStore`). For each of the 7 local days ending today:
 - `claudeTokens` = Σ over models of `input+output+cacheCreate` (`cacheRead` excluded — reuse must not inflate the count; see Token-total convention above).
-- `codexTokens` = Σ over models of `input+output`.
+- `codexTokens` = Σ over models of `max(0, input−cacheRead)+output` (uncached + output; codex's cached reuse excluded, same as Claude).
 - `claudeCostUSD` per model `m` with `pricing.price(for: m)` =
   `input·inP + output·outP + cacheRead·crP + cacheCreate·ccP`; nil if no priced
   model that day.
