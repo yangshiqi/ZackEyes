@@ -30,6 +30,8 @@ const downloadStructuredData = [
       'Claude Code and Codex CLI session visibility',
       'Permission approval awareness',
       'Rate-limit pressure display',
+      'Daily and per-session token and cost tracking for Claude Code and Codex',
+      'Offline model pricing conversion to USD (no API key required)',
       'Multiple themes',
       'Real notch and simulated island display modes'
     ]
@@ -64,7 +66,7 @@ const downloadStructuredData = [
           <div class="section-eyebrow">Current release</div>
           <h1 id="download-page-title">Download ZackEyes.</h1>
           <p class="policy-lede">
-            {releaseName} is the current public macOS DMG. It supports macOS 14 or newer, Apple Silicon + Intel Macs, Claude Code, Codex CLI, Multiple themes, terminal tab jump, and display modes for real notches or simulated Dynamic Island-style panels.
+            {releaseName} is the current public macOS DMG. It supports macOS 14 or newer, Apple Silicon + Intel Macs, Claude Code, Codex CLI, daily token and cost tracking, multiple themes, terminal tab jump, and display modes for real notches or simulated Dynamic Island-style panels.
           </p>
           <div class="hero-actions">
             <a class="button primary" href={downloadUrl}>Download {releaseName} <span aria-hidden="true">↓</span></a>
@@ -119,6 +121,10 @@ const downloadStructuredData = [
             <article>
               <h3>Agent command center</h3>
               <p>Claude Code and Codex CLI sessions, task state, permission prompts, completion, and usage pressure stay near the top edge of the screen.</p>
+            </article>
+            <article>
+              <h3>Daily token and cost tracking</h3>
+              <p>A Today row tracks token spend and USD cost for Claude and Codex with a 7-day sparkline. Model pricing is bundled and refreshed offline — no API key or cloud upload.</p>
             </article>
             <article>
               <h3>Multiple themes</h3>

@@ -118,6 +118,11 @@ dmg: app-release
 #   - Close the v<VERSION> GitHub milestone (its issues are already closed by
 #     the feature-PR merges; closing the milestone marks the version shipped).
 #   - Tick that version's items in the Roadmap tracking issue (#92).
+#   - Review the public website for content drift: homepage, docs, FAQ/answers,
+#     roadmap — add/update anything this version changed (new features,
+#     screenshots, compatibility, quota/cost wording). Only the changelog is
+#     auto-bumped (Scripts/bump-website-release.sh); the rest is NOT, so it
+#     silently goes stale unless reviewed each release.
 #
 # Usage:  make release VERSION=0.3.0     (X.Y.Z, no 'v' prefix)
 # Optional: NOTES="changelog text"       (defaults to "Release vVERSION")

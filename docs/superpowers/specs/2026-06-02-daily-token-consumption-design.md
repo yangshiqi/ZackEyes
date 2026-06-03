@@ -79,17 +79,33 @@ public var dailyUsage: [DayUsage]       // exactly 7 entries, oldest → today (
 
 ### Token-total convention (cross-agent)
 
-The displayed "tokens" number is **`input + output` for both agents** — the real
-work done. (Codex's `cached_input_tokens` is a subset of `input_tokens`, not
-additive.)
+The displayed "tokens" number is **distinct tokens processed, counted once**:
+- **Claude:** `input + output + cache_creation` — uncached input + newly-cached
+  input + output. `cache_read` (the same cached context re-read every turn) is
+  **excluded** so reuse doesn't inflate the count. Claude's three input fields
+  (`input_tokens` / `cache_creation` / `cache_read`) are disjoint buckets of one
+  turn's input; a token is counted once when first sent (as `input` or
+  `cache_creation`), never again on the re-reads (`cache_read`).
+- **Codex:** `max(0, input − cache_read) + output` — Codex's `input_tokens` *includes*
+  `cached_input_tokens` (stored in `cacheRead`), which is cache reuse — the
+  analogue of Claude's `cache_read`. We subtract it so the count is distinct
+  tokens, the **same convention as Claude**, and reuse a lot (real data: codex
+  input was ~93% cached). `input − cache_read` (uncached) is the analogue of
+  Claude's `input + cache_creation` (all newly-processed input); Codex has no
+  separate cache-creation bucket. This is the same `uncached` quantity the cost
+  fold below already uses.
 
-> **Revised (2026-06-02, real-data feedback):** the headline originally counted
-> Claude as `input + output + cache_read + cache_creation`, but real usage showed
-> that's ~97% `cache_read` — the same cached context re-read every turn — inflating
-> "today" to 800M+ tokens. Cache reuse is not "work done", so it's **excluded from
-> the displayed count** (`DailyUsage.swift` `buildDailyUsage`). Cost (below) still
-> bills **all four components** at their respective rates, and is labeled **"est."**
-> (a theoretical per-API-token figure, not subscription spend).
+> **History:** originally `input + output + cache_read + cache_creation`, but real
+> data was ~97% `cache_read` (reuse) inflating "today" to 800M+. First fix dropped
+> *all* cache (`input + output`), but that also dropped `cache_creation` —
+> genuinely-new tokens — under-counting ~9× (e.g. 1.6M shown vs 14.8M real on
+> 2026-06-03). Final: include `cache_creation`, exclude only `cache_read`. Cost
+> (below) still bills **all four** components at their rates, labeled **"est."**
+>
+> **Codex follow-up (2026-06-03):** Codex was left at `input + output`, but its
+> `input_tokens` includes `cached_input_tokens` (~93% on real data) — the same
+> reuse inflation. Brought in line: `max(0, input − cache_read) + output`, so C and
+> X both mean "distinct tokens, reuse excluded" and are comparable.
 
 ## Scan + cost (off-main scan, on-main pricing)
 
@@ -153,8 +169,8 @@ nonisolated static func buildDailyUsage(
 
 Pure function (injected `pricing`/`calendar`/`now` — no clock, no files, no
 `PricingStore`). For each of the 7 local days ending today:
-- `claudeTokens` = Σ over models of `input+output+cacheRead+cacheCreate`.
-- `codexTokens` = Σ over models of `input+output`.
+- `claudeTokens` = Σ over models of `input+output+cacheCreate` (`cacheRead` excluded — reuse must not inflate the count; see Token-total convention above).
+- `codexTokens` = Σ over models of `max(0, input−cacheRead)+output` (uncached + output; codex's cached reuse excluded, same as Claude).
 - `claudeCostUSD` per model `m` with `pricing.price(for: m)` =
   `input·inP + output·outP + cacheRead·crP + cacheCreate·ccP`; nil if no priced
   model that day.
