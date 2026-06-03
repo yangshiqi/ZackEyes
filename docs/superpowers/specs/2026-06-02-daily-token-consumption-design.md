@@ -159,7 +159,7 @@ nonisolated static func buildDailyUsage(
 
 Pure function (injected `pricing`/`calendar`/`now` — no clock, no files, no
 `PricingStore`). For each of the 7 local days ending today:
-- `claudeTokens` = Σ over models of `input+output+cacheRead+cacheCreate`.
+- `claudeTokens` = Σ over models of `input+output+cacheCreate` (`cacheRead` excluded — reuse must not inflate the count; see Token-total convention above).
 - `codexTokens` = Σ over models of `input+output`.
 - `claudeCostUSD` per model `m` with `pricing.price(for: m)` =
   `input·inP + output·outP + cacheRead·crP + cacheCreate·ccP`; nil if no priced
