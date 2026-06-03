@@ -79,17 +79,23 @@ public var dailyUsage: [DayUsage]       // exactly 7 entries, oldest → today (
 
 ### Token-total convention (cross-agent)
 
-The displayed "tokens" number is **`input + output` for both agents** — the real
-work done. (Codex's `cached_input_tokens` is a subset of `input_tokens`, not
-additive.)
+The displayed "tokens" number is **distinct tokens processed, counted once**:
+- **Claude:** `input + output + cache_creation` — uncached input + newly-cached
+  input + output. `cache_read` (the same cached context re-read every turn) is
+  **excluded** so reuse doesn't inflate the count. Claude's three input fields
+  (`input_tokens` / `cache_creation` / `cache_read`) are disjoint buckets of one
+  turn's input; a token is counted once when first sent (as `input` or
+  `cache_creation`), never again on the re-reads (`cache_read`).
+- **Codex:** `input + output` — Codex's `input_tokens` already *includes*
+  `cached_input_tokens`, so this is already "all distinct input + output" (the
+  analogue of Claude's `input + cache_creation + output`).
 
-> **Revised (2026-06-02, real-data feedback):** the headline originally counted
-> Claude as `input + output + cache_read + cache_creation`, but real usage showed
-> that's ~97% `cache_read` — the same cached context re-read every turn — inflating
-> "today" to 800M+ tokens. Cache reuse is not "work done", so it's **excluded from
-> the displayed count** (`DailyUsage.swift` `buildDailyUsage`). Cost (below) still
-> bills **all four components** at their respective rates, and is labeled **"est."**
-> (a theoretical per-API-token figure, not subscription spend).
+> **History:** originally `input + output + cache_read + cache_creation`, but real
+> data was ~97% `cache_read` (reuse) inflating "today" to 800M+. First fix dropped
+> *all* cache (`input + output`), but that also dropped `cache_creation` —
+> genuinely-new tokens — under-counting ~9× (e.g. 1.6M shown vs 14.8M real on
+> 2026-06-03). Final: include `cache_creation`, exclude only `cache_read`. Cost
+> (below) still bills **all four** components at their rates, labeled **"est."**
 
 ## Scan + cost (off-main scan, on-main pricing)
 
