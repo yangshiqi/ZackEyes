@@ -86,7 +86,7 @@ The displayed "tokens" number is **distinct tokens processed, counted once**:
   (`input_tokens` / `cache_creation` / `cache_read`) are disjoint buckets of one
   turn's input; a token is counted once when first sent (as `input` or
   `cache_creation`), never again on the re-reads (`cache_read`).
-- **Codex:** `(input − cache_read) + output` — Codex's `input_tokens` *includes*
+- **Codex:** `max(0, input − cache_read) + output` — Codex's `input_tokens` *includes*
   `cached_input_tokens` (stored in `cacheRead`), which is cache reuse — the
   analogue of Claude's `cache_read`. We subtract it so the count is distinct
   tokens, the **same convention as Claude**, and reuse a lot (real data: codex
