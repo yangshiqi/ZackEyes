@@ -94,11 +94,15 @@ public struct BurnRateEstimator: Sendable {
 
     public init() {}
 
-    /// Record a fresh reading. A drop in `pct` means the window rolled over
-    /// (used% reset toward 0), so we discard the pre-reset history — otherwise
-    /// the rate would be computed across the cliff and read negative/garbage.
+    /// Record a fresh reading. A LARGE drop in `pct` means the window rolled
+    /// over (used% reset toward 0), so we discard the pre-reset history —
+    /// otherwise the rate would be computed across the cliff. The threshold is
+    /// generous (5 pts): minor downward jitter must NOT wipe history, or the ETA
+    /// would keep flapping back to cold-start `—`. A real reset is a drop of
+    /// tens of points; a small gradual decline instead yields a negative rate,
+    /// which `rawETA` already reports as `.safe` (not burning).
     public mutating func record(_ now: Date, pct: Double) {
-        if let last = samples.last, pct < last.pct - 0.01 {
+        if let last = samples.last, pct < last.pct - 5.0 {
             samples.removeAll()
             committed = nil; pending = nil; pendingHits = 0
         }

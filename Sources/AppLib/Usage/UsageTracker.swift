@@ -282,10 +282,13 @@ public final class UsageTracker: ObservableObject {
             calendar: cal, now: scanNow
         )
         // #86 — re-estimate Claude ETA on the refresh tick so it ages out to
-        // `.computing` when no hook has arrived recently (idle), instead of
-        // pinning the last live countdown. No new sample is recorded here.
+        // `.computing` when no hook arrived recently (idle), instead of pinning
+        // the last live countdown. Uses Date() — NOT the older `scanNow` captured
+        // before the heavy disk scans above — so staleness/aging is measured
+        // against the true current time (a concurrent hook may have recorded a
+        // sample newer than scanNow). No new sample is recorded here.
         merged.fiveHourETA = claudeEstimator.estimate(
-            now: scanNow, currentPct: merged.fiveHourUsedPct, resetsAt: merged.fiveHourResetsAt)
+            now: Date(), currentPct: merged.fiveHourUsedPct, resetsAt: merged.fiveHourResetsAt)
         self.snapshot = merged
 
         if let obs = codexObservation {

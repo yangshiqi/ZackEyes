@@ -97,6 +97,19 @@ struct BurnRateEstimatorTests {
         #expect(eta == .computing)
     }
 
+    @Test func smallJitterDoesNotClearHistory() {
+        var est = BurnRateEstimator()
+        est.record(Self.at(0), pct: 20)
+        est.record(Self.at(2), pct: 24)
+        est.record(Self.at(4), pct: 28)
+        // Minor downward jitter (1 pt) is NOT a reset cliff — history must stay,
+        // or the ETA flaps back to cold-start `—`. A real reset is a tens-of-pts
+        // drop (covered by `resetCliffClearsHistory`).
+        est.record(Self.at(6), pct: 27)
+        let eta = est.estimate(now: Self.at(6), currentPct: 27, resetsAt: nil)
+        #expect(eta != .computing)
+    }
+
     @Test func recordPrunesOutsideWindow() {
         var est = BurnRateEstimator()
         est.record(Self.at(0), pct: 10)    // 12 min before the latest → pruned
