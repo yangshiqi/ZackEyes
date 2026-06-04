@@ -411,7 +411,7 @@ public final class SessionStore: ObservableObject {
     /// future PermissionRequests for the same tool in this session are
     /// auto-allowed (see `isToolAutoAllowed` + the short-circuit in
     /// `AppDelegate.handleEvent`). Session-scoped, never persisted.
-    public func allowAll(sessionId: String) {
+    public func allowAlways(sessionId: String) {
         guard var session = sessions[sessionId], let pending = session.pendingPermission else { return }
         session.autoAllowedTools.insert(pending.toolName)
         sessions[sessionId] = session

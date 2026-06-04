@@ -60,9 +60,9 @@ public final class NotchViewModel: ObservableObject {
     }
 
     /// "Allow Always": approve now and auto-allow this tool for the rest of the
-    /// session (see `SessionStore.allowAll`).
-    public func approveAll(sessionId: String) {
-        sessionStore.allowAll(sessionId: sessionId)
+    /// session (see `SessionStore.allowAlways`).
+    public func approveAlways(sessionId: String) {
+        sessionStore.allowAlways(sessionId: sessionId)
     }
 
     /// Click handler: jump to the terminal tab for this session.

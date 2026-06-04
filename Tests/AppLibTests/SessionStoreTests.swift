@@ -73,7 +73,7 @@ struct SessionStoreTests {
 
     // 5a. "Allow Always" sends an allow for the current request, clears pending,
     //     and remembers the tool so future requests for it are auto-allowed.
-    @Test func allowAllApprovesAndRemembersTool() {
+    @Test func allowAlwaysApprovesAndRemembersTool() {
         let store = SessionStore()
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
         let box = Box<BridgeResponse>()
@@ -84,13 +84,13 @@ struct SessionStoreTests {
         store.handlePermissionRequest(sessionId: "s1", permission: permission)
 
         #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Bash") == false)
-        store.allowAll(sessionId: "s1")
+        store.allowAlways(sessionId: "s1")
 
         // Current request allowed + pending cleared + back to working
         if case .permission(let r) = box.value {
             #expect(r.hookSpecificOutput.decision.behavior == "allow")
         } else {
-            #expect(Bool(false), "allowAll should send a .permission(allow) response")
+            #expect(Bool(false), "allowAlways should send a .permission(allow) response")
         }
         #expect(store.sessions["s1"]?.pendingPermission == nil)
         #expect(store.sessions["s1"]?.state == .working)
@@ -110,7 +110,7 @@ struct SessionStoreTests {
             toolName: "Bash", toolInput: [:], cwd: "/a", responder: { _ in }
         )
         store.handlePermissionRequest(sessionId: "s1", permission: permission)
-        store.allowAll(sessionId: "s1")
+        store.allowAlways(sessionId: "s1")
 
         #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Bash"))
         #expect(store.isToolAutoAllowed(sessionId: "s2", toolName: "Bash") == false)

@@ -522,7 +522,7 @@ struct NotchExpandedView: View {
         HStack(spacing: 8) {
             denyButton(sessionId: sessionId, isPrimary: isPrimary)
             allowButton(sessionId: sessionId, isPrimary: isPrimary)
-            allowAllButton(sessionId: sessionId, isPrimary: isPrimary)
+            allowAlwaysButton(sessionId: sessionId, isPrimary: isPrimary)
         }
     }
 
@@ -581,9 +581,9 @@ struct NotchExpandedView: View {
     }
 
     @ViewBuilder
-    private func allowAllButton(sessionId: String, isPrimary: Bool) -> some View {
+    private func allowAlwaysButton(sessionId: String, isPrimary: Bool) -> some View {
         let teal = Color(red: 0.31, green: 0.80, blue: 0.77)
-        let base = Button(action: { viewModel.approveAll(sessionId: sessionId) }) {
+        let base = Button(action: { viewModel.approveAlways(sessionId: sessionId) }) {
             HStack(spacing: 4) {
                 // #87 — "Allow Always" (not "Allow All"): auto-allow is per-tool,
                 // not all-tools. Pairs with "Allow Once" as the temporal contrast.
