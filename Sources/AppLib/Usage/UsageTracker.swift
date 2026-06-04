@@ -41,6 +41,13 @@ public final class UsageTracker: ObservableObject {
         // stale "today" after midnight.
         public var dailyUsage: [DayUsage] = []
 
+        // #86 — predicted time until the 5h window reaches 100%, extrapolated
+        // from successive `used%` readings. Recomputed on every update and aged
+        // out when idle; excluded from Codable so a stale ETA never restores
+        // across launches.
+        public var fiveHourETA: CapETA? = nil
+        public var codexFiveHourETA: CapETA? = nil
+
         // `dailyUsage` is intentionally excluded from Codable: it is rebuilt on
         // every refresh and must never restore a stale "today" — and omitting it
         // keeps pre-#84 usage-cache.json (without this key) decodable on upgrade.
@@ -107,6 +114,12 @@ public final class UsageTracker: ObservableObject {
     /// main actor; passed by value into the detached scan and replaced on return.
     private var codexDailyCache: [String: FileTally] = [:]
 
+    /// #86 — rolling burn-rate estimators, one per agent. Fed `(now, used%)`
+    /// readings as they arrive; queried for the 5h cap ETA. Plain value types,
+    /// so they're confined to this @MainActor instance.
+    private var claudeEstimator = BurnRateEstimator()
+    private var codexEstimator = BurnRateEstimator()
+
     /// Path where we persist the last received rate_limits snapshot so the UI
     /// can show meaningful data immediately on next launch instead of "no data".
     private let cacheURL: URL = {
@@ -117,13 +130,17 @@ public final class UsageTracker: ObservableObject {
     /// Call whenever a `BridgeEvent` arrives with non-nil `rateLimits`.
     public func updateFromHook(rateLimits: [String: AnyCodable]) {
         var s = snapshot
-        s.lastUpdated = Date()
+        let now = Date()
+        s.lastUpdated = now
+        var freshFivePct: Double? = nil
 
         if let fh = rateLimits["five_hour"]?.value as? [String: Any] {
             if let used = fh["used_percentage"] as? Double {
                 s.fiveHourUsedPct = used
+                freshFivePct = used
             } else if let used = fh["used_percentage"] as? Int {
                 s.fiveHourUsedPct = Double(used)
+                freshFivePct = Double(used)
             }
             if let resets = fh["resets_at"] as? Double {
                 s.fiveHourResetsAt = Date(timeIntervalSince1970: resets > 1e12 ? resets / 1000 : resets)
@@ -146,6 +163,15 @@ public final class UsageTracker: ObservableObject {
                 s.sevenDayResetsAt = Date(timeIntervalSince1970: secs)
             }
         }
+
+        // #86 — only feed the estimator when THIS event carried a fresh 5h
+        // reading (otherwise we'd inject a duplicate flat point at a new time).
+        // Always re-estimate so the ETA reflects the latest % + reset.
+        if let used = freshFivePct {
+            claudeEstimator.record(now, pct: used)
+        }
+        s.fiveHourETA = claudeEstimator.estimate(
+            now: now, currentPct: s.fiveHourUsedPct, resetsAt: s.fiveHourResetsAt)
 
         snapshot = s
         saveToCache()
@@ -255,6 +281,11 @@ public final class UsageTracker: ObservableObject {
             pricing: pricingStore?.table ?? .empty,
             calendar: cal, now: scanNow
         )
+        // #86 — re-estimate Claude ETA on the refresh tick so it ages out to
+        // `.computing` when no hook has arrived recently (idle), instead of
+        // pinning the last live countdown. No new sample is recorded here.
+        merged.fiveHourETA = claudeEstimator.estimate(
+            now: scanNow, currentPct: merged.fiveHourUsedPct, resetsAt: merged.fiveHourResetsAt)
         self.snapshot = merged
 
         if let obs = codexObservation {
@@ -274,22 +305,30 @@ public final class UsageTracker: ObservableObject {
         if s.codexFiveHourUsedPct == nil
             && s.codexFiveHourResetsAt == nil
             && s.codexSevenDayUsedPct == nil
-            && s.codexSevenDayResetsAt == nil { return }
+            && s.codexSevenDayResetsAt == nil
+            && s.codexFiveHourETA == nil { return }
         s.codexFiveHourUsedPct = nil
         s.codexFiveHourResetsAt = nil
         s.codexSevenDayUsedPct = nil
         s.codexSevenDayResetsAt = nil
+        s.codexFiveHourETA = nil   // #86 — codex inactive → no countdown
         snapshot = s
         saveToCache()
     }
 
     private func applyCodexObservation(_ obs: CodexRateLimitObservation) {
         var s = snapshot
-        s.lastUpdated = Date()
-        if let v = obs.fiveHourUsedPct { s.codexFiveHourUsedPct = v }
+        let now = Date()
+        s.lastUpdated = now
+        if let v = obs.fiveHourUsedPct {
+            s.codexFiveHourUsedPct = v
+            codexEstimator.record(now, pct: v)   // #86 — same estimator, codex axis
+        }
         if let v = obs.fiveHourResetsAt { s.codexFiveHourResetsAt = v }
         if let v = obs.sevenDayUsedPct { s.codexSevenDayUsedPct = v }
         if let v = obs.sevenDayResetsAt { s.codexSevenDayResetsAt = v }
+        s.codexFiveHourETA = codexEstimator.estimate(
+            now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
         snapshot = s
         saveToCache()
     }

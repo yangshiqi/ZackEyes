@@ -128,14 +128,32 @@ struct NotchCompactView: View {
 
     @ViewBuilder
     private var leftContent: some View {
-        switch viewModel.aggregateState {
-        case .idle, .stopped:
-            usageChip(label: "5h", usedPct: usageTracker.snapshot.fiveHourUsedPct)
-        case .working, .waiting:
-            Text("Claude")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.white)
+        // #86 — when the 5h cap is imminent (≤30 min), the urgent ETA takes the
+        // left slot over the normal quota chip / "Claude" label: the pill stays
+        // quota-only until it matters, then surfaces the countdown.
+        if let urgent = usageTracker.snapshot.fiveHourETA?.pillUrgentLabel {
+            urgentETAChip(urgent)
+        } else {
+            switch viewModel.aggregateState {
+            case .idle, .stopped:
+                usageChip(label: "5h", usedPct: usageTracker.snapshot.fiveHourUsedPct)
+            case .working, .waiting:
+                Text("Claude")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white)
+            }
         }
+    }
+
+    @ViewBuilder
+    private func urgentETAChip(_ label: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "bolt.fill")
+                .font(.system(size: 9, weight: .bold))
+            Text(label)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+        }
+        .foregroundColor(Color(red: 0.95, green: 0.30, blue: 0.30))
     }
 
     // MARK: - Right content (visible, right of notch)

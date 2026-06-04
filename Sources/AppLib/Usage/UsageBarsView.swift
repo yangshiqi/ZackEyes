@@ -22,7 +22,8 @@ struct UsageBarsView<Trailing: View>: View {
     var body: some View {
         let snap = usageTracker.snapshot
         VStack(spacing: 8) {
-            usageBar(label: "5h", usedPct: snap.fiveHourUsedPct, resetsAt: snap.fiveHourResetsAt) {
+            usageBar(label: "5h", usedPct: snap.fiveHourUsedPct,
+                     resetsAt: snap.fiveHourResetsAt, eta: snap.fiveHourETA) {
                 trailing
             }
             usageBar(label: "7d", usedPct: snap.sevenDayUsedPct, resetsAt: snap.sevenDayResetsAt) {
@@ -43,6 +44,7 @@ struct UsageBarsView<Trailing: View>: View {
         label: String,
         usedPct: Double?,
         resetsAt: Date?,
+        eta: CapETA? = nil,
         @ViewBuilder trailing: () -> T
     ) -> some View {
         let used = usedPct ?? 0
@@ -66,6 +68,10 @@ struct UsageBarsView<Trailing: View>: View {
                         .font(.system(size: 11))
                         .foregroundColor(.white.opacity(0.4))
                 }
+
+                // #86 — cap ETA badge (5h row only). Renders nothing for the
+                // calm states so the row stays as before.
+                CapETABadge(eta: eta)
 
                 Spacer(minLength: 0)
 

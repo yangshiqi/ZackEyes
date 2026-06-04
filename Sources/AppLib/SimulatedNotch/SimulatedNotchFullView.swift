@@ -165,6 +165,8 @@ struct SimulatedNotchFullView: View {
                     leftResetsAt: snap.fiveHourResetsAt,
                     rightPct: snap.codexFiveHourUsedPct,
                     rightResetsAt: snap.codexFiveHourResetsAt,
+                    leftETA: snap.fiveHourETA,
+                    rightETA: snap.codexFiveHourETA,
                     trailing: { gearMenu }
                 )
                 splitUsageRow(
@@ -184,6 +186,7 @@ struct SimulatedNotchFullView: View {
                     agent: useCodex ? .codex : .claude,
                     usedPct: useCodex ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct,
                     resetsAt: useCodex ? snap.codexFiveHourResetsAt : snap.fiveHourResetsAt,
+                    eta: useCodex ? snap.codexFiveHourETA : snap.fiveHourETA,
                     trailing: { gearMenu }
                 )
                 usageBar(
@@ -213,6 +216,7 @@ struct SimulatedNotchFullView: View {
         label: String,
         leftPct: Double?, leftResetsAt: Date?,
         rightPct: Double?, rightResetsAt: Date?,
+        leftETA: CapETA? = nil, rightETA: CapETA? = nil,
         @ViewBuilder trailing: () -> Trailing = { EmptyView() }
     ) -> some View {
         HStack(alignment: .center, spacing: 10) {
@@ -222,8 +226,8 @@ struct SimulatedNotchFullView: View {
                 .frame(width: 22, alignment: .leading)
 
             HStack(spacing: 8) {
-                splitHalf(agent: .claude, usedPct: leftPct, resetsAt: leftResetsAt)
-                splitHalf(agent: .codex,  usedPct: rightPct, resetsAt: rightResetsAt)
+                splitHalf(agent: .claude, usedPct: leftPct, resetsAt: leftResetsAt, eta: leftETA)
+                splitHalf(agent: .codex,  usedPct: rightPct, resetsAt: rightResetsAt, eta: rightETA)
             }
 
             // Trailing column: always reserves the same width so both
@@ -239,7 +243,8 @@ struct SimulatedNotchFullView: View {
     /// One agent's half of a split row: header (letter + remaining % +
     /// reset countdown) sitting tightly above its progress bar.
     @ViewBuilder
-    private func splitHalf(agent: AgentKind, usedPct: Double?, resetsAt: Date?) -> some View {
+    private func splitHalf(agent: AgentKind, usedPct: Double?, resetsAt: Date?,
+                           eta: CapETA? = nil) -> some View {
         let used = usedPct ?? 0
         let remaining = max(0, 100 - used)
         let color = barColor(for: used)
@@ -261,7 +266,11 @@ struct SimulatedNotchFullView: View {
                         .foregroundColor(.white.opacity(0.35))
                 }
                 Spacer(minLength: 0)
-                if let reset = resetsAt?.usageResetDisplay {
+                // #86 — cap ETA replaces the reset countdown in the tight split
+                // half when a countdown exists (the imminent signal wins the slot).
+                if eta?.panelLabel != nil {
+                    CapETABadge(eta: eta, compact: true)
+                } else if let reset = resetsAt?.usageResetDisplay {
                     Text(reset)
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(.white.opacity(0.4))
@@ -502,6 +511,7 @@ struct SimulatedNotchFullView: View {
         agent: AgentKind = .claude,
         usedPct: Double?,
         resetsAt: Date?,
+        eta: CapETA? = nil,
         @ViewBuilder trailing: () -> Trailing = { EmptyView() }
     ) -> some View {
         let used = usedPct ?? 0
@@ -536,6 +546,8 @@ struct SimulatedNotchFullView: View {
                         .font(.system(size: 11))
                         .foregroundColor(.white.opacity(0.4))
                 }
+
+                CapETABadge(eta: eta)   // #86 — cap ETA badge (5h only)
 
                 Spacer(minLength: 0)
 
