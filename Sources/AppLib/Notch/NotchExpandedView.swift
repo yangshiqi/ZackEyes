@@ -522,7 +522,7 @@ struct NotchExpandedView: View {
         HStack(spacing: 8) {
             denyButton(sessionId: sessionId, isPrimary: isPrimary)
             allowButton(sessionId: sessionId, isPrimary: isPrimary)
-            allowAllButton(sessionId: sessionId, isPrimary: isPrimary)
+            allowAlwaysButton(sessionId: sessionId, isPrimary: isPrimary)
         }
     }
 
@@ -581,19 +581,21 @@ struct NotchExpandedView: View {
     }
 
     @ViewBuilder
-    private func allowAllButton(sessionId: String, isPrimary: Bool) -> some View {
+    private func allowAlwaysButton(sessionId: String, isPrimary: Bool) -> some View {
         let teal = Color(red: 0.31, green: 0.80, blue: 0.77)
-        let base = Button(action: { viewModel.approveAll(sessionId: sessionId) }) {
+        let base = Button(action: { viewModel.approveAlways(sessionId: sessionId) }) {
             HStack(spacing: 4) {
-                Text("Allow All")
+                // #87 — "Allow Always" (not "Allow All"): auto-allow is per-tool,
+                // not all-tools. Pairs with "Allow Once" as the temporal contrast.
+                Text("Allow Always")
                 if isPrimary {
                     Text("⇧⌘Y")
                         .font(.system(size: 8, weight: .regular, design: .monospaced))
                         .opacity(0.7)
                 }
             }
-                // Filled (vs Allow Once's translucent fill) to signal the
-                // broader, session-wide scope.
+                // Filled (vs Allow Once's translucent fill) to signal the broader,
+                // for-the-rest-of-this-session scope (still just this one tool).
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
@@ -602,6 +604,7 @@ struct NotchExpandedView: View {
                 .cornerRadius(8)
         }
         .buttonStyle(.plain)
+        .help("Auto-allow this tool for the rest of this session")
 
         if isPrimary {
             base.keyboardShortcut("y", modifiers: [.command, .shift])
