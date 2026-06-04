@@ -36,6 +36,11 @@ struct UsageBarsView<Trailing: View>: View {
                     .padding(.vertical, 2)
                 TodayConsumptionRow(days: snap.dailyUsage)
             }
+            // #45 — usage freshness footnote (stale numbers shouldn't read as live).
+            if snap.hasRealData {
+                UsageFreshnessLabel(lastUpdated: snap.lastUpdated)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
     }
 
