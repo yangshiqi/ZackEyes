@@ -30,25 +30,23 @@ enum UsageFreshness {
 /// a warning glyph once the data is stale, so an idle session's pinned numbers
 /// (and the #86 ETA derived from them) aren't mistaken for live values.
 public struct UsageFreshnessLabel: View {
-    let lastUpdated: Date?
+    let lastUpdated: Date
 
-    public init(lastUpdated: Date?) {
+    public init(lastUpdated: Date) {
         self.lastUpdated = lastUpdated
     }
 
     public var body: some View {
-        if let lastUpdated {
-            let now = Date()
-            let stale = UsageFreshness.isStale(now: now, lastUpdated: lastUpdated)
-            HStack(spacing: 3) {
-                Image(systemName: stale ? "exclamationmark.triangle.fill" : "clock")
-                    .font(.system(size: 8))
-                Text("updated \(UsageFreshness.ageString(now: now, lastUpdated: lastUpdated))")
-                    .font(.system(size: 9))
-            }
-            .foregroundColor(stale
-                ? Color(red: 0.96, green: 0.65, blue: 0.14)
-                : .white.opacity(0.35))
+        let now = Date()
+        let stale = UsageFreshness.isStale(now: now, lastUpdated: lastUpdated)
+        HStack(spacing: 3) {
+            Image(systemName: stale ? "exclamationmark.triangle.fill" : "clock")
+                .font(.system(size: 8))
+            Text("updated \(UsageFreshness.ageString(now: now, lastUpdated: lastUpdated))")
+                .font(.system(size: 9))
         }
+        .foregroundColor(stale
+            ? Color(red: 0.96, green: 0.65, blue: 0.14)
+            : .white.opacity(0.35))
     }
 }
