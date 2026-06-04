@@ -213,6 +213,7 @@ struct LivenessFilterTests {
             cwd: cwd,
             lastModified: mtime,
             lastUserPrompt: nil,
+            lastAssistantMessage: nil,
             messageCount: 0,
             transcriptPath: "/tmp/\(id).jsonl"
         )

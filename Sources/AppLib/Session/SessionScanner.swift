@@ -14,6 +14,9 @@ public struct SessionScanner {
         public let cwd: String?
         public let lastModified: Date
         public let lastUserPrompt: String?
+        /// #43 — last assistant reply text from the transcript tail, used as the
+        /// recap fallback for sessions we never received a live Stop hook for.
+        public let lastAssistantMessage: String?
         public let messageCount: Int
         public let transcriptPath: String
     }
@@ -101,6 +104,7 @@ public struct SessionScanner {
 
         var cwd: String? = nil
         var lastUserPrompt: String? = nil
+        var lastAssistantMessage: String? = nil
         var messageCount = 0
 
         for line in text.split(separator: "\n") {
@@ -128,6 +132,19 @@ public struct SessionScanner {
                     }
                 }
             }
+
+            // #43 — last assistant reply (text blocks only; tool_use/thinking
+            // blocks are skipped). Last one in the tail wins → the recap text.
+            if let type = obj["type"] as? String, type == "assistant",
+               let msg = obj["message"] as? [String: Any],
+               let arr = msg["content"] as? [[String: Any]] {
+                let textParts = arr.compactMap { part -> String? in
+                    guard part["type"] as? String == "text" else { return nil }
+                    return part["text"] as? String
+                }
+                let joined = textParts.joined(separator: " ")
+                if !joined.isEmpty { lastAssistantMessage = joined }
+            }
         }
 
         return DetectedSession(
@@ -136,6 +153,7 @@ public struct SessionScanner {
             cwd: cwd,
             lastModified: lastModified,
             lastUserPrompt: lastUserPrompt,
+            lastAssistantMessage: lastAssistantMessage,
             messageCount: messageCount,
             transcriptPath: url.path
         )
@@ -234,8 +252,9 @@ public struct SessionScanner {
 
         let cwd = CodexJsonlTailer.parseSessionMetaCwd(at: url)
 
-        // Tail: last 64KB for user_message events.
+        // Tail: last 64KB for user_message + assistant events.
         var lastUserPrompt: String? = nil
+        var lastAssistantMessage: String? = nil
         var messageCount = 0
         if let tail = readTail(of: url, maxBytes: 65_536) {
             for line in tail.split(separator: "\n") {
@@ -243,10 +262,25 @@ public struct SessionScanner {
                 guard let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
                 guard obj["type"] as? String == "event_msg" else { continue }
                 guard let payload = obj["payload"] as? [String: Any] else { continue }
-                guard payload["type"] as? String == "user_message" else { continue }
-                messageCount += 1
-                if let msg = payload["message"] as? String, !msg.isEmpty {
-                    lastUserPrompt = msg
+                switch payload["type"] as? String {
+                case "user_message":
+                    messageCount += 1
+                    if let msg = payload["message"] as? String, !msg.isEmpty {
+                        lastUserPrompt = msg
+                    }
+                case "agent_message":
+                    // #43 — streamed assistant reply.
+                    if let msg = payload["message"] as? String, !msg.isEmpty {
+                        lastAssistantMessage = msg
+                    }
+                case "task_complete":
+                    // #43 — the turn's final summary; preferred recap text since
+                    // it follows any agent_message in the same turn (last wins).
+                    if let msg = payload["last_agent_message"] as? String, !msg.isEmpty {
+                        lastAssistantMessage = msg
+                    }
+                default:
+                    continue
                 }
             }
         }
@@ -257,6 +291,7 @@ public struct SessionScanner {
             cwd: cwd,
             lastModified: lastModified,
             lastUserPrompt: lastUserPrompt,
+            lastAssistantMessage: lastAssistantMessage,
             messageCount: messageCount,
             transcriptPath: url.path
         )

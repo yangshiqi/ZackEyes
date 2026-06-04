@@ -661,6 +661,7 @@ public final class SessionStore: ObservableObject {
             )
             session.lastActiveAt = d.lastModified
             session.lastUserPrompt = d.lastUserPrompt
+            session.lastAssistantMessage = d.lastAssistantMessage   // #43 recap fallback
             session.transcriptPath = d.transcriptPath
             // TaskExtractor only knows the Claude transcript schema. Codex
             // tasks would need their own extractor (deferred).
