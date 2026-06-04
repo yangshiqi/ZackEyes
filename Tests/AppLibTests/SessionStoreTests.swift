@@ -180,6 +180,19 @@ struct SessionStoreTests {
         #expect(store.sessions.count == 1)  // session still exists
     }
 
+    // #43 — a Stop payload populates the recap text, and a new prompt clears it
+    // so a resting card never shows last turn's stale reply (acceptance ①).
+    @Test func stopPayloadSetsRecapText_clearedOnNewPrompt() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "Stop", sessionId: "s1",
+                                      lastAssistantMessage: "Fixed the parser."))
+        #expect(store.sessions["s1"]?.lastAssistantMessage == "Fixed the parser.")
+        #expect(store.sessions["s1"]?.state == .idle)
+        store.handleEvent(BridgeEvent(bridgeEvent: "UserPromptSubmit", sessionId: "s1",
+                                      userPrompt: "now do something else"))
+        #expect(store.sessions["s1"]?.lastAssistantMessage == nil)
+    }
+
     @Test func recordCodexTaskStartedMarksSessionWorking() {
         let store = SessionStore()
         let startedAt = Date(timeIntervalSince1970: 1_777_962_840)

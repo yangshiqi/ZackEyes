@@ -4,6 +4,8 @@ struct NotchExpandedView: View {
     @ObservedObject var viewModel: NotchViewModel
     @State private var pulseOpacity: Double = 1.0
     @State private var tick: Date = Date()
+    /// #43 — session ids whose resting-card recap is expanded to full text.
+    @State private var expandedRecaps: Set<String> = []
 
     private let durationTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -147,17 +149,21 @@ struct NotchExpandedView: View {
 
                 // (User prompt now shown in Row 1.5 above)
 
-                // Row 3: agent's last reply
+                // Row 3: agent's last reply (live) / completion recap (resting).
                 if let reply = session.lastAssistantMessage, !reply.isEmpty {
-                    HStack(alignment: .top, spacing: 4) {
-                        Text(session.agent == .codex ? "Codex:" : "Claude:")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.8))
-                        Text(truncate(reply, length: 100))
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.75))
-                            .lineLimit(2)
-                            .truncationMode(.tail)
+                    if isResting(session) {
+                        recapBlock(session, reply: reply)
+                    } else {
+                        HStack(alignment: .top, spacing: 4) {
+                            Text(session.agent == .codex ? "Codex:" : "Claude:")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.8))
+                            Text(truncate(reply, length: 100))
+                                .font(.system(size: 10))
+                                .foregroundColor(.white.opacity(0.75))
+                                .lineLimit(2)
+                                .truncationMode(.tail)
+                        }
                     }
                 }
 
@@ -611,6 +617,63 @@ struct NotchExpandedView: View {
     /// stale UI like the completed task list.
     private func isResting(_ session: SessionInfo) -> Bool {
         (session.state == .idle || session.state == .stopped) && session.pendingPermission == nil
+    }
+
+    /// #43 — completion recap shown on resting (idle/stopped) cards: the agent's
+    /// last reply (2 lines, tap the card to expand to full text) plus a terse
+    /// metadata line. Missing pieces degrade silently (detected/scanned sessions
+    /// have only the reply text). Stale text is already prevented upstream —
+    /// SessionStore clears `lastAssistantMessage` on each new user prompt.
+    @ViewBuilder
+    private func recapBlock(_ session: SessionInfo, reply: String) -> some View {
+        let expanded = expandedRecaps.contains(session.id)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .top, spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.8))
+                Text(expanded ? reply : truncate(reply, length: 100))
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.75))
+                    .lineLimit(expanded ? nil : 2)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let meta = recapMetadata(session) {
+                Text(meta)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.45))
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if expanded { expandedRecaps.remove(session.id) }
+            else { expandedRecaps.insert(session.id) }
+        }
+    }
+
+    /// Terse recap metadata: `N tools · 12m · $0.42`. Each piece is included only
+    /// when the data exists, so detected sessions (no tool count / cost) just
+    /// show fewer parts — or nothing, in which case the subline is hidden.
+    /// Error reason is intentionally omitted: the error banner below already
+    /// surfaces it on resting cards.
+    private func recapMetadata(_ session: SessionInfo) -> String? {
+        var parts: [String] = []
+        if session.toolCallCount > 0 {
+            parts.append("\(session.toolCallCount) tool\(session.toolCallCount == 1 ? "" : "s")")
+        }
+        let dur = session.lastActiveAt.timeIntervalSince(session.startedAt)
+        if dur >= 60 { parts.append(durationString(dur)) }
+        if let cost = session.totalCostUSD, cost > 0 {
+            parts.append(String(format: "$%.2f", cost))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    private func durationString(_ seconds: TimeInterval) -> String {
+        let m = Int(seconds) / 60
+        if m < 60 { return "\(m)m" }
+        return "\(m / 60)h \(m % 60)m"
     }
 
     private func statusColor(for session: SessionInfo) -> Color {

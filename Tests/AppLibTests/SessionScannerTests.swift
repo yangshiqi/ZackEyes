@@ -187,6 +187,99 @@ struct SessionScannerTests {
         #expect(results[1].id == claudeId)
     }
 
+    // MARK: - #43 recap: last assistant message from transcript tail
+
+    @Test func scanClaude_extractsLastAssistantReplyForRecap() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeRoot = tmpDir.appendingPathComponent("claude-projects")
+        let proj = claudeRoot.appendingPathComponent("-Users-test-foo")
+        try FileManager.default.createDirectory(at: proj, withIntermediateDirectories: true)
+        let id = "claude-recap-aaaa-bbbb"
+        let file = proj.appendingPathComponent("\(id).jsonl")
+        try """
+            {"type":"user","cwd":"/Users/test/foo","message":{"content":"fix the bug"}}
+            {"type":"assistant","message":{"content":[{"type":"text","text":"Looking into it."}]}}
+            {"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit"},{"type":"text","text":"Fixed the off-by-one in parse()."}]}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        let scanner = SessionScanner(
+            projectsDir: claudeRoot,
+            codexSessionsDir: tmpDir.appendingPathComponent("no-codex")
+        )
+        let results = scanner.scan(recencyMinutes: 24 * 60)
+        #expect(results.count == 1)
+        // Last assistant message wins; tool_use blocks are skipped.
+        #expect(results.first?.lastAssistantMessage == "Fixed the off-by-one in parse().")
+    }
+
+    @Test func scanCodex_prefersTaskCompleteForRecap() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let codexRoot = tmpDir.appendingPathComponent("codex-sessions")
+        let day = currentCodexDayDir(under: codexRoot)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        let id = "019dec85-b760-71f2-bca7-b1c463f0d36e"
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id))
+        try """
+            {"type":"session_meta","payload":{"id":"\(id)","cwd":"/Users/test/bar"}}
+            {"type":"event_msg","payload":{"type":"user_message","message":"build it"}}
+            {"type":"event_msg","payload":{"type":"agent_message","message":"working on it"}}
+            {"type":"event_msg","payload":{"type":"task_complete","last_agent_message":"Done built and tested."}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        let scanner = SessionScanner(
+            projectsDir: tmpDir.appendingPathComponent("no-claude"),
+            codexSessionsDir: codexRoot
+        )
+        let results = scanner.scan(recencyMinutes: 24 * 60)
+        #expect(results.count == 1)
+        // task_complete.last_agent_message follows agent_message → it's the recap.
+        #expect(results.first?.lastAssistantMessage == "Done built and tested.")
+    }
+
+    @Test func scanClaude_handlesStringFormAssistantContent() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeRoot = tmpDir.appendingPathComponent("claude-projects")
+        let proj = claudeRoot.appendingPathComponent("-Users-test-foo")
+        try FileManager.default.createDirectory(at: proj, withIntermediateDirectories: true)
+        let id = "claude-strcontent-cccc"
+        let file = proj.appendingPathComponent("\(id).jsonl")
+        try """
+            {"type":"user","cwd":"/Users/test/foo","message":{"content":"hi"}}
+            {"type":"assistant","message":{"content":"plain string reply"}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        let scanner = SessionScanner(
+            projectsDir: claudeRoot,
+            codexSessionsDir: tmpDir.appendingPathComponent("no-codex")
+        )
+        let results = scanner.scan(recencyMinutes: 24 * 60)
+        #expect(results.first?.lastAssistantMessage == "plain string reply")
+    }
+
+    @Test func scanClaude_trailingUserTurnClearsStaleRecap() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeRoot = tmpDir.appendingPathComponent("claude-projects")
+        let proj = claudeRoot.appendingPathComponent("-Users-test-foo")
+        try FileManager.default.createDirectory(at: proj, withIntermediateDirectories: true)
+        let id = "claude-trailing-dddd"
+        let file = proj.appendingPathComponent("\(id).jsonl")
+        // Transcript ends with a NEW user turn (no assistant reply yet) → the
+        // previous turn's recap must NOT be carried forward (acceptance ①).
+        try """
+            {"type":"user","cwd":"/Users/test/foo","message":{"content":"do X"}}
+            {"type":"assistant","message":{"content":[{"type":"text","text":"X done."}]}}
+            {"type":"user","cwd":"/Users/test/foo","message":{"content":"now do Y"}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        let scanner = SessionScanner(
+            projectsDir: claudeRoot,
+            codexSessionsDir: tmpDir.appendingPathComponent("no-codex")
+        )
+        let results = scanner.scan(recencyMinutes: 24 * 60)
+        #expect(results.first?.lastAssistantMessage == nil)
+        #expect(results.first?.lastUserPrompt == "now do Y")
+    }
+
     // MARK: - allDateDirs (filesystem walk)
 
     /// macOS `temporaryDirectory` returns `/var/folders/...` but
