@@ -78,11 +78,26 @@ struct SimulatedNotchView: View {
         let agent = modeStore.compactAgent
         let fivePct = (agent == .codex) ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct
         let sevenPct = (agent == .codex) ? snap.codexSevenDayUsedPct : snap.sevenDayUsedPct
-        percentageChip(label: "5h", usedPct: fivePct, fallbackTokens: snap.tokens5h, scale: .fiveHour)
+        let eta = (agent == .codex) ? snap.codexFiveHourETA : snap.fiveHourETA
+        // #86 — imminent cap (≤30 min) takes the 5h slot; 7d stays put.
+        if let urgent = eta?.pillUrgentLabel {
+            urgentETAChip(urgent)
+        } else {
+            percentageChip(label: "5h", usedPct: fivePct, fallbackTokens: snap.tokens5h, scale: .fiveHour)
+        }
         Text("·")
             .font(.system(size: 12))
             .foregroundColor(.white.opacity(0.3))
         percentageChip(label: "7d", usedPct: sevenPct, fallbackTokens: snap.tokens7d, scale: .sevenDay)
+    }
+
+    @ViewBuilder
+    private func urgentETAChip(_ label: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: "bolt.fill").font(.system(size: 10, weight: .bold))
+            Text(label).font(.system(size: 13, weight: .semibold, design: .monospaced))
+        }
+        .foregroundColor(Color(red: 0.95, green: 0.30, blue: 0.30))
     }
 
     @ViewBuilder
@@ -137,7 +152,8 @@ struct SimulatedNotchView: View {
             label: "5h",
             usedPct: fivePct,
             resetsAt: fiveResets,
-            scale: .fiveHour
+            scale: .fiveHour,
+            eta: (agent == .codex) ? snap.codexFiveHourETA : snap.fiveHourETA
         )
 
         Rectangle()
@@ -164,7 +180,8 @@ struct SimulatedNotchView: View {
     }
 
     @ViewBuilder
-    private func usageStat(label: String, usedPct: Double?, resetsAt: Date?, scale: TokenScale) -> some View {
+    private func usageStat(label: String, usedPct: Double?, resetsAt: Date?,
+                           scale: TokenScale, eta: CapETA? = nil) -> some View {
         HStack(spacing: 4) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
@@ -172,7 +189,10 @@ struct SimulatedNotchView: View {
             Text(remainingString(usedPct: usedPct, fallbackTokens: 0, scale: scale))
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(remainingColor(usedPct: usedPct, fallbackTokens: 0, scale: scale))
-            if let reset = resetsAt?.usageResetDisplay {
+            // #86 — cap ETA badge (5h only); nil for calm states keeps the row quiet.
+            if eta?.panelLabel != nil {
+                CapETABadge(eta: eta, compact: true)
+            } else if let reset = resetsAt?.usageResetDisplay {
                 Text(reset)
                     .font(.system(size: 9))
                     .foregroundColor(.white.opacity(0.4))
