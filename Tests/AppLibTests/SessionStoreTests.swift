@@ -71,7 +71,7 @@ struct SessionStoreTests {
         #expect(store.sessions["s1"]?.pendingPermission == nil)
     }
 
-    // 5a. "Allow All" sends an allow for the current request, clears pending,
+    // 5a. "Allow Always" sends an allow for the current request, clears pending,
     //     and remembers the tool so future requests for it are auto-allowed.
     @Test func allowAllApprovesAndRemembersTool() {
         let store = SessionStore()
