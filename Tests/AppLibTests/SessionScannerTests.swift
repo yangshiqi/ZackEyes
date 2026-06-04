@@ -236,6 +236,50 @@ struct SessionScannerTests {
         #expect(results.first?.lastAssistantMessage == "Done built and tested.")
     }
 
+    @Test func scanClaude_handlesStringFormAssistantContent() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeRoot = tmpDir.appendingPathComponent("claude-projects")
+        let proj = claudeRoot.appendingPathComponent("-Users-test-foo")
+        try FileManager.default.createDirectory(at: proj, withIntermediateDirectories: true)
+        let id = "claude-strcontent-cccc"
+        let file = proj.appendingPathComponent("\(id).jsonl")
+        try """
+            {"type":"user","cwd":"/Users/test/foo","message":{"content":"hi"}}
+            {"type":"assistant","message":{"content":"plain string reply"}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        let scanner = SessionScanner(
+            projectsDir: claudeRoot,
+            codexSessionsDir: tmpDir.appendingPathComponent("no-codex")
+        )
+        let results = scanner.scan(recencyMinutes: 24 * 60)
+        #expect(results.first?.lastAssistantMessage == "plain string reply")
+    }
+
+    @Test func scanClaude_trailingUserTurnClearsStaleRecap() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeRoot = tmpDir.appendingPathComponent("claude-projects")
+        let proj = claudeRoot.appendingPathComponent("-Users-test-foo")
+        try FileManager.default.createDirectory(at: proj, withIntermediateDirectories: true)
+        let id = "claude-trailing-dddd"
+        let file = proj.appendingPathComponent("\(id).jsonl")
+        // Transcript ends with a NEW user turn (no assistant reply yet) → the
+        // previous turn's recap must NOT be carried forward (acceptance ①).
+        try """
+            {"type":"user","cwd":"/Users/test/foo","message":{"content":"do X"}}
+            {"type":"assistant","message":{"content":[{"type":"text","text":"X done."}]}}
+            {"type":"user","cwd":"/Users/test/foo","message":{"content":"now do Y"}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        let scanner = SessionScanner(
+            projectsDir: claudeRoot,
+            codexSessionsDir: tmpDir.appendingPathComponent("no-codex")
+        )
+        let results = scanner.scan(recencyMinutes: 24 * 60)
+        #expect(results.first?.lastAssistantMessage == nil)
+        #expect(results.first?.lastUserPrompt == "now do Y")
+    }
+
     // MARK: - allDateDirs (filesystem walk)
 
     /// macOS `temporaryDirectory` returns `/var/folders/...` but

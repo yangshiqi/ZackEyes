@@ -117,6 +117,10 @@ public struct SessionScanner {
 
             if let type = obj["type"] as? String, type == "user" {
                 messageCount += 1
+                // #43 — a new user turn invalidates the prior turn's reply, so a
+                // transcript ending mid-turn (user asked, no answer yet) can't
+                // surface a stale recap. Mirrors SessionStore's live clear-on-prompt.
+                lastAssistantMessage = nil
                 if let msg = obj["message"] as? [String: Any] {
                     let content = msg["content"]
                     if let text = content as? String, !text.isEmpty, !text.hasPrefix("<tool_use_error>") {
@@ -133,17 +137,22 @@ public struct SessionScanner {
                 }
             }
 
-            // #43 — last assistant reply (text blocks only; tool_use/thinking
-            // blocks are skipped). Last one in the tail wins → the recap text.
+            // #43 — last assistant reply. Content is normally an array of blocks
+            // (skip tool_use/thinking), but defensively handle the plain-string
+            // form too — same as the user parsing above. Last one in the tail wins.
             if let type = obj["type"] as? String, type == "assistant",
-               let msg = obj["message"] as? [String: Any],
-               let arr = msg["content"] as? [[String: Any]] {
-                let textParts = arr.compactMap { part -> String? in
-                    guard part["type"] as? String == "text" else { return nil }
-                    return part["text"] as? String
+               let msg = obj["message"] as? [String: Any] {
+                let content = msg["content"]
+                if let text = content as? String, !text.isEmpty {
+                    lastAssistantMessage = text
+                } else if let arr = content as? [[String: Any]] {
+                    let textParts = arr.compactMap { part -> String? in
+                        guard part["type"] as? String == "text" else { return nil }
+                        return part["text"] as? String
+                    }
+                    let joined = textParts.joined(separator: " ")
+                    if !joined.isEmpty { lastAssistantMessage = joined }
                 }
-                let joined = textParts.joined(separator: " ")
-                if !joined.isEmpty { lastAssistantMessage = joined }
             }
         }
 
@@ -265,6 +274,7 @@ public struct SessionScanner {
                 switch payload["type"] as? String {
                 case "user_message":
                     messageCount += 1
+                    lastAssistantMessage = nil   // #43 — new user turn clears stale recap
                     if let msg = payload["message"] as? String, !msg.isEmpty {
                         lastUserPrompt = msg
                     }
