@@ -7,6 +7,27 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.6.0',
+    date: 'Published June 5, 2026',
+    summary: 'Burn-rate cap prediction, plus a more glanceable and trustworthy usage panel.',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Burn-rate cap ETA — a glanceable "~XX min to 5h cap" extrapolated from your live usage rate, shown on the expanded 5h bar (amber, red when imminent) and surfaced on the collapsed pill only when the cap is close.',
+          'Completion recap on idle session cards — the agent\'s last reply behind a checkmark, tap to expand to full text, with an "N tools, duration, cost" line. Falls back to the transcript when no live stop event arrived.',
+          'Usage freshness indicator — an "updated N min ago" footnote under the usage bars that turns amber when the data is stale, so idle numbers (and the cap ETA derived from them) are never mistaken for live.'
+        ]
+      },
+      {
+        label: 'Changed',
+        items: [
+          'The permission card\'s "Allow All" button is now "Allow Always", with a tooltip. It auto-allows that one tool for the rest of the session (it was always per-tool, never all tools).'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.5.1',
     date: 'Published June 3, 2026',
     highlights: [
