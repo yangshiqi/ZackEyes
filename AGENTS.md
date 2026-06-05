@@ -124,3 +124,17 @@ diff ~/.claude/settings.json ~/.claude/settings.json.backup.*  # 确认只改了
 - 每个 commit 是一个原子变更，可独立 revert
 - Imperative mood: "add feature" not "added feature"
 - 跨多个组件的变更可省略 scope
+
+## 发版收尾清单（`make release` 之后必做）
+
+`make release VERSION=x.y.z NOTES=...` 只**自动**改三个网站文件：`website/src/lib/release.mjs`（版本/hash/size）、`website/README.md`、`website/src/pages/changelog.astro`（新条目；NOTES 须英文，按 `Added:`/`Changed:`/`Fixed:` 分组，preflight 拒 CJK）。其余收尾**手动**做，否则会留下「已发布特性仍标成未来」之类的陈旧公开页：
+
+- [ ] 关闭 `v<VERSION>` GitHub milestone（`gh api -X PATCH .../milestones/<n> -f state=closed`）
+- [ ] 勾 roadmap tracking issue **#92**：基线推进到下个版本、对应版本标题标 `✅ 已发布`、勾选已发条目
+- [ ] **扫一遍 website 各页**，把刚发布 / 改动的特性从「未来」改为已发或移除：
+  - `src/pages/roadmap.astro` —— `roadmapItems`（删已发条目、提升下一档 horizon）、hero `policy-lede`、meta `description`
+  - `tests/site-contract.test.mjs` —— 它 assert roadmap item 标题，改了 `roadmapItems` 必同步（否则卡测试）
+  - `src/pages/llms.txt.ts` + `llms-full.txt.ts` —— Roadmap 段落
+  - 扫 `index.astro` / `docs.astro` / `answers.astro` 有无「coming soon」式过时措辞或旧 UI 文案（如改名的按钮）
+- [ ] `cd website && pnpm run build && pnpm test`（site-contract 必绿）
+- [ ] 更新 memory：版本已发 + 本次范围决策

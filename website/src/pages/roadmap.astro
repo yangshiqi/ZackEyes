@@ -4,26 +4,11 @@ import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { issuesUrl } from '../lib/release.mjs';
 
-const description = 'ZackEyes roadmap: quota burn-rate prediction, completion recaps, quieter notifications, hook health and event resilience, deeper process and session insight, more agent support, and privacy controls.';
+const description = 'ZackEyes roadmap: hook health and event resilience, deeper process and session insight, more agent support, and privacy and logs controls.';
 const roadmapItems = [
   {
-    title: 'Quota burn-rate prediction',
-    horizon: 'Next',
-    copy: 'Project when the current session will hit the 5-hour or weekly limit at the present token burn rate — so you can pace work before the wall instead of discovering it mid-task.'
-  },
-  {
-    title: 'Completion recaps and quieter alerts',
-    horizon: 'Next',
-    copy: 'Summarize what a finished run actually did, mute or schedule noisy notifications, and flag when usage data has gone stale — across Claude Code and Codex sessions.'
-  },
-  {
-    title: 'Per-session permission rules',
-    horizon: 'Planned',
-    copy: 'Remember "always allow this tool for this session" so trusted, repetitive approvals stop interrupting flow — without weakening the prompt for anything new.'
-  },
-  {
     title: 'Hook health and event resilience',
-    horizon: 'Planned',
+    horizon: 'Next',
     copy: 'Detect broken or missing hooks with one-click repair, keep improving Codex JSONL fallback and session cleanup, and replay events through a watchdog so a busy moment never drops a session update.'
   },
   {
@@ -72,7 +57,7 @@ const roadmapStructuredData = {
           <div class="section-eyebrow">Product direction</div>
           <h1 id="roadmap-title">Roadmap.</h1>
           <p class="policy-lede">
-            ZackEyes is focused on reliable local agent awareness: predicting quota burn-rate before you hit the wall, sharper session and process insight, quieter notifications, and stronger hook resilience — without breaking its near-zero-CPU, zero-dependency design.
+            ZackEyes is focused on reliable local agent awareness: stronger hook health and event resilience, sharper session and process insight, broader agent support, and clearer privacy and logs controls — without breaking its near-zero-CPU, zero-dependency design.
           </p>
           <div class="hero-actions">
             <a class="button primary" href={issuesUrl}>Request a feature <span aria-hidden="true">↗</span></a>

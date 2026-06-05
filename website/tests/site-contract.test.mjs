@@ -232,12 +232,12 @@ describe('Astro site contract', () => {
 
     const page = read('src/pages/roadmap.astro');
     assert.match(page, /Roadmap/);
-    assert.match(page, /Quota burn-rate prediction/);
-    assert.match(page, /Completion recaps and quieter alerts/);
-    assert.match(page, /Per-session permission rules/);
+    // Shipped in v0.6.0 (burn-rate ETA #86, completion recaps #43, per-session
+    // permission #87) — removed from "what is next"; the live roadmap is below.
     assert.match(page, /Hook health and event resilience/);
     assert.match(page, /Process and session insight/);
     assert.match(page, /More agent support/);
+    assert.match(page, /Privacy and logs controls/);
     assert.match(page, /Codex/);
     assert.match(page, /ItemList/);
   });
