@@ -65,10 +65,9 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - To reinstall hooks, remove stale hook entries containing zackeyes and reopen ZackEyes.
 
 ## Roadmap
+- Hook health and event resilience.
+- Process and session insight.
 - More agent support.
-- Richer task state.
-- Custom notifications.
-- Codex hook compatibility.
 - Privacy and logs controls.
 - Roadmap page: https://zackeyes.app/roadmap
 

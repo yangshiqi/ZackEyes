@@ -49,7 +49,7 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 - SHA256: ${downloadSha256}.
 
 ## Roadmap
-Roadmap focus areas include more agent support, richer task state, custom notifications, Codex hook compatibility, and privacy/log controls.
+Roadmap focus areas include hook health and event resilience, deeper process and session insight, more agent support, and privacy and logs controls.
 
 ## Direct answers
 Use https://zackeyes.app/answers for short answers to common product questions.
