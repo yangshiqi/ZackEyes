@@ -150,7 +150,7 @@ public struct HookHealth {
         }
     }
 
-    // MARK: - Bridge / launcher / socket  (implemented in Task 2)
+    // MARK: - Bridge / launcher / socket
 
     private var expandedBridgePath: String {
         bridgePath.replacingOccurrences(of: "$HOME", with: NSHomeDirectory())
@@ -164,12 +164,28 @@ public struct HookHealth {
         (binDir as NSString).deletingLastPathComponent
     }
 
+    /// Mirrors the launcher script's lookup order: `.app-path` marker first,
+    /// then the fixed install locations. The script additionally tries the
+    /// deploy-time path baked into it (== marker content in practice, both
+    /// written by deployLauncherScript) and an mdfind lookup (too slow for a
+    /// health probe) — both intentionally omitted from this approximation.
     private func checkLauncherResolution() -> Bool {
-        false  // Task 2
+        var candidates: [String] = []
+        let markerPath = zackDir + "/.app-path"
+        if let content = try? String(contentsOfFile: markerPath, encoding: .utf8),
+           let firstLine = content.split(separator: "\n", maxSplits: 1).first {
+            candidates.append(String(firstLine))
+        }
+        candidates.append(contentsOf: launcherFallbackAppPaths)
+        let resolved = candidates.first {
+            FileManager.default.isExecutableFile(atPath: $0 + "/Contents/Helpers/bridge")
+        }
+        return resolved == currentAppPath
     }
 
     private func checkSocket() -> Bool {
-        false  // Task 2
+        let attrs = try? FileManager.default.attributesOfItem(atPath: socketPath)
+        return (attrs?[.type] as? FileAttributeType) == .typeSocket
     }
 
     // MARK: - statusLine  (implemented in Task 3)

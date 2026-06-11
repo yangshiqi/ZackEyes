@@ -190,4 +190,127 @@ struct HookHealthTests {
 
         #expect(report.codexHooks == .missing)
     }
+
+    // MARK: - Bridge / launcher / socket
+
+    /// Creates a real unix socket at `path` so the file exists with socket
+    /// type. IMPORTANT: bind under /tmp directly — sun_path caps at 104
+    /// bytes and FileManager.temporaryDirectory paths blow past that.
+    private func bindSocket(at path: String) throws -> Int32 {
+        unlink(path)
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        try #require(fd >= 0, "socket() failed")
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        path.withCString { src in
+            withUnsafeMutablePointer(to: &addr.sun_path) { dst in
+                dst.withMemoryRebound(to: CChar.self, capacity: 104) {
+                    _ = strncpy($0, src, 103)
+                }
+            }
+        }
+        let len = socklen_t(MemoryLayout<sockaddr_un>.size)
+        let bindResult = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                Darwin.bind(fd, $0, len)
+            }
+        }
+        try #require(bindResult == 0, "bind() failed for \(path)")
+        return fd
+    }
+
+    /// Fake .app bundle with an executable Contents/Helpers/bridge.
+    private func makeAppBundle(in tmpDir: URL, name: String) throws -> String {
+        let bundle = tmpDir.appendingPathComponent(name)
+        try writeExecutableScript(
+            "#!/bin/sh\nexit 0\n",
+            to: bundle.appendingPathComponent("Contents/Helpers/bridge"))
+        return bundle.path
+    }
+
+    @Test func bridgeLauncherDetectedWhenExecutable() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        try writeExecutableScript(
+            "#!/bin/sh\nexit 0\n",
+            to: tmpDir.appendingPathComponent(".zackeyes/bin/bridge"))
+
+        #expect(makeHealth(tmpDir: tmpDir).check().bridgeLauncher)
+    }
+
+    @Test func nonExecutableBridgeLauncherIsUnhealthy() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let bridge = tmpDir.appendingPathComponent(".zackeyes/bin/bridge")
+        try FileManager.default.createDirectory(
+            at: bridge.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "#!/bin/sh\n".write(to: bridge, atomically: true, encoding: .utf8)
+        // 0o644 — exists but not executable
+
+        #expect(!makeHealth(tmpDir: tmpDir).check().bridgeLauncher)
+    }
+
+    @Test func launcherResolvesWhenMarkerPointsAtCurrentBundle() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let appPath = try makeAppBundle(in: tmpDir, name: "ZackEyes.app")
+        try FileManager.default.createDirectory(
+            at: tmpDir.appendingPathComponent(".zackeyes"), withIntermediateDirectories: true)
+        try appPath.write(
+            toFile: tmpDir.appendingPathComponent(".zackeyes/.app-path").path,
+            atomically: true, encoding: .utf8)
+
+        let report = makeHealth(tmpDir: tmpDir, currentAppPath: appPath).check()
+
+        #expect(report.launcherResolvesApp)
+    }
+
+    @Test func launcherResolvingDifferentBundleIsUnhealthy() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let current = try makeAppBundle(in: tmpDir, name: "Current.app")
+        let stale = try makeAppBundle(in: tmpDir, name: "Stale.app")
+        try FileManager.default.createDirectory(
+            at: tmpDir.appendingPathComponent(".zackeyes"), withIntermediateDirectories: true)
+        // Marker points at the stale copy — launcher would exec the wrong build.
+        try stale.write(
+            toFile: tmpDir.appendingPathComponent(".zackeyes/.app-path").path,
+            atomically: true, encoding: .utf8)
+
+        let report = makeHealth(tmpDir: tmpDir, currentAppPath: current).check()
+
+        #expect(!report.launcherResolvesApp)
+    }
+
+    @Test func launcherFallbackPathsResolveWithoutMarker() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let appPath = try makeAppBundle(in: tmpDir, name: "Installed.app")
+
+        let report = makeHealth(
+            tmpDir: tmpDir,
+            currentAppPath: appPath,
+            launcherFallbackAppPaths: [appPath]
+        ).check()
+
+        #expect(report.launcherResolvesApp)
+    }
+
+    @Test func socketDetectedOnlyWhenSocketTypeExists() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let socketPath = "/tmp/zackeyes-test-\(UUID().uuidString.prefix(8)).sock"
+        let fd = try bindSocket(at: socketPath)
+        defer {
+            close(fd)
+            unlink(socketPath)
+        }
+
+        #expect(makeHealth(tmpDir: tmpDir, socketPath: socketPath).check().socketReachable)
+
+        // A regular file at the socket path must NOT count as reachable.
+        let plainFile = tmpDir.appendingPathComponent("plain.sock")
+        try "x".write(to: plainFile, atomically: true, encoding: .utf8)
+        #expect(!makeHealth(tmpDir: tmpDir, socketPath: plainFile.path).check().socketReachable)
+    }
 }
