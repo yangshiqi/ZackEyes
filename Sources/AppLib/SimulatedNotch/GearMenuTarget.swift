@@ -17,6 +17,7 @@ final class GearMenuTarget: NSObject {
     var dmgURL: URL?
     var downloader: UpdateDownloader?
     private var previewSound: NSSound?
+    private var hookStatusWindow: HookStatusWindow?
 
     @objc func aboutClicked(_ sender: Any?) {
         modeStore?.isMenuOpen = false
@@ -26,6 +27,17 @@ final class GearMenuTarget: NSObject {
     @objc func hotkeyClicked(_ sender: Any?) {
         modeStore?.isMenuOpen = false
         modeStore?.isHotkeyRecorderShown = true
+    }
+
+    @objc func hookStatusClicked(_ sender: Any?) {
+        // Standalone window (not an in-panel overlay): the status card needs
+        // to outlive the notch's hover-collapse, and one implementation can
+        // then serve both menu surfaces.
+        modeStore?.isMenuOpen = false
+        if hookStatusWindow == nil {
+            hookStatusWindow = HookStatusWindow()
+        }
+        hookStatusWindow?.show()
     }
 
     @objc func updateClicked(_ sender: Any?) {

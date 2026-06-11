@@ -3,8 +3,7 @@ import SwiftUI
 
 /// Non-blocking About card. Replaces `NSAlert.runModal()` which would
 /// block the main thread — starving the `@MainActor` socket handler and
-/// potentially tripping the bridge's 15s timeout on a concurrent
-/// permission request.
+/// delaying delivery of a concurrent permission request.
 ///
 /// Same pattern as `HotkeyRecorderWindow`: borderless, nonactivating,
 /// keyable panel hosting a SwiftUI card. `NSWindowDelegate` +

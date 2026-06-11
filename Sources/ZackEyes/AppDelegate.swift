@@ -212,24 +212,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // 5. Hook Installer (silent, best-effort)
+        // 5. Hook Installer (silent, best-effort) — same path as the Hook
+        //    Status window's Repair button.
         Task {
-            do {
-                let appPath = Bundle.main.bundlePath
-                let installer = HookInstaller()
-                try installer.deployLauncherScript(appPath: appPath)
-                try installer.installHooks()
-            } catch {
-                NSLog("ZackEyes: Hook installation failed: \(error)")
-            }
-            // Codex installer is independent — failure here must not affect
-            // the Claude install. Skips silently if `~/.codex/` is absent.
-            do {
-                let codexInstaller = CodexHookInstaller()
-                try codexInstaller.installHooks()
-            } catch {
-                NSLog("ZackEyes: Codex hook installation failed: \(error)")
-            }
+            HookRepair.run(appPath: Bundle.main.bundlePath)
         }
 
         // 6.5 Update checker — polls GitHub Releases every 6h

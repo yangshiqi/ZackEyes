@@ -17,6 +17,7 @@ public final class StatusBarMenu: NSObject {
     private let downloader: UpdateDownloader
     private var hotkeyWindow: HotkeyRecorderWindow?
     private var aboutWindow: AboutWindow?
+    private var hookStatusWindow: HookStatusWindow?
 
     public init(updateChecker: UpdateChecker, downloader: UpdateDownloader) {
         self.updateChecker = updateChecker
@@ -62,6 +63,14 @@ public final class StatusBarMenu: NSObject {
         )
         hotkey.target = self
         menu.addItem(hotkey)
+
+        let hookStatus = NSMenuItem(
+            title: "Hook Status…",
+            action: #selector(hookStatusClicked(_:)),
+            keyEquivalent: ""
+        )
+        hookStatus.target = self
+        menu.addItem(hookStatus)
 
         let visibility = ConfigStore().loadNotchVisibility()
         let showIsland = NSMenuItem(
@@ -118,6 +127,14 @@ public final class StatusBarMenu: NSObject {
             hotkeyWindow = HotkeyRecorderWindow()
         }
         hotkeyWindow?.show()
+    }
+
+    @objc private func hookStatusClicked(_ sender: Any?) {
+        // Lazily create once and reuse — same pattern as aboutWindow.
+        if hookStatusWindow == nil {
+            hookStatusWindow = HookStatusWindow()
+        }
+        hookStatusWindow?.show()
     }
 
     @objc private func toggleVisibilityClicked(_ sender: Any?) {

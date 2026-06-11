@@ -15,7 +15,7 @@ public struct HookInstaller {
 
     // MARK: - Hook Config
 
-    private static let hookEvents = [
+    static let hookEvents = [
         "PreToolUse",
         "PostToolUse",
         "PermissionRequest",
@@ -58,6 +58,8 @@ public struct HookInstaller {
 
         let settingsURL = URL(fileURLWithPath: settingsPath)
         var settings: [String: Any] = [:]
+        var originalSettings: [String: Any]?
+        var originalData: Data?
 
         if FileManager.default.fileExists(atPath: settingsPath) {
             guard let data = try? Data(contentsOf: settingsURL),
@@ -67,13 +69,8 @@ public struct HookInstaller {
                 return
             }
             settings = parsed
-
-            // Create backup before any modification
-            let timestamp = Int(Date().timeIntervalSince1970)
-            let backupURL = settingsURL
-                .deletingLastPathComponent()
-                .appendingPathComponent("settings.json.backup.\(timestamp)")
-            try data.write(to: backupURL)
+            originalSettings = parsed
+            originalData = data
         }
 
         // Get or create hooks dict
@@ -149,6 +146,22 @@ public struct HookInstaller {
                 "type": "command",
                 "command": bridgeCommand(event: "StatusLine"),
             ]
+        }
+
+        // No-op guard: a re-install that changes nothing must not spawn a
+        // backup file or rewrite settings.json (Repair button + every app
+        // launch would otherwise pile up identical backups).
+        if let originalSettings,
+           NSDictionary(dictionary: settings).isEqual(to: originalSettings) {
+            return
+        }
+
+        if let originalData {
+            let timestamp = Int(Date().timeIntervalSince1970)
+            let backupURL = settingsURL
+                .deletingLastPathComponent()
+                .appendingPathComponent("settings.json.backup.\(timestamp)")
+            try originalData.write(to: backupURL)
         }
 
         try writeSettings(settings, to: settingsURL)
@@ -365,6 +378,22 @@ public struct HookInstaller {
 
     // MARK: - Helpers
 
+    /// Read-only classification of a settings.json statusLine command.
+    /// Mirrors the ownership branching in installHooks() so the Hook Status
+    /// surface reports exactly the state the installer would act on.
+    func statusLineMode(of command: String?) -> HookHealthReport.StatusLineMode {
+        guard let command else { return .absent }
+        if isStatusLineMuxCommand(command) {
+            if readMuxOriginalCommand() != nil { return .mux }
+            if hasUserStatusLineScript { return .userRenderer }
+            // Degenerate mux (no original, no user script) — installHooks
+            // would normalize this to direct; report the wrapper as mux.
+            return .mux
+        }
+        if isZackEyesCommand(command) { return .direct }
+        return .thirdParty(command: command)
+    }
+
     private func isStatusLineMuxCommand(_ command: String) -> Bool {
         command == statusLineMuxPath || command == statusLineMuxCommand
     }
@@ -398,7 +427,7 @@ public struct HookInstaller {
 
     /// Returns true if any hook command in this entry contains "zackeyes" or
     /// matches the configured bridgePath (to support test paths lacking "zackeyes").
-    private func isZackEyesEntry(_ entry: [String: Any]) -> Bool {
+    func isZackEyesEntry(_ entry: [String: Any]) -> Bool {
         guard let hooks = entry["hooks"] as? [[String: Any]] else { return false }
         return hooks.contains { hook in
             guard let command = hook["command"] as? String else { return false }
