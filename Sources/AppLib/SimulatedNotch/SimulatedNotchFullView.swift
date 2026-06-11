@@ -374,6 +374,14 @@ struct SimulatedNotchFullView: View {
         hotkey.target = GearMenuTarget.shared
         menu.addItem(hotkey)
 
+        let hookStatus = NSMenuItem(
+            title: "Hook Status…",
+            action: #selector(GearMenuTarget.hookStatusClicked(_:)),
+            keyEquivalent: ""
+        )
+        hookStatus.target = GearMenuTarget.shared
+        menu.addItem(hookStatus)
+
         let visibility = ConfigStore().loadNotchVisibility()
         let showIsland = NSMenuItem(
             title: "Show Dynamic Island",
