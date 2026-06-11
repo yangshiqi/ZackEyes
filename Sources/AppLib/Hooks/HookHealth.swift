@@ -188,12 +188,18 @@ public struct HookHealth {
         return (attrs?[.type] as? FileAttributeType) == .typeSocket
     }
 
-    // MARK: - statusLine  (implemented in Task 3)
+    // MARK: - statusLine
 
     private func statusLineMode(claudeFile: ConfigFile) -> HookHealthReport.StatusLineMode {
         switch claudeFile {
-        case .unreadable: return .unreadable
-        default: return .absent  // Task 3
+        case .unreadable:
+            return .unreadable
+        case .dirMissing, .fileMissing:
+            return .absent
+        case .parsed(let doc):
+            let command = (doc["statusLine"] as? [String: Any])?["command"] as? String
+            return HookInstaller(settingsPath: claudeSettingsPath, bridgePath: bridgePath)
+                .statusLineMode(of: command)
         }
     }
 }

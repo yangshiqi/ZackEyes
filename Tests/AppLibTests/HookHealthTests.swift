@@ -313,4 +313,106 @@ struct HookHealthTests {
         try "x".write(to: plainFile, atomically: true, encoding: .utf8)
         #expect(!makeHealth(tmpDir: tmpDir, socketPath: plainFile.path).check().socketReachable)
     }
+
+    // MARK: - statusLine classification
+
+    /// settings.json with our hooks installed, then statusLine.command
+    /// overridden to `command` (nil = remove the key).
+    private func writeSettingsWithStatusLine(
+        tmpDir: URL, command: String?
+    ) throws {
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let settingsURL = claudeDir.appendingPathComponent("settings.json")
+        let bridgePath = tmpDir.appendingPathComponent(".zackeyes/bin/bridge").path
+        try HookInstaller(settingsPath: settingsURL.path, bridgePath: bridgePath).installHooks()
+
+        var doc = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: settingsURL)) as! [String: Any]
+        if let command {
+            doc["statusLine"] = ["type": "command", "command": command]
+        } else {
+            doc.removeValue(forKey: "statusLine")
+        }
+        try JSONSerialization.data(withJSONObject: doc).write(to: settingsURL)
+    }
+
+    @Test func statusLineDirectAfterInstall() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        try HookInstaller(
+            settingsPath: claudeDir.appendingPathComponent("settings.json").path,
+            bridgePath: tmpDir.appendingPathComponent(".zackeyes/bin/bridge").path
+        ).installHooks()
+
+        #expect(makeHealth(tmpDir: tmpDir).check().statusLine == .direct)
+    }
+
+    @Test func statusLineThirdPartyDetected() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        try writeSettingsWithStatusLine(tmpDir: tmpDir, command: "/usr/local/bin/claude-hud")
+
+        let report = makeHealth(tmpDir: tmpDir).check()
+
+        #expect(report.statusLine == .thirdParty(command: "/usr/local/bin/claude-hud"))
+        #expect(!report.isHealthy)
+    }
+
+    @Test func statusLineMissingReportedAsAbsent() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        try writeSettingsWithStatusLine(tmpDir: tmpDir, command: nil)
+
+        #expect(makeHealth(tmpDir: tmpDir).check().statusLine == .absent)
+    }
+
+    @Test func statusLineMuxWithOriginalClassifiedAsMux() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let muxPath = tmpDir.appendingPathComponent(".zackeyes/bin/statusline-mux").path
+        try writeSettingsWithStatusLine(tmpDir: tmpDir, command: muxPath)
+        // Saved original marks "wrapping a third-party command".
+        try FileManager.default.createDirectory(
+            at: tmpDir.appendingPathComponent(".zackeyes"), withIntermediateDirectories: true)
+        try "/usr/local/bin/claude-hud".write(
+            toFile: tmpDir.appendingPathComponent(".zackeyes/.statusline-original").path,
+            atomically: true, encoding: .utf8)
+
+        #expect(makeHealth(tmpDir: tmpDir).check().statusLine == .mux)
+    }
+
+    @Test func statusLineMuxWithUserScriptClassifiedAsUserRenderer() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let muxPath = tmpDir.appendingPathComponent(".zackeyes/bin/statusline-mux").path
+        try writeSettingsWithStatusLine(tmpDir: tmpDir, command: muxPath)
+        // No .statusline-original, but an executable statusline-user.
+        try writeExecutableScript(
+            "#!/bin/sh\ncat\n",
+            to: tmpDir.appendingPathComponent(".zackeyes/bin/statusline-user"))
+
+        #expect(makeHealth(tmpDir: tmpDir).check().statusLine == .userRenderer)
+    }
+
+    @Test func installerWrappedThirdPartyRoundTripsAsMux() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let settingsURL = claudeDir.appendingPathComponent("settings.json")
+        // Pre-seed a third-party statusLine, then run the real installer —
+        // it deploys the mux and writes the QUOTED mux command, pinning the
+        // quoted arm of isStatusLineMuxCommand that hand-built fixtures miss.
+        try #"{"statusLine":{"type":"command","command":"/usr/local/bin/claude-hud"}}"#
+            .write(to: settingsURL, atomically: true, encoding: .utf8)
+        try HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: tmpDir.appendingPathComponent(".zackeyes/bin/bridge").path
+        ).installHooks()
+
+        #expect(makeHealth(tmpDir: tmpDir).check().statusLine == .mux)
+    }
 }

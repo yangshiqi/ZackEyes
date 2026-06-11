@@ -365,6 +365,22 @@ public struct HookInstaller {
 
     // MARK: - Helpers
 
+    /// Read-only classification of a settings.json statusLine command.
+    /// Mirrors the ownership branching in installHooks() so the Hook Status
+    /// surface reports exactly the state the installer would act on.
+    func statusLineMode(of command: String?) -> HookHealthReport.StatusLineMode {
+        guard let command else { return .absent }
+        if isStatusLineMuxCommand(command) {
+            if readMuxOriginalCommand() != nil { return .mux }
+            if hasUserStatusLineScript { return .userRenderer }
+            // Degenerate mux (no original, no user script) — installHooks
+            // would normalize this to direct; report the wrapper as mux.
+            return .mux
+        }
+        if isZackEyesCommand(command) { return .direct }
+        return .thirdParty(command: command)
+    }
+
     private func isStatusLineMuxCommand(_ command: String) -> Bool {
         command == statusLineMuxPath || command == statusLineMuxCommand
     }
