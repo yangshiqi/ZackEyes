@@ -176,8 +176,10 @@ PricingStore.start()
 **Hook 安装**
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | Claude 路径——静默安装/卸载 `~/.claude/settings.json` 的 `hooks` + `statusLine`，备份保护，附加合并，支持可选 `~/.zackeyes/bin/statusline-user` 显示扩展，所有变更含 `zackeyes` 标识 + `--agent claude` flag |
-| `CodexHookInstaller` | `Sources/AppLib/Hooks/CodexHookInstaller.swift` | Codex 路径——静默安装/卸载 `~/.codex/hooks.json` 的 6 个事件，命令含 `--agent codex`。同样的备份 / 解析失败不动 / 用户内容保留契约。**不读不写 `~/.codex/config.toml`**（codex 默认开 hooks）。 |
+| `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | Claude 路径——静默安装/卸载 `~/.claude/settings.json` 的 `hooks` + `statusLine`，备份保护，附加合并，支持可选 `~/.zackeyes/bin/statusline-user` 显示扩展，所有变更含 `zackeyes` 标识 + `--agent claude` flag；重装为 no-op 时跳过备份与写入（幂等，防 backup 刷屏） |
+| `CodexHookInstaller` | `Sources/AppLib/Hooks/CodexHookInstaller.swift` | Codex 路径——静默安装/卸载 `~/.codex/hooks.json` 的 6 个事件，命令含 `--agent codex`。同样的备份 / 解析失败不动 / 用户内容保留契约。**不读不写 `~/.codex/config.toml`**（codex 默认开 hooks）；重装为 no-op 时跳过备份与写入（幂等，防 backup 刷屏） |
+| `HookHealth` | `Sources/AppLib/Hooks/HookHealth.swift` | 只读健康检查（#38）：claude/codex hook 条目完整性、bridge launcher 可执行、launcher 解析是否指向当前 bundle、socket 存在性、statusLine 归属分类（direct/mux/userRenderer/thirdParty/absent/unreadable）。复用 installer 的事件表与条目识别，绝不写任何文件。 |
+| `HookRepair` | `Sources/AppLib/Hooks/HookRepair.swift` | 共享修复入口 = deployLauncherScript + 双 installer 重装；AppDelegate 启动与 Hook Status 窗口 Repair 按钮共用。 |
 
 **Notch UI（真刘海机型）**
 
@@ -222,6 +224,7 @@ PricingStore.start()
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `MenuBarFallback` | `Sources/AppLib/MenuBar/MenuBarFallback.swift` | sparkles 状态栏图标 + NSPopover；外部点击监听器自动关闭 |
+| `HookStatusWindow` | `Sources/AppLib/MenuBar/HookStatusWindow.swift` | Hook Status 卡片（KeyablePanel + SwiftUI，仿 AboutWindow）：6 行健康状态 + Repair Hooks 按钮；状态栏右键菜单与齿轮菜单共用同一实现。 |
 
 **全局功能**
 | 模块 | 文件 | 职责 |
