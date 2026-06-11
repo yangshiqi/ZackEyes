@@ -15,7 +15,7 @@ public struct HookInstaller {
 
     // MARK: - Hook Config
 
-    private static let hookEvents = [
+    static let hookEvents = [
         "PreToolUse",
         "PostToolUse",
         "PermissionRequest",
@@ -398,7 +398,7 @@ public struct HookInstaller {
 
     /// Returns true if any hook command in this entry contains "zackeyes" or
     /// matches the configured bridgePath (to support test paths lacking "zackeyes").
-    private func isZackEyesEntry(_ entry: [String: Any]) -> Bool {
+    func isZackEyesEntry(_ entry: [String: Any]) -> Bool {
         guard let hooks = entry["hooks"] as? [[String: Any]] else { return false }
         return hooks.contains { hook in
             guard let command = hook["command"] as? String else { return false }

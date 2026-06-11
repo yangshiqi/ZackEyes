@@ -33,7 +33,7 @@ public struct CodexHookInstaller {
     // Codex defines six lifecycle hooks. There is no SessionEnd, no
     // Notification, and no StatusLine — those are Claude-only. Reference:
     // https://developers.openai.com/codex/hooks
-    private static let hookEvents = [
+    static let hookEvents = [
         "PreToolUse",
         "PostToolUse",
         "PermissionRequest",
@@ -149,7 +149,7 @@ public struct CodexHookInstaller {
     /// True when any hook command in this entry contains "zackeyes" or matches
     /// the configured bridgePath (so test fixtures using paths without the
     /// "zackeyes" substring still match).
-    private func isZackEyesEntry(_ entry: [String: Any]) -> Bool {
+    func isZackEyesEntry(_ entry: [String: Any]) -> Bool {
         guard let hooks = entry["hooks"] as? [[String: Any]] else { return false }
         return hooks.contains { hook in
             guard let command = hook["command"] as? String else { return false }
