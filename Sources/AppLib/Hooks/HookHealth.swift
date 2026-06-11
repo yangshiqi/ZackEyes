@@ -177,10 +177,14 @@ public struct HookHealth {
             candidates.append(String(firstLine))
         }
         candidates.append(contentsOf: launcherFallbackAppPaths)
-        let resolved = candidates.first {
+        guard let resolved = candidates.first(where: {
             FileManager.default.isExecutableFile(atPath: $0 + "/Contents/Helpers/bridge")
-        }
-        return resolved == currentAppPath
+        }) else { return false }
+        // Resolve symlinks on both sides (/var vs /private/var, moved
+        // bundles behind links) so equivalent paths never read as "stale".
+        let resolvedPath = URL(fileURLWithPath: resolved).resolvingSymlinksInPath().path
+        let currentPath = URL(fileURLWithPath: currentAppPath).resolvingSymlinksInPath().path
+        return resolvedPath == currentPath
     }
 
     private func checkSocket() -> Bool {
