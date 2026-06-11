@@ -1461,7 +1461,7 @@ git commit -m "feat: wire Hook Status into status-bar and gear menus"
 In the **Hook 安装** module table, update the `HookInstaller` row's 职责 cell — append: `；重装为 no-op 时跳过备份与写入（幂等，防 backup 刷屏）`. Same for `CodexHookInstaller`. Add two rows:
 
 ```markdown
-| `HookHealth` | `Sources/AppLib/Hooks/HookHealth.swift` | 只读健康检查（#38）：claude/codex hook 条目完整性、bridge launcher 可执行、launcher 解析是否指向当前 bundle、socket 存在性、statusLine 归属四态分类。复用 installer 的事件表与条目识别，绝不写任何文件。 |
+| `HookHealth` | `Sources/AppLib/Hooks/HookHealth.swift` | 只读健康检查（#38）：claude/codex hook 条目完整性、bridge launcher 可执行、launcher 解析是否指向当前 bundle、socket 存在性、statusLine 归属分类（direct/mux/userRenderer/thirdParty/absent/unreadable）。复用 installer 的事件表与条目识别，绝不写任何文件。 |
 | `HookRepair` | `Sources/AppLib/Hooks/HookRepair.swift` | 共享修复入口 = deployLauncherScript + 双 installer 重装；AppDelegate 启动与 Hook Status 窗口 Repair 按钮共用。 |
 ```
 
