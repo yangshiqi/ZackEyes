@@ -637,6 +637,68 @@ struct HookInstallerTests {
         #expect(saved == "claude-hud --render")
     }
 
+    // MARK: - Idempotent re-install (#38 repair)
+
+    private func backupFiles(in dir: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: dir.path)
+            .filter { $0.hasPrefix("settings.json.backup.") }
+    }
+
+    @Test func reinstallWithoutChangesSkipsBackupAndWrite() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let settingsURL = claudeDir.appendingPathComponent("settings.json")
+        try #"{"permissions":{"allow":["Bash"]}}"#
+            .write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: tmpDir.appendingPathComponent(".zackeyes/bin/bridge").path
+        )
+        try installer.installHooks()
+
+        // Drop the backup from the first (real) write, then re-run.
+        for name in try backupFiles(in: claudeDir) {
+            try FileManager.default.removeItem(at: claudeDir.appendingPathComponent(name))
+        }
+        let contentAfterFirst = try Data(contentsOf: settingsURL)
+
+        try installer.installHooks()
+
+        #expect(try backupFiles(in: claudeDir).isEmpty)
+        #expect(try Data(contentsOf: settingsURL) == contentAfterFirst)
+    }
+
+    @Test func reinstallAfterManualDamageBacksUpAndRepairs() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let settingsURL = claudeDir.appendingPathComponent("settings.json")
+        let bridgePath = tmpDir.appendingPathComponent(".zackeyes/bin/bridge").path
+        let installer = HookInstaller(settingsPath: settingsURL.path, bridgePath: bridgePath)
+        try installer.installHooks()
+        for name in try backupFiles(in: claudeDir) {
+            try FileManager.default.removeItem(at: claudeDir.appendingPathComponent(name))
+        }
+
+        // User nukes the hooks key entirely (keeps a third-party statusLine).
+        var doc = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: settingsURL)) as! [String: Any]
+        doc.removeValue(forKey: "hooks")
+        try JSONSerialization.data(withJSONObject: doc).write(to: settingsURL)
+
+        try installer.installHooks()
+
+        #expect(try backupFiles(in: claudeDir).count == 1)
+        let repaired = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: settingsURL)) as! [String: Any]
+        let hooks = repaired["hooks"] as! [String: Any]
+        #expect(hooks.count == 12)
+    }
+
     // MARK: - Test 11: installs observation-only Claude lifecycle events
 
     @Test func installsObservationOnlyClaudeLifecycleEvents() throws {

@@ -203,6 +203,36 @@ struct CodexHookInstallerTests {
         #expect(!FileManager.default.fileExists(atPath: hooksURL.path))
     }
 
+    // MARK: - Idempotent re-install (#38 repair)
+
+    @Test func reinstallWithoutChangesSkipsBackupAndWrite() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let codexDir = tmpDir.appendingPathComponent(".codex")
+        try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
+        let hooksURL = codexDir.appendingPathComponent("hooks.json")
+
+        let installer = CodexHookInstaller(
+            hooksPath: hooksURL.path,
+            bridgePath: tmpDir.appendingPathComponent(".zackeyes/bin/bridge").path
+        )
+        try installer.installHooks()
+
+        let backups = {
+            try FileManager.default.contentsOfDirectory(atPath: codexDir.path)
+                .filter { $0.hasPrefix("hooks.json.backup.") }
+        }
+        for name in try backups() {
+            try FileManager.default.removeItem(at: codexDir.appendingPathComponent(name))
+        }
+        let contentAfterFirst = try Data(contentsOf: hooksURL)
+
+        try installer.installHooks()
+
+        #expect(try backups().isEmpty)
+        #expect(try Data(contentsOf: hooksURL) == contentAfterFirst)
+    }
+
     // MARK: - Test 8: re-install is idempotent (no duplicate entries)
 
     @Test func reinstallDoesNotDuplicateOurEntries() throws {

@@ -58,6 +58,8 @@ public struct HookInstaller {
 
         let settingsURL = URL(fileURLWithPath: settingsPath)
         var settings: [String: Any] = [:]
+        var originalSettings: [String: Any]?
+        var originalData: Data?
 
         if FileManager.default.fileExists(atPath: settingsPath) {
             guard let data = try? Data(contentsOf: settingsURL),
@@ -67,13 +69,8 @@ public struct HookInstaller {
                 return
             }
             settings = parsed
-
-            // Create backup before any modification
-            let timestamp = Int(Date().timeIntervalSince1970)
-            let backupURL = settingsURL
-                .deletingLastPathComponent()
-                .appendingPathComponent("settings.json.backup.\(timestamp)")
-            try data.write(to: backupURL)
+            originalSettings = parsed
+            originalData = data
         }
 
         // Get or create hooks dict
@@ -149,6 +146,22 @@ public struct HookInstaller {
                 "type": "command",
                 "command": bridgeCommand(event: "StatusLine"),
             ]
+        }
+
+        // No-op guard: a re-install that changes nothing must not spawn a
+        // backup file or rewrite settings.json (Repair button + every app
+        // launch would otherwise pile up identical backups).
+        if let originalSettings,
+           NSDictionary(dictionary: settings).isEqual(to: originalSettings) {
+            return
+        }
+
+        if let originalData {
+            let timestamp = Int(Date().timeIntervalSince1970)
+            let backupURL = settingsURL
+                .deletingLastPathComponent()
+                .appendingPathComponent("settings.json.backup.\(timestamp)")
+            try originalData.write(to: backupURL)
         }
 
         try writeSettings(settings, to: settingsURL)

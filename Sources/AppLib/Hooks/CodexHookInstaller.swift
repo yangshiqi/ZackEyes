@@ -70,6 +70,8 @@ public struct CodexHookInstaller {
 
         let hooksURL = URL(fileURLWithPath: hooksPath)
         var doc: [String: Any] = [:]
+        var originalDoc: [String: Any]?
+        var originalData: Data?
 
         if FileManager.default.fileExists(atPath: hooksPath) {
             guard let data = try? Data(contentsOf: hooksURL),
@@ -79,13 +81,8 @@ public struct CodexHookInstaller {
                 return
             }
             doc = parsed
-
-            // Create backup before any modification
-            let timestamp = Int(Date().timeIntervalSince1970)
-            let backupURL = hooksURL
-                .deletingLastPathComponent()
-                .appendingPathComponent("hooks.json.backup.\(timestamp)")
-            try data.write(to: backupURL)
+            originalDoc = parsed
+            originalData = data
         }
 
         // Codex hooks.json wraps under top-level "hooks" key (same shape as
@@ -101,6 +98,20 @@ public struct CodexHookInstaller {
         }
 
         doc["hooks"] = hooks
+
+        // No-op guard — see HookInstaller.installHooks.
+        if let originalDoc,
+           NSDictionary(dictionary: doc).isEqual(to: originalDoc) {
+            return
+        }
+
+        if let originalData {
+            let timestamp = Int(Date().timeIntervalSince1970)
+            let backupURL = hooksURL
+                .deletingLastPathComponent()
+                .appendingPathComponent("hooks.json.backup.\(timestamp)")
+            try originalData.write(to: backupURL)
+        }
 
         try writeHooks(doc, to: hooksURL)
     }
