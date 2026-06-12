@@ -40,6 +40,7 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 | Permission 响应 JSON 形状 | `{hookSpecificOutput:{decision:{behavior,message}}}` | 同上（codex 文档形状完全一致，**Bridge 输出不需翻译**） |
 | AskUserQuestion | 支持（PreToolUse 阻塞） | 不支持（codex 不定义此工具） |
 | 进程探测（liveness sweep） | `TerminalLocator.runningClaudeCwds()` 走 `ps`/`lsof` | 暂无 `runningCodexCwds()`，改用 `lastActiveAt` 时间剪枝（15 min 阈值） |
+| 无 hook 兜底发现 | 启动扫描 + 60s 周期重扫（SessionScanner，#83） | CodexJsonlTailer kqueue 实时 + 30s rediscovery |
 | Detected session 启动扫描窗口 | 8h | 30 min（codex 一次 invocation = 一个 rollout，关掉就死） |
 | 已运行 agent 的实时回退 | hook 自动接入 | hook 缓存的限制 → `CodexJsonlTailer` 监 `event_msg.task_started` / `event_msg.task_complete` 兜底 |
 
@@ -164,7 +165,7 @@ PricingStore.start()
 |------|------|------|
 | `SocketServer` | `Sources/AppLib/Socket/SocketServer.swift` | 监听 `/tmp/zackeyes.sock`，`PermissionRequest` 连接保持到用户决策 / POLLHUP / 超时 |
 | `SessionStore` | `Sources/AppLib/Session/SessionStore.swift` | 按 `session_id` 索引的多 session 状态机，含 `aggregateState` / `primarySession` / 错误检测。`SessionInfo.agent: AgentKind` 标记每个 session 的 agent。`recordCodexTaskComplete(...)` 处理来自 jsonl tailer 的 turn 完成事件。 |
-| `SessionScanner` | `Sources/AppLib/Session/SessionScanner.swift` | 扫描 `~/.claude/projects/*.jsonl` + `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` 导入既有会话。两个 agent **使用独立 recency 窗口**（claude 默认 8h，codex 默认 30 min）。Codex 路径按 UTC 日期裁剪只走候选日期子目录。 |
+| `SessionScanner` | `Sources/AppLib/Session/SessionScanner.swift` | 扫描 `~/.claude/projects/*.jsonl` + `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` 导入既有会话。两个 agent **使用独立 recency 窗口**（claude 默认 8h，codex 默认 30 min）。Codex 路径按 UTC 日期裁剪只走候选日期子目录；#83 起每 60s 随 sweep 重扫 Claude transcript（claude-only、活性过滤、ps 失败跳过本轮、未变化跳过），hook 缺失时启动后新会话 ≤60s 可见 |
 | `LivenessFilter` | `Sources/AppLib/Session/LivenessFilter.swift` | 纯函数：根据 `cwd` → 运行中 `claude` 进程 map 决定哪些 detected session 还活着。Codex session 直接 pass-through 不参与（暂无 `runningCodexCwds()`）。 |
 | `CodexJsonlTailer` | `Sources/AppLib/Session/CodexJsonlTailer.swift` | kqueue 实时监控 `~/.codex/sessions/*/rollout-*.jsonl`，看到 `event_msg.task_started` 即标记 working，看到用户可见的 `event_msg.task_complete` 即触发通知（内部审批 / 空结果不响），看到 `event_msg.token_count.info` 即更新 popup 的 per-session context bar。**用于覆盖那些启动早于 hooks 安装的 codex TUI**——它们永远不会 fire hook，但会持续写 jsonl。 |
 | `PendingEventReplayer` | `Sources/AppLib/Session/PendingEventReplayer.swift` | #89 读侧：启动时按时间序补播 pending 事件进 handleEvent（isReplayed 抑制过期通知），24h 过期丢弃，文件一律消费删除 |

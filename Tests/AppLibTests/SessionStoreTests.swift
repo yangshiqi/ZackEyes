@@ -716,4 +716,135 @@ struct SessionStoreTests {
         #expect(session?.cwd == "/proj")
     }
 
+    // MARK: - importDetectedSessions (#83 unchanged-skip guard)
+
+    // #83-1. Re-importing the same DetectedSession (same lastModified) must
+    // be a no-op: returns 0 and leaves any enrichment intact.
+    @Test func reimportSkipsUnchangedDetectedSession() {
+        let store = SessionStore()
+        let modDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let d = SessionScanner.DetectedSession(
+            id: "s1",
+            agent: .claude,
+            cwd: "/tmp/p",
+            lastModified: modDate,
+            lastUserPrompt: "original prompt",
+            lastAssistantMessage: nil,
+            messageCount: 1,
+            transcriptPath: "/nonexistent/transcript.jsonl"
+        )
+
+        // First import — creates the session
+        let first = store.importDetectedSessions([d])
+        #expect(first == 1)
+
+        // Simulate enrichment written by another path
+        store.sessions["s1"]?.lastAssistantMessage = "enriched"
+
+        // Re-import with same DetectedSession (same lastModified) → skip
+        let second = store.importDetectedSessions([d])
+        #expect(second == 0)
+        #expect(store.sessions["s1"]?.lastAssistantMessage == "enriched",
+                "unchanged-skip must preserve enrichment from other paths")
+    }
+
+    // #83-2. Re-importing with an updated lastModified must refresh the session
+    // and return 1.
+    @Test func reimportRefreshesWhenTranscriptMoved() {
+        let store = SessionStore()
+        let modDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let d1 = SessionScanner.DetectedSession(
+            id: "s1",
+            agent: .claude,
+            cwd: "/tmp/p",
+            lastModified: modDate,
+            lastUserPrompt: "old prompt",
+            lastAssistantMessage: nil,
+            messageCount: 1,
+            transcriptPath: "/nonexistent/transcript.jsonl"
+        )
+        _ = store.importDetectedSessions([d1])
+
+        let modDate2 = modDate.addingTimeInterval(60)
+        let d2 = SessionScanner.DetectedSession(
+            id: "s1",
+            agent: .claude,
+            cwd: "/tmp/p",
+            lastModified: modDate2,
+            lastUserPrompt: "new prompt",
+            lastAssistantMessage: "new reply",
+            messageCount: 2,
+            transcriptPath: "/nonexistent/transcript.jsonl"
+        )
+        let second = store.importDetectedSessions([d2])
+        #expect(second == 1)
+        #expect(store.sessions["s1"]?.lastUserPrompt == "new prompt")
+        #expect(store.sessions["s1"]?.lastAssistantMessage == "new reply")
+        #expect(store.sessions["s1"]?.lastActiveAt == modDate2)
+    }
+
+    // #83-3. importDetectedSessions must never touch a .live session, and
+    // must return 0 for it.
+    // SessionStart creates sessions with source == .live directly, so no
+    // upgradeToLive call needed.
+    @Test func reimportNeverTouchesLiveSessions() {
+        let store = SessionStore()
+        // SessionStart → source == .live
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp/p"))
+        #expect(store.sessions["s1"]?.source == .live)
+
+        let modDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let d = SessionScanner.DetectedSession(
+            id: "s1",
+            agent: .claude,
+            cwd: "/tmp/p",
+            lastModified: modDate,
+            lastUserPrompt: "stale",
+            lastAssistantMessage: nil,
+            messageCount: 1,
+            transcriptPath: "/nonexistent/transcript.jsonl"
+        )
+        let count = store.importDetectedSessions([d])
+        #expect(count == 0)
+        #expect(store.sessions["s1"]?.lastUserPrompt != "stale",
+                "live session must not be overwritten by importDetectedSessions")
+    }
+
+    // #83-4. A transcript mtime bump rebuilds the .detected session — the
+    // activation cache (claudePid) must survive the rebuild, otherwise the
+    // periodic rescan re-runs lsof/OSC2-titling for already-known sessions.
+    @Test func reimportPreservesCachedPidOnRefresh() {
+        let store = SessionStore()
+        let modDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let d1 = SessionScanner.DetectedSession(
+            id: "s1",
+            agent: .claude,
+            cwd: "/tmp/p",
+            lastModified: modDate,
+            lastUserPrompt: "old",
+            lastAssistantMessage: nil,
+            messageCount: 1,
+            transcriptPath: "/nonexistent/transcript.jsonl"
+        )
+        _ = store.importDetectedSessions([d1])
+        // Activation pass cached a pid for this session.
+        store.sessions["s1"]?.claudePid = 4242
+
+        let d2 = SessionScanner.DetectedSession(
+            id: "s1",
+            agent: .claude,
+            cwd: "/tmp/p",
+            lastModified: modDate.addingTimeInterval(60),
+            lastUserPrompt: "new",
+            lastAssistantMessage: "reply",
+            messageCount: 2,
+            transcriptPath: "/nonexistent/transcript.jsonl"
+        )
+        let count = store.importDetectedSessions([d2])
+        #expect(count == 1)
+        #expect(store.sessions["s1"]?.lastUserPrompt == "new")
+        #expect(store.sessions["s1"]?.claudePid == 4242,
+                "refresh must carry the activation cache forward")
+    }
+
 }
