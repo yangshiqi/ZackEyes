@@ -23,7 +23,7 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 
 | 组件 | 位置 | 职责 | 禁止 |
 |------|------|------|------|
-| **Bridge CLI** | `Bridge/` → 嵌入 `ZackEyes.app/Contents/Helpers/bridge` | 被 Claude Code 和 Codex CLI hook 调用，解析 `--event` + `--agent`，转发事件到主 App，返回权限决策 | 不含 UI 逻辑，不直接读写用户配置文件 |
+| **Bridge CLI** | `Bridge/` → 嵌入 `ZackEyes.app/Contents/Helpers/bridge` | 被 Claude Code 和 Codex CLI hook 调用，解析 `--event` + `--agent`，转发事件到主 App，返回权限决策；socket 不可达时把白名单生命周期事件落盘 ~/.zackeyes/pending/ 供启动补播（#89） | 不含 UI 逻辑，不直接读写用户配置文件 |
 | **Main App** | `ZackEyes/` | Socket 监听、会话状态管理、NotchPanel UI、Hook 自动安装（Claude + Codex 各一套）、Codex jsonl 实时 tailer | 不直接与 agent 进程交互（全部通过 Bridge / jsonl tail） |
 | **Launcher Script** | `~/.zackeyes/bin/bridge`（shell 脚本） | 定位 .app 路径，exec 到真实 Bridge 二进制。查找顺序：`~/.zackeyes/.app-path` → 常见安装路径 → Spotlight bundle id；找不到时静默 `exit 0` | 不含业务逻辑，只做路径查找和 exec；失败不写 stdout/stderr |
 
@@ -96,6 +96,7 @@ Claude Code 触发 PreToolUse hook (tool_name="AskUserQuestion")
 ```
 bridge 连接 /tmp/zackeyes.sock 失败（App 未运行）
   → bridge exit(0) 且不写 stdout
+  → 白名单生命周期事件（SessionStart/End、Stop、UserPromptSubmit、Notification、compact/subagent）先落盘 ~/.zackeyes/pending/（200 个上限 / 24h 过期，写盘失败同样静默）
   → Claude Code 视为无 hook 偏好，回退到终端审批 / 正常继续
 ```
 
@@ -155,6 +156,7 @@ PricingStore.start()
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `SocketClient` | `Sources/BridgeLib/SocketClient.swift` | Unix Socket 客户端，`sendFireAndForget` / `sendAndWaitForResponse` |
+| `PendingEventQueue` | `Sources/BridgeLib/PendingEventQueue.swift` | #89 写侧：socket 发送失败时白名单生命周期事件落盘 `<ms>-<pid>-<uuid>.json`；200 个上限裁剪最旧；一切失败静默（invariant #2） |
 | `Bridge main` | `Sources/Bridge/main.swift` | CLI 入口。读 stdin、注入 `_bridge_event` + `_bridge_ppid`、按事件类型阻塞或非阻塞 |
 
 **Socket / Session 核心**
@@ -165,6 +167,7 @@ PricingStore.start()
 | `SessionScanner` | `Sources/AppLib/Session/SessionScanner.swift` | 扫描 `~/.claude/projects/*.jsonl` + `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` 导入既有会话。两个 agent **使用独立 recency 窗口**（claude 默认 8h，codex 默认 30 min）。Codex 路径按 UTC 日期裁剪只走候选日期子目录。 |
 | `LivenessFilter` | `Sources/AppLib/Session/LivenessFilter.swift` | 纯函数：根据 `cwd` → 运行中 `claude` 进程 map 决定哪些 detected session 还活着。Codex session 直接 pass-through 不参与（暂无 `runningCodexCwds()`）。 |
 | `CodexJsonlTailer` | `Sources/AppLib/Session/CodexJsonlTailer.swift` | kqueue 实时监控 `~/.codex/sessions/*/rollout-*.jsonl`，看到 `event_msg.task_started` 即标记 working，看到用户可见的 `event_msg.task_complete` 即触发通知（内部审批 / 空结果不响），看到 `event_msg.token_count.info` 即更新 popup 的 per-session context bar。**用于覆盖那些启动早于 hooks 安装的 codex TUI**——它们永远不会 fire hook，但会持续写 jsonl。 |
+| `PendingEventReplayer` | `Sources/AppLib/Session/PendingEventReplayer.swift` | #89 读侧：启动时按时间序补播 pending 事件进 handleEvent（isReplayed 抑制过期通知），24h 过期丢弃，文件一律消费删除 |
 | `TaskExtractor` | `Sources/AppLib/Session/TaskExtractor.swift` | 解析 Claude transcript 重建任务列表，按用户 prompt 边界重置（只显示当前 turn）。Codex transcript schema 不同，目前不重建 task 列表。 |
 
 **配置**
@@ -259,7 +262,7 @@ Source code lives in **`yangshiqi/ZackEyes` (private)**; release artifacts (DMG)
 | 场景 | 行为 | Exit Code |
 |------|------|-----------|
 | 正常响应（权限决策） | stdout 输出 JSON | 0 |
-| Socket 不存在 / App 未运行 | 静默退出（无 stdout） | **0** |
+| Socket 不存在 / App 未运行 | 静默退出（无 stdout）；白名单生命周期事件先落盘 pending 队列 | **0** |
 | Socket 连接超时 | 静默退出（无 stdout） | **0** |
 | stdin 为空 / JSON 解析失败 | 静默退出 | **0** |
 | args 错误 | 静默退出 | **0** |
@@ -268,7 +271,7 @@ Source code lives in **`yangshiqi/ZackEyes` (private)**; release artifacts (DMG)
 
 **铁律**: Bridge 的任何路径只要走到退出都返回 0（除了进程崩溃这种不可控情况）。Claude Code 的新版本会把任何非 0 退出码显示成 "hook error"，会污染用户终端；我们宁可丢事件也不弄脏显示。
 - PermissionRequest socket 不通时 exit 0 且不写 stdout → Claude Code 视为"无 hook 偏好" → 回退到原生终端授权弹窗，行为正确。
-- 其他 fire-and-forget hook socket 不通时就当这次事件没发生；App 重连后靠 `SessionScanner` 做 catch-up sweep。
+- 其他 fire-and-forget hook socket 不通时就当这次事件没发生；App 重启后先补播 pending 队列，再靠 `SessionScanner` 做 catch-up sweep。
 
 ### Hook 注入安全
 

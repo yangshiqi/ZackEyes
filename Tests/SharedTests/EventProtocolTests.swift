@@ -189,3 +189,17 @@ import Foundation
     #expect(decoded.agent == .codex)
     #expect(decoded.sessionId == "s")
 }
+
+// MARK: - #89 isReplayed
+
+@Test func isReplayedDefaultsFalseWhenAbsent() throws {
+    let json = #"{"_bridge_event":"Stop","session_id":"s1"}"#
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: Data(json.utf8))
+    #expect(event.isReplayed == false)
+}
+
+@Test func isReplayedDecodesTrue() throws {
+    let json = #"{"_bridge_event":"Stop","session_id":"s1","_bridge_replayed":true}"#
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: Data(json.utf8))
+    #expect(event.isReplayed == true)
+}
