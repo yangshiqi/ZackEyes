@@ -330,6 +330,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             sessionStore.sessions.values
                 .filter { $0.source == .detected }
                 .compactMap { s in
+                    // Already activated on a prior pass — periodic rescan (#83) must not
+                    // re-lsof / re-write titles for known sessions; failed discoveries
+                    // (pid still nil) retry naturally.
+                    guard s.claudePid == nil else { return nil }
                     guard let cwd = s.cwd else { return nil }
                     return (s.id, s.agent, cwd, s.transcriptPath, s.lastUserPrompt)
                 }
@@ -453,7 +457,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// liveness filter).
     private func runPassiveClaudeRescan() {
         Task.detached(priority: .utility) { [weak self] in
-            let scanner = SessionScanner()
+            // claude-only rescan: skip the codex tree walk entirely
+            let scanner = SessionScanner(codexSessionsDir: nil)
             let detected = scanner.scan(
                 claudeRecencyMinutes: 480,   // same 8h window as startup
                 codexRecencyMinutes: 0       // codex path skipped entirely
