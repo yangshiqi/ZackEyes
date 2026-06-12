@@ -680,6 +680,10 @@ public final class SessionStore: ObservableObject {
                 session.tasks = TaskExtractor.extractTasks(fromTranscriptAt: d.transcriptPath)
             }
             session.source = .detected
+            // #83 — carry the activation cache across refreshes: a transcript
+            // mtime bump must not put an already-activated session back into
+            // the re-lsof / re-title path.
+            session.claudePid = sessions[d.id]?.claudePid
             sessions[d.id] = session
             imported += 1
         }

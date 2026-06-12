@@ -810,4 +810,41 @@ struct SessionStoreTests {
                 "live session must not be overwritten by importDetectedSessions")
     }
 
+    // #83-4. A transcript mtime bump rebuilds the .detected session — the
+    // activation cache (claudePid) must survive the rebuild, otherwise the
+    // periodic rescan re-runs lsof/OSC2-titling for already-known sessions.
+    @Test func reimportPreservesCachedPidOnRefresh() {
+        let store = SessionStore()
+        let modDate = Date(timeIntervalSince1970: 1_800_000_000)
+        let d1 = SessionScanner.DetectedSession(
+            id: "s1",
+            agent: .claude,
+            cwd: "/tmp/p",
+            lastModified: modDate,
+            lastUserPrompt: "old",
+            lastAssistantMessage: nil,
+            messageCount: 1,
+            transcriptPath: "/nonexistent/transcript.jsonl"
+        )
+        _ = store.importDetectedSessions([d1])
+        // Activation pass cached a pid for this session.
+        store.sessions["s1"]?.claudePid = 4242
+
+        let d2 = SessionScanner.DetectedSession(
+            id: "s1",
+            agent: .claude,
+            cwd: "/tmp/p",
+            lastModified: modDate.addingTimeInterval(60),
+            lastUserPrompt: "new",
+            lastAssistantMessage: "reply",
+            messageCount: 2,
+            transcriptPath: "/nonexistent/transcript.jsonl"
+        )
+        let count = store.importDetectedSessions([d2])
+        #expect(count == 1)
+        #expect(store.sessions["s1"]?.lastUserPrompt == "new")
+        #expect(store.sessions["s1"]?.claudePid == 4242,
+                "refresh must carry the activation cache forward")
+    }
+
 }
