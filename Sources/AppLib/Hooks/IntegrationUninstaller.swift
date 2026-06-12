@@ -109,7 +109,16 @@ public struct IntegrationUninstaller {
     /// Best-effort: each step independent, errors logged not thrown. The
     /// uninstall primitives carry the safety contract (backup-before-write,
     /// third-party preservation, parse-failure bail).
-    public func execute() {
+    ///
+    /// Returns `true` when cleanup completed fully (configs clean, files
+    /// swept). Returns `false` when hook entries could not be removed —
+    /// in that case the generated files are deliberately KEPT: deleting
+    /// the launcher while configs still reference it would turn every
+    /// hook invocation into a user-visible exit-127 error, the exact
+    /// terminal pollution invariant #2 exists to prevent (codex review,
+    /// PR #111).
+    @discardableResult
+    public func execute() -> Bool {
         do {
             try HookInstaller(
                 settingsPath: claudeSettingsPath, bridgePath: bridgePath
@@ -124,8 +133,34 @@ public struct IntegrationUninstaller {
         } catch {
             NSLog("ZackEyes: codex uninstall failed: \(error)")
         }
+
+        // Gate the file sweep on the configs actually being clean. An
+        // unreadable config counts as dirty: parse failure means our
+        // entries may still be inside, even though preview() can't see
+        // them.
+        let residue = preview()
+        guard residue.claudeHookEvents == 0,
+              !residue.claudeOwnsStatusLine,
+              residue.codexHookEvents == 0,
+              !isUnreadable(claudeSettingsPath),
+              !isUnreadable(codexHooksPath)
+        else {
+            NSLog("ZackEyes: uninstall incomplete — keeping launcher (claude:%d codex:%d statusLine:%d)",
+                  residue.claudeHookEvents, residue.codexHookEvents,
+                  residue.claudeOwnsStatusLine ? 1 : 0)
+            return false
+        }
+
         for path in candidateFiles {
             try? FileManager.default.removeItem(atPath: path)
         }
+        return true
+    }
+
+    /// File exists but isn't parseable JSON — contents unknown, treat as
+    /// possibly still containing our entries.
+    private func isUnreadable(_ path: String) -> Bool {
+        guard FileManager.default.fileExists(atPath: path) else { return false }
+        return load(path) == nil
     }
 }

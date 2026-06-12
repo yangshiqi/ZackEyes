@@ -67,10 +67,11 @@ final class UninstallWindow: NSObject, NSWindowDelegate {
 
 private struct UninstallCardView: View {
     let runPreview: () -> IntegrationUninstaller.Plan
-    let runExecute: () -> Void
+    let runExecute: () -> Bool
     let onDismiss: () -> Void
 
     @State private var plan: IntegrationUninstaller.Plan?
+    @State private var cleanupComplete = true
     @State private var done = false
 
     private static let danger = Color(red: 0.95, green: 0.45, blue: 0.40)
@@ -88,7 +89,9 @@ private struct UninstallCardView: View {
                     .padding(.bottom, 4)
 
                 if done {
-                    Text("ZackEyes-owned hooks, statusLine entries and the launcher are gone. Third-party hooks and your own files were preserved.\n\nIntegrations stay removed while the app keeps running — but relaunching ZackEyes reinstalls them. To finish removal, quit now and drag ZackEyes.app to the Trash.")
+                    Text(cleanupComplete
+                        ? "ZackEyes-owned hooks, statusLine entries and the launcher are gone. Third-party hooks and your own files were preserved.\n\nIntegrations stay removed while the app keeps running — but relaunching ZackEyes reinstalls them. To finish removal, quit now and drag ZackEyes.app to the Trash."
+                        : "Some hook entries could not be removed (a config file may be unreadable or write-protected), so the launcher was kept to avoid hook errors in your terminal.\n\nCheck the config permissions and try again, or inspect Hook Status… for details.")
                         .font(.system(size: 12))
                         .foregroundColor(.white.opacity(0.8))
                         .fixedSize(horizontal: false, vertical: true)
@@ -140,7 +143,7 @@ private struct UninstallCardView: View {
                     } else {
                         if let plan, !plan.isEmpty {
                             Button {
-                                runExecute()
+                                cleanupComplete = runExecute()
                                 done = true
                             } label: { buttonLabel("Remove Integrations", color: Self.danger) }
                             .buttonStyle(.plain)

@@ -318,4 +318,33 @@ struct IntegrationUninstallerTests {
         // After execute, preview must report empty
         #expect(uninstaller.preview().isEmpty)
     }
+
+    // MARK: - Test 7: executeKeepsLauncherWhenConfigCleanupFails (codex review, PR #111)
+
+    @Test func executeKeepsLauncherWhenConfigCleanupFails() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        try fullInstall(tmpDir: tmpDir)
+        let bridgePath = tmpDir.appendingPathComponent(".zackeyes/bin/bridge").path
+        let settingsPath = tmpDir.appendingPathComponent(".claude/settings.json").path
+        try HookInstaller(settingsPath: settingsPath, bridgePath: bridgePath)
+            .deployLauncherScript(
+                appPath: tmpDir.appendingPathComponent("ZackEyes.app").path)
+
+        // Corrupt settings.json: uninstallHooks parse-fail-bails, so our hook
+        // entries may still be inside. The file sweep must NOT delete the
+        // launcher those (unremovable) entries point at — that would turn
+        // every hook invocation into a visible exit-127 terminal error.
+        try "{not json".write(
+            toFile: settingsPath, atomically: true, encoding: .utf8)
+
+        let result = makeUninstaller(tmpDir: tmpDir).execute()
+
+        #expect(result == false)
+        #expect(FileManager.default.fileExists(atPath: bridgePath),
+                "launcher must survive while configs may still reference it")
+        // Codex side WAS clean — its entries are gone — but the shared
+        // launcher stays until the claude side can actually be cleaned.
+    }
 }
