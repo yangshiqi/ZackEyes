@@ -699,6 +699,48 @@ struct HookInstallerTests {
         #expect(hooks.count == 12)
     }
 
+    // MARK: - #46 uninstall backup + no-op
+
+    @Test func uninstallBacksUpBeforeWrite() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let settingsURL = claudeDir.appendingPathComponent("settings.json")
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: tmpDir.appendingPathComponent(".zackeyes/bin/bridge").path)
+        try installer.installHooks()
+        // Clear install-time backups so the assertion isolates uninstall.
+        for name in try backupFiles(in: claudeDir) {
+            try FileManager.default.removeItem(at: claudeDir.appendingPathComponent(name))
+        }
+
+        try installer.uninstallHooks()
+
+        #expect(try backupFiles(in: claudeDir).count == 1)
+        let doc = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: settingsURL)) as! [String: Any]
+        #expect(doc["hooks"] == nil)
+    }
+
+    @Test func uninstallOnCleanConfigIsNoOpWithoutBackup() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let settingsURL = claudeDir.appendingPathComponent("settings.json")
+        try #"{"permissions":{"allow":["Bash"]}}"#
+            .write(to: settingsURL, atomically: true, encoding: .utf8)
+        let installer = HookInstaller(
+            settingsPath: settingsURL.path,
+            bridgePath: tmpDir.appendingPathComponent(".zackeyes/bin/bridge").path)
+
+        try installer.uninstallHooks()   // nothing of ours present
+
+        #expect(try backupFiles(in: claudeDir).isEmpty)
+    }
+
     // MARK: - Test 11: installs observation-only Claude lifecycle events
 
     @Test func installsObservationOnlyClaudeLifecycleEvents() throws {

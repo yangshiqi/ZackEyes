@@ -233,6 +233,36 @@ struct CodexHookInstallerTests {
         #expect(try Data(contentsOf: hooksURL) == contentAfterFirst)
     }
 
+    // MARK: - #46 uninstall backup + no-op
+
+    private func backupFiles(in dir: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: dir.path)
+            .filter { $0.hasPrefix("hooks.json.backup.") }
+    }
+
+    @Test func uninstallBacksUpBeforeWrite() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let codexDir = tmpDir.appendingPathComponent(".codex")
+        try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
+        let hooksURL = codexDir.appendingPathComponent("hooks.json")
+        let installer = CodexHookInstaller(
+            hooksPath: hooksURL.path,
+            bridgePath: tmpDir.appendingPathComponent(".zackeyes/bin/bridge").path)
+        try installer.installHooks()
+        // Clear install-time backups so the assertion isolates uninstall.
+        for name in try backupFiles(in: codexDir) {
+            try FileManager.default.removeItem(at: codexDir.appendingPathComponent(name))
+        }
+
+        try installer.uninstallHooks()
+
+        // Codex deletes the file entirely when doc empties (we owned everything).
+        // The backup must still have been written before the deletion.
+        #expect(try backupFiles(in: codexDir).count == 1)
+        #expect(!FileManager.default.fileExists(atPath: hooksURL.path))
+    }
+
     // MARK: - Test 8: re-install is idempotent (no duplicate entries)
 
     @Test func reinstallDoesNotDuplicateOurEntries() throws {

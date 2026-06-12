@@ -178,6 +178,8 @@ public struct HookInstaller {
             return
         }
 
+        let originalSettings = settings
+
         guard var hooks = settings["hooks"] as? [String: Any] else { return }
 
         for event in Self.hookEvents {
@@ -212,6 +214,17 @@ public struct HookInstaller {
             // Clean up mux files
             cleanupStatusLineMuxFiles()
         }
+
+        // No-op guard: if removing our entries changed nothing, skip backup and write.
+        if NSDictionary(dictionary: settings).isEqual(to: originalSettings) {
+            return
+        }
+
+        try data.write(to: settingsURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(
+                "settings.json.backup.\(Int(Date().timeIntervalSince1970))"
+            ))
 
         try writeSettings(settings, to: settingsURL)
     }
