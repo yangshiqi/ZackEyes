@@ -7,7 +7,7 @@ import Shared
 ///
 /// Every `.json` file is consumed — replayed, expired, or malformed, it is
 /// deleted afterwards — so the spool can never accumulate across launches.
-/// Replayed events carry `isReplayed == true` (injected `_bridge_replayed`)
+/// Replayed events carry `isReplayed == true` (set post-decode)
 /// so the event pipeline suppresses stale notifications.
 public struct PendingEventReplayer {
 
@@ -41,14 +41,10 @@ public struct PendingEventReplayer {
             guard let ts = Self.timestamp(fromFileName: name),
                   now.timeIntervalSince(ts) <= maxAge,
                   let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-                  var json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                  var event = try? JSONDecoder().decode(BridgeEvent.self, from: data)
             else { continue }
 
-            json["_bridge_replayed"] = true
-            guard let tagged = try? JSONSerialization.data(withJSONObject: json),
-                  let event = try? JSONDecoder().decode(BridgeEvent.self, from: tagged)
-            else { continue }
-
+            event.isReplayed = true
             handler(event)
             replayed += 1
         }

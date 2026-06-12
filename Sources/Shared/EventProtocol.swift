@@ -112,7 +112,7 @@ public struct BridgeEvent: Codable, Sendable {
     public let cost: [String: AnyCodable]?            // {total_cost_usd, total_duration_ms, ...}
     /// True when this event was replayed from the pending spool at app
     /// startup rather than received live (#89). Suppresses notifications.
-    public let isReplayed: Bool
+    public var isReplayed: Bool
 
     public init(
         bridgeEvent: String,
