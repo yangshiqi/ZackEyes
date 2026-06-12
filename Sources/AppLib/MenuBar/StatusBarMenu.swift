@@ -65,6 +65,23 @@ public final class StatusBarMenu: NSObject {
         hotkey.target = self
         menu.addItem(hotkey)
 
+        let visibility = ConfigStore().loadNotchVisibility()
+        let showIsland = NSMenuItem(
+            title: "Show Dynamic Island",
+            action: #selector(toggleVisibilityClicked(_:)),
+            keyEquivalent: ""
+        )
+        showIsland.target = self
+        showIsland.state = (visibility == .always) ? .on : .off
+        menu.addItem(showIsland)
+
+        menu.addItem(themeSubmenuItem())
+
+        // Low-frequency maintenance actions sink to the bottom (macOS
+        // convention: diagnostics/destructive near Quit, fenced by
+        // separators) so daily toggles stay at eye level.
+        menu.addItem(.separator())
+
         let hookStatus = NSMenuItem(
             title: "Hook Status…",
             action: #selector(hookStatusClicked(_:)),
@@ -81,17 +98,6 @@ public final class StatusBarMenu: NSObject {
         uninstall.target = self
         menu.addItem(uninstall)
 
-        let visibility = ConfigStore().loadNotchVisibility()
-        let showIsland = NSMenuItem(
-            title: "Show Dynamic Island",
-            action: #selector(toggleVisibilityClicked(_:)),
-            keyEquivalent: ""
-        )
-        showIsland.target = self
-        showIsland.state = (visibility == .always) ? .on : .off
-        menu.addItem(showIsland)
-
-        menu.addItem(themeSubmenuItem())
         menu.addItem(.separator())
 
         let quit = NSMenuItem(

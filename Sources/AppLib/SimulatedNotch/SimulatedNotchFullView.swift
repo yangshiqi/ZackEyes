@@ -374,22 +374,6 @@ struct SimulatedNotchFullView: View {
         hotkey.target = GearMenuTarget.shared
         menu.addItem(hotkey)
 
-        let hookStatus = NSMenuItem(
-            title: "Hook Status…",
-            action: #selector(GearMenuTarget.hookStatusClicked(_:)),
-            keyEquivalent: ""
-        )
-        hookStatus.target = GearMenuTarget.shared
-        menu.addItem(hookStatus)
-
-        let uninstall = NSMenuItem(
-            title: "Uninstall Integrations…",
-            action: #selector(GearMenuTarget.uninstallClicked(_:)),
-            keyEquivalent: ""
-        )
-        uninstall.target = GearMenuTarget.shared
-        menu.addItem(uninstall)
-
         let visibility = ConfigStore().loadNotchVisibility()
         let showIsland = NSMenuItem(
             title: "Show Dynamic Island",
@@ -491,6 +475,27 @@ struct SimulatedNotchFullView: View {
         todayConsumption.target = GearMenuTarget.shared
         todayConsumption.state = usageTracker.showTodayConsumption ? .on : .off
         menu.addItem(todayConsumption)
+
+        // Low-frequency maintenance actions sink to the bottom (macOS
+        // convention: diagnostics/destructive near Quit, fenced by
+        // separators) so daily toggles stay at eye level.
+        menu.addItem(.separator())
+
+        let hookStatus = NSMenuItem(
+            title: "Hook Status…",
+            action: #selector(GearMenuTarget.hookStatusClicked(_:)),
+            keyEquivalent: ""
+        )
+        hookStatus.target = GearMenuTarget.shared
+        menu.addItem(hookStatus)
+
+        let uninstall = NSMenuItem(
+            title: "Uninstall Integrations…",
+            action: #selector(GearMenuTarget.uninstallClicked(_:)),
+            keyEquivalent: ""
+        )
+        uninstall.target = GearMenuTarget.shared
+        menu.addItem(uninstall)
 
         menu.addItem(.separator())
 
