@@ -647,10 +647,22 @@ public final class SessionStore: ObservableObject {
     /// Import sessions discovered by SessionScanner. These are read-only and
     /// marked as `.detected` — user needs to restart them (or open a new
     /// thread, in Codex's case) for live tracking.
-    public func importDetectedSessions(_ detected: [SessionScanner.DetectedSession]) {
+    ///
+    /// Returns the number of sessions actually created/refreshed. The #83
+    /// periodic rescan re-feeds known sessions every tick: when the
+    /// transcript hasn't moved (`lastModified` matches `lastActiveAt`), the
+    /// rebuild is skipped — no TaskExtractor re-parse, and enrichment
+    /// written by other paths (codex tailer fields, recap fallbacks)
+    /// survives.
+    @discardableResult
+    public func importDetectedSessions(_ detected: [SessionScanner.DetectedSession]) -> Int {
+        var imported = 0
         for d in detected {
             // Don't overwrite live sessions if we already have them
             if sessions[d.id]?.source == .live { continue }
+            // Unchanged-skip (#83): same transcript mtime ⇒ nothing new.
+            if let existing = sessions[d.id], existing.source == .detected,
+               existing.lastActiveAt == d.lastModified { continue }
 
             var session = SessionInfo(
                 id: d.id,
@@ -670,7 +682,9 @@ public final class SessionStore: ObservableObject {
             }
             session.source = .detected
             sessions[d.id] = session
+            imported += 1
         }
+        return imported
     }
 
     /// Remove sessions by id. Skips any session that currently has a
