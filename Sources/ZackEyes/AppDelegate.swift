@@ -298,8 +298,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         //    terminal closes, crashes, and any session whose claude exited
         //    without firing SessionEnd. Cross-references against `ps` so
         //    a transient sh wrapper around the bridge can't false-positive.
+        //    Also re-scans Claude transcripts each tick (#83) so sessions started after launch surface even with no hooks installed.
         livenessSweepTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.runLivenessSweep() }
+            Task { @MainActor in
+                self?.runLivenessSweep()
+                self?.runPassiveClaudeRescan()
+            }
         }
 
         // 7.5 Codex jsonl tailer. Real-time fallback for codex sessions
@@ -437,6 +441,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.sessionStore.removeSessions(ids: deadIds)
                 NSLog("ZackEyes: liveness sweep pruned %d dead sessions", deadIds.count)
+            }
+        }
+    }
+
+    /// #83 — passive fallback discovery. The startup scan runs once, so
+    /// without hooks a session started after launch would never appear.
+    /// Each sweep tick re-scans Claude transcripts and imports new/updated
+    /// detected sessions. Claude-only: codex has its own kqueue tailer with
+    /// 30s rediscovery (invariant #7 — codex never enters the claude cwd
+    /// liveness filter).
+    private func runPassiveClaudeRescan() {
+        Task.detached(priority: .utility) { [weak self] in
+            let scanner = SessionScanner()
+            let detected = scanner.scan(
+                claudeRecencyMinutes: 480,   // same 8h window as startup
+                codexRecencyMinutes: 0       // codex path skipped entirely
+            ).filter { $0.agent == .claude }
+            guard !detected.isEmpty else { return }
+
+            // Unlike startup (ps failure ⇒ import-all fallback), the
+            // periodic path requires a live cwd map: resurrecting sessions
+            // the sweep just pruned, on a transient ps hiccup, would make
+            // cards flap. Skip the tick instead — the next one retries.
+            guard let cwdCounts = TerminalLocator.runningClaudeCwds() else { return }
+            let live = LivenessFilter.filterLiveDetected(
+                detected, cwdCounts: cwdCounts, codexCwdCounts: nil)
+            guard !live.isEmpty else { return }
+
+            await MainActor.run { [weak self] in
+                guard let self else { return }
+                let imported = self.sessionStore.importDetectedSessions(live)
+                if imported > 0 {
+                    NSLog("ZackEyes: passive rescan imported %d claude sessions", imported)
+                    // PID discovery + OSC2 titles only when something new landed.
+                    self.activateDetectedSessions()
+                }
             }
         }
     }

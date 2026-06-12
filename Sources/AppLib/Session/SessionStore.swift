@@ -651,9 +651,8 @@ public final class SessionStore: ObservableObject {
     /// Returns the number of sessions actually created/refreshed. The #83
     /// periodic rescan re-feeds known sessions every tick: when the
     /// transcript hasn't moved (`lastModified` matches `lastActiveAt`), the
-    /// rebuild is skipped — no TaskExtractor re-parse, and enrichment
-    /// written by other paths (codex tailer fields, recap fallbacks)
-    /// survives.
+    /// rebuild is skipped — no TaskExtractor re-parse, and any enrichment
+    /// written since the last import (e.g. recap fallbacks) survives.
     @discardableResult
     public func importDetectedSessions(_ detected: [SessionScanner.DetectedSession]) -> Int {
         var imported = 0
