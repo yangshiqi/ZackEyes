@@ -180,22 +180,22 @@ public struct HookInstaller {
 
         let originalSettings = settings
 
-        guard var hooks = settings["hooks"] as? [String: Any] else { return }
-
-        for event in Self.hookEvents {
-            guard var entries = hooks[event] as? [[String: Any]] else { continue }
-            entries.removeAll { isZackEyesEntry($0) }
-            if entries.isEmpty {
-                hooks.removeValue(forKey: event)
-            } else {
-                hooks[event] = entries
+        if var hooks = settings["hooks"] as? [String: Any] {
+            for event in Self.hookEvents {
+                guard var entries = hooks[event] as? [[String: Any]] else { continue }
+                entries.removeAll { isZackEyesEntry($0) }
+                if entries.isEmpty {
+                    hooks.removeValue(forKey: event)
+                } else {
+                    hooks[event] = entries
+                }
             }
-        }
 
-        if hooks.isEmpty {
-            settings.removeValue(forKey: "hooks")
-        } else {
-            settings["hooks"] = hooks
+            if hooks.isEmpty {
+                settings.removeValue(forKey: "hooks")
+            } else {
+                settings["hooks"] = hooks
+            }
         }
 
         // Remove statusLine if we own it (direct or mux)

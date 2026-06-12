@@ -741,6 +741,27 @@ struct HookInstallerTests {
         #expect(try backupFiles(in: claudeDir).isEmpty)
     }
 
+    // MARK: - #46 Part A: orphan statusLine removed even when hooks key absent
+
+    @Test func uninstallRemovesOrphanStatusLineWithoutHooksKey() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let claudeDir = tmpDir.appendingPathComponent(".claude")
+        try FileManager.default.createDirectory(at: claudeDir, withIntermediateDirectories: true)
+        let settingsURL = claudeDir.appendingPathComponent("settings.json")
+        let bridgePath = tmpDir.appendingPathComponent(".zackeyes/bin/bridge").path
+        // Our statusLine, but NO hooks key (user hand-pruned hooks).
+        try #"{"statusLine":{"type":"command","command":"\#(bridgePath) --event StatusLine --agent claude"}}"#
+            .write(to: settingsURL, atomically: true, encoding: .utf8)
+
+        try HookInstaller(settingsPath: settingsURL.path, bridgePath: bridgePath)
+            .uninstallHooks()
+
+        let doc = try JSONSerialization.jsonObject(
+            with: Data(contentsOf: settingsURL)) as! [String: Any]
+        #expect(doc["statusLine"] == nil)
+    }
+
     // MARK: - Test 11: installs observation-only Claude lifecycle events
 
     @Test func installsObservationOnlyClaudeLifecycleEvents() throws {
