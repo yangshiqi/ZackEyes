@@ -69,6 +69,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         do {
             try socketServer.start()
+            // #89 — replay fire-and-forget events the bridge spooled while the
+            // app was closed. Same routing as live socket events; isReplayed
+            // suppresses stale notifications inside handleEvent.
+            let replayedCount = PendingEventReplayer().replayAll { [weak self] event in
+                self?.handleEvent(event, responder: nil)
+            }
+            if replayedCount > 0 {
+                NSLog("ZackEyes: replayed %d pending hook events", replayedCount)
+            }
         } catch {
             NSLog("ZackEyes: Failed to start socket server: \(error)")
         }
@@ -572,7 +581,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                   let session = sessionStore.sessions[sid] else { return }
 
             // Notify if an error was JUST detected on this session
-            if let errLabel = session.errorMessage,
+            // Replayed events never notify — the error/finish happened while
+            // the app was closed; the panel state is refreshed silently.
+            if !event.isReplayed,
+               let errLabel = session.errorMessage,
                session.errorAt != priorErrorAt {
                 NotificationManager.shared.notifyError(
                     sessionId: sid,
@@ -603,7 +615,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // The previous `didWorkThisTurn = toolCount-after > toolCount-before`
             // check was always false: Stop doesn't change toolCallCount,
             // so both sides of the comparison were the same captured value.
-            if event.bridgeEvent == "Stop",
+            if !event.isReplayed,
+               event.bridgeEvent == "Stop",
                session.errorMessage == nil,    // don't double-notify on errors
                priorState == .working || priorState == .waiting {
                 let didAnyTooling = session.toolCallCount > 0

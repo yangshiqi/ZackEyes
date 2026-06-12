@@ -141,9 +141,13 @@ case "PreToolUse":
     exit(0)
 
 default:
-    // Fire-and-forget observation-only hook. Always exit 0 — if the
-    // socket isn't reachable we simply drop this event. The app will
-    // catch up on its own via the periodic SessionScanner sweep.
-    _ = client.sendFireAndForget(data: payloadData)
+    // Fire-and-forget observation-only hook. Always exit 0. If the socket
+    // isn't reachable (app not running), spool replayable lifecycle events
+    // to ~/.zackeyes/pending/ for startup replay (#89); everything else is
+    // dropped and recovered by the periodic SessionScanner sweep. The spool
+    // itself is best-effort and silent — invariant #2 holds either way.
+    if !client.sendFireAndForget(data: payloadData) {
+        PendingEventQueue().enqueueIfEligible(event: eventName, payload: payloadData)
+    }
     exit(0)
 }
