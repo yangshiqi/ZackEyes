@@ -382,6 +382,14 @@ struct SimulatedNotchFullView: View {
         hookStatus.target = GearMenuTarget.shared
         menu.addItem(hookStatus)
 
+        let uninstall = NSMenuItem(
+            title: "Uninstall Integrations…",
+            action: #selector(GearMenuTarget.uninstallClicked(_:)),
+            keyEquivalent: ""
+        )
+        uninstall.target = GearMenuTarget.shared
+        menu.addItem(uninstall)
+
         let visibility = ConfigStore().loadNotchVisibility()
         let showIsland = NSMenuItem(
             title: "Show Dynamic Island",

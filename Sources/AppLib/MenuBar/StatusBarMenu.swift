@@ -18,6 +18,7 @@ public final class StatusBarMenu: NSObject {
     private var hotkeyWindow: HotkeyRecorderWindow?
     private var aboutWindow: AboutWindow?
     private var hookStatusWindow: HookStatusWindow?
+    private var uninstallWindow: UninstallWindow?
 
     public init(updateChecker: UpdateChecker, downloader: UpdateDownloader) {
         self.updateChecker = updateChecker
@@ -71,6 +72,14 @@ public final class StatusBarMenu: NSObject {
         )
         hookStatus.target = self
         menu.addItem(hookStatus)
+
+        let uninstall = NSMenuItem(
+            title: "Uninstall Integrations…",
+            action: #selector(uninstallClicked(_:)),
+            keyEquivalent: ""
+        )
+        uninstall.target = self
+        menu.addItem(uninstall)
 
         let visibility = ConfigStore().loadNotchVisibility()
         let showIsland = NSMenuItem(
@@ -135,6 +144,13 @@ public final class StatusBarMenu: NSObject {
             hookStatusWindow = HookStatusWindow()
         }
         hookStatusWindow?.show()
+    }
+
+    @objc private func uninstallClicked(_ sender: Any?) {
+        if uninstallWindow == nil {
+            uninstallWindow = UninstallWindow()
+        }
+        uninstallWindow?.show()
     }
 
     @objc private func toggleVisibilityClicked(_ sender: Any?) {
