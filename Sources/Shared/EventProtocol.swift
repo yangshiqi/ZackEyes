@@ -110,6 +110,9 @@ public struct BridgeEvent: Codable, Sendable {
     public let contextWindow: [String: AnyCodable]?  // per-session context usage (Claude statusLine)
     public let model: [String: AnyCodable]?           // {id, display_name}
     public let cost: [String: AnyCodable]?            // {total_cost_usd, total_duration_ms, ...}
+    /// True when this event was replayed from the pending spool at app
+    /// startup rather than received live (#89). Suppresses notifications.
+    public let isReplayed: Bool
 
     public init(
         bridgeEvent: String,
@@ -128,7 +131,8 @@ public struct BridgeEvent: Codable, Sendable {
         rateLimits: [String: AnyCodable]? = nil,
         contextWindow: [String: AnyCodable]? = nil,
         model: [String: AnyCodable]? = nil,
-        cost: [String: AnyCodable]? = nil
+        cost: [String: AnyCodable]? = nil,
+        isReplayed: Bool = false
     ) {
         self.bridgeEvent = bridgeEvent
         self.agent = agent
@@ -147,6 +151,7 @@ public struct BridgeEvent: Codable, Sendable {
         self.contextWindow = contextWindow
         self.model = model
         self.cost = cost
+        self.isReplayed = isReplayed
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -167,6 +172,7 @@ public struct BridgeEvent: Codable, Sendable {
         case contextWindow        = "context_window"
         case model
         case cost
+        case isReplayed           = "_bridge_replayed"
     }
 
     public init(from decoder: Decoder) throws {
@@ -190,6 +196,7 @@ public struct BridgeEvent: Codable, Sendable {
         self.contextWindow = try c.decodeIfPresent([String: AnyCodable].self, forKey: .contextWindow)
         self.model = try c.decodeIfPresent([String: AnyCodable].self, forKey: .model)
         self.cost = try c.decodeIfPresent([String: AnyCodable].self, forKey: .cost)
+        self.isReplayed = (try? c.decodeIfPresent(Bool.self, forKey: .isReplayed)) ?? false
     }
 }
 
