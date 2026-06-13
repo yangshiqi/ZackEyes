@@ -4,16 +4,11 @@ import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { issuesUrl } from '../lib/release.mjs';
 
-const description = 'ZackEyes roadmap: hook health and event resilience, deeper process and session insight, more agent support, and privacy and logs controls.';
+const description = 'ZackEyes roadmap: deeper process and session insight, more agent support, and clearer local logs controls.';
 const roadmapItems = [
   {
-    title: 'Hook health and event resilience',
-    horizon: 'Next',
-    copy: 'Detect broken or missing hooks with one-click repair, keep improving Codex JSONL fallback and session cleanup, and replay events through a watchdog so a busy moment never drops a session update.'
-  },
-  {
     title: 'Process and session insight',
-    horizon: 'Exploration',
+    horizon: 'Next',
     copy: 'Surface what an agent is really doing — open ports and child processes, the subagent tree, and current git branch and dirty state — while holding the near-zero-CPU, no-polling line.'
   },
   {
@@ -22,9 +17,9 @@ const roadmapItems = [
     copy: 'Keep Claude Code and Codex CLI first-class while evaluating other local AI coding agents that expose reliable lifecycle and permission events.'
   },
   {
-    title: 'Privacy and logs controls',
+    title: 'Local logs controls',
     horizon: 'Exploration',
-    copy: 'Expose clearer controls for local logs, local settings cleanup, and diagnostics that are safe to share in GitHub Issues.'
+    copy: 'Expose clearer controls for local log capture and retention.'
   }
 ];
 const roadmapStructuredData = {
@@ -57,7 +52,7 @@ const roadmapStructuredData = {
           <div class="section-eyebrow">Product direction</div>
           <h1 id="roadmap-title">Roadmap.</h1>
           <p class="policy-lede">
-            ZackEyes is focused on reliable local agent awareness: stronger hook health and event resilience, sharper session and process insight, broader agent support, and clearer privacy and logs controls — without breaking its near-zero-CPU, zero-dependency design.
+            ZackEyes is focused on reliable local agent awareness: sharper session and process insight, broader agent support, and clearer local logs controls — without breaking its near-zero-CPU, zero-dependency design.
           </p>
           <div class="hero-actions">
             <a class="button primary" href={issuesUrl}>Request a feature <span aria-hidden="true">↗</span></a>
