@@ -32,9 +32,9 @@ The homepage currently uses no React island and no generated client JavaScript b
 - pnpm 10.28.2 is the pinned package manager, declared in `package.json`.
 - The production target must support static file hosting.
 - The canonical production origin is currently `https://zackeyes.app`; update `astro.config.mjs`, `public/robots.txt`, and LLM text endpoints if the final domain changes.
-- Latest public release: `https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.6.0/ZackEyes-0.6.0.dmg`.
-- DMG size: 3.1 MB.
-- SHA256: `477f81d60048b540887635dd47ebdabf844d2b9dce1b385675552750a0614ede`.
+- Latest public release: `https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.7.0/ZackEyes-0.7.0.dmg`.
+- DMG size: 3.4 MB.
+- SHA256: `c4f8806c18b873db311b41cf893b6fbc92048d677974459072ba4ff195cf47fb`.
 - Issues and feature requests: `https://github.com/yangshiqi/ZackEyes-release/issues`.
 - Release metadata is centralised in [`src/lib/release.mjs`](src/lib/release.mjs); update that file on each release and every page + test will pick up the new values.
 - `make release` in the ccisland repo triggers the [`bump-version`](.github/workflows/bump-version.yml) workflow here via `gh workflow run`, which rewrites `src/lib/release.mjs` with the new DMG metadata and opens a PR. The PR is intentionally not auto-merged so a changelog entry can be added by hand on the same branch.
