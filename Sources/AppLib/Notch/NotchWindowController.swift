@@ -107,9 +107,15 @@ public final class NotchWindowController {
     public func applyVisibility(_ v: NotchVisibility) {
         visibility = v
         guard let panel = panel else { return }
-        if v == .hidden && currentState != .expanded {
+        let shouldShow: Bool
+        switch v {
+        case .always:     shouldShow = true
+        case .hidden:     shouldShow = false
+        case .whenActive: shouldShow = !viewModel.sessionStore.sessions.isEmpty
+        }
+        if !shouldShow && currentState != .expanded {
             panel.orderOut(nil)
-        } else if v == .always && !panel.isVisible {
+        } else if shouldShow && !panel.isVisible {
             panel.orderFrontRegardless()
         }
     }
