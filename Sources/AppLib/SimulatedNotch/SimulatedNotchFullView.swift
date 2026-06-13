@@ -374,15 +374,27 @@ struct SimulatedNotchFullView: View {
         hotkey.target = GearMenuTarget.shared
         menu.addItem(hotkey)
 
-        let visibility = ConfigStore().loadNotchVisibility()
-        let showIsland = NSMenuItem(
-            title: "Show Dynamic Island",
-            action: #selector(GearMenuTarget.toggleVisibilityClicked(_:)),
-            keyEquivalent: ""
-        )
-        showIsland.target = GearMenuTarget.shared
-        showIsland.state = (visibility == .always) ? .on : .off
-        menu.addItem(showIsland)
+        let visibilityMenu = NSMenu()
+        let currentVisibility = ConfigStore().loadNotchVisibility()
+        let visibilityOptions: [(String, NotchVisibility)] = [
+            ("Always", .always),
+            ("Only When Sessions Active", .whenActive),
+            ("Hidden", .hidden),
+        ]
+        for (title, value) in visibilityOptions {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(GearMenuTarget.visibilityOptionClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.target = GearMenuTarget.shared
+            item.representedObject = value.rawValue
+            item.state = (value == currentVisibility) ? .on : .off
+            visibilityMenu.addItem(item)
+        }
+        let visibilityItem = NSMenuItem(title: "Dynamic Island", action: nil, keyEquivalent: "")
+        visibilityItem.submenu = visibilityMenu
+        menu.addItem(visibilityItem)
 
         // "Move Notch" groups the two position actions in one dimension:
         // enter drag-reposition mode, or jump straight back to center.
@@ -489,6 +501,14 @@ struct SimulatedNotchFullView: View {
         hookStatus.target = GearMenuTarget.shared
         menu.addItem(hookStatus)
 
+        let repair = NSMenuItem(
+            title: "Repair Hooks",
+            action: #selector(GearMenuTarget.repairHooksClicked(_:)),
+            keyEquivalent: ""
+        )
+        repair.target = GearMenuTarget.shared
+        menu.addItem(repair)
+
         let uninstall = NSMenuItem(
             title: "Uninstall Integrations…",
             action: #selector(GearMenuTarget.uninstallClicked(_:)),
@@ -496,6 +516,14 @@ struct SimulatedNotchFullView: View {
         )
         uninstall.target = GearMenuTarget.shared
         menu.addItem(uninstall)
+
+        let checkUpdates = NSMenuItem(
+            title: "Check for Updates",
+            action: #selector(GearMenuTarget.checkUpdatesClicked(_:)),
+            keyEquivalent: ""
+        )
+        checkUpdates.target = GearMenuTarget.shared
+        menu.addItem(checkUpdates)
 
         menu.addItem(.separator())
 
@@ -510,6 +538,7 @@ struct SimulatedNotchFullView: View {
         GearMenuTarget.shared.downloader = downloader
         GearMenuTarget.shared.dmgURL = updateChecker.dmgURL
         GearMenuTarget.shared.releaseURL = updateChecker.releaseURL
+        GearMenuTarget.shared.updateChecker = updateChecker
         GearMenuTarget.shared.modeStore = modeStore
         GearMenuTarget.shared.usageTracker = usageTracker
 
