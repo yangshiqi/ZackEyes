@@ -178,22 +178,24 @@ public struct HookInstaller {
             return
         }
 
-        guard var hooks = settings["hooks"] as? [String: Any] else { return }
+        let originalSettings = settings
 
-        for event in Self.hookEvents {
-            guard var entries = hooks[event] as? [[String: Any]] else { continue }
-            entries.removeAll { isZackEyesEntry($0) }
-            if entries.isEmpty {
-                hooks.removeValue(forKey: event)
-            } else {
-                hooks[event] = entries
+        if var hooks = settings["hooks"] as? [String: Any] {
+            for event in Self.hookEvents {
+                guard var entries = hooks[event] as? [[String: Any]] else { continue }
+                entries.removeAll { isZackEyesEntry($0) }
+                if entries.isEmpty {
+                    hooks.removeValue(forKey: event)
+                } else {
+                    hooks[event] = entries
+                }
             }
-        }
 
-        if hooks.isEmpty {
-            settings.removeValue(forKey: "hooks")
-        } else {
-            settings["hooks"] = hooks
+            if hooks.isEmpty {
+                settings.removeValue(forKey: "hooks")
+            } else {
+                settings["hooks"] = hooks
+            }
         }
 
         // Remove statusLine if we own it (direct or mux)
@@ -212,6 +214,17 @@ public struct HookInstaller {
             // Clean up mux files
             cleanupStatusLineMuxFiles()
         }
+
+        // No-op guard: if removing our entries changed nothing, skip backup and write.
+        if NSDictionary(dictionary: settings).isEqual(to: originalSettings) {
+            return
+        }
+
+        try data.write(to: settingsURL
+            .deletingLastPathComponent()
+            .appendingPathComponent(
+                "settings.json.backup.\(Int(Date().timeIntervalSince1970))"
+            ))
 
         try writeSettings(settings, to: settingsURL)
     }

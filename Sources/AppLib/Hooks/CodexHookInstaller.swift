@@ -127,6 +127,8 @@ public struct CodexHookInstaller {
             return
         }
 
+        let originalDoc = doc
+
         guard var hooks = doc["hooks"] as? [String: Any] else { return }
 
         for event in Self.hookEvents {
@@ -144,6 +146,16 @@ public struct CodexHookInstaller {
         } else {
             doc["hooks"] = hooks
         }
+
+        // No-op guard: if removing our entries changed nothing, skip backup and write.
+        if NSDictionary(dictionary: doc).isEqual(to: originalDoc) {
+            return
+        }
+
+        let backupURL = hooksURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("hooks.json.backup.\(Int(Date().timeIntervalSince1970))")
+        try data.write(to: backupURL)
 
         // If the doc is now empty (we owned the entire hooks.json), delete the
         // file rather than leaving an empty `{}` dangling.

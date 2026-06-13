@@ -180,8 +180,9 @@ PricingStore.start()
 **Hook 安装**
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | Claude 路径——静默安装/卸载 `~/.claude/settings.json` 的 `hooks` + `statusLine`，备份保护，附加合并，支持可选 `~/.zackeyes/bin/statusline-user` 显示扩展，所有变更含 `zackeyes` 标识 + `--agent claude` flag；重装为 no-op 时跳过备份与写入（幂等，防 backup 刷屏） |
-| `CodexHookInstaller` | `Sources/AppLib/Hooks/CodexHookInstaller.swift` | Codex 路径——静默安装/卸载 `~/.codex/hooks.json` 的 6 个事件，命令含 `--agent codex`。同样的备份 / 解析失败不动 / 用户内容保留契约。**不读不写 `~/.codex/config.toml`**（codex 默认开 hooks）；重装为 no-op 时跳过备份与写入（幂等，防 backup 刷屏） |
+| `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | Claude 路径——静默安装/卸载 `~/.claude/settings.json` 的 `hooks` + `statusLine`，备份保护，附加合并，支持可选 `~/.zackeyes/bin/statusline-user` 显示扩展，所有变更含 `zackeyes` 标识 + `--agent claude` flag；重装为 no-op 时跳过备份与写入（幂等，防 backup 刷屏）；卸载亦先备份 + no-op 跳过（#46） |
+| `CodexHookInstaller` | `Sources/AppLib/Hooks/CodexHookInstaller.swift` | Codex 路径——静默安装/卸载 `~/.codex/hooks.json` 的 6 个事件，命令含 `--agent codex`。同样的备份 / 解析失败不动 / 用户内容保留契约。**不读不写 `~/.codex/config.toml`**（codex 默认开 hooks）；重装为 no-op 时跳过备份与写入（幂等，防 backup 刷屏）；卸载亦先备份 + no-op 跳过（#46） |
+| `IntegrationUninstaller` | `Sources/AppLib/Hooks/IntegrationUninstaller.swift` | #46 完整卸载：只读 `preview()` 复用 installer 检测内核（与 `execute()` 不漂移）+ 尽力 `execute()`（双 `uninstallHooks()` + 清除 bridge/mux/.app-path/.statusline-original/pending）。保留第三方条目、config.json、pricing-cache.json、statusline-user；不碰 codex config.toml。 |
 | `HookHealth` | `Sources/AppLib/Hooks/HookHealth.swift` | 只读健康检查（#38）：claude/codex hook 条目完整性、bridge launcher 可执行、launcher 解析是否指向当前 bundle、socket 存在性、statusLine 归属分类（direct/mux/userRenderer/thirdParty/absent/unreadable）。复用 installer 的事件表与条目识别，绝不写任何文件。 |
 | `HookRepair` | `Sources/AppLib/Hooks/HookRepair.swift` | 共享修复入口 = deployLauncherScript + 双 installer 重装；AppDelegate 启动与 Hook Status 窗口 Repair 按钮共用。 |
 
@@ -229,6 +230,7 @@ PricingStore.start()
 |------|------|------|
 | `MenuBarFallback` | `Sources/AppLib/MenuBar/MenuBarFallback.swift` | sparkles 状态栏图标 + NSPopover；外部点击监听器自动关闭 |
 | `HookStatusWindow` | `Sources/AppLib/MenuBar/HookStatusWindow.swift` | Hook Status 卡片（KeyablePanel + SwiftUI，仿 AboutWindow）：6 行健康状态 + Repair Hooks 按钮；状态栏右键菜单与齿轮菜单共用同一实现。 |
+| `UninstallWindow` | `Sources/AppLib/MenuBar/UninstallWindow.swift` | #46 卸载确认卡片：预览将移除项 → Remove Integrations → 完成态可选 Quit / 继续运行（重新启动会自动重装集成）。两个菜单入口（状态栏右键菜单与齿轮菜单）共用。 |
 
 **全局功能**
 | 模块 | 文件 | 职责 |
@@ -276,7 +278,7 @@ Source code lives in **`yangshiqi/ZackEyes` (private)**; release artifacts (DMG)
 
 ### Hook 注入安全
 
-1. 写入前备份: `settings.json.backup.{timestamp}`
+1. 写入前备份: `settings.json.backup.{timestamp}`（安装与卸载的每次写入均先备份）
 2. 只追加 `hooks` key，不碰 `permissions` / `enabledPlugins` / `defaultMode` / `theme` 等
 3. JSON 解析失败 → 不修改原文件
 4. 我们的条目通过 command 路径中的 `zackeyes` 字符串可识别

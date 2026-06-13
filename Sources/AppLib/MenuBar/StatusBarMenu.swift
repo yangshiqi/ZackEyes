@@ -18,6 +18,7 @@ public final class StatusBarMenu: NSObject {
     private var hotkeyWindow: HotkeyRecorderWindow?
     private var aboutWindow: AboutWindow?
     private var hookStatusWindow: HookStatusWindow?
+    private var uninstallWindow: UninstallWindow?
 
     public init(updateChecker: UpdateChecker, downloader: UpdateDownloader) {
         self.updateChecker = updateChecker
@@ -64,14 +65,6 @@ public final class StatusBarMenu: NSObject {
         hotkey.target = self
         menu.addItem(hotkey)
 
-        let hookStatus = NSMenuItem(
-            title: "Hook Status…",
-            action: #selector(hookStatusClicked(_:)),
-            keyEquivalent: ""
-        )
-        hookStatus.target = self
-        menu.addItem(hookStatus)
-
         let visibility = ConfigStore().loadNotchVisibility()
         let showIsland = NSMenuItem(
             title: "Show Dynamic Island",
@@ -83,6 +76,28 @@ public final class StatusBarMenu: NSObject {
         menu.addItem(showIsland)
 
         menu.addItem(themeSubmenuItem())
+
+        // Low-frequency maintenance actions sink to the bottom (macOS
+        // convention: diagnostics/destructive near Quit, fenced by
+        // separators) so daily toggles stay at eye level.
+        menu.addItem(.separator())
+
+        let hookStatus = NSMenuItem(
+            title: "Hook Status…",
+            action: #selector(hookStatusClicked(_:)),
+            keyEquivalent: ""
+        )
+        hookStatus.target = self
+        menu.addItem(hookStatus)
+
+        let uninstall = NSMenuItem(
+            title: "Uninstall Integrations…",
+            action: #selector(uninstallClicked(_:)),
+            keyEquivalent: ""
+        )
+        uninstall.target = self
+        menu.addItem(uninstall)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(
@@ -135,6 +150,13 @@ public final class StatusBarMenu: NSObject {
             hookStatusWindow = HookStatusWindow()
         }
         hookStatusWindow?.show()
+    }
+
+    @objc private func uninstallClicked(_ sender: Any?) {
+        if uninstallWindow == nil {
+            uninstallWindow = UninstallWindow()
+        }
+        uninstallWindow?.show()
     }
 
     @objc private func toggleVisibilityClicked(_ sender: Any?) {

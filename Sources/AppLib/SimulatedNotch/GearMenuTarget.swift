@@ -18,6 +18,7 @@ final class GearMenuTarget: NSObject {
     var downloader: UpdateDownloader?
     private var previewSound: NSSound?
     private var hookStatusWindow: HookStatusWindow?
+    private var uninstallWindow: UninstallWindow?
 
     @objc func aboutClicked(_ sender: Any?) {
         modeStore?.isMenuOpen = false
@@ -38,6 +39,14 @@ final class GearMenuTarget: NSObject {
             hookStatusWindow = HookStatusWindow()
         }
         hookStatusWindow?.show()
+    }
+
+    @objc func uninstallClicked(_ sender: Any?) {
+        modeStore?.isMenuOpen = false
+        if uninstallWindow == nil {
+            uninstallWindow = UninstallWindow()
+        }
+        uninstallWindow?.show()
     }
 
     @objc func updateClicked(_ sender: Any?) {
