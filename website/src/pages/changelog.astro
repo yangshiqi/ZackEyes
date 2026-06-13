@@ -7,6 +7,31 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.7.0',
+    date: 'Published June 13, 2026',
+    summary: 'Reliability & diagnostics release: see and repair your hook health, fully uninstall integrations, export a shareable diagnostic report, recover events across restarts, and keep the panel visible only when it matters.',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Hook Status window — an at-a-glance health check (Claude & Codex hooks, bridge launcher, launcher resolution, socket reachability, statusLine ownership) with one-click Repair, reachable from both the status-bar and gear menus.',
+          'Complete integration uninstall — preview exactly what will be removed, then strip ZackEyes hooks, statusLine entries and the launcher while preserving third-party entries and your own files; every config write is backed up first.',
+          'Export Diagnostics — a privacy-redacted, human-readable report (versions, hook health, socket, usage freshness) you can review before sharing and safely attach to a GitHub issue; home paths and username are redacted and no prompt content is ever included.',
+          'Offline event recovery — fire-and-forget hook events that occur while ZackEyes is closed now spool to disk and replay at next launch, so session activity is not lost.',
+          'Passive session discovery — Claude sessions started after launch now appear within about a minute even when hooks are not installed.',
+          'Check for Updates menu item — trigger an update check on demand instead of waiting for the periodic poll.'
+        ]
+      },
+      {
+        label: 'Changed',
+        items: [
+          'Dynamic Island visibility is now a three-way choice — Always, Only When Sessions Active (auto-hides when idle, reappears on activity), or Hidden.',
+          'Menus reorganized — diagnostic and maintenance actions (Hook Status, Uninstall, Check for Updates, Export Diagnostics) are grouped at the bottom, near Quit.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.6.0',
     date: 'Published June 5, 2026',
     summary: 'Burn-rate cap prediction, plus a more glanceable and trustworthy usage panel.',
