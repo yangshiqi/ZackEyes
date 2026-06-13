@@ -76,13 +76,6 @@ final class GearMenuTarget: NSObject {
         }
     }
 
-    @objc func repairHooksClicked(_ sender: Any?) {
-        modeStore?.isMenuOpen = false
-        Task.detached(priority: .utility) {
-            HookRepair.run(appPath: Bundle.main.bundlePath)
-        }
-    }
-
     @objc func checkUpdatesClicked(_ sender: Any?) {
         modeStore?.isMenuOpen = false
         updateChecker?.checkNow()

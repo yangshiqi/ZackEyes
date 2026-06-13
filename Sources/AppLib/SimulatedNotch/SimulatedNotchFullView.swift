@@ -501,14 +501,6 @@ struct SimulatedNotchFullView: View {
         hookStatus.target = GearMenuTarget.shared
         menu.addItem(hookStatus)
 
-        let repair = NSMenuItem(
-            title: "Repair Hooks",
-            action: #selector(GearMenuTarget.repairHooksClicked(_:)),
-            keyEquivalent: ""
-        )
-        repair.target = GearMenuTarget.shared
-        menu.addItem(repair)
-
         let uninstall = NSMenuItem(
             title: "Uninstall Integrations…",
             action: #selector(GearMenuTarget.uninstallClicked(_:)),

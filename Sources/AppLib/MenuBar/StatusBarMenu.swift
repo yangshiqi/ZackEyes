@@ -82,14 +82,6 @@ public final class StatusBarMenu: NSObject {
         hookStatus.target = self
         menu.addItem(hookStatus)
 
-        let repair = NSMenuItem(
-            title: "Repair Hooks",
-            action: #selector(repairHooksClicked(_:)),
-            keyEquivalent: ""
-        )
-        repair.target = self
-        menu.addItem(repair)
-
         let uninstall = NSMenuItem(
             title: "Uninstall Integrations…",
             action: #selector(uninstallClicked(_:)),
@@ -176,12 +168,6 @@ public final class StatusBarMenu: NSObject {
             name: .notchVisibilityChanged, object: nil,
             userInfo: ["visibility": v]
         )
-    }
-
-    @objc private func repairHooksClicked(_ sender: Any?) {
-        Task.detached(priority: .utility) {
-            HookRepair.run(appPath: Bundle.main.bundlePath)
-        }
     }
 
     @objc private func checkUpdatesClicked(_ sender: Any?) {
