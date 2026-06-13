@@ -167,7 +167,10 @@ public final class SimulatedNotchController {
         hostingView.autoresizingMask = [.width, .height]
         panel.contentView = hostingView
 
-        if visibility == .always {
+        // `.whenActive` with sessions already present at setup shows
+        // immediately; an empty store stays hidden until the session-boundary
+        // sink (AppDelegate) recalls it.
+        if shouldBeVisible {
             panel.orderFrontRegardless()
         }
         // Hidden: stay off-screen. forceExpand / hotkey / menu click / events
@@ -251,8 +254,9 @@ public final class SimulatedNotchController {
             if !modeStore.isHotkeyRecorderShown {
                 panel.allowsKeyStatus = false
             }
-            // Hidden: once collapsed, immediately remove the panel from screen.
-            if visibility == .hidden {
+            // Once collapsed, remove the panel from screen if it shouldn't be
+            // visible (.hidden, or .whenActive with no sessions).
+            if !shouldBeVisible {
                 panel.orderOut(nil)
             }
         }
@@ -327,13 +331,14 @@ public final class SimulatedNotchController {
         let hoverArea: CGRect
         switch mode {
         case .compact, .hoverWide:
-            // In hidden mode the off-screen pill must not auto-expand on
-            // hover — only hotkey / menu / explicit event may recall it.
-            // Placed inside the compact branch (not at function entry) so
-            // that `.full` still runs the mouse-out collapse logic below,
-            // matching NotchWindowController's parity and guaranteeing the
-            // "next collapse orders out" promise in applyVisibility's doc.
-            if visibility == .hidden { return }
+            // When the pill is meant to be off-screen (.hidden, or
+            // .whenActive with no sessions) it must not auto-expand on hover —
+            // only hotkey / menu / explicit event may recall it. Placed inside
+            // the compact branch (not at function entry) so that `.full` still
+            // runs the mouse-out collapse logic below, matching
+            // NotchWindowController's parity and guaranteeing the "next
+            // collapse orders out" promise in applyVisibility's doc.
+            if !shouldBeVisible { return }
             hoverArea = panelFrame.insetBy(dx: -20, dy: -12)
         case .full:
             hoverArea = panelFrame.insetBy(dx: -16, dy: -16)
@@ -473,8 +478,8 @@ public final class SimulatedNotchController {
         // Collapse to the compact pill — that's the always-visible element the
         // user wants to position out from under the menu-bar icons.
         setMode(.compact)
-        // `setMode(.compact)` orders the panel out when visibility == .hidden;
-        // move mode needs the pill on-screen to drag, so force it back.
+        // `setMode(.compact)` orders the panel out when it shouldn't be
+        // visible; move mode needs the pill on-screen to drag, so force it back.
         if !panel.isVisible { panel.orderFrontRegardless() }
         modeStore.isMovingNotch = true
         startMoveMonitors()
@@ -545,9 +550,10 @@ public final class SimulatedNotchController {
         dragGrabOffsetX = nil
         stopMoveMonitors()
         modeStore.isMovingNotch = false
-        // Restore hidden-mode behaviour: a hidden notch shouldn't linger
+        // Restore auto-hide behaviour: a panel that shouldn't be visible
+        // (.hidden, or .whenActive with no sessions) shouldn't linger
         // on-screen once the user has finished positioning it.
-        if visibility == .hidden, mode != .full { panel?.orderOut(nil) }
+        if !shouldBeVisible, mode != .full { panel?.orderOut(nil) }
     }
 
     private func stopMoveMonitors() {
@@ -584,15 +590,23 @@ public final class SimulatedNotchController {
     /// - `.always` → order the panel back on-screen, leave mode untouched
     /// - `.hidden` + currently full → leave on-screen; next collapse will
     ///   naturally `orderOut` via the tail of `setMode(.compact)`
+    /// Whether the panel should currently be on-screen, given the visibility
+    /// mode and (for `.whenActive`) the live session count. Single source of
+    /// truth for every show/hide decision in this controller — the collapse,
+    /// hover, and move-mode paths consult it too, so `.whenActive` is honored
+    /// everywhere, not just in `applyVisibility`.
+    private var shouldBeVisible: Bool {
+        switch visibility {
+        case .always:     return true
+        case .hidden:     return false
+        case .whenActive: return !viewModel.sessionStore.sessions.isEmpty
+        }
+    }
+
     public func applyVisibility(_ v: NotchVisibility) {
         visibility = v
         guard let panel = panel else { return }
-        let shouldShow: Bool
-        switch v {
-        case .always:     shouldShow = true
-        case .hidden:     shouldShow = false
-        case .whenActive: shouldShow = !viewModel.sessionStore.sessions.isEmpty
-        }
+        let shouldShow = shouldBeVisible
         if !shouldShow && mode != .full {
             panel.orderOut(nil)
         } else if shouldShow && !panel.isVisible {
