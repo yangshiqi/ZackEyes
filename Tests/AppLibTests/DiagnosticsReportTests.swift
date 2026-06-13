@@ -37,6 +37,8 @@ struct DiagnosticsReportTests {
         )
         // Human-readable headers present
         #expect(text.contains("ZackEyes Diagnostics"))
+        // Absolute generation timestamp (UTC ISO8601) from the injected `now`.
+        #expect(text.contains("Generated: 2023-11-14T22:14:20Z"))
         #expect(text.contains("App version: 0.7.0"))
         #expect(text.contains("macOS: 15.3.2"))
         #expect(text.contains("Architecture: arm64"))

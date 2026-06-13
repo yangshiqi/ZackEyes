@@ -20,6 +20,7 @@ public enum DiagnosticsReport {
         var lines: [String] = []
         lines.append("ZackEyes Diagnostics")
         lines.append("====================")
+        lines.append("Generated: \(iso8601(now))")
         lines.append("App version: \(appVersion)")
         lines.append("macOS: \(osVersion)")
         lines.append("Architecture: \(arch)")
@@ -99,5 +100,14 @@ public enum DiagnosticsReport {
         if secs < 3600 { return "\(secs / 60)m ago" }
         if secs < 86400 { return "\(secs / 3600)h ago" }
         return "\(secs / 86400)d ago"
+    }
+
+    /// Absolute report-generation time (UTC ISO8601) so the relative usage
+    /// ages above stay interpretable once the report is detached/attached
+    /// to an issue. Timestamp only — privacy-safe.
+    private static func iso8601(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f.string(from: date)
     }
 }
