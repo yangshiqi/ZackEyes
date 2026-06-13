@@ -241,6 +241,9 @@ PricingStore.start()
 | `MenuBarFallback` | `Sources/AppLib/MenuBar/MenuBarFallback.swift` | sparkles 状态栏图标 + NSPopover；外部点击监听器自动关闭 |
 | `HookStatusWindow` | `Sources/AppLib/MenuBar/HookStatusWindow.swift` | Hook Status 卡片（KeyablePanel + SwiftUI，仿 AboutWindow）：6 行健康状态 + Repair Hooks 按钮；状态栏右键菜单与齿轮菜单共用同一实现。 |
 | `UninstallWindow` | `Sources/AppLib/MenuBar/UninstallWindow.swift` | #46 卸载确认卡片：预览将移除项 → Remove Integrations → 完成态可选 Quit / 继续运行（重新启动会自动重装集成）。两个菜单入口（状态栏右键菜单与齿轮菜单）共用。 |
+| `Redactor` | `Sources/AppLib/Diagnostics/Redactor.swift` | #47 纯文本脱敏：home→`~`、用户名→`<user>`，注入式无 I/O，完全可测试。过度脱敏（短用户名）是安全方向——绝不为了美观而放宽，以防真实用户名泄漏。 |
+| `DiagnosticsReport` | `Sources/AppLib/Diagnostics/DiagnosticsReport.swift` | #47 隐私安全诊断报告（固定 schema）：版本/OS/arch + HookHealth 布尔值 + 用量新鲜度，复用 `HookHealth`。唯一自由文本字段（statusLine 第三方命令）经 `Redactor` 脱敏；绝不含 prompt/assistant/工具参数/完整配置内容。`generate` 纯函数（依赖注入），`current()` 为薄 `@MainActor` 聚合层。 |
+| `DiagnosticsWindow` | `Sources/AppLib/MenuBar/DiagnosticsWindow.swift` | #47 导出审阅窗口（`KeyablePanel` 仿 `HookStatusWindow`）：滚动展示脱敏报告 + Copy/Save…/Close，用户分享前可先审阅内容。两菜单"Export Diagnostics…"共用同一实例。 |
 
 **全局功能**
 | 模块 | 文件 | 职责 |
@@ -293,6 +296,14 @@ Source code lives in **`yangshiqi/ZackEyes` (private)**; release artifacts (DMG)
 3. JSON 解析失败 → 不修改原文件
 4. 我们的条目通过 command 路径中的 `zackeyes` 字符串可识别
 5. 卸载时精确移除我们的条目，不影响其他 hooks
+
+### 诊断导出安全
+
+- **用户主动触发**：仅在"Export Diagnostics…"菜单项点击时生成，无自动触发、无定时器、不联网。
+- **固定 schema**：只含版本/OS/arch + HookHealth 布尔摘要 + 用量时间戳，无会话内容。
+- **脱敏**：home 路径压缩为 `~`，用户名替换为 `<user>`（`Redactor`）；唯一自由文本字段（statusLine 第三方命令路径）同样经过脱敏。
+- **不含敏感内容**：绝不输出 prompt / assistant 回复 / 工具参数 / 完整配置文件内容。
+- **不外发**：报告仅写到剪贴板或用户选定的本地文件，App 自身不上传。
 
 ### NotchPanel 安全
 
