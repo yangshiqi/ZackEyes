@@ -145,7 +145,11 @@ private struct DiagnosticsCardView: View {
         sp.allowedContentTypes = [.plainText]
         sp.begin { resp in
             if resp == .OK, let url = sp.url {
-                try? report.data(using: .utf8)?.write(to: url)
+                do {
+                    try report.write(to: url, atomically: true, encoding: .utf8)
+                } catch {
+                    NSLog("ZackEyes: failed to save diagnostics report: \(error)")
+                }
             }
         }
     }
