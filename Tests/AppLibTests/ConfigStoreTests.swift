@@ -212,6 +212,22 @@ final class ConfigStoreTests: XCTestCase {
         XCTAssertEqual(after, garbage)
     }
 
+    // MARK: - #48 whenActive visibility
+
+    func testWhenActiveVisibilityRoundTrips() {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveNotchVisibility(.whenActive)
+        XCTAssertEqual(store.loadNotchVisibility(), .whenActive)
+    }
+
+    func testUnknownVisibilityRawFallsBackToAlways() throws {
+        let configURL = tmpDir.appendingPathComponent("config.json")
+        try #"{"notchVisibility":"bogus"}"#
+            .write(to: configURL, atomically: true, encoding: .utf8)
+        let store = ConfigStore(directory: tmpDir.path)
+        XCTAssertEqual(store.loadNotchVisibility(), .always)
+    }
+
     // MARK: - Show Today Consumption
 
     func testShowTodayConsumptionDefaultsTrue() {

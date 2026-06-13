@@ -13,6 +13,7 @@ final class GearMenuTarget: NSObject {
     static let shared = GearMenuTarget()
     weak var modeStore: NotchModeStore?
     weak var usageTracker: UsageTracker?
+    weak var updateChecker: UpdateChecker?
     var releaseURL: URL?
     var dmgURL: URL?
     var downloader: UpdateDownloader?
@@ -59,20 +60,25 @@ final class GearMenuTarget: NSObject {
         }
     }
 
-    @objc func toggleVisibilityClicked(_ sender: Any?) {
-        // Match sibling handlers (aboutClicked / hotkeyClicked / updateClicked):
-        // clear the menu-open sticky flag so mouse-out collapse works without
-        // waiting for the safety-net timer.
+    @objc func visibilityOptionClicked(_ sender: Any?) {
         modeStore?.isMenuOpen = false
-        let store = ConfigStore()
-        let current = store.loadNotchVisibility()
-        let next: NotchVisibility = (current == .always) ? .hidden : .always
-        store.saveNotchVisibility(next)
+        guard let item = sender as? NSMenuItem,
+              let raw = item.representedObject as? String,
+              let v = NotchVisibility(rawValue: raw) else { return }
+        ConfigStore().saveNotchVisibility(v)
         NotificationCenter.default.post(
-            name: .notchVisibilityChanged,
-            object: nil,
-            userInfo: ["visibility": next]
+            name: .notchVisibilityChanged, object: nil,
+            userInfo: ["visibility": v]
         )
+        // Update checkmarks on the visibility submenu
+        for sibling in item.menu?.items ?? [] {
+            sibling.state = (sibling.representedObject as? String == raw) ? .on : .off
+        }
+    }
+
+    @objc func checkUpdatesClicked(_ sender: Any?) {
+        modeStore?.isMenuOpen = false
+        updateChecker?.checkNow()
     }
 
     @objc func moveNotchClicked(_ sender: Any?) {

@@ -1,5 +1,6 @@
 import AppKit
 import AppLib
+import Combine
 import Shared
 
 @MainActor
@@ -18,6 +19,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarMenu: StatusBarMenu?
     private var livenessSweepTimer: Timer?
     private var codexTailer: CodexJsonlTailer?
+    private var cancellables = Set<AnyCancellable>()
+    /// #48 — tracks whether the store had any sessions at the last
+    /// `.whenActive` visibility evaluation, so we only order the panel
+    /// in/out on the empty↔non-empty boundary (not on every event-field
+    /// mutation, which would flicker the window).
+    private var lastHadSessionsForVisibility = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Prevent macOS from auto-terminating this LSUIElement app when no windows are visible
@@ -218,8 +225,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard let self else { return }
                 self.windowController?.applyVisibility(visibility)
                 self.simulatedNotch?.applyVisibility(visibility)
+                self.lastHadSessionsForVisibility = !self.sessionStore.sessions.isEmpty
             }
         }
+
+        // #48 — for .whenActive, show/hide the panel as sessions come and
+        // go. Only act on the empty↔non-empty boundary. `.receive(on:)`
+        // defers delivery until after the store mutation lands, so a 0→1
+        // transition reads the post-change count.
+        sessionStore.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                // Boundary check first so the no-change common case (every
+                // event-field mutation fires objectWillChange) skips the
+                // config disk read entirely.
+                let hasSessions = !self.sessionStore.sessions.isEmpty
+                guard hasSessions != self.lastHadSessionsForVisibility else { return }
+                guard ConfigStore().loadNotchVisibility() == .whenActive else { return }
+                self.lastHadSessionsForVisibility = hasSessions
+                self.windowController?.applyVisibility(.whenActive)
+                self.simulatedNotch?.applyVisibility(.whenActive)
+            }
+            .store(in: &cancellables)
 
         // 5. Hook Installer (silent, best-effort) — same path as the Hook
         //    Status window's Repair button.

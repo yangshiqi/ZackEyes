@@ -68,6 +68,14 @@ public final class UpdateChecker: ObservableObject {
         timer = nil
     }
 
+    /// Manual "Check for Updates" trigger. Runs the same poll as the 6h
+    /// timer; results surface through the existing publish path
+    /// (availableVersion → onNewVersion notification + menu item). No
+    /// separate "up to date" UI — consistent with the app's auto-poll model.
+    public func checkNow() {
+        Task { await check() }
+    }
+
     // MARK: - Check logic
 
     private func check() async {

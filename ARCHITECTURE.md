@@ -129,6 +129,16 @@ Claude Code 周期性触发 statusLine command（每隔几秒）
 ```
 
 `hoverWide` 是中间过渡态（保留代码以便未来按需使用）。当前主路径是 `compact ⇄ full`。
+
+**可见性三态**（`#48`，存储于 `ConfigStore.notchVisibility`，缺省或解析失败时回退 `.always`）：
+
+| 值 | 行为 |
+|----|------|
+| `.always`（默认） | Compact pill 始终在屏 |
+| `.whenActive` | 仅当 ≥1 个会话存在时显示；最后一个会话结束时 AppDelegate 在 empty↔non-empty 边界（boundary-guard 防抖）调用 `applyVisibility(.whenActive)` 自动隐藏 |
+| `.hidden` | 面板不可见，仅 hotkey / 菜单 / 事件唤起 |
+
+`.whenActive`（及 `.hidden`）**不压制** `forceUiExpand`：PermissionRequest 和错误始终强制显示面板，避免用户失去对正在运行命令的审批入口。
 Full 模式下：
 - 高度按 session 数量 + 内容（prompt / reply / tool / tasks / errors / permission）启发式估算
 - 内容变化时 debounced 120ms 重新计算高度并平滑动画
@@ -220,7 +230,7 @@ PricingStore.start()
 | `SimulatedNotchPanel` | `Sources/AppLib/SimulatedNotch/SimulatedNotchPanel.swift` | 顶部居中 NSPanel，`.screenSaver` 层级 |
 | `SimulatedNotchView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchView.swift` | Compact / hoverWide 内容（5h/7d 剩余 + NotchShape）。读 `NotchModeStore.compactAgent` 决定显示哪个 agent 的配额 |
 | `SimulatedNotchFullView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchFullView.swift` | Full 模式：5h/7d 进度条 header + 滚动 session 列表。当两 agent 都有数据时，header 自动左右切割（左 Claude / 右 Codex），用固定宽 gear 列保证 5h 与 7d 两行轨道对齐 |
-| `SimulatedNotchController` | `Sources/AppLib/SimulatedNotch/SimulatedNotchController.swift` | 三态形变控制器，hover 进入 full，外部点击退出，内容自适应高度。启动时从 `ConfigStore.loadCompactAgent()` 注水 `modeStore.compactAgent` 避免首帧闪烁 |
+| `SimulatedNotchController` | `Sources/AppLib/SimulatedNotch/SimulatedNotchController.swift` | 三态形变控制器，hover 进入 full，外部点击退出，内容自适应高度。启动时从 `ConfigStore.loadCompactAgent()` 注水 `modeStore.compactAgent` 避免首帧闪烁；`#48` 起 `applyVisibility` 支持 `.whenActive` 自动显隐 |
 | `SimulatedNotchRoot` | `Sources/AppLib/SimulatedNotch/SimulatedNotchRoot.swift` | SwiftUI 根视图，compact/full 切换 + overlay 层叠。`NotchModeStore` 含 `@Published compactAgent: AgentKind` |
 | `GearMenuTarget` | `Sources/AppLib/SimulatedNotch/GearMenuTarget.swift` | NSMenu 动作目标（About / Change Hotkey / Theme / Compact display / Update） |
 | `HostViewProbe` | `Sources/AppLib/SimulatedNotch/HostViewProbe.swift` | SwiftUI → NSView 桥接，用于齿轮菜单锚点定位 |
@@ -237,7 +247,7 @@ PricingStore.start()
 |------|------|------|
 | `HotKeyManager` | `Sources/AppLib/HotKey/HotKeyManager.swift` | Carbon `RegisterEventHotKey` 注册全局快捷键（可配置，默认 `Cmd+Shift+Z`），支持运行时 `reregister` 热更新 |
 | `NotificationManager` | `Sources/AppLib/Notifications/NotificationManager.swift` | 时间敏感通知（session 完成 / API 错误 / 版本更新），点击跳转终端或打开 GitHub |
-| `UpdateChecker` | `Sources/AppLib/Update/UpdateChecker.swift` | 轮询公开发布仓库（6h）获取最新 DMG，语义版本比较，`@Published dmgURL` 驱动齿轮红点 + 系统通知 |
+| `UpdateChecker` | `Sources/AppLib/Update/UpdateChecker.swift` | 轮询公开发布仓库（6h）获取最新 DMG，语义版本比较，`@Published dmgURL` 驱动齿轮红点 + 系统通知；`checkNow()` 手动检查入口（`#48`） |
 | `UpdateDownloader` | `Sources/AppLib/Update/UpdateDownloader.swift` | URLSession 下载 DMG 到 `$TMPDIR`，通过 NSWorkspace 打开使 Finder 挂载；状态栏菜单 + 齿轮菜单 + 通知点击均通过此下载器 |
 | `TerminalLocator` | `Sources/AppLib/Terminal/TerminalLocator.swift` | 进程树遍历 + iTerm2/Terminal AppleScript + Ghostty/Warp/Kitty Accessibility |
 | `UsageTracker` | `Sources/AppLib/Usage/UsageTracker.swift` | 双 agent 配额。Claude 数据来自 statusLine hook 的 `rate_limits.{five_hour,seven_day}`；Codex 数据来自周期扫描 `~/.codex/sessions/` 最新 rollout 的 `event_msg.token_count.rate_limits.{primary,secondary}`。Snapshot 含 claude + codex 平行字段，UI 按需呈现单条或左右切。 |

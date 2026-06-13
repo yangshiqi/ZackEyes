@@ -65,15 +65,7 @@ public final class StatusBarMenu: NSObject {
         hotkey.target = self
         menu.addItem(hotkey)
 
-        let visibility = ConfigStore().loadNotchVisibility()
-        let showIsland = NSMenuItem(
-            title: "Show Dynamic Island",
-            action: #selector(toggleVisibilityClicked(_:)),
-            keyEquivalent: ""
-        )
-        showIsland.target = self
-        showIsland.state = (visibility == .always) ? .on : .off
-        menu.addItem(showIsland)
+        menu.addItem(visibilitySubmenuItem())
 
         menu.addItem(themeSubmenuItem())
 
@@ -97,6 +89,14 @@ public final class StatusBarMenu: NSObject {
         )
         uninstall.target = self
         menu.addItem(uninstall)
+
+        let checkUpdates = NSMenuItem(
+            title: "Check for Updates",
+            action: #selector(checkUpdatesClicked(_:)),
+            keyEquivalent: ""
+        )
+        checkUpdates.target = self
+        menu.addItem(checkUpdates)
 
         menu.addItem(.separator())
 
@@ -159,16 +159,19 @@ public final class StatusBarMenu: NSObject {
         uninstallWindow?.show()
     }
 
-    @objc private func toggleVisibilityClicked(_ sender: Any?) {
-        let store = ConfigStore()
-        let current = store.loadNotchVisibility()
-        let next: NotchVisibility = (current == .always) ? .hidden : .always
-        store.saveNotchVisibility(next)
+    @objc private func visibilityOptionClicked(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem,
+              let raw = item.representedObject as? String,
+              let v = NotchVisibility(rawValue: raw) else { return }
+        ConfigStore().saveNotchVisibility(v)
         NotificationCenter.default.post(
-            name: .notchVisibilityChanged,
-            object: nil,
-            userInfo: ["visibility": next]
+            name: .notchVisibilityChanged, object: nil,
+            userInfo: ["visibility": v]
         )
+    }
+
+    @objc private func checkUpdatesClicked(_ sender: Any?) {
+        updateChecker.checkNow()
     }
 
     /// Map (availableVersion, downloader.state) → menu item title + enabled flag.
@@ -190,6 +193,32 @@ public final class StatusBarMenu: NSObject {
         case .failed:
             return ("Update Failed — Click to Retry", true)
         }
+    }
+
+    // MARK: - Visibility submenu
+
+    private func visibilitySubmenuItem() -> NSMenuItem {
+        let current = ConfigStore().loadNotchVisibility()
+        let submenu = NSMenu()
+        let options: [(String, NotchVisibility)] = [
+            ("Always", .always),
+            ("Only When Sessions Active", .whenActive),
+            ("Hidden", .hidden),
+        ]
+        for (title, value) in options {
+            let item = NSMenuItem(
+                title: title,
+                action: #selector(visibilityOptionClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = value.rawValue
+            item.state = (value == current) ? .on : .off
+            submenu.addItem(item)
+        }
+        let parent = NSMenuItem(title: "Dynamic Island", action: nil, keyEquivalent: "")
+        parent.submenu = submenu
+        return parent
     }
 
     // MARK: - Theme submenu

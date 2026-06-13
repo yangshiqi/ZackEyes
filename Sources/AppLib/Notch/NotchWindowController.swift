@@ -104,12 +104,26 @@ public final class NotchWindowController {
     /// - `.always` → order the panel back on-screen
     /// - `.hidden` + currently expanded → leave on-screen; next collapse
     ///   naturally orders out via the tail of `updatePanelState(.compact)`
+    /// Whether the panel should currently be on-screen, given the visibility
+    /// mode and (for `.whenActive`) the live session count. Single source of
+    /// truth for every show/hide decision in this controller — the collapse
+    /// and hover paths consult it too, so `.whenActive` is honored everywhere,
+    /// not just in `applyVisibility`.
+    private var shouldBeVisible: Bool {
+        switch visibility {
+        case .always:     return true
+        case .hidden:     return false
+        case .whenActive: return !viewModel.sessionStore.sessions.isEmpty
+        }
+    }
+
     public func applyVisibility(_ v: NotchVisibility) {
         visibility = v
         guard let panel = panel else { return }
-        if v == .hidden && currentState != .expanded {
+        let shouldShow = shouldBeVisible
+        if !shouldShow && currentState != .expanded {
             panel.orderOut(nil)
-        } else if v == .always && !panel.isVisible {
+        } else if shouldShow && !panel.isVisible {
             panel.orderFrontRegardless()
         }
     }
@@ -152,7 +166,12 @@ public final class NotchWindowController {
         newPanel.contentView = hostingView
 
         newPanel.setFrame(initialFrame, display: false)
-        if visibility == .always {
+        // Note: `panel` isn't assigned until after this; `shouldBeVisible`
+        // only reads `visibility` + session count, so it's safe here. For
+        // `.whenActive` with sessions already present at creation we show
+        // immediately; an empty store stays hidden until the session-boundary
+        // sink (AppDelegate) recalls it.
+        if shouldBeVisible {
             newPanel.orderFrontRegardless()
         }
         // Hidden: stay off-screen. forceExpand / hotkey / menu click / events
@@ -189,8 +208,9 @@ public final class NotchWindowController {
             stopOutsideClickMonitoring()
         }
 
-        // Hidden: once collapsed, immediately remove the panel from screen.
-        if newState == .compact && visibility == .hidden {
+        // Once collapsed, remove the panel from screen if it shouldn't be
+        // visible (.hidden, or .whenActive with no sessions).
+        if newState == .compact && !shouldBeVisible {
             panel?.orderOut(nil)
         }
 
@@ -255,10 +275,10 @@ public final class NotchWindowController {
 
         switch currentState {
         case .compact:
-            // In hidden mode the panel is off-screen and should not auto-expand
-            // on hover — only hotkey / menu click / explicit event triggers bring
-            // it back.
-            if visibility == .hidden { return }
+            // When the panel is meant to be off-screen (.hidden, or
+            // .whenActive with no sessions) it should not auto-expand on
+            // hover — only hotkey / menu / explicit event brings it back.
+            if !shouldBeVisible { return }
             // Expand the moment the cursor enters the menu-bar row within
             // our horizontal pill span.
             let pill = compactPillRect(on: screen, notchHeight: notchHeight)
