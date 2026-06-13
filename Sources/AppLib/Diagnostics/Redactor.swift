@@ -27,6 +27,11 @@ public struct Redactor: Sendable {
             out = out.replacingOccurrences(of: homeDirectory, with: "~")
         }
         // Empty username would replace between every character — guard it.
+        // A very short real username (e.g. "a") may over-redact unrelated
+        // text ("arm64" → "<user>rm64"). That is intentional and SAFE —
+        // over-redaction, never under-redaction. Do NOT add a min-length
+        // guard to "fix" cosmetics: skipping redaction for a short real
+        // username would leak it, the opposite of this feature's promise.
         if !username.isEmpty {
             out = out.replacingOccurrences(of: username, with: "<user>")
         }
