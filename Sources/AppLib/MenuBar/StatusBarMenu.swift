@@ -15,14 +15,17 @@ import AppKit
 public final class StatusBarMenu: NSObject {
     private let updateChecker: UpdateChecker
     private let downloader: UpdateDownloader
+    private let usageTracker: UsageTracker
     private var hotkeyWindow: HotkeyRecorderWindow?
     private var aboutWindow: AboutWindow?
     private var hookStatusWindow: HookStatusWindow?
     private var uninstallWindow: UninstallWindow?
+    private var diagnosticsWindow: DiagnosticsWindow?
 
-    public init(updateChecker: UpdateChecker, downloader: UpdateDownloader) {
+    public init(updateChecker: UpdateChecker, downloader: UpdateDownloader, usageTracker: UsageTracker) {
         self.updateChecker = updateChecker
         self.downloader = downloader
+        self.usageTracker = usageTracker
         super.init()
     }
 
@@ -98,6 +101,14 @@ public final class StatusBarMenu: NSObject {
         checkUpdates.target = self
         menu.addItem(checkUpdates)
 
+        let diagnostics = NSMenuItem(
+            title: "Export Diagnostics…",
+            action: #selector(exportDiagnosticsClicked(_:)),
+            keyEquivalent: ""
+        )
+        diagnostics.target = self
+        menu.addItem(diagnostics)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(
@@ -172,6 +183,16 @@ public final class StatusBarMenu: NSObject {
 
     @objc private func checkUpdatesClicked(_ sender: Any?) {
         updateChecker.checkNow()
+    }
+
+    @objc private func exportDiagnosticsClicked(_ sender: Any?) {
+        if diagnosticsWindow == nil {
+            let tracker = usageTracker
+            diagnosticsWindow = DiagnosticsWindow(
+                makeReport: { DiagnosticsReport.current(usageSnapshot: tracker.snapshot) }
+            )
+        }
+        diagnosticsWindow?.show()
     }
 
     /// Map (availableVersion, downloader.state) → menu item title + enabled flag.

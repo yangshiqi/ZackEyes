@@ -517,6 +517,14 @@ struct SimulatedNotchFullView: View {
         checkUpdates.target = GearMenuTarget.shared
         menu.addItem(checkUpdates)
 
+        let diagnostics = NSMenuItem(
+            title: "Export Diagnostics…",
+            action: #selector(GearMenuTarget.exportDiagnosticsClicked(_:)),
+            keyEquivalent: ""
+        )
+        diagnostics.target = GearMenuTarget.shared
+        menu.addItem(diagnostics)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(
