@@ -20,6 +20,7 @@ final class GearMenuTarget: NSObject {
     private var previewSound: NSSound?
     private var hookStatusWindow: HookStatusWindow?
     private var uninstallWindow: UninstallWindow?
+    private var diagnosticsWindow: DiagnosticsWindow?
 
     @objc func aboutClicked(_ sender: Any?) {
         modeStore?.isMenuOpen = false
@@ -48,6 +49,17 @@ final class GearMenuTarget: NSObject {
             uninstallWindow = UninstallWindow()
         }
         uninstallWindow?.show()
+    }
+
+    @objc func exportDiagnosticsClicked(_ sender: Any?) {
+        modeStore?.isMenuOpen = false
+        if diagnosticsWindow == nil {
+            let tracker = usageTracker
+            diagnosticsWindow = DiagnosticsWindow(
+                makeReport: { DiagnosticsReport.current(usageSnapshot: tracker?.snapshot ?? .empty) }
+            )
+        }
+        diagnosticsWindow?.show()
     }
 
     @objc func updateClicked(_ sender: Any?) {

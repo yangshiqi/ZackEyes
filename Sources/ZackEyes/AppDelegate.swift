@@ -129,7 +129,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Shared right-click context menu (About / Update / Hotkey / Theme /
         // Quit). Both paths get the same menu; on simulated-notch it is
         // redundant with the gear button but harmless.
-        let statusMenu = StatusBarMenu(updateChecker: uc, downloader: dl)
+        let statusMenu = StatusBarMenu(updateChecker: uc, downloader: dl, usageTracker: usageTracker)
         mb.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
         self.statusBarMenu = statusMenu
 
