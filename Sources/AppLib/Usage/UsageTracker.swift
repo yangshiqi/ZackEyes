@@ -114,6 +114,12 @@ public final class UsageTracker: ObservableObject {
     /// main actor; passed by value into the detached scan and replaced on return.
     private var codexDailyCache: [String: FileTally] = [:]
 
+    /// Per-file Claude transcript parse cache, keyed by resolved path. Same
+    /// lifecycle as `codexDailyCache` — passed by value into the detached scan
+    /// and replaced on return. Bounds the cost of the recursive #116 scan: in
+    /// steady state only the actively-written file is re-parsed.
+    private var claudeFileCache: [String: ClaudeFileCache] = [:]
+
     /// #86 — rolling burn-rate estimators, one per agent. Fed `(now, used%)`
     /// readings as they arrive; queried for the 5h cap ETA. Plain value types,
     /// so they're confined to this @MainActor instance.
@@ -252,9 +258,11 @@ public final class UsageTracker: ObservableObject {
         let codexDir = codexSessionsDir
         let cal = Calendar.current
         let scanNow = Date()
+        let claudeCacheSnapshot = claudeFileCache
         let claudeScan = await Task.detached(priority: .utility) {
-            Self.computeSnapshot(projectsDir: dir, calendar: cal, now: scanNow)
+            Self.computeSnapshot(projectsDir: dir, cache: claudeCacheSnapshot, calendar: cal, now: scanNow)
         }.value
+        claudeFileCache = claudeScan.cache
         let estimated = claudeScan.snapshot
         let codexObservation = await Task.detached(priority: .utility) { () -> CodexRateLimitObservation? in
             guard let codexDir else { return nil }
@@ -521,10 +529,33 @@ public final class UsageTracker: ObservableObject {
     struct ClaudeScanResult: Sendable {
         var snapshot: Snapshot
         var daily: [Date: [String: ModelTokenTally]]
+        var cache: [String: ClaudeFileCache]
+    }
+
+    /// One assistant message's token usage, parsed out of a transcript line.
+    /// Folding these against the (now-relative) 5h/7d/daily cutoffs is cheap; the
+    /// expensive part — reading + JSON-parsing the file — is what `ClaudeFileCache`
+    /// skips on unchanged files.
+    struct ClaudeMsgRecord: Sendable {
+        var ts: Date
+        var id: String?
+        var model: String
+        var input: Int, output: Int, cacheRead: Int, cacheCreate: Int
+    }
+
+    /// Cached parse of one transcript file, keyed by identity `(mtime, size)`.
+    /// Mirrors the Codex `FileTally` cache. Stores the raw per-message records
+    /// (NOT deduped / NOT windowed) so the global dedup + rolling-window fold stay
+    /// correct against the current `now` on every scan.
+    struct ClaudeFileCache: Sendable {
+        var mtime: Date
+        var size: UInt64
+        var records: [ClaudeMsgRecord]
     }
 
     nonisolated static func computeSnapshot(
         projectsDir: URL,
+        cache: [String: ClaudeFileCache] = [:],
         calendar: Calendar = .current,
         now: Date = Date()
     ) -> ClaudeScanResult {
@@ -536,32 +567,66 @@ public final class UsageTracker: ObservableObject {
         let fileCutoff = min(cutoff7d, dailyCutoff)
 
         let fm = FileManager.default
-        guard let projectDirs = try? fm.contentsOfDirectory(
-            at: projectsDir, includingPropertiesForKeys: [.contentModificationDateKey]
-        ) else { return ClaudeScanResult(snapshot: .empty, daily: [:]) }
+        // #116: recurse the WHOLE projects tree, not just `<projectDir>/*.jsonl`.
+        // Claude Code writes Task-subagent transcripts to `<session>/subagents/
+        // agent-*.jsonl` and Workflow-tool agent transcripts to `<session>/
+        // wf_<runId>/agent-*.jsonl` (and `<session>/subagents/workflows/wf_*/`).
+        // A deep-research / workflow run burns most of its tokens in those nested
+        // files, so the old top-level-only walk made the Today row / `tokens5h7d`
+        // / burn-rate input badly under-count.
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey, .fileSizeKey]
+        guard let walker = fm.enumerator(
+            at: projectsDir, includingPropertiesForKeys: Array(keys)
+        ) else { return ClaudeScanResult(snapshot: .empty, daily: [:], cache: [:]) }
 
         var tokens5h = 0, tokens7d = 0, msgs5h = 0, msgs7d = 0
         var daily: [Date: [String: ModelTokenTally]] = [:]
         // #88: Claude Code splits one API response across multiple JSONL lines
         // that share a `message.id` and each repeat the SAME `usage`. Dedup by
-        // id GLOBALLY across all files (resume/fork can replay an id) so totals
-        // aren't ~2x inflated.
+        // id GLOBALLY across all files (resume/fork can replay an id, and a main
+        // transcript can share an id with a nested subagent file) so totals
+        // aren't inflated. Runs on every scan over the (possibly cached) records.
         var seenMessageIDs = Set<String>()
+        var newCache: [String: ClaudeFileCache] = [:]
 
-        for projectDir in projectDirs {
-            guard let files = try? fm.contentsOfDirectory(
-                at: projectDir, includingPropertiesForKeys: [.contentModificationDateKey]
-            ) else { continue }
-            for file in files where file.pathExtension == "jsonl" {
-                if let attrs = try? fm.attributesOfItem(atPath: file.path),
-                   let mod = attrs[.modificationDate] as? Date, mod < fileCutoff {
-                    continue
+        for case let file as URL in walker where file.pathExtension == "jsonl" {
+            // Skip files untouched within the window; the prefetched values avoid
+            // an extra stat() per file. Non-regular entries never get parsed.
+            guard let vals = try? file.resourceValues(forKeys: keys),
+                  vals.isRegularFile == true,
+                  let mtime = vals.contentModificationDate, mtime >= fileCutoff,
+                  let size = vals.fileSize else { continue }
+            // Resolve symlinks in the key so /var/... (temp dirs) and the
+            // /private/var/... the enumerator yields hash to the same entry.
+            let key = file.resolvingSymlinksInPath().path
+            let records: [ClaudeMsgRecord]
+            if let hit = cache[key], hit.mtime == mtime, hit.size == UInt64(size) {
+                records = hit.records                       // cache hit — no re-parse
+            } else {
+                records = parseFileRecords(at: file)
+            }
+            newCache[key] = ClaudeFileCache(mtime: mtime, size: UInt64(size), records: records)
+
+            for r in records {
+                if r.ts < cutoff7d { continue }
+                // #88: skip a repeated message.id (its usage was already counted);
+                // records without an id are never collapsed.
+                if let id = r.id, !id.isEmpty, !seenMessageIDs.insert(id).inserted { continue }
+                let total = r.input + r.output + r.cacheRead + r.cacheCreate
+                tokens7d += total
+                msgs7d += 1
+                if r.ts >= cutoff5h {
+                    tokens5h += total
+                    msgs5h += 1
                 }
-                parseFile(at: file, cutoff5h: cutoff5h, cutoff7d: cutoff7d,
-                          dailyCutoff: dailyCutoff, calendar: calendar,
-                          tokens5h: &tokens5h, tokens7d: &tokens7d,
-                          msgs5h: &msgs5h, msgs7d: &msgs7d, daily: &daily,
-                          seenMessageIDs: &seenMessageIDs)
+                // #84 per-local-day tally (subset of the 7d window, by local day).
+                if r.ts >= dailyCutoff {
+                    let day = calendar.startOfDay(for: r.ts)
+                    var tally = daily[day]?[r.model] ?? ModelTokenTally()
+                    tally.input += r.input; tally.output += r.output
+                    tally.cacheRead += r.cacheRead; tally.cacheCreate += r.cacheCreate
+                    daily[day, default: [:]][r.model] = tally
+                }
             }
         }
 
@@ -571,71 +636,46 @@ public final class UsageTracker: ObservableObject {
             tokens5h: tokens5h, tokens7d: tokens7d,
             messages5h: msgs5h, messages7d: msgs7d
         )
-        return ClaudeScanResult(snapshot: snapshot, daily: daily)
+        return ClaudeScanResult(snapshot: snapshot, daily: daily, cache: newCache)
     }
 
-    private nonisolated static func parseFile(
-        at url: URL,
-        cutoff5h: Date, cutoff7d: Date,
-        dailyCutoff: Date, calendar: Calendar,
-        tokens5h: inout Int, tokens7d: inout Int,
-        msgs5h: inout Int, msgs7d: inout Int,
-        daily: inout [Date: [String: ModelTokenTally]],
-        seenMessageIDs: inout Set<String>
-    ) {
+    /// Parse one transcript file into its assistant-message token records.
+    /// No dedup / no windowing here — that runs in the fold so it stays correct
+    /// against the current `now`. This (file read + JSON parse) is the hot path
+    /// the `ClaudeFileCache` skips when `(mtime, size)` is unchanged.
+    private nonisolated static func parseFileRecords(at url: URL) -> [ClaudeMsgRecord] {
         guard let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .utf8) else { return }
+              let text = String(data: data, encoding: .utf8) else { return [] }
 
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let isoNoFrac = ISO8601DateFormatter()
 
+        var records: [ClaudeMsgRecord] = []
         for line in text.split(separator: "\n") {
             guard let lineData = line.data(using: .utf8),
                   let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any]
             else { continue }
 
-            // Parse timestamp — JSONL entries usually have "timestamp" at the top level
+            // Timestamp lives at the top level of each JSONL entry.
             guard let tsString = obj["timestamp"] as? String,
                   let ts = iso.date(from: tsString) ?? isoNoFrac.date(from: tsString) else {
                 continue
             }
-            if ts < cutoff7d { continue }
-
-            // Only count assistant messages (they carry usage data)
+            // Only assistant messages carry usage data.
             guard (obj["type"] as? String) == "assistant",
                   let msg = obj["message"] as? [String: Any],
                   let usage = msg["usage"] as? [String: Any] else { continue }
 
-            // #88: skip a repeated `message.id` — its usage was already counted.
-            // Lines without an id are NOT collapsed (each counts on its own).
-            // `insert(_:).inserted` is false when the id was already present →
-            // skip the repeated line in a single hash operation.
-            if let id = msg["id"] as? String, !id.isEmpty,
-               !seenMessageIDs.insert(id).inserted { continue }
-
-            let input = (usage["input_tokens"] as? Int) ?? 0
-            let output = (usage["output_tokens"] as? Int) ?? 0
-            let cacheRead = (usage["cache_read_input_tokens"] as? Int) ?? 0
-            let cacheCreate = (usage["cache_creation_input_tokens"] as? Int) ?? 0
-            let total = input + output + cacheRead + cacheCreate
-
-            tokens7d += total
-            msgs7d += 1
-            if ts >= cutoff5h {
-                tokens5h += total
-                msgs5h += 1
-            }
-
-            // #84 per-local-day tally (subset of the 7d window, by local calendar day).
-            if ts >= dailyCutoff {
-                let model = (msg["model"] as? String) ?? "unknown"
-                let day = calendar.startOfDay(for: ts)
-                var tally = daily[day]?[model] ?? ModelTokenTally()
-                tally.input += input; tally.output += output
-                tally.cacheRead += cacheRead; tally.cacheCreate += cacheCreate
-                daily[day, default: [:]][model] = tally
-            }
+            records.append(ClaudeMsgRecord(
+                ts: ts,
+                id: msg["id"] as? String,
+                model: (msg["model"] as? String) ?? "unknown",
+                input: (usage["input_tokens"] as? Int) ?? 0,
+                output: (usage["output_tokens"] as? Int) ?? 0,
+                cacheRead: (usage["cache_read_input_tokens"] as? Int) ?? 0,
+                cacheCreate: (usage["cache_creation_input_tokens"] as? Int) ?? 0))
         }
+        return records
     }
 }
