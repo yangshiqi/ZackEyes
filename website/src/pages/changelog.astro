@@ -7,6 +7,20 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.7.2',
+    date: 'Published June 17, 2026',
+    summary: 'Security hardening patch.',
+    highlights: [
+      {
+        label: 'Fixed',
+        items: [
+          'Authenticated the local control socket: it now verifies peer credentials and only accepts connections from the same user (and restricts the socket to owner-only 0600). Previously any local process could connect to the unauthenticated socket that gates tool-permission prompts.',
+          'Bounded the transcript scan with a per-file size cap and an explicit symlink skip, so an oversized or symlinked file placed in the projects tree cannot drive a runaway read.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.7.1',
     date: 'Published June 17, 2026',
     summary: 'Usage accuracy fix for multi-agent runs (deep research and workflows).',
