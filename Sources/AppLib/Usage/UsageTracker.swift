@@ -553,6 +553,19 @@ public final class UsageTracker: ObservableObject {
         var records: [ClaudeMsgRecord]
     }
 
+    /// Per-file size ceiling for the recursive transcript scan (scan finding
+    /// F-008). Real transcripts are a few MB; this bounds a single planted or
+    /// runaway `.jsonl` from forcing a multi-GB read on every 30s refresh.
+    nonisolated static let maxTranscriptBytes = 256 * 1024 * 1024
+
+    /// Security gate for the recursive scan (scan findings F-008 / F-009):
+    /// never read a symlink — don't follow links out of the projects tree
+    /// (defense in depth; `isRegularFile` already excludes them, but a security
+    /// boundary shouldn't lean on that subtlety) — and skip oversized files.
+    nonisolated static func shouldScanTranscript(isSymbolicLink: Bool, fileSize: Int) -> Bool {
+        !isSymbolicLink && fileSize <= maxTranscriptBytes
+    }
+
     nonisolated static func computeSnapshot(
         projectsDir: URL,
         cache: [String: ClaudeFileCache] = [:],
@@ -574,7 +587,7 @@ public final class UsageTracker: ObservableObject {
         // A deep-research / workflow run burns most of its tokens in those nested
         // files, so the old top-level-only walk made the Today row / `tokens5h7d`
         // / burn-rate input badly under-count.
-        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey, .fileSizeKey]
+        let keys: Set<URLResourceKey> = [.contentModificationDateKey, .isRegularFileKey, .fileSizeKey, .isSymbolicLinkKey]
         guard let walker = fm.enumerator(
             at: projectsDir, includingPropertiesForKeys: Array(keys)
         ) else { return ClaudeScanResult(snapshot: .empty, daily: [:], cache: [:]) }
@@ -595,7 +608,9 @@ public final class UsageTracker: ObservableObject {
             guard let vals = try? file.resourceValues(forKeys: keys),
                   vals.isRegularFile == true,
                   let mtime = vals.contentModificationDate, mtime >= fileCutoff,
-                  let size = vals.fileSize else { continue }
+                  let size = vals.fileSize,
+                  shouldScanTranscript(isSymbolicLink: vals.isSymbolicLink ?? false, fileSize: size)
+            else { continue }
             // Resolve symlinks in the key so /var/... (temp dirs) and the
             // /private/var/... the enumerator yields hash to the same entry.
             let key = file.resolvingSymlinksInPath().path
