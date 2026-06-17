@@ -30,6 +30,16 @@ public final class SocketServer {
         self.path = path
     }
 
+    /// Reject any peer whose effective uid differs from ours (scan findings
+    /// F-001/F-002). On macOS, AF_UNIX socket file permissions are NOT enforced
+    /// on connect, so a kernel-verified peer-credential check (`getpeereid`) is
+    /// the reliable boundary that stops other local users from speaking the
+    /// tool-authorization protocol. Same-uid processes are out of scope — a
+    /// same-uid attacker already has full access to the user's session.
+    nonisolated static func peerIsAuthorized(peerEUID: uid_t, ownEUID: uid_t) -> Bool {
+        peerEUID == ownEUID
+    }
+
     // MARK: - Public API
 
     public func setEventHandler(
@@ -73,6 +83,12 @@ public final class SocketServer {
             throw SocketError.bindFailed
         }
 
+        // F-002 defense in depth: restrict the socket node to the owner. BSD
+        // does not enforce this on connect (the getpeereid check in acceptLoop
+        // is the real gate), but it signals intent and helps on platforms that
+        // do enforce socket-file permissions.
+        _ = path.withCString { chmod($0, 0o600) }
+
         guard Darwin.listen(fd, 5) == 0 else {
             close(fd)
             throw SocketError.listenFailed
@@ -106,6 +122,18 @@ public final class SocketServer {
             let clientFd = Darwin.accept(sfd, nil, nil)
             guard clientFd >= 0 else {
                 // accept failed — server may have been stopped
+                continue
+            }
+
+            // F-001/F-002: authenticate the peer before processing anything.
+            // Only this user may drive the tool-authorization protocol; reject
+            // and close connections from any other local uid (or if creds are
+            // unreadable). The legitimate bridge runs as the same user.
+            var peerEUID = uid_t(0)
+            var peerEGID = gid_t(0)
+            guard getpeereid(clientFd, &peerEUID, &peerEGID) == 0,
+                  Self.peerIsAuthorized(peerEUID: peerEUID, ownEUID: geteuid()) else {
+                close(clientFd)
                 continue
             }
 
