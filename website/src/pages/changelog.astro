@@ -7,6 +7,19 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.7.1',
+    date: 'Published June 17, 2026',
+    summary: 'Usage accuracy fix for multi-agent runs (deep research and workflows).',
+    highlights: [
+      {
+        label: 'Fixed',
+        items: [
+          'Token usage now counts subagent and Workflow-tool agent transcripts, not just the main session. During deep-research and workflow runs — where background agents do most of the work — the Today consumption row, the 7-day sparkline, and the burn-rate input were undercounting badly (over 10x on heavy workflow runs); they now reflect the full token spend. A per-file parse cache keeps the wider transcript scan within the same near-zero idle CPU budget.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.7.0',
     date: 'Published June 13, 2026',
     summary: 'Reliability & diagnostics release: see and repair your hook health, fully uninstall integrations, export a shareable diagnostic report, recover events across restarts, and keep the panel visible only when it matters.',
