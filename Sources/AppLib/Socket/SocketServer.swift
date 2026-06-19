@@ -26,7 +26,7 @@ public final class SocketServer {
 
     // MARK: - Init
 
-    public init(path: String = "/tmp/zackeyes.sock") {
+    public init(path: String = SocketConfig.defaultPath) {
         self.path = path
     }
 
@@ -57,6 +57,15 @@ public final class SocketServer {
 
     /// Unlink any stale socket, create AF_UNIX/SOCK_STREAM, bind, listen, then launch accept loop.
     public func start() throws {
+        // Ensure the socket's parent dir exists and is owner-only (#136): the
+        // socket now lives in ~/.zackeyes (0700) rather than world-writable /tmp
+        // so another uid can't pre-bind / squat it.
+        let dir = (path as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(
+            atPath: dir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir)
+
         // Unlink stale socket file if present
         unlink(path)
 

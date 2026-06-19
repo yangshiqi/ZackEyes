@@ -45,6 +45,16 @@ public struct BridgeSocketClient: Sendable {
             close(fd)
             return -1
         }
+        // Authenticate the SERVER peer: reject a socket owned by another uid (a
+        // squatter on a shared host). Mirrors the server's getpeereid gate on the
+        // client side, so the bridge never leaks the payload to — or accepts a
+        // forged decision from — a different user's process (#136 / F-006).
+        var peerEUID = uid_t(0)
+        var peerEGID = gid_t(0)
+        guard getpeereid(fd, &peerEUID, &peerEGID) == 0, peerEUID == geteuid() else {
+            close(fd)
+            return -1
+        }
         return fd
     }
 

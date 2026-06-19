@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 /// Read-only snapshot of the ZackEyes hook installation, one field per
 /// status row in the Hook Status window (issue #38).
@@ -72,7 +73,7 @@ public struct HookHealth {
         claudeSettingsPath: String = NSHomeDirectory() + "/.claude/settings.json",
         codexHooksPath: String = NSHomeDirectory() + "/.codex/hooks.json",
         bridgePath: String = "$HOME/.zackeyes/bin/bridge",
-        socketPath: String = "/tmp/zackeyes.sock",
+        socketPath: String = SocketConfig.defaultPath,
         currentAppPath: String = Bundle.main.bundlePath,
         launcherFallbackAppPaths: [String] = [
             "/Applications/ZackEyes.app",
