@@ -10,3 +10,9 @@ import Foundation
     #expect(!path.hasPrefix("/tmp/"))
     #expect(path.hasPrefix(NSHomeDirectory()))
 }
+
+/// Codex review (PR #141): the path must always fit AF_UNIX sun_path (<=103 on
+/// Darwin) — otherwise connect()/bind() reject it and every hook silently fails.
+@Test func socketConfig_fitsSunPath() {
+    #expect(SocketConfig.defaultPath.utf8.count <= 103)
+}
