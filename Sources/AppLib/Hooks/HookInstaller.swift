@@ -161,7 +161,14 @@ public struct HookInstaller {
             let backupURL = settingsURL
                 .deletingLastPathComponent()
                 .appendingPathComponent("settings.json.backup.\(timestamp)")
-            try originalData.write(to: backupURL)
+            // Create owner-only from the start — no 0644 window before a chmod,
+            // and a failure aborts rather than leaving a loose file (#129/F-014;
+            // Codex review #142). The backup mirrors settings.json, which may hold
+            // a third-party statusLine command with secrets.
+            guard FileManager.default.createFile(
+                atPath: backupURL.path, contents: originalData,
+                attributes: [.posixPermissions: 0o600])
+            else { throw CocoaError(.fileWriteUnknown) }
         }
 
         try writeSettings(settings, to: settingsURL)
@@ -220,11 +227,15 @@ public struct HookInstaller {
             return
         }
 
-        try data.write(to: settingsURL
+        let backupURL = settingsURL
             .deletingLastPathComponent()
             .appendingPathComponent(
-                "settings.json.backup.\(Int(Date().timeIntervalSince1970))"
-            ))
+                "settings.json.backup.\(Int(Date().timeIntervalSince1970))")
+        // Owner-only from creation — no 0644 window (#129/F-014; Codex #142).
+        guard FileManager.default.createFile(
+            atPath: backupURL.path, contents: data,
+            attributes: [.posixPermissions: 0o600])
+        else { throw CocoaError(.fileWriteUnknown) }
 
         try writeSettings(settings, to: settingsURL)
     }

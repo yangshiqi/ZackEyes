@@ -8,13 +8,16 @@ public struct Redactor: Sendable {
 
     private let homeDirectory: String
     private let username: String
+    private let hostName: String
 
     public init(
         homeDirectory: String = NSHomeDirectory(),
-        username: String = NSUserName()
+        username: String = NSUserName(),
+        hostName: String = ProcessInfo.processInfo.hostName
     ) {
         self.homeDirectory = homeDirectory
         self.username = username
+        self.hostName = hostName
     }
 
     /// Redact a string: home-dir prefix → `~`, then any remaining bare
@@ -33,9 +36,29 @@ public struct Redactor: Sendable {
         // guard to "fix" cosmetics: skipping redaction for a short real
         // username would leak it, the opposite of this feature's promise.
         if !username.isEmpty {
-            out = out.replacingOccurrences(of: username, with: "<user>")
+            // Case-insensitive: a report may echo the username in any case
+            // (#129/F-016). Over-redaction is safe; never under-redact.
+            out = out.replacingOccurrences(
+                of: username, with: "<user>", options: .caseInsensitive)
+        }
+        // Hostname can leak via paths / URLs / identifiers (#129/F-020). Redact it
+        // and its `.local` Bonjour form — but only as a WHOLE word (\b…\b), so a
+        // short hostname (`mac`) doesn't rewrite substrings of fixed report text
+        // (`macOS`, `arm64`) the way the username redaction can (Codex review #142).
+        let hostBase = hostName.hasSuffix(".local") ? String(hostName.dropLast(6)) : hostName
+        for h in [hostName, hostBase] where !h.isEmpty {
+            out = Self.redactWord(h, in: out)
         }
         return out
+    }
+
+    /// Replace whole-word, case-insensitive occurrences of `word` with `<host>`.
+    private static func redactWord(_ word: String, in text: String) -> String {
+        let pattern = "\\b" + NSRegularExpression.escapedPattern(for: word) + "\\b"
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        else { return text }
+        return re.stringByReplacingMatches(
+            in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<host>")
     }
 
     public func redactOptional(_ text: String?) -> String? {
