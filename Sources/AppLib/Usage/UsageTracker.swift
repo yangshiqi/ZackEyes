@@ -182,9 +182,13 @@ public final class UsageTracker: ObservableObject {
         // Always re-estimate so the ETA reflects the latest % + reset.
         if let used = freshFivePct {
             // #116 — re-anchor the between-hook interpolation on every real
-            // reading: (real %, transcript 5h tokens) captured at this instant.
+            // reading. Defer the token baseline to the next scan (anchorTokens =
+            // nil): `s.tokens5h` here is the PREVIOUS scan's total, so pairing it
+            // with the fresh % would double-count tokens written since that scan
+            // (Codex review). The next refresh baselines tokens to the same
+            // instant the % is anchored to.
             fiveHourAnchorPct = used
-            fiveHourAnchorTokens = s.tokens5h
+            fiveHourAnchorTokens = nil
             claudeEstimator.record(now, pct: used)
         }
         s.fiveHourETA = claudeEstimator.estimate(
@@ -201,12 +205,14 @@ public final class UsageTracker: ObservableObject {
     /// mid-turn); the next real rate_limit re-anchors and can lower it. Returns
     /// nil when there is no usable anchor or tokens haven't grown.
     nonisolated static func interpolatedFiveHourPct(
-        anchorPct: Double?, anchorTokens: Int?, currentTokens: Int
+        anchorPct: Double?, anchorTokens: Int?, currentTokens: Int, floor: Double
     ) -> Double? {
         guard let p0 = anchorPct, p0 > 0,
               let t0 = anchorTokens, t0 > 0,
               currentTokens > t0 else { return nil }
-        return min(100, max(p0, p0 * Double(currentTokens) / Double(t0)))
+        // `floor` keeps the result monotonic between hooks (never below the last
+        // displayed value, which the rolling token window could otherwise undo).
+        return min(100, max(floor, p0 * Double(currentTokens) / Double(t0)))
     }
 
     /// Update Codex rate limit data from a `event_msg.token_count.rate_limits`
@@ -319,15 +325,24 @@ public final class UsageTracker: ObservableObject {
         // growth so a long burst (a Workflow fan-out) moves continuously instead
         // of freezing then snapping at the next hook. Skip once the window has
         // reset (resets_at passed): the sliding token window and Claude's fixed
-        // reset window diverge there, so we wait for the next real rate_limit
-        // rather than overestimate. Feeds the smoothed sample to the #86 ETA.
+        // reset window diverge there, so we wait for the next real rate_limit.
         let pastFiveHourReset = merged.fiveHourResetsAt.map { Date() >= $0 } ?? false
-        if !pastFiveHourReset,
-           let provisional = Self.interpolatedFiveHourPct(
-               anchorPct: fiveHourAnchorPct, anchorTokens: fiveHourAnchorTokens,
-               currentTokens: merged.tokens5h) {
-            merged.fiveHourUsedPct = provisional
-            claudeEstimator.record(Date(), pct: provisional)
+        if !pastFiveHourReset, let p0 = fiveHourAnchorPct {
+            if fiveHourAnchorTokens == nil {
+                // First scan after a real reading: baseline the token count so the
+                // anchor (real %, tokens) refers to the same instant — no stale
+                // double-count. Don't interpolate this tick (no growth yet).
+                fiveHourAnchorTokens = merged.tokens5h
+            } else if let smoothed = Self.interpolatedFiveHourPct(
+                          anchorPct: p0, anchorTokens: fiveHourAnchorTokens,
+                          currentTokens: merged.tokens5h,
+                          // Monotonic between hooks: floor at the last displayed
+                          // value so the rolling-window scan can't pull % back
+                          // (only a real lower rate_limit does). Feeds the #86 ETA.
+                          floor: merged.fiveHourUsedPct ?? p0) {
+                merged.fiveHourUsedPct = smoothed
+                claudeEstimator.record(Date(), pct: smoothed)
+            }
         }
         // #86 — re-estimate Claude ETA on the refresh tick so it ages out to
         // `.computing` when no hook arrived recently (idle), instead of pinning
