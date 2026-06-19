@@ -41,13 +41,24 @@ public struct Redactor: Sendable {
             out = out.replacingOccurrences(
                 of: username, with: "<user>", options: .caseInsensitive)
         }
-        // Hostname can leak via paths / URLs / identifiers (#129/F-020). Strip it
-        // and its `.local` Bonjour form; same over-redaction-is-safe policy.
+        // Hostname can leak via paths / URLs / identifiers (#129/F-020). Redact it
+        // and its `.local` Bonjour form — but only as a WHOLE word (\b…\b), so a
+        // short hostname (`mac`) doesn't rewrite substrings of fixed report text
+        // (`macOS`, `arm64`) the way the username redaction can (Codex review #142).
         let hostBase = hostName.hasSuffix(".local") ? String(hostName.dropLast(6)) : hostName
         for h in [hostName, hostBase] where !h.isEmpty {
-            out = out.replacingOccurrences(of: h, with: "<host>", options: .caseInsensitive)
+            out = Self.redactWord(h, in: out)
         }
         return out
+    }
+
+    /// Replace whole-word, case-insensitive occurrences of `word` with `<host>`.
+    private static func redactWord(_ word: String, in text: String) -> String {
+        let pattern = "\\b" + NSRegularExpression.escapedPattern(for: word) + "\\b"
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        else { return text }
+        return re.stringByReplacingMatches(
+            in: text, range: NSRange(text.startIndex..., in: text), withTemplate: "<host>")
     }
 
     public func redactOptional(_ text: String?) -> String? {

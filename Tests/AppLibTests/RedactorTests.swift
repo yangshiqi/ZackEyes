@@ -52,4 +52,14 @@ struct RedactorTests {
         #expect(!out.lowercased().contains("bob"))
         #expect(!out.lowercased().contains("workstation-7"))
     }
+
+    // Codex review #142: whole-word hostname redaction must not corrupt schema text.
+    @Test func hostnameRedactionIsWholeWord() {
+        let r = Redactor(homeDirectory: "/none", username: "zzz", hostName: "mac.local")
+        let out = r.redact("macOS: 15.3.2 arch arm64 host mac.local")
+        #expect(out.contains("macOS: 15.3.2"))   // not corrupted
+        #expect(out.contains("arm64"))            // not corrupted
+        #expect(!out.contains("mac.local"))       // standalone hostname redacted
+        #expect(out.contains("<host>"))
+    }
 }
