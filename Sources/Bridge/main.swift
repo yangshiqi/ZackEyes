@@ -91,7 +91,7 @@ TerminalTitleWriter.writeIfPossible(
 
 // MARK: - Step 4 & 5: Create client and route by event
 
-let client = BridgeSocketClient(path: "/tmp/zackeyes.sock")
+let client = BridgeSocketClient(path: SocketConfig.defaultPath)
 
 switch eventName {
 case "PermissionRequest":
@@ -116,7 +116,16 @@ case "PermissionRequest":
     // the missing response as "no hook preference" and falls back to
     // its own default permission prompt — which is the right outcome
     // when our app isn't running.
-    guard let responseData = client.sendAndWaitForResponse(data: payloadData, timeoutSeconds: 0) else {
+    // Finite wall-clock cap (#136 / F-021): generous enough for a real user to
+    // answer (10 min), but a wedged or hostile peer that accept()s and never
+    // replies no longer hangs the agent forever — it fails open below.
+    guard let responseData = client.sendAndWaitForResponse(data: payloadData, timeoutSeconds: 600) else {
+        exit(0)
+    }
+    // Validate the reply shape before handing it to Claude Code (#136): only a
+    // well-formed PermissionResponse is forwarded; anything else fails open to
+    // CC's native prompt rather than passing garbage to the agent.
+    guard (try? JSONDecoder().decode(PermissionResponse.self, from: responseData)) != nil else {
         exit(0)
     }
     FileHandle.standardOutput.write(responseData)
