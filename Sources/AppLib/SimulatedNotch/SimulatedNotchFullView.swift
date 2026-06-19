@@ -274,10 +274,9 @@ struct SimulatedNotchFullView: View {
                 // trailing slot stays free for the reset countdown. Both matter at
                 // once: ETA = when you run dry, reset = when budget comes back, and
                 // ETA < reset is exactly the case to show side by side. Mirrors the
-                // full-width usageBar layout.
-                if eta?.panelLabel != nil {
-                    CapETABadge(eta: eta, compact: true)
-                }
+                // full-width usageBar layout. CapETABadge self-guards a nil eta
+                // (renders nothing), so no outer `if` is needed — matches usageBar.
+                CapETABadge(eta: eta, compact: true)
                 Spacer(minLength: 0)
                 if let reset = resetsAt?.usageResetDisplay {
                     Text(reset)
