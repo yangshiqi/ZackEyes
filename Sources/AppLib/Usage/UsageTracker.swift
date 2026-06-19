@@ -126,6 +126,13 @@ public final class UsageTracker: ObservableObject {
     private var claudeEstimator = BurnRateEstimator()
     private var codexEstimator = BurnRateEstimator()
 
+    /// #116 — anchor for between-hook 5h% interpolation: the real used% and the
+    /// transcript 5h-token total captured at the last rate-limit update. Lets
+    /// refresh() scale the displayed % up as tokens burn during a long turn
+    /// (e.g. a Workflow fan-out) instead of freezing until the next hook.
+    private var fiveHourAnchorPct: Double?
+    private var fiveHourAnchorTokens: Int?
+
     /// Path where we persist the last received rate_limits snapshot so the UI
     /// can show meaningful data immediately on next launch instead of "no data".
     private let cacheURL: URL = {
@@ -174,6 +181,10 @@ public final class UsageTracker: ObservableObject {
         // reading (otherwise we'd inject a duplicate flat point at a new time).
         // Always re-estimate so the ETA reflects the latest % + reset.
         if let used = freshFivePct {
+            // #116 — re-anchor the between-hook interpolation on every real
+            // reading: (real %, transcript 5h tokens) captured at this instant.
+            fiveHourAnchorPct = used
+            fiveHourAnchorTokens = s.tokens5h
             claudeEstimator.record(now, pct: used)
         }
         s.fiveHourETA = claudeEstimator.estimate(
@@ -181,6 +192,21 @@ public final class UsageTracker: ObservableObject {
 
         snapshot = s
         saveToCache()
+    }
+
+    /// #116 — provisional 5h used% between hook updates. Scales the last real
+    /// reading by transcript token growth so a long burst (e.g. a Workflow
+    /// fan-out) shows continuous movement instead of a frozen number that snaps
+    /// at the next hook. Only ever raises the number (you can only burn more
+    /// mid-turn); the next real rate_limit re-anchors and can lower it. Returns
+    /// nil when there is no usable anchor or tokens haven't grown.
+    nonisolated static func interpolatedFiveHourPct(
+        anchorPct: Double?, anchorTokens: Int?, currentTokens: Int
+    ) -> Double? {
+        guard let p0 = anchorPct, p0 > 0,
+              let t0 = anchorTokens, t0 > 0,
+              currentTokens > t0 else { return nil }
+        return min(100, max(p0, p0 * Double(currentTokens) / Double(t0)))
     }
 
     /// Update Codex rate limit data from a `event_msg.token_count.rate_limits`
@@ -289,6 +315,20 @@ public final class UsageTracker: ObservableObject {
             pricing: pricingStore?.table ?? .empty,
             calendar: cal, now: scanNow
         )
+        // #116 — between hooks, scale the displayed 5h% by transcript token
+        // growth so a long burst (a Workflow fan-out) moves continuously instead
+        // of freezing then snapping at the next hook. Skip once the window has
+        // reset (resets_at passed): the sliding token window and Claude's fixed
+        // reset window diverge there, so we wait for the next real rate_limit
+        // rather than overestimate. Feeds the smoothed sample to the #86 ETA.
+        let pastFiveHourReset = merged.fiveHourResetsAt.map { Date() >= $0 } ?? false
+        if !pastFiveHourReset,
+           let provisional = Self.interpolatedFiveHourPct(
+               anchorPct: fiveHourAnchorPct, anchorTokens: fiveHourAnchorTokens,
+               currentTokens: merged.tokens5h) {
+            merged.fiveHourUsedPct = provisional
+            claudeEstimator.record(Date(), pct: provisional)
+        }
         // #86 — re-estimate Claude ETA on the refresh tick so it ages out to
         // `.computing` when no hook arrived recently (idle), instead of pinning
         // the last live countdown. Uses Date() — NOT the older `scanNow` captured
