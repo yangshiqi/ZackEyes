@@ -138,7 +138,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // immediately orderOut again on a .hidden startup.
         let initialVisibility = ConfigStore().loadNotchVisibility()
 
-        if NSScreen.main?.hasNotch == true {
+        // Decide by "is any connected display notched", NOT NSScreen.main:
+        // main follows keyboard focus, so launching with a window focused on
+        // an external monitor would wrongly take the simulated path on a real
+        // notched MacBook (issue #64).
+        if NSScreen.hasAnyNotch {
             let wc = NotchWindowController(
                 viewModel: viewModel,
                 usageTracker: usageTracker,

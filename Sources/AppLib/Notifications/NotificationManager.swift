@@ -67,7 +67,13 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
 
     /// Request permission on app startup.
     public func requestAuthorization() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+        // `@Sendable` is load-bearing: this type is `@MainActor`, so without it
+        // the completion closure is inferred MainActor-isolated. UNUserNotification
+        // fires the handler on a background queue, and macOS 15's stricter Swift
+        // runtime hard-traps (EXC_BREAKPOINT) on that executor mismatch instead of
+        // warning — crashing the app on launch. Marking the closure `@Sendable`
+        // makes it genuinely nonisolated; its body only logs Sendable values.
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { @Sendable granted, error in
             if let error = error {
                 NSLog("ZackEyes: notification auth error: %@", error.localizedDescription)
             }
@@ -115,7 +121,7 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request) { error in
+        UNUserNotificationCenter.current().add(request) { @Sendable error in
             if let error = error {
                 NSLog("ZackEyes: error notification post failed: %@", error.localizedDescription)
             }
@@ -145,7 +151,7 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request) { error in
+        UNUserNotificationCenter.current().add(request) { @Sendable error in
             if let error = error {
                 NSLog("ZackEyes: notification post error: %@", error.localizedDescription)
             }
@@ -170,7 +176,7 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
             content: content,
             trigger: nil
         )
-        UNUserNotificationCenter.current().add(request) { error in
+        UNUserNotificationCenter.current().add(request) { @Sendable error in
             if let error = error {
                 NSLog("ZackEyes: update notification failed: %@", error.localizedDescription)
             }

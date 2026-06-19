@@ -205,11 +205,14 @@ PricingStore.start()
 
 两家的关键约定（我们已采纳，偏离必有理由）：
 
-- **NSPanel styleMask**: `[.borderless, .nonactivatingPanel, .utilityWindow, .hudWindow]`
-- **level**: `.mainMenu + 3`（**不是** `.screenSaver` —— 那个 level 在菜单栏边缘行为不文档化）
+- **NSPanel styleMask**: `[.borderless, .nonactivatingPanel]`（实测：`.utilityWindow`/`.hudWindow` 会引入 title-bar inset，把内容往下挤，且无收益 —— `#64`）
+- **level**: `CGShieldingWindowLevel()`，且**必须在 `isFloatingPanel = true` 之后设置**。`isFloatingPanel = true` 会把 level 打回 `.floating`（raw 3，**低于**菜单栏），导致面板渲染在刘海**下方**一条菜单栏的位置（`#64` 真机症状）。`.mainMenu + 3` 在没有 SkyLight NotchSpace 注入时无法盖住菜单栏；`SimulatedNotchPanel` 与真刘海 `NotchPanel` 现在统一用 `CGShieldingWindowLevel()`。
+- **constrainFrameRect override**: 两个 panel 都覆写 `constrainFrameRect` 返回原 frame —— 否则 AppKit 会把顶边贴菜单栏上方的窗口往下推。
 - **窗口尺寸固定**: 一次性设为 expanded 尺寸，此后不 resize；SwiftUI 内部按 `panelState` 切换 compact pill / 完整面板
 - **定位公式**: `y = screen.frame.maxY - window.height`（窗口顶边贴屏幕顶）
 - **Notch 探测**: `screen.safeAreaInsets.top > 0` + `notchWidth = frame.width - auxiliaryTopLeftArea.width - auxiliaryTopRightArea.width + 4`
+- **屏幕选择**（`#64`）: 真刘海路径的判定与锚定用 `NSScreen.hasAnyNotch` / `NSScreen.withNotch`（"任一连接屏有刘海"），**不是** `NSScreen.main?.hasNotch`——`NSScreen.main` 跟随键盘焦点，外接显示器有 key window 时会指向无刘海的外接屏，导致真刘海机误走 simulated 路径或把面板锚到外接屏。`NotchWindowController.notchScreen()` 仅返回刘海屏（无则 nil），合盖/clamshell 下不再把 0 高度隐形面板贴到外接屏。
+- **NotchShape**（`#64`）: 平顶 + 顶部外角向屏幕边缘外扩 + 圆底的灵动岛轮廓（照搬 DynamicNotchKit / boring.notch），真刘海与模拟刘海共用（模拟侧用 `init(cornerRadius:)` 退化成纯圆底，保持原样）。紧凑态用中间留 `notchSize.width` 空档、两侧放 5h/7d chips 的方式贴住物理刘海。
 
 | 模块 | 文件 | 职责 |
 |------|------|------|
