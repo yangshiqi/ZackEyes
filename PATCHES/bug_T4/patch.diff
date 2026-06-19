@@ -1,7 +1,7 @@
 diff --git a/Sources/AppLib/Update/UpdateChecker.swift b/Sources/AppLib/Update/UpdateChecker.swift
 --- a/Sources/AppLib/Update/UpdateChecker.swift
 +++ b/Sources/AppLib/Update/UpdateChecker.swift
-@@ -93,11 +93,21 @@
+@@ -93,11 +93,22 @@
              let remoteVersion = release.tagName.hasPrefix("v")
                  ? String(release.tagName.dropFirst())
                  : release.tagName
@@ -17,8 +17,9 @@ diff --git a/Sources/AppLib/Update/UpdateChecker.swift b/Sources/AppLib/Update/U
 +                // download host can never be attacker-chosen.
 +                if let asset = release.assets.first(where: { $0.name.hasSuffix(".dmg") }),
 +                   Self.isSafeAssetName(asset.name),
-+                   let tag = release.tagName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
-+                   let name = asset.name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) {
++                   !release.tagName.contains("/"), !release.tagName.contains(".."),
++                   let tag = release.tagName.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed),
++                   let name = asset.name.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) {
 +                    dmgURL = URL(string: "https://github.com/\(repoOwner)/\(repoName)/releases/download/\(tag)/\(name)")
 +                } else {
 +                    dmgURL = nil

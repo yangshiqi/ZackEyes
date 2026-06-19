@@ -83,5 +83,8 @@ private func isNotarizedDMG(_ url: URL) -> Bool {
   `https://github.com/{owner}/{repo}/releases/download/{tag}/{name}` and redirect
   server-side to the CDN — confirm the reconstructed URL still resolves for a real
   release (it should; it's the same canonical form GitHub emits).
-- `addingPercentEncoding(.urlPathAllowed)` on `tagName`/`name` — confirm real tags
-  (`v0.7.2`) and asset names round-trip unchanged.
+- `tagName` is validated against `/` and `..` and encoded with `.urlHostAllowed`
+  (NOT `.urlPathAllowed`, which leaves `/` unencoded — a compromised `tag_name`
+  like `../../owner/repo/...` would otherwise rebuild the URL to a different repo
+  on github.com, defeating the owner/repo pin). Flagged by both Gemini (PR #134,
+  security-high) and Codex. Confirm real tags (`v0.7.2`) and asset names round-trip.
