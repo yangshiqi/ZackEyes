@@ -26,6 +26,34 @@ final class TerminalTitleWriterTests: XCTestCase {
         )
     }
 
+    // MARK: C1 controls (T-3 hardening)
+
+    func test_sanitizePrompt_stripsC1Controls() {
+        // C1 controls (U+0080–U+009F, e.g. ST/CSI) are now dropped too.
+        XCTAssertEqual(TerminalTitleWriter.sanitizePrompt("a\u{009C}b\u{0080}c"), "abc")
+    }
+
+    // MARK: oscEscape sanitizes the whole title (T-3: cwd basename can't inject)
+
+    func test_oscEscape_sanitizesWholeTitle_basenameCannotInject() {
+        // formatTitle interpolates the cwd basename raw; oscEscape must sanitize
+        // the whole composed title at the boundary so an ESC/BEL-bearing dir name
+        // cannot smuggle a follow-on escape (e.g. OSC 52 clipboard write).
+        let title = TerminalTitleWriter.formatTitle(
+            cwd: "/tmp/proj\u{0007}\u{001B}]52;c;evil",
+            sessionId: "abcd1234",
+            prompt: nil
+        )
+        let osc = TerminalTitleWriter.oscEscape(title: title)
+        XCTAssertTrue(osc.hasPrefix("\u{001B}]2;"))
+        XCTAssertTrue(osc.hasSuffix("\u{0007}"))
+        let inner = String(osc.dropFirst(4).dropLast())
+        XCTAssertFalse(
+            inner.unicodeScalars.contains { $0.value == 0x1B || $0.value == 0x07 },
+            "no ESC/BEL may survive inside the OSC title"
+        )
+    }
+
     // MARK: truncateToChars
 
     func test_truncateToChars_shortPassesThrough() {

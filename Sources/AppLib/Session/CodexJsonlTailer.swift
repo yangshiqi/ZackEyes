@@ -241,6 +241,11 @@ public final class CodexJsonlTailer {
 // MARK: - Pure parser (testable, nonisolated)
 
 extension CodexJsonlTailer {
+    /// Cap on the carried partial line (T-9). A real codex JSONL line is far
+    /// smaller; a newline-free flood would otherwise grow the buffer without
+    /// bound across kqueue events (O(n^2) recopy via `pending + chunk`).
+    nonisolated static let maxPendingBytes = 8 * 1024 * 1024
+
     public nonisolated static func parseTaskLifecycleEvents(
         chunk: String,
         pending: inout String,
@@ -254,7 +259,8 @@ extension CodexJsonlTailer {
             pending = combined
             return []
         }
-        pending = last
+        // Drop an over-long unparsable partial rather than carrying it forever.
+        pending = last.utf8.count > Self.maxPendingBytes ? "" : last
         let completeLines = parts.dropLast()
 
         var events: [CodexTaskLifecycleEvent] = []
@@ -401,6 +407,15 @@ extension CodexJsonlTailer {
             || dict["rationale"] != nil
     }
 
+    /// Convert an untrusted Double token/window count to a safe, clamped Int so a
+    /// crafted huge / non-finite value can't trap `Int(_:)` (T-8). Mirrors
+    /// `UsageTracker.clampTokens`; also protects the downstream `input - cached`
+    /// subtraction in SessionStore.applyCodexTokenCount.
+    private nonisolated static func safeTokenInt(_ d: Double) -> Int {
+        guard d.isFinite, d > 0 else { return 0 }
+        return Int(min(d.rounded(), 1_000_000_000))
+    }
+
     private nonisolated static func parseTokenCountEvent(
         payload: [String: Any],
         sessionId: String,
@@ -415,13 +430,13 @@ extension CodexJsonlTailer {
             return nil
         }
 
-        let windowSize = Int(window.rounded())
+        let windowSize = Self.safeTokenInt(window)
         // #78: cumulative session totals (for per-session cost). Optional —
         // some token_count rows carry only last_token_usage.
         let totals = info["total_token_usage"] as? [String: Any]
-        let cumInput = totals.flatMap { number($0["input_tokens"]) }.map { Int($0.rounded()) }
-        let cumCached = totals.flatMap { number($0["cached_input_tokens"]) }.map { Int($0.rounded()) }
-        let cumOutput = totals.flatMap { number($0["output_tokens"]) }.map { Int($0.rounded()) }
+        let cumInput = totals.flatMap { number($0["input_tokens"]) }.map { Self.safeTokenInt($0) }
+        let cumCached = totals.flatMap { number($0["cached_input_tokens"]) }.map { Self.safeTokenInt($0) }
+        let cumOutput = totals.flatMap { number($0["output_tokens"]) }.map { Self.safeTokenInt($0) }
         return CodexTokenCountEvent(
             sessionId: sessionId,
             cwd: cwd,
@@ -459,6 +474,10 @@ private final class Watcher: @unchecked Sendable {
     private let queue: DispatchQueue
     private var offset: UInt64
     private var pendingBuffer: String = ""
+    /// Cap on bytes read from the rollout per refresh (T-9): on a huge
+    /// newline-free flood, skip to a bounded tail instead of reading the whole
+    /// gap into memory at once.
+    private static let maxReadBytes: UInt64 = 16 * 1024 * 1024
     private let onTaskStarted: (CodexTaskStartedEvent) -> Void
     private let onTaskComplete: (CodexTaskCompleteEvent) -> Void
     private let onTokenCount: (CodexTokenCountEvent) -> Void
@@ -611,7 +630,22 @@ private final class Watcher: @unchecked Sendable {
         defer { try? handle.close() }
         do {
             let endSize = try handle.seekToEnd()
+            if endSize < offset {
+                // File truncated/rotated in place (T-9 / F-026). The bytes now in
+                // the file are fresh content, so restart from offset 0 (dropping
+                // the stale partial) and re-read them below — skipping to EOF would
+                // silently lose records written right after the truncation.
+                offset = 0
+                pendingBuffer = ""
+            }
             guard endSize > offset else { return }
+            // Bound a single read (T-9): on a huge newline-free flood, skip to a
+            // bounded tail rather than pulling the whole gap into memory, dropping
+            // the stale partial we can no longer complete.
+            if endSize - offset > Self.maxReadBytes {
+                offset = endSize - Self.maxReadBytes
+                pendingBuffer = ""
+            }
             try handle.seek(toOffset: offset)
             guard let data = try handle.readToEnd() else { return }
             offset = endSize

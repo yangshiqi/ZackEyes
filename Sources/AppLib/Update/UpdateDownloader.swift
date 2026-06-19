@@ -38,8 +38,16 @@ public final class UpdateDownloader: ObservableObject {
         // a fast double-click — this gate is the actual safety net.
         if case .downloading = state { return }
 
+        // Re-validate the filename before using it as a path component (the URL
+        // is reconstructed + validated upstream, but this sink must not assume
+        // that — T-4). Reuse the checker's helper so the rules stay consistent.
+        let filename = url.lastPathComponent
+        guard UpdateChecker.isSafeAssetName(filename) else {
+            state = .failed("invalid asset filename")
+            return
+        }
         let dest = FileManager.default.temporaryDirectory
-            .appendingPathComponent(url.lastPathComponent)
+            .appendingPathComponent(filename)
 
         if FileManager.default.fileExists(atPath: dest.path) {
             state = .ready(dest)

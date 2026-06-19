@@ -130,9 +130,19 @@ extension UsageTracker {
                   let totals = info["total_token_usage"] as? [String: Any] else { continue }
 
             // Absent component → treat as unchanged (delta 0 for that component).
-            let curInput = (totals["input_tokens"] as? Int) ?? prevInput
-            let curCached = (totals["cached_input_tokens"] as? Int) ?? prevCached
-            let curOutput = (totals["output_tokens"] as? Int) ?? prevOutput
+            // Codex may write token counts as Int OR Double in the rollout JSONL,
+            // so `as? Int` alone silently misses float-encoded values (Gemini #138).
+            // Parse robustly, then clamp so deltas/tally sums can't overflow (T-8).
+            func tok(_ raw: Any?, _ prev: Int) -> Int {
+                if let i = raw as? Int { return UsageTracker.clampTokens(i) }
+                if let d = raw as? Double, d.isFinite, d >= 0 {
+                    return UsageTracker.clampTokens(Int(min(d.rounded(), 1_000_000_000)))
+                }
+                return prev
+            }
+            let curInput = tok(totals["input_tokens"], prevInput)
+            let curCached = tok(totals["cached_input_tokens"], prevCached)
+            let curOutput = tok(totals["output_tokens"], prevOutput)
             // Schema assumption (locked by fixtures): a rollout's total_token_usage
             // starts from 0 at turn 1, and `codex --resume` appends to the ORIGINAL
             // file (never a continuation carrying prior totals), so the first totals

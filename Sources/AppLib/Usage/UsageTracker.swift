@@ -497,10 +497,16 @@ public final class UsageTracker: ObservableObject {
                 at: dayDir, includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey]
             ) else { continue }
             for file in files where file.pathExtension == "jsonl" {
-                guard let vals = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
+                guard let vals = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isSymbolicLinkKey]),
                       let mtime = vals.contentModificationDate,
                       let size = vals.fileSize else { continue }
                 if mtime < dailyCutoff { continue }   // file untouched within the window
+                // Same size/symlink gate the Claude path uses (T-2): the 256MB
+                // cap + symlink skip (PR #119 / F-008) was applied only to
+                // computeSnapshot, not to this structurally identical codex scan.
+                guard UsageTracker.shouldScanTranscript(
+                    isSymbolicLink: vals.isSymbolicLink ?? false, fileSize: size
+                ) else { continue }
                 // Use the symlink-resolved path as cache key so that entries
                 // created with /var/... (FileManager.temporaryDirectory) and
                 // those returned by contentsOfDirectory (/private/var/...) match.
@@ -564,6 +570,14 @@ public final class UsageTracker: ObservableObject {
     /// boundary shouldn't lean on that subtlety) — and skip oversized files.
     nonisolated static func shouldScanTranscript(isSymbolicLink: Bool, fileSize: Int) -> Bool {
         !isSymbolicLink && fileSize <= maxTranscriptBytes
+    }
+
+    /// Clamp an untrusted token count to a sane, non-negative ceiling so summing
+    /// many records cannot overflow Int and trap the process (T-8). Real
+    /// per-message counts are at most a few million; 1e9 is far above that yet
+    /// far below Int.max, so all downstream accumulation stays safe.
+    nonisolated static func clampTokens(_ value: Int) -> Int {
+        min(max(0, value), 1_000_000_000)
     }
 
     nonisolated static func computeSnapshot(
@@ -686,10 +700,10 @@ public final class UsageTracker: ObservableObject {
                 ts: ts,
                 id: msg["id"] as? String,
                 model: (msg["model"] as? String) ?? "unknown",
-                input: (usage["input_tokens"] as? Int) ?? 0,
-                output: (usage["output_tokens"] as? Int) ?? 0,
-                cacheRead: (usage["cache_read_input_tokens"] as? Int) ?? 0,
-                cacheCreate: (usage["cache_creation_input_tokens"] as? Int) ?? 0))
+                input: Self.clampTokens((usage["input_tokens"] as? Int) ?? 0),
+                output: Self.clampTokens((usage["output_tokens"] as? Int) ?? 0),
+                cacheRead: Self.clampTokens((usage["cache_read_input_tokens"] as? Int) ?? 0),
+                cacheCreate: Self.clampTokens((usage["cache_creation_input_tokens"] as? Int) ?? 0)))
         }
         return records
     }
