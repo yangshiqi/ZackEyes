@@ -407,14 +407,28 @@ public final class SessionStore: ObservableObject {
         resolvePermission(sessionId: primary.id, allow: allow)
     }
 
+    /// Tools whose blanket "Allow Always" is too dangerous to honor — a single
+    /// approval would silently auto-run every future invocation this session
+    /// (e.g. any Bash command, `rm -rf` included). These always require a fresh
+    /// confirmation (#128). Extend conservatively. Same-uid is out of the threat
+    /// model; this is a defense-in-depth UX guardrail, not a security boundary.
+    public static let highRiskTools: Set<String> = ["Bash"]
+
+    public static func isHighRisk(_ toolName: String) -> Bool {
+        highRiskTools.contains(toolName)
+    }
+
     /// "Allow Always": approve the current request AND remember the tool name so
     /// future PermissionRequests for the same tool in this session are
     /// auto-allowed (see `isToolAutoAllowed` + the short-circuit in
-    /// `AppDelegate.handleEvent`). Session-scoped, never persisted.
+    /// `AppDelegate.handleEvent`). Session-scoped, never persisted. A high-risk
+    /// tool is approved once but NOT remembered (#128).
     public func allowAlways(sessionId: String) {
         guard var session = sessions[sessionId], let pending = session.pendingPermission else { return }
-        session.autoAllowedTools.insert(pending.toolName)
-        sessions[sessionId] = session
+        if !Self.isHighRisk(pending.toolName) {
+            session.autoAllowedTools.insert(pending.toolName)
+            sessions[sessionId] = session
+        }
         // Send the .allow for the current request + clear pending + go working.
         resolvePermission(sessionId: sessionId, allow: true)
     }
@@ -422,7 +436,9 @@ public final class SessionStore: ObservableObject {
     /// True when the given tool was approved via "Allow Always" for this session
     /// and a fresh PermissionRequest should be auto-allowed without a popup.
     public func isToolAutoAllowed(sessionId: String, toolName: String) -> Bool {
-        sessions[sessionId]?.autoAllowedTools.contains(toolName) ?? false
+        // High-risk tools are never auto-allowed, even if somehow recorded (#128).
+        if Self.isHighRisk(toolName) { return false }
+        return sessions[sessionId]?.autoAllowedTools.contains(toolName) ?? false
     }
 
     /// Called when the bridge disconnects without the user responding via ZackEyes

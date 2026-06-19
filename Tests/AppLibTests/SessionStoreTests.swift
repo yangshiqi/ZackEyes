@@ -78,12 +78,12 @@ struct SessionStoreTests {
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
         let box = Box<BridgeResponse>()
         let permission = PendingPermission(
-            toolName: "Bash", toolInput: [:], cwd: "/tmp",
+            toolName: "Read", toolInput: [:], cwd: "/tmp",
             responder: { box.value = $0 }
         )
         store.handlePermissionRequest(sessionId: "s1", permission: permission)
 
-        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Bash") == false)
+        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Read") == false)
         store.allowAlways(sessionId: "s1")
 
         // Current request allowed + pending cleared + back to working
@@ -94,26 +94,53 @@ struct SessionStoreTests {
         }
         #expect(store.sessions["s1"]?.pendingPermission == nil)
         #expect(store.sessions["s1"]?.state == .working)
-        // Future Bash requests in this session are now auto-allowed
-        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Bash"))
+        // Future Read requests in this session are now auto-allowed
+        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Read"))
         // A different tool is NOT auto-allowed
         #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Write") == false)
     }
 
-    // 5b. Auto-allow is scoped per session: allowing all Bash in s1 must not
-    //     auto-allow Bash in s2.
+    // #128: a high-risk tool (Bash) is approved once but never remembered — every
+    // future invocation still prompts, even after "Allow Always".
+    @Test func allowAlwaysDoesNotRememberHighRiskTool() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        let box = Box<BridgeResponse>()
+        let permission = PendingPermission(
+            toolName: "Bash", toolInput: [:], cwd: "/tmp",
+            responder: { box.value = $0 }
+        )
+        store.handlePermissionRequest(sessionId: "s1", permission: permission)
+        store.allowAlways(sessionId: "s1")
+
+        // The current request is still approved...
+        if case .permission(let r) = box.value {
+            #expect(r.hookSpecificOutput.decision.behavior == "allow")
+        } else {
+            #expect(Bool(false), "allowAlways should still approve the current high-risk request")
+        }
+        #expect(store.sessions["s1"]?.pendingPermission == nil)
+        // ...but Bash is NOT remembered (#128).
+        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Bash") == false)
+        #expect(store.sessions["s1"]?.autoAllowedTools.contains("Bash") == false)
+        #expect(SessionStore.isHighRisk("Bash"))
+        #expect(SessionStore.isHighRisk("Read") == false)
+    }
+
+    // 5b. Auto-allow is scoped per session: allowing all Read in s1 must not
+    //     auto-allow Read in s2.
     @Test func autoAllowIsScopedPerSession() {
         let store = SessionStore()
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/a"))
         store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s2", cwd: "/b"))
         let permission = PendingPermission(
-            toolName: "Bash", toolInput: [:], cwd: "/a", responder: { _ in }
+            toolName: "Read", toolInput: [:], cwd: "/a", responder: { _ in }
         )
         store.handlePermissionRequest(sessionId: "s1", permission: permission)
         store.allowAlways(sessionId: "s1")
 
-        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Bash"))
-        #expect(store.isToolAutoAllowed(sessionId: "s2", toolName: "Bash") == false)
+        #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Read"))
+        #expect(store.isToolAutoAllowed(sessionId: "s2", toolName: "Read") == false)
     }
 
     @Test func isToolAutoAllowedDefaultsFalse() {

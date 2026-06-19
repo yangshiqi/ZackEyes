@@ -519,10 +519,16 @@ struct NotchExpandedView: View {
 
     @ViewBuilder
     private func permissionApprovalButtons(sessionId: String, isPrimary: Bool) -> some View {
+        let toolName = viewModel.sessionStore.sessions[sessionId]?.pendingPermission?.toolName
+        let highRisk = toolName.map(SessionStore.isHighRisk) ?? false
         HStack(spacing: 8) {
             denyButton(sessionId: sessionId, isPrimary: isPrimary)
             allowButton(sessionId: sessionId, isPrimary: isPrimary)
-            allowAlwaysButton(sessionId: sessionId, isPrimary: isPrimary)
+            // High-risk tools (e.g. Bash) don't offer "Allow Always" — a single
+            // approval would auto-run every future invocation this session (#128).
+            if !highRisk {
+                allowAlwaysButton(sessionId: sessionId, isPrimary: isPrimary)
+            }
         }
     }
 
