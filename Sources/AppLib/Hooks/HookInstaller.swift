@@ -162,6 +162,10 @@ public struct HookInstaller {
                 .deletingLastPathComponent()
                 .appendingPathComponent("settings.json.backup.\(timestamp)")
             try originalData.write(to: backupURL)
+            // The backup is a verbatim copy of settings.json, which may hold a
+            // third-party statusLine command with secrets — owner-only (#129/F-014).
+            try? FileManager.default.setAttributes(
+                [.posixPermissions: 0o600], ofItemAtPath: backupURL.path)
         }
 
         try writeSettings(settings, to: settingsURL)
@@ -220,11 +224,14 @@ public struct HookInstaller {
             return
         }
 
-        try data.write(to: settingsURL
+        let backupURL = settingsURL
             .deletingLastPathComponent()
             .appendingPathComponent(
-                "settings.json.backup.\(Int(Date().timeIntervalSince1970))"
-            ))
+                "settings.json.backup.\(Int(Date().timeIntervalSince1970))")
+        try data.write(to: backupURL)
+        // Owner-only — the backup mirrors settings.json (#129/F-014).
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: backupURL.path)
 
         try writeSettings(settings, to: settingsURL)
     }

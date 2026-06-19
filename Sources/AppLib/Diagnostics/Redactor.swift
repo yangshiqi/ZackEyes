@@ -8,13 +8,16 @@ public struct Redactor: Sendable {
 
     private let homeDirectory: String
     private let username: String
+    private let hostName: String
 
     public init(
         homeDirectory: String = NSHomeDirectory(),
-        username: String = NSUserName()
+        username: String = NSUserName(),
+        hostName: String = ProcessInfo.processInfo.hostName
     ) {
         self.homeDirectory = homeDirectory
         self.username = username
+        self.hostName = hostName
     }
 
     /// Redact a string: home-dir prefix → `~`, then any remaining bare
@@ -33,7 +36,16 @@ public struct Redactor: Sendable {
         // guard to "fix" cosmetics: skipping redaction for a short real
         // username would leak it, the opposite of this feature's promise.
         if !username.isEmpty {
-            out = out.replacingOccurrences(of: username, with: "<user>")
+            // Case-insensitive: a report may echo the username in any case
+            // (#129/F-016). Over-redaction is safe; never under-redact.
+            out = out.replacingOccurrences(
+                of: username, with: "<user>", options: .caseInsensitive)
+        }
+        // Hostname can leak via paths / URLs / identifiers (#129/F-020). Strip it
+        // and its `.local` Bonjour form; same over-redaction-is-safe policy.
+        let hostBase = hostName.hasSuffix(".local") ? String(hostName.dropLast(6)) : hostName
+        for h in [hostName, hostBase] where !h.isEmpty {
+            out = out.replacingOccurrences(of: h, with: "<host>", options: .caseInsensitive)
         }
         return out
     }

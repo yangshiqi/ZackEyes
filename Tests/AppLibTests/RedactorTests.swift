@@ -42,4 +42,14 @@ struct RedactorTests {
         let r = Redactor(homeDirectory: "/Users/alice", username: "")
         #expect(r.redact("/Users/bob/file") == "/Users/bob/file")
     }
+
+    // #129 F-016 / F-020: case-insensitive username + hostname (incl .local) redaction.
+    @Test func caseInsensitiveUsernameAndHostname() {
+        let r = Redactor(homeDirectory: "/Users/bob", username: "bob", hostName: "workstation-7.local")
+        let out = r.redact("/Users/bob/x ran by BOB on workstation-7.local (Workstation-7)")
+        #expect(out.contains("<user>"))
+        #expect(out.contains("<host>"))
+        #expect(!out.lowercased().contains("bob"))
+        #expect(!out.lowercased().contains("workstation-7"))
+    }
 }
