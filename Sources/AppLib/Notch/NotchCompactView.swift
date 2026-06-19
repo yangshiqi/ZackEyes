@@ -8,6 +8,11 @@ struct NotchRootView: View {
     /// compact pill knows exactly how tall to be. Matches the menu-bar
     /// strip height.
     let notchHeight: CGFloat
+    /// Real notch width (from `auxiliaryTopLeftArea`/`auxiliaryTopRightArea`)
+    /// piped down so the compact pill reserves a center gap exactly over the
+    /// hardware notch and flanks it with content (issue #64 — Dynamic Island
+    /// layout, mirroring DynamicNotchKit / boring.notch).
+    let notchWidth: CGFloat
     /// Called when the gear is clicked. Receives the gear's backing NSView
     /// so AppDelegate can anchor an NSMenu against it.
     let showMenu: (NSView) -> Void
@@ -21,9 +26,13 @@ struct NotchRootView: View {
         ZStack(alignment: .top) {
             switch viewModel.panelState {
             case .compact:
-                NotchCompactView(viewModel: viewModel, usageTracker: usageTracker)
-                    .frame(height: notchHeight)
-                    .frame(maxWidth: .infinity, alignment: .top)
+                NotchCompactView(
+                    viewModel: viewModel,
+                    usageTracker: usageTracker,
+                    notchWidth: notchWidth
+                )
+                .frame(height: notchHeight)
+                .frame(maxWidth: .infinity, alignment: .top)
 
             case .expanded:
                 // Both welcome and normal branches share the same real-notch
@@ -54,7 +63,11 @@ struct NotchRootView: View {
                     }
                 }
                 .background(Color.black)
-                .clipShape(RoundedRectangle(cornerRadius: 16))
+                // Same notch silhouette as the compact pill, with larger radii
+                // for the bigger panel: flat top flush to the screen edge,
+                // top-outer corners flaring into the bezel, rounded bottom —
+                // the expanded panel grows out of the hardware notch.
+                .clipShape(NotchShape(topCornerRadius: 10, bottomCornerRadius: 22))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -82,25 +95,45 @@ struct NotchRootView: View {
     }
 }
 
-/// Always-visible compact pill. The panel is 420pt wide but the center
-/// ~190pt is clipped by the physical notch. Layout pushes meaningful
-/// content to the left and right strips via `Spacer`; anything placed
-/// in the middle is effectively invisible.
+/// Always-visible compact pill, laid out Dynamic-Island style around the
+/// physical notch (issue #64): a center `Spacer` exactly as wide as the
+/// hardware notch keeps that region empty (so nothing lands under the cutout),
+/// with the always-on 5h/7d usage chips + status flanking it on the left/right
+/// menu-bar strips. `fixedSize` shrinks the black `NotchShape` to wrap tightly
+/// around content+notch (instead of a fixed 420pt bar), so the pill hugs the
+/// real notch — mirroring DynamicNotchKit / boring.notch's compact layout. The
+/// island is therefore a bit wider than the bare notch: that extra width is the
+/// always-on info the user asked to keep visible.
 struct NotchCompactView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
+    let notchWidth: CGFloat
+
+    /// Extra clearance added to the center gap so minor left/right content
+    /// asymmetry can't push a glyph under the (centered) physical notch.
+    private let notchClearance: CGFloat = 16
 
     var body: some View {
         HStack(spacing: 6) {
             statusIcon
             leftContent
-            Spacer(minLength: 0)
+            // Reserve the hardware-notch footprint: an explicit fixed-width gap
+            // (NOT a Spacer — under `.fixedSize` a Spacer collapses toward zero,
+            // which would pull both chips into the center, behind the physical
+            // notch cutout, making them invisible — issue #64).
+            Color.clear.frame(width: notchWidth + notchClearance)
             rightContent
         }
         .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxHeight: .infinity)
+        // Shrink to content width so the black shape hugs the notch instead of
+        // spanning the whole 420pt host.
+        .fixedSize(horizontal: true, vertical: false)
         .background(Color.black)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        // Flat top flush to the bezel, top-outer corners flaring into it, and
+        // rounded bottom — the pill fuses with the hardware notch.
+        .clipShape(NotchShape(topCornerRadius: 8, bottomCornerRadius: 14))
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Status icon (left edge)
@@ -129,19 +162,15 @@ struct NotchCompactView: View {
     @ViewBuilder
     private var leftContent: some View {
         // #86 — when the 5h cap is imminent (≤30 min), the urgent ETA takes the
-        // left slot over the normal quota chip / "Claude" label: the pill stays
-        // quota-only until it matters, then surfaces the countdown.
+        // left slot over the normal quota chip: the pill stays quota-only until
+        // it matters, then surfaces the countdown.
         if let urgent = usageTracker.snapshot.fiveHourETA?.pillUrgentLabel {
             urgentETAChip(urgent)
         } else {
-            switch viewModel.aggregateState {
-            case .idle, .stopped:
-                usageChip(label: "5h", usedPct: usageTracker.snapshot.fiveHourUsedPct)
-            case .working, .waiting:
-                Text("Claude")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white)
-            }
+            // Always-on 5h chip (issue #64) — the working/waiting state is shown
+            // by the status icon, and the detailed status text lives in the
+            // hover-expanded panel, so the quota chip stays visible at all times.
+            usageChip(label: "5h", usedPct: usageTracker.snapshot.fiveHourUsedPct)
         }
     }
 
@@ -160,15 +189,9 @@ struct NotchCompactView: View {
 
     @ViewBuilder
     private var rightContent: some View {
-        switch viewModel.aggregateState {
-        case .idle, .stopped:
-            usageChip(label: "7d", usedPct: usageTracker.snapshot.sevenDayUsedPct)
-        case .working, .waiting:
-            Text(viewModel.statusText)
-                .font(.system(size: 11))
-                .foregroundColor(viewModel.statusColor)
-                .lineLimit(1)
-        }
+        // Always-on 7d chip (issue #64) — kept visible in every state so the
+        // island persistently shows both quota windows.
+        usageChip(label: "7d", usedPct: usageTracker.snapshot.sevenDayUsedPct)
     }
 
     // MARK: - Usage chip

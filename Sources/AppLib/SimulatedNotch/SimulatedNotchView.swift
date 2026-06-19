@@ -207,25 +207,6 @@ struct SimulatedNotchView: View {
     }
 }
 
-/// A pill-shaped notch: flat top, rounded bottom corners (hangs from the menu bar area).
-struct NotchShape: Shape {
-    let cornerRadius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: rect.minX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - cornerRadius))
-        p.addQuadCurve(
-            to: CGPoint(x: rect.maxX - cornerRadius, y: rect.maxY),
-            control: CGPoint(x: rect.maxX, y: rect.maxY)
-        )
-        p.addLine(to: CGPoint(x: rect.minX + cornerRadius, y: rect.maxY))
-        p.addQuadCurve(
-            to: CGPoint(x: rect.minX, y: rect.maxY - cornerRadius),
-            control: CGPoint(x: rect.minX, y: rect.maxY)
-        )
-        p.closeSubpath()
-        return p
-    }
-}
+// `NotchShape` now lives in Sources/AppLib/Notch/NotchShape.swift (shared by
+// the real-notch and simulated paths). The simulated path keeps its original
+// look via the back-compat `NotchShape(cornerRadius:)` initializer.

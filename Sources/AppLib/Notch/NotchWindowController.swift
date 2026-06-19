@@ -57,9 +57,13 @@ public final class NotchWindowController {
 
     // Window dimensions. The host panel is sized for the largest state
     // (expanded) and never resized; SwiftUI draws the narrow pill inside
-    // this fixed host when we're in the compact state.
-    private let windowWidth: CGFloat = 420
-    private let windowHeight: CGFloat = 280
+    // this fixed host when we're in the compact state. Matches the simulated
+    // notch's generous sizing (520 wide, height adaptive to the screen) so the
+    // expanded panel doesn't feel cramped on smaller (13") displays — #64.
+    private let windowWidth: CGFloat = 480
+    // Set per-screen in `createPanel` (capped to leave a margin below the top);
+    // the expanded content scrolls internally, so this is fixed once.
+    private var windowHeight: CGFloat = 400
 
     // MARK: - Init
 
@@ -138,10 +142,19 @@ public final class NotchWindowController {
             return
         }
 
+        // Cap the expanded height to the screen (leaving a margin below the
+        // top), mirroring SimulatedNotchController. The content scrolls
+        // internally, so this is computed once and the host is never resized.
+        windowHeight = min(400, screen.visibleFrame.height - 60)
+
         let initialFrame = hostFrame(on: screen)
-        NSLog("ZackEyes[notch]: createPanel screen.frame=%@ safeTop=%.1f hostFrame=%@",
+        // Physical notch width from the screen's auxiliary top areas; fall back
+        // to ~185pt (boring.notch's fallback) if the metrics are unavailable.
+        let notchWidth = screen.notchSize?.width ?? 185
+        NSLog("ZackEyes[notch]: createPanel screen.frame=%@ safeTop=%.1f notchW=%.1f hostFrame=%@",
               "\(screen.frame)",
               screen.safeAreaInsets.top,
+              notchWidth,
               "\(initialFrame)")
 
         let newPanel = NotchPanel(
@@ -154,7 +167,8 @@ public final class NotchWindowController {
         let rootView = NotchRootView(
             viewModel: viewModel,
             usageTracker: usageTracker,
-            notchHeight: screen.safeAreaInsets.top,
+            notchHeight: notchBarHeight(on: screen),
+            notchWidth: notchWidth,
             showMenu: { [weak self] view in
                 self?.showMenu?(view)
             }
@@ -271,7 +285,7 @@ public final class NotchWindowController {
 
     private func handleMouseMoved(_ mouse: NSPoint) {
         guard let screen = notchScreen() else { return }
-        let notchHeight = screen.safeAreaInsets.top
+        let notchHeight = notchBarHeight(on: screen)
 
         switch currentState {
         case .compact:
@@ -397,8 +411,23 @@ public final class NotchWindowController {
 
     // MARK: - Helpers
 
+    /// The notch display to anchor to. Notch-only by design: this controller
+    /// is created solely on machines reporting a hardware notch, so when no
+    /// notch screen is present (e.g. the lid is closed / clamshell mode with an
+    /// external monitor) we return nil rather than falling back to
+    /// `NSScreen.main`. Falling back would anchor a 0-height, invisible panel
+    /// onto the external display; returning nil makes `createPanel` skip and
+    /// `handleScreenChange` leave nothing on screen until the notch display
+    /// returns (issue #64 — never anchor to a notchless screen).
     private func notchScreen() -> NSScreen? {
-        NSScreen.screens.first { $0.hasNotch }
-            ?? NSScreen.main
+        NSScreen.withNotch
+    }
+
+    /// Height of the compact pill: the notch safe-area inset, clamped so it
+    /// never exceeds the menu-bar height (`frame.maxY − visibleFrame.maxY`).
+    /// This matches the physical notch height flush (#64).
+    private func notchBarHeight(on screen: NSScreen) -> CGFloat {
+        let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
+        return min(screen.safeAreaInsets.top, menuBar)
     }
 }
