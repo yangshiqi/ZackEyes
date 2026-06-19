@@ -60,9 +60,27 @@ struct DiagnosticsReportTests {
             appVersion: "0.7.0", osVersion: "15.3.2", arch: "arm64",
             redactor: redactor, now: Date(timeIntervalSince1970: 1_700_000_060)
         )
-        #expect(text.contains("~/.local/bin/hud --user <user>"))
+        // #125/F-007: only the executable basename is exported — the full command
+        // (paths, args, the `--user alice` token) is dropped, not just redacted.
+        #expect(text.contains("statusLine: third-party: hud"))
         #expect(!text.contains("/Users/alice"))
         #expect(!text.contains("alice"))
+        #expect(!text.contains("--user"))
+    }
+
+    @Test func reportDropsEnvPrefixedStatusLineSecret() {
+        // #125 / Codex review (PR #140): `VAR=secret cmd` must not surface the
+        // env assignment as the "basename".
+        let text = DiagnosticsReport.generate(
+            health: sampleHealth(statusLine: .thirdParty(
+                command: "API_KEY=supersecret /usr/local/bin/hud --flag")),
+            usage: sampleUsage(lastUpdated: nil),
+            appVersion: "0.7.0", osVersion: "15.3.2", arch: "arm64",
+            redactor: redactor, now: Date(timeIntervalSince1970: 1_700_000_060)
+        )
+        #expect(text.contains("statusLine: third-party: hud"))
+        #expect(!text.contains("API_KEY"))
+        #expect(!text.contains("supersecret"))
     }
 
     @Test func reportNeverContainsSensitiveLabels() {

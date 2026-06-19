@@ -87,10 +87,55 @@ public enum DiagnosticsReport {
         case .direct: return "direct"
         case .mux: return "mux"
         case .userRenderer: return "user renderer"
-        case .thirdParty(let cmd): return "third-party: \(redactor.redact(cmd))"
+        case .thirdParty(let cmd):
+            // Only the executable basename — the full command line can carry
+            // tokens, credential URLs, non-home paths, and hostnames the Redactor
+            // (home / username only) does not catch (#125/F-007).
+            return "third-party: \(redactor.redact(Self.commandBasename(cmd)))"
         case .absent: return "not installed"
         case .unreadable: return "unreadable"
         }
+    }
+
+    /// Reduce an arbitrary third-party statusLine command to just its executable
+    /// basename so the diagnostics export can't leak args, tokens, paths, or
+    /// hostnames (#125/F-007). Skips leading `NAME=value` env-assignment prefixes
+    /// (which would otherwise surface a secret as the "basename" — Codex review,
+    /// PR #140) and honors simple quotes; anything that isn't a clean filename
+    /// is replaced with `<custom>` rather than risk leaking a fragment.
+    private static func commandBasename(_ command: String) -> String {
+        let exe = firstExecutableToken(command)
+        let base = (exe as NSString).lastPathComponent
+        let isCleanSlug = !base.isEmpty && base.allSatisfy { c in
+            c.isASCII && (c.isLetter || c.isNumber || c == "-" || c == "_" || c == ".")
+        }
+        return isCleanSlug ? base : "<custom>"
+    }
+
+    /// First non-env-assignment token of a shell-ish command, honoring simple
+    /// single/double quotes so a quoted path with spaces stays one token.
+    private static func firstExecutableToken(_ command: String) -> String {
+        var tokens: [String] = []
+        var current = ""
+        var quote: Character?
+        for ch in command {
+            if let q = quote {
+                if ch == q { quote = nil } else { current.append(ch) }
+            } else if ch == "\"" || ch == "'" {
+                quote = ch
+            } else if ch == " " || ch == "\t" {
+                if !current.isEmpty { tokens.append(current); current = "" }
+            } else {
+                current.append(ch)
+            }
+        }
+        if !current.isEmpty { tokens.append(current) }
+        return tokens.first(where: { !isEnvAssignment($0) }) ?? ""
+    }
+
+    private static func isEnvAssignment(_ token: String) -> Bool {
+        guard let eq = token.firstIndex(of: "="), eq != token.startIndex else { return false }
+        return token[..<eq].allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_") }
     }
 
     private static func freshness(_ date: Date?, now: Date) -> String {

@@ -41,7 +41,11 @@ public struct PendingEventReplayer {
             guard let ts = Self.timestamp(fromFileName: name),
                   now.timeIntervalSince(ts) <= maxAge,
                   let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-                  var event = try? JSONDecoder().decode(BridgeEvent.self, from: data)
+                  var event = try? JSONDecoder().decode(BridgeEvent.self, from: data),
+                  // Read side must enforce the SAME allowlist the write side uses
+                  // (#127/F-012): a planted file with any other event type — or a
+                  // forged PermissionRequest — is rejected, not fed to the handler.
+                  BridgeEvent.replayableEventNames.contains(event.bridgeEvent)
             else { continue }
 
             event.isReplayed = true

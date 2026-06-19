@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 /// Write-side spool for fire-and-forget hook events that couldn't reach the
 /// app's socket (#89). The bridge calls `enqueueIfEligible` only after a
@@ -16,11 +17,7 @@ import Foundation
 /// PermissionRequest is blocking and meaningless to replay.
 public struct PendingEventQueue: Sendable {
 
-    public static let replayableEvents: Set<String> = [
-        "SessionStart", "SessionEnd", "Stop", "UserPromptSubmit",
-        "Notification", "PreCompact", "PostCompact",
-        "SubagentStart", "SubagentStop",
-    ]
+    public static let replayableEvents: Set<String> = BridgeEvent.replayableEventNames
 
     private let directory: String
     private let maxCount: Int
@@ -40,13 +37,18 @@ public struct PendingEventQueue: Sendable {
         guard Self.replayableEvents.contains(event) else { return }
         let fm = FileManager.default
         guard (try? fm.createDirectory(
-            atPath: directory, withIntermediateDirectories: true)) != nil
+            atPath: directory, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])) != nil
         else { return }
+        // Tighten in case the spool dir pre-existed at looser perms (#127/#137):
+        // the files below carry raw prompt / cwd / transcript paths.
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory)
 
         let ms = Int(now.timeIntervalSince1970 * 1000)
         let name = "\(ms)-\(getpid())-\(UUID().uuidString).json"
         let url = URL(fileURLWithPath: directory).appendingPathComponent(name)
         guard (try? payload.write(to: url, options: .atomic)) != nil else { return }
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
 
         pruneOverCap()
     }

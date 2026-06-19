@@ -135,7 +135,7 @@ public struct TitleCache {
     }
 
     public func read(sessionId: String) -> String? {
-        let path = filePath(for: sessionId)
+        guard let path = filePath(for: sessionId) else { return nil }
         guard FileManager.default.fileExists(atPath: path) else { return nil }
         return try? String(contentsOfFile: path, encoding: .utf8)
     }
@@ -143,7 +143,7 @@ public struct TitleCache {
     /// Atomic first-write-wins: write only if the file does not yet exist.
     /// Silent on all errors (the title feature is fire-and-forget).
     public func writeIfMissing(sessionId: String, content: String) {
-        let path = filePath(for: sessionId)
+        guard let path = filePath(for: sessionId) else { return }
         if FileManager.default.fileExists(atPath: path) { return }
 
         // Ensure parent dir exists
@@ -156,7 +156,17 @@ public struct TitleCache {
         try? content.write(toFile: path, atomically: true, encoding: .utf8)
     }
 
-    private func filePath(for sessionId: String) -> String {
+    /// A session id is used directly as a cache filename, so it must be a strict
+    /// slug — reject anything that could traverse out of the cache dir or name a
+    /// file elsewhere (#126/F-010). session_id comes from untrusted hook JSON.
+    static func isSafeSessionId(_ sid: String) -> Bool {
+        !sid.isEmpty && sid.count <= 64 && sid.allSatisfy { c in
+            c.isASCII && (c.isLetter || c.isNumber || c == "-" || c == "_")
+        }
+    }
+
+    private func filePath(for sessionId: String) -> String? {
+        guard Self.isSafeSessionId(sessionId) else { return nil }
         let safe = String(sessionId.prefix(16))
         return (directory as NSString).appendingPathComponent(safe)
     }
