@@ -270,12 +270,16 @@ struct SimulatedNotchFullView: View {
                         .font(.system(size: 10))
                         .foregroundColor(.white.opacity(0.35))
                 }
-                Spacer(minLength: 0)
-                // #86 — cap ETA replaces the reset countdown in the tight split
-                // half when a countdown exists (the imminent signal wins the slot).
+                // #86/#108 — the ETA badge sits next to the percentage so the
+                // trailing slot stays free for the reset countdown. Both matter at
+                // once: ETA = when you run dry, reset = when budget comes back, and
+                // ETA < reset is exactly the case to show side by side. Mirrors the
+                // full-width usageBar layout.
                 if eta?.panelLabel != nil {
                     CapETABadge(eta: eta, compact: true)
-                } else if let reset = resetsAt?.usageResetDisplay {
+                }
+                Spacer(minLength: 0)
+                if let reset = resetsAt?.usageResetDisplay {
                     Text(reset)
                         .font(.system(size: 9, design: .monospaced))
                         .foregroundColor(.white.opacity(0.4))
