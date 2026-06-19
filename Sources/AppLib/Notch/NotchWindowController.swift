@@ -426,8 +426,13 @@ public final class NotchWindowController {
     /// Height of the compact pill: the notch safe-area inset, clamped so it
     /// never exceeds the menu-bar height (`frame.maxY − visibleFrame.maxY`).
     /// This matches the physical notch height flush (#64).
+    ///
+    /// When the menu bar is auto-hidden / in full screen, `visibleFrame` spans
+    /// the whole frame so the menu-bar measurement is 0. Fall back to the
+    /// safe-area inset in that case — clamping to 0 would give the pill zero
+    /// height and make it invisible (the notch is physical and still present).
     private func notchBarHeight(on screen: NSScreen) -> CGFloat {
         let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
-        return min(screen.safeAreaInsets.top, menuBar)
+        return menuBar > 0 ? min(screen.safeAreaInsets.top, menuBar) : screen.safeAreaInsets.top
     }
 }
