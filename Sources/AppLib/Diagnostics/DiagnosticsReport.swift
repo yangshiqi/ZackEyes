@@ -87,10 +87,24 @@ public enum DiagnosticsReport {
         case .direct: return "direct"
         case .mux: return "mux"
         case .userRenderer: return "user renderer"
-        case .thirdParty(let cmd): return "third-party: \(redactor.redact(cmd))"
+        case .thirdParty(let cmd):
+            // Only the executable basename — the full command line can carry
+            // tokens, credential URLs, non-home paths, and hostnames the Redactor
+            // (home / username only) does not catch (#125/F-007).
+            return "third-party: \(redactor.redact(Self.commandBasename(cmd)))"
         case .absent: return "not installed"
         case .unreadable: return "unreadable"
         }
+    }
+
+    /// Reduce an arbitrary third-party statusLine command to just its executable
+    /// basename so the diagnostics export can't leak args / tokens / paths (#125).
+    private static func commandBasename(_ command: String) -> String {
+        let firstToken = command
+            .split(whereSeparator: { $0 == " " || $0 == "\t" })
+            .first.map(String.init) ?? command
+        let base = (firstToken as NSString).lastPathComponent
+        return base.isEmpty ? "<command>" : base
     }
 
     private static func freshness(_ date: Date?, now: Date) -> String {

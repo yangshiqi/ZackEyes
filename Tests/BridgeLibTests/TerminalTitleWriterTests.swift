@@ -54,6 +54,32 @@ final class TerminalTitleWriterTests: XCTestCase {
         )
     }
 
+    // MARK: TitleCache session_id validation (#126 path traversal)
+
+    func test_isSafeSessionId() {
+        XCTAssertTrue(TitleCache.isSafeSessionId("a1b2-c3d4_EF"))
+        XCTAssertFalse(TitleCache.isSafeSessionId("../x"))
+        XCTAssertFalse(TitleCache.isSafeSessionId("a/b"))
+        XCTAssertFalse(TitleCache.isSafeSessionId("a.b"))
+        XCTAssertFalse(TitleCache.isSafeSessionId(""))
+    }
+
+    func test_titleCache_rejectsPathTraversalSessionId() throws {
+        let tmp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+        let cache = TitleCache(directory: tmp.appendingPathComponent("osc2").path)
+
+        // A traversal session_id is a no-op: nothing written, read returns nil.
+        cache.writeIfMissing(sessionId: "../escaped", content: "secret")
+        XCTAssertNil(cache.read(sessionId: "../escaped"))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: tmp.appendingPathComponent("escaped").path))
+
+        // A normal slug still round-trips.
+        cache.writeIfMissing(sessionId: "abc-123_DEF", content: "ok")
+        XCTAssertEqual(cache.read(sessionId: "abc-123_DEF"), "ok")
+    }
+
     // MARK: truncateToChars
 
     func test_truncateToChars_shortPassesThrough() {

@@ -60,9 +60,12 @@ struct DiagnosticsReportTests {
             appVersion: "0.7.0", osVersion: "15.3.2", arch: "arm64",
             redactor: redactor, now: Date(timeIntervalSince1970: 1_700_000_060)
         )
-        #expect(text.contains("~/.local/bin/hud --user <user>"))
+        // #125/F-007: only the executable basename is exported — the full command
+        // (paths, args, the `--user alice` token) is dropped, not just redacted.
+        #expect(text.contains("statusLine: third-party: hud"))
         #expect(!text.contains("/Users/alice"))
         #expect(!text.contains("alice"))
+        #expect(!text.contains("--user"))
     }
 
     @Test func reportNeverContainsSensitiveLabels() {

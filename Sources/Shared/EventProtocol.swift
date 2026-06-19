@@ -93,6 +93,15 @@ public struct AnyCodable: Codable, @unchecked Sendable {
 /// Decodes JSON with snake_case keys via explicit CodingKeys.
 /// Unknown fields in the JSON are silently ignored (default Codable behavior).
 public struct BridgeEvent: Codable, Sendable {
+    /// Event types the pending-event spool will persist and replay. The write
+    /// side (PendingEventQueue) and the read side (PendingEventReplayer) must
+    /// agree, so the allowlist lives here in Shared (#127/F-012).
+    public static let replayableEventNames: Set<String> = [
+        "SessionStart", "SessionEnd", "Stop", "UserPromptSubmit",
+        "Notification", "PreCompact", "PostCompact",
+        "SubagentStart", "SubagentStop",
+    ]
+
     public let bridgeEvent: String
     public let agent: AgentKind
     public let sessionId: String?
