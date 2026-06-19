@@ -1,0 +1,114 @@
+diff --git a/Sources/BridgeLib/TerminalTitleWriter.swift b/Sources/BridgeLib/TerminalTitleWriter.swift
+--- a/Sources/BridgeLib/TerminalTitleWriter.swift
++++ b/Sources/BridgeLib/TerminalTitleWriter.swift
+@@ -21,8 +21,9 @@
+         for scalar in input.unicodeScalars {
+             let value = scalar.value
+             if scalar == "\n" || scalar == "\r" || scalar == "\t" {
+                 out.append(" ")
+-            } else if value < 0x20 || value == 0x7F {
+-                // other C0 / DEL — drop entirely
++            } else if value < 0x20 || value == 0x7F || (value >= 0x80 && value <= 0x9F) {
++                // other C0 / DEL / C1 — drop entirely
+                 continue
+             } else {
+                 out.append(Character(scalar))
+@@ -62,8 +63,10 @@
+     /// OSC 2 ("set window title") escape sequence:
+     /// `ESC ] 2 ; <title> BEL`
+     public static func oscEscape(title: String) -> String {
+-        "\u{001B}]2;\(title)\u{0007}"
++        // Sanitize the WHOLE composed title at the escape boundary so no field
++        // (e.g. the cwd basename) can smuggle an escape sequence (finding T-3).
++        "\u{001B}]2;\(sanitizePrompt(title))\u{0007}"
+     }
+
+diff --git a/Sources/AppLib/Terminal/TerminalLocator.swift b/Sources/AppLib/Terminal/TerminalLocator.swift
+--- a/Sources/AppLib/Terminal/TerminalLocator.swift
++++ b/Sources/AppLib/Terminal/TerminalLocator.swift
+@@ -299,7 +299,9 @@
+         guard let tty = TTYUtil.ttyPath(pid: Int32(pid)) else { return false }
+         let title = sessionTitle(cwd: cwd, sessionId: sessionId, prompt: prompt)
+-        let osc = "\u{001B}]2;\(title)\u{0007}"
++        // Strip the whole composed title at the write boundary so no field
++        // (e.g. the cwd basename) can smuggle an escape sequence (finding T-3).
++        let osc = "\u{001B}]2;\(stripControls(title))\u{0007}"
+         guard let data = osc.data(using: .utf8),
+               let fh = FileHandle(forWritingAtPath: tty) else { return false }
+         defer { try? fh.close() }
+@@ -314,17 +316,24 @@
+     }
+
+-    private static func sanitizeTitlePrompt(_ input: String) -> String {
+-        var sanitized = ""
+-        for scalar in input.unicodeScalars {
+-            if scalar == "\n" || scalar == "\r" || scalar == "\t" {
+-                sanitized.append(" ")
+-            } else if scalar.value < 0x20 || scalar.value == 0x7F {
+-                continue
+-            } else {
+-                sanitized.append(Character(scalar))
+-            }
+-        }
+-        return String(sanitized.prefix(30)).trimmingCharacters(in: .whitespaces)
++    /// Strip C0/DEL/C1 control characters (incl. ESC/BEL) and map newlines/tabs
++    /// to spaces. No truncation — safe to run over a whole composed OSC title so
++    /// no field can smuggle an escape (finding T-3).
++    private static func stripControls(_ input: String) -> String {
++        var out = ""
++        for scalar in input.unicodeScalars {
++            if scalar == "\n" || scalar == "\r" || scalar == "\t" {
++                out.append(" ")
++            } else if scalar.value < 0x20 || scalar.value == 0x7F
++                        || (scalar.value >= 0x80 && scalar.value <= 0x9F) {
++                continue   // C0 / DEL / C1
++            } else {
++                out.append(Character(scalar))
++            }
++        }
++        return out
++    }
++
++    private static func sanitizeTitlePrompt(_ input: String) -> String {
++        String(stripControls(input).prefix(30)).trimmingCharacters(in: .whitespaces)
+     }
+
+diff --git a/Sources/AppLib/Notifications/NotificationManager.swift b/Sources/AppLib/Notifications/NotificationManager.swift
+--- a/Sources/AppLib/Notifications/NotificationManager.swift
++++ b/Sources/AppLib/Notifications/NotificationManager.swift
+@@ -95,7 +95,7 @@
+     ) {
+         let content = UNMutableNotificationContent()
+-        content.title = "⚠️ \(Self.agentTag(agent)) \(projectName) — \(errorLabel)"
++        content.title = "⚠️ \(Self.agentTag(agent)) \(Self.displaySafe(projectName)) — \(errorLabel)"
+         let agentName = (agent == .claude) ? "Claude Code" : "Codex"
+         content.body = Self.sanitizePrompt(
+             detail,
+@@ -130,7 +130,7 @@
+     ) {
+         let content = UNMutableNotificationContent()
+-        content.title = "\(Self.agentTag(agent)) \(projectName) — done"
++        content.title = "\(Self.agentTag(agent)) \(Self.displaySafe(projectName)) — done"
+         let body = Self.sanitizePrompt(lastPrompt)
+         content.body = body
+@@ -193,8 +193,24 @@
+         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+         if trimmed.hasPrefix("<") && trimmed.contains("</") { return fallback }
+         let clipped = text.count > maxLength ? String(text.prefix(maxLength)) + "..." : text
+-        return clipped
++        return Self.displaySafe(clipped)
++    }
++
++    /// Strip control characters and Unicode bidi/format overrides from text shown
++    /// in a notification title/body, so a crafted prompt or cwd basename cannot
++    /// visually reorder/impersonate which project fired (findings T-10 / F-008).
++    static func displaySafe(_ input: String) -> String {
++        String(String.UnicodeScalarView(input.unicodeScalars.filter { s in
++            let v = s.value
++            if v < 0x20 || v == 0x7F || (v >= 0x80 && v <= 0x9F) { return false } // C0/DEL/C1
++            // bidi/format overrides + zero-width: 200B-200F, 202A-202E, 2066-2069, FEFF
++            if (0x200B...0x200F).contains(v) || (0x202A...0x202E).contains(v)
++                || (0x2066...0x2069).contains(v) || v == 0xFEFF { return false }
++            return true
++        }))
+     }

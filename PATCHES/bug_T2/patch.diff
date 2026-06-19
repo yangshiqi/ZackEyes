@@ -1,0 +1,41 @@
+diff --git a/Sources/AppLib/Usage/UsageTracker.swift b/Sources/AppLib/Usage/UsageTracker.swift
+--- a/Sources/AppLib/Usage/UsageTracker.swift
++++ b/Sources/AppLib/Usage/UsageTracker.swift
+@@ -497,9 +497,15 @@
+             for file in files where file.pathExtension == "jsonl" {
+-                guard let vals = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey]),
++                guard let vals = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .isSymbolicLinkKey]),
+                       let mtime = vals.contentModificationDate,
+                       let size = vals.fileSize else { continue }
+                 if mtime < dailyCutoff { continue }   // file untouched within the window
++                // Same size/symlink gate the Claude path uses (finding T-2): the
++                // 256MB cap + symlink skip (PR #119 / F-008) was applied only to
++                // computeSnapshot, not to this structurally identical codex scan.
++                guard Self.shouldScanTranscript(
++                    isSymbolicLink: vals.isSymbolicLink ?? false, fileSize: size
++                ) else { continue }
+                 // Use the symlink-resolved path as cache key so that entries
+                 // created with /var/... (FileManager.temporaryDirectory) and
+                 // those returned by contentsOfDirectory (/private/var/...) match.
+diff --git a/Sources/AppLib/Session/TaskExtractor.swift b/Sources/AppLib/Session/TaskExtractor.swift
+--- a/Sources/AppLib/Session/TaskExtractor.swift
++++ b/Sources/AppLib/Session/TaskExtractor.swift
+@@ -15,9 +15,17 @@
+ public enum TaskExtractor {
+
+     public static func extractTasks(fromTranscriptAt path: String) -> [TaskItem] {
+-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
++        // Bound this read like the transcript scan (finding T-2): skip symlinks
++        // and files over the 256MB cap before slurping the whole file. PR #119's
++        // cap covered UsageTracker but not this sibling whole-file reader.
++        let url = URL(fileURLWithPath: path)
++        guard let rv = try? url.resourceValues(forKeys: [.isSymbolicLinkKey, .fileSizeKey]),
++              let size = rv.fileSize,
++              UsageTracker.shouldScanTranscript(
++                isSymbolicLink: rv.isSymbolicLink ?? false, fileSize: size) else {
++            return []
++        }
++        guard let data = try? Data(contentsOf: url),
+               let text = String(data: data, encoding: .utf8) else {
+             return []
+         }

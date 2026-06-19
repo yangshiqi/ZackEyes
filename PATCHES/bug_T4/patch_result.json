@@ -1,0 +1,25 @@
+{
+  "bug_id": "T-4",
+  "title": "Software update opened with no in-app signature/checksum verification + server-controlled download host",
+  "files": ["Sources/AppLib/Update/UpdateChecker.swift", "Sources/AppLib/Update/UpdateDownloader.swift"],
+  "input_finding": "TRIAGE T-4 (folds F-013, F-018, F-019, F-022, F-025, F-027)",
+  "tracks_issue": "#121 (coupled to #131 / T-1)",
+  "status": "candidate_unverified",
+  "applied_to_source": false,
+  "verification": {
+    "t0_applies": "not_run",
+    "t0_builds": "not_run",
+    "t1_behavior_preserved": "not_run",
+    "t2_tests_pass": "not_run (expect test fixtures asserting browser_download_url to need updating)",
+    "re_attack": "not_run",
+    "reason": "Inert review diff. Verify ladder + independent reviewer could not run (spend limit)."
+  },
+  "closes": {
+    "server_controlled_host": "yes (URL reconstructed from trusted components; F-013 amplifier closed)",
+    "filename_path_injection": "yes (isSafeAssetName + sink re-validation; F-018)",
+    "no_integrity_check_before_open": "no — requires Developer-ID + notarization of the DMG (release-pipeline change); in-app gate scaffolded but disabled",
+    "redirect_following": "deferred (F-022 — documented, not in diff)"
+  },
+  "coupling": "The integrity core requires the same Developer-ID + notarization release change that unblocks T-1's (#131) signature gate. Code diff narrows surface; the guarantee is a release-process change.",
+  "review_doc": "PATCHES/bug_T4/notes.md"
+}

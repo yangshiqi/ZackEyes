@@ -1,0 +1,53 @@
+diff --git a/Sources/AppLib/Usage/UsageTracker.swift b/Sources/AppLib/Usage/UsageTracker.swift
+--- a/Sources/AppLib/Usage/UsageTracker.swift
++++ b/Sources/AppLib/Usage/UsageTracker.swift
+@@ -565,6 +565,14 @@
+     nonisolated static func shouldScanTranscript(isSymbolicLink: Bool, fileSize: Int) -> Bool {
+         !isSymbolicLink && fileSize <= maxTranscriptBytes
+     }
+
++    /// Clamp an untrusted token count to a sane, non-negative ceiling so that
++    /// summing many records cannot overflow Int and trap the process (finding
++    /// T-8). Real per-message counts are at most a few million; 1e9 is far above
++    /// that yet far below Int.max, so all downstream accumulation stays safe.
++    nonisolated static func clampTokens(_ value: Int) -> Int {
++        min(max(0, value), 1_000_000_000)
++    }
++
+     nonisolated static func computeSnapshot(
+         projectsDir: URL,
+         cache: [String: ClaudeFileCache] = [:],
+@@ -686,10 +694,10 @@
+             records.append(ClaudeMsgRecord(
+                 ts: ts,
+                 id: msg["id"] as? String,
+                 model: (msg["model"] as? String) ?? "unknown",
+-                input: (usage["input_tokens"] as? Int) ?? 0,
+-                output: (usage["output_tokens"] as? Int) ?? 0,
+-                cacheRead: (usage["cache_read_input_tokens"] as? Int) ?? 0,
+-                cacheCreate: (usage["cache_creation_input_tokens"] as? Int) ?? 0))
++                input: Self.clampTokens((usage["input_tokens"] as? Int) ?? 0),
++                output: Self.clampTokens((usage["output_tokens"] as? Int) ?? 0),
++                cacheRead: Self.clampTokens((usage["cache_read_input_tokens"] as? Int) ?? 0),
++                cacheCreate: Self.clampTokens((usage["cache_creation_input_tokens"] as? Int) ?? 0)))
+         }
+         return records
+     }
+diff --git a/Sources/AppLib/Usage/DailyUsage.swift b/Sources/AppLib/Usage/DailyUsage.swift
+--- a/Sources/AppLib/Usage/DailyUsage.swift
++++ b/Sources/AppLib/Usage/DailyUsage.swift
+@@ -130,9 +130,11 @@
+                   let totals = info["total_token_usage"] as? [String: Any] else { continue }
+
+             // Absent component → treat as unchanged (delta 0 for that component).
+-            let curInput = (totals["input_tokens"] as? Int) ?? prevInput
+-            let curCached = (totals["cached_input_tokens"] as? Int) ?? prevCached
+-            let curOutput = (totals["output_tokens"] as? Int) ?? prevOutput
++            // Clamp untrusted cumulative totals so the per-turn deltas and the
++            // tally sums below cannot overflow Int and trap (finding T-8).
++            let curInput = UsageTracker.clampTokens((totals["input_tokens"] as? Int) ?? prevInput)
++            let curCached = UsageTracker.clampTokens((totals["cached_input_tokens"] as? Int) ?? prevCached)
++            let curOutput = UsageTracker.clampTokens((totals["output_tokens"] as? Int) ?? prevOutput)
+             // Schema assumption (locked by fixtures): a rollout's total_token_usage
+             // starts from 0 at turn 1, and `codex --resume` appends to the ORIGINAL
+             // file (never a continuation carrying prior totals), so the first totals

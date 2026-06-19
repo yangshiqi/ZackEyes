@@ -1,0 +1,24 @@
+{
+  "bug_id": "T-1",
+  "title": "Same-uid code-execution persistence via unprotected ~/.zackeyes launcher chain",
+  "file": "Sources/AppLib/Hooks/HookInstaller.swift",
+  "functions": ["deployLauncherScript", "deployScript"],
+  "input_finding": "TRIAGE T-1 (folds F-010, F-011, F-012, F-014)",
+  "status": "candidate_unverified",
+  "applied_to_source": false,
+  "verification": {
+    "t0_applies": "not_run",
+    "t0_builds": "not_run",
+    "t1_behavior_preserved": "not_run",
+    "t2_tests_pass": "not_run",
+    "re_attack": "not_run",
+    "reason": "Inert review diff. Verification ladder and independent reviewer subagent could not run (monthly spend limit). Requires human build + test."
+  },
+  "closes": {
+    "cross_uid_surface": "yes (0700 dirs, 0700 launcher, 0600 marker)",
+    "same_uid_marker_poisoning": "partial (reorder shrinks window; not closed)",
+    "same_uid_bundle_substitution": "no — requires signature gate, which is gated on Developer-ID + notarization (finding T-4)"
+  },
+  "coupling": "T-1 and T-4 are coupled: the load-bearing same-uid control (signature verification before exec) is only meaningful once the app is Developer-ID signed + notarized. The signature gate ships DISABLED/commented in this diff.",
+  "review_doc": "PATCHES/bug_T1/notes.md"
+}

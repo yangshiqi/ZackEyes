@@ -1,0 +1,94 @@
+diff --git a/Sources/AppLib/Update/UpdateChecker.swift b/Sources/AppLib/Update/UpdateChecker.swift
+--- a/Sources/AppLib/Update/UpdateChecker.swift
++++ b/Sources/AppLib/Update/UpdateChecker.swift
+@@ -93,11 +93,21 @@
+             let remoteVersion = release.tagName.hasPrefix("v")
+                 ? String(release.tagName.dropFirst())
+                 : release.tagName
+
+             if Self.isNewer(remote: remoteVersion, thanLocal: localVersion) {
+                 availableVersion = remoteVersion
+                 releaseURL = release.htmlURL
+-                dmgURL = release.assets.first(where: { $0.name.hasSuffix(".dmg") })?.browserDownloadURL
++                // Do NOT trust the server-supplied browser_download_url — a
++                // tampered release can point it at ANY host (finding T-4/F-013).
++                // Reconstruct the canonical GitHub asset URL from trusted
++                // components + a validated single-component filename, so the
++                // download host can never be attacker-chosen.
++                if let asset = release.assets.first(where: { $0.name.hasSuffix(".dmg") }),
++                   Self.isSafeAssetName(asset.name),
++                   let tag = release.tagName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed),
++                   let name = asset.name.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) {
++                    dmgURL = URL(string: "https://github.com/\(repoOwner)/\(repoName)/releases/download/\(tag)/\(name)")
++                } else {
++                    dmgURL = nil
++                }
+                 if remoteVersion != notifiedVersion {
+                     notifiedVersion = remoteVersion
+                     onNewVersion?(remoteVersion, release.htmlURL)
+                 }
+             }
+@@ -126,6 +136,17 @@
+         return false
+     }
+
++    /// A release asset name must be a single, simple filename before it is used
++    /// to build a download URL or a tmp destination path: non-empty, ends in
++    /// `.dmg`, no path separators, no parent ref (findings T-4 / F-018).
++    nonisolated static func isSafeAssetName(_ name: String) -> Bool {
++        !name.isEmpty
++            && name.hasSuffix(".dmg")
++            && !name.contains("/")
++            && !name.contains("\\")
++            && !name.contains("..")
++    }
++
+     private nonisolated static func parseVersion(_ string: String) -> [Int] {
+         let stripped = string.hasPrefix("v") ? String(string.dropFirst()) : string
+         let parts = stripped.split(separator: ".").compactMap { Int($0) }
+diff --git a/Sources/AppLib/Update/UpdateDownloader.swift b/Sources/AppLib/Update/UpdateDownloader.swift
+--- a/Sources/AppLib/Update/UpdateDownloader.swift
++++ b/Sources/AppLib/Update/UpdateDownloader.swift
+@@ -36,14 +36,24 @@
+         // Prevent re-entrance: if a previous click is still mid-flight, ignore.
+         // The menu rebuild disables the item, but @Published propagation can lag
+         // a fast double-click — this gate is the actual safety net.
+         if case .downloading = state { return }
+
+-        let dest = FileManager.default.temporaryDirectory
+-            .appendingPathComponent(url.lastPathComponent)
++        // Re-validate the filename defensively before using it as a path
++        // component (the URL is reconstructed + validated upstream, but this
++        // sink must not assume that — findings T-4 / F-018).
++        let filename = url.lastPathComponent
++        guard !filename.isEmpty, filename.hasSuffix(".dmg"),
++              !filename.contains("/"), !filename.contains("..") else {
++            state = .failed("invalid asset filename")
++            return
++        }
++        let dest = FileManager.default.temporaryDirectory
++            .appendingPathComponent(filename)
+
+         if FileManager.default.fileExists(atPath: dest.path) {
++            // INTEGRITY GATE (disabled — see PATCHES/bug_T4/notes.md): once the
++            // DMG is Developer-ID signed + notarized (#121), verify it here
++            // before opening, and do NOT trust a pre-existing cache file blindly.
+             state = .ready(dest)
+             opener(dest)
+             return
+         }
+@@ -59,9 +69,12 @@
+                 state = .failed("HTTP \(code)")
+                 return
+             }
+             try? FileManager.default.removeItem(at: dest)
+             try FileManager.default.moveItem(at: tmpURL, to: dest)
++            // INTEGRITY GATE (disabled — see PATCHES/bug_T4/notes.md): verify the
++            // notarization/signature of `dest` here before opening, once the
++            // release pipeline signs + notarizes the DMG (#121).
+             state = .ready(dest)
+             opener(dest)
+         } catch {
+             state = .failed(error.localizedDescription)
+         }
+     }

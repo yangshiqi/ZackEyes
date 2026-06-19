@@ -1,0 +1,62 @@
+diff --git a/Sources/AppLib/Session/CodexJsonlTailer.swift b/Sources/AppLib/Session/CodexJsonlTailer.swift
+--- a/Sources/AppLib/Session/CodexJsonlTailer.swift
++++ b/Sources/AppLib/Session/CodexJsonlTailer.swift
+@@ -241,6 +241,11 @@
+ extension CodexJsonlTailer {
++    /// Cap on the carried partial line (finding T-9). A real codex JSONL line is
++    /// far smaller; a newline-free flood would otherwise grow the buffer without
++    /// bound across kqueue events (O(n^2) recopy via `pending + chunk`).
++    nonisolated static let maxPendingBytes = 8 * 1024 * 1024
++
+     public nonisolated static func parseTaskLifecycleEvents(
+         chunk: String,
+         pending: inout String,
+         sessionId: String,
+         cwd: String?,
+         transcriptPath: String
+     ) -> [CodexTaskLifecycleEvent] {
+         let combined = pending + chunk
+         let parts = combined.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+         guard let last = parts.last else {
+             pending = combined
+             return []
+         }
+-        pending = last
++        // Drop an over-long unparsable partial rather than carrying it forever.
++        pending = last.utf8.count > Self.maxPendingBytes ? "" : last
+         let completeLines = parts.dropLast()
+@@ -458,6 +463,10 @@
+     private var offset: UInt64
+     private var pendingBuffer: String = ""
++    /// Cap on bytes read from the rollout per refresh (finding T-9): on a huge
++    /// newline-free flood, skip to a bounded tail instead of reading the whole
++    /// gap into memory at once.
++    private static let maxReadBytes: UInt64 = 16 * 1024 * 1024
+     private let onTaskStarted: (CodexTaskStartedEvent) -> Void
+     private let onTaskComplete: (CodexTaskCompleteEvent) -> Void
+     private let onTokenCount: (CodexTokenCountEvent) -> Void
+@@ -610,9 +619,21 @@
+         guard let handle = try? FileHandle(forReadingFrom: url) else { return }
+         defer { try? handle.close() }
+         do {
+             let endSize = try handle.seekToEnd()
+-            guard endSize > offset else { return }
++            if endSize < offset {
++                // File truncated/rotated in place (finding T-9 / F-026): reset to
++                // the new EOF and drop the stale partial so we don't resume
++                // mid-record or go permanently silent.
++                offset = endSize
++                pendingBuffer = ""
++                return
++            }
++            guard endSize > offset else { return }
++            // Bound a single read (finding T-9): on a huge newline-free flood,
++            // skip to a bounded tail rather than pulling the whole gap into
++            // memory, dropping the stale partial we can no longer complete.
++            if endSize - offset > Self.maxReadBytes {
++                offset = endSize - Self.maxReadBytes
++                pendingBuffer = ""
++            }
+             try handle.seek(toOffset: offset)
+             guard let data = try handle.readToEnd() else { return }
+             offset = endSize
