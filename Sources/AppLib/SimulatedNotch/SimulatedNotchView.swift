@@ -189,10 +189,12 @@ struct SimulatedNotchView: View {
             Text(remainingString(usedPct: usedPct, fallbackTokens: 0, scale: scale))
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(remainingColor(usedPct: usedPct, fallbackTokens: 0, scale: scale))
-            // #86 — cap ETA badge (5h only); nil for calm states keeps the row quiet.
-            if eta?.panelLabel != nil {
-                CapETABadge(eta: eta, compact: true)
-            } else if let reset = resetsAt?.usageResetDisplay {
+            // #86/#108 — show the ETA badge AND the reset countdown; they don't
+            // compete (ETA = when you run dry, reset = when budget returns), and
+            // an urgent ETA like ⚡~10min is exactly when you want both. CapETABadge
+            // self-guards a nil eta (renders nothing), so no outer `if` is needed.
+            CapETABadge(eta: eta, compact: true)
+            if let reset = resetsAt?.usageResetDisplay {
                 Text(reset)
                     .font(.system(size: 9))
                     .foregroundColor(.white.opacity(0.4))
