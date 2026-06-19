@@ -96,7 +96,21 @@ public final class UpdateChecker: ObservableObject {
             if Self.isNewer(remote: remoteVersion, thanLocal: localVersion) {
                 availableVersion = remoteVersion
                 releaseURL = release.htmlURL
-                dmgURL = release.assets.first(where: { $0.name.hasSuffix(".dmg") })?.browserDownloadURL
+                // Do NOT trust the server-supplied browser_download_url (it could
+                // point at any host). Reconstruct the canonical GitHub asset URL
+                // from trusted components + a validated single-component filename
+                // and tag, so the download host/repo can never be attacker-chosen
+                // (T-4). .urlHostAllowed encodes '/', blocking path traversal via a
+                // compromised tag_name (flagged by Gemini + Codex on PR #134).
+                if let asset = release.assets.first(where: { $0.name.hasSuffix(".dmg") }),
+                   Self.isSafeAssetName(asset.name),
+                   !release.tagName.contains("/"), !release.tagName.contains(".."),
+                   let tag = release.tagName.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed),
+                   let name = asset.name.addingPercentEncoding(withAllowedCharacters: .urlHostAllowed) {
+                    dmgURL = URL(string: "https://github.com/\(repoOwner)/\(repoName)/releases/download/\(tag)/\(name)")
+                } else {
+                    dmgURL = nil
+                }
                 if remoteVersion != notifiedVersion {
                     notifiedVersion = remoteVersion
                     onNewVersion?(remoteVersion, release.htmlURL)
@@ -123,6 +137,17 @@ public final class UpdateChecker: ObservableObject {
             if rv < lv { return false }
         }
         return false
+    }
+
+    /// A release asset name must be a single, simple filename before it is used
+    /// to build a download URL or a tmp destination path: non-empty, ends in
+    /// `.dmg`, no path separators, no parent ref (T-4).
+    nonisolated static func isSafeAssetName(_ name: String) -> Bool {
+        !name.isEmpty
+            && name.hasSuffix(".dmg")
+            && !name.contains("/")
+            && !name.contains("\\")
+            && !name.contains("..")
     }
 
     private nonisolated static func parseVersion(_ string: String) -> [Int] {

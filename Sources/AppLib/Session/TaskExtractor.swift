@@ -15,7 +15,17 @@ import Foundation
 public enum TaskExtractor {
 
     public static func extractTasks(fromTranscriptAt path: String) -> [TaskItem] {
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+        // Bound this read like the transcript scan (T-2): skip symlinks and
+        // files over the 256MB cap before slurping the whole file. PR #119's cap
+        // covered UsageTracker but not this sibling whole-file reader.
+        let url = URL(fileURLWithPath: path)
+        guard let rv = try? url.resourceValues(forKeys: [.isSymbolicLinkKey, .fileSizeKey]),
+              let size = rv.fileSize,
+              UsageTracker.shouldScanTranscript(
+                isSymbolicLink: rv.isSymbolicLink ?? false, fileSize: size) else {
+            return []
+        }
+        guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) else {
             return []
         }

@@ -232,11 +232,25 @@ public struct HookInstaller {
     // MARK: - Deploy Launcher Script
 
     public func deployLauncherScript(appPath: String) throws {
-        try FileManager.default.createDirectory(
+        // Create ~/.zackeyes and ~/.zackeyes/bin owner-only (0700). Default
+        // (umask) mode leaves them group/other-readable, yet the launcher here is
+        // exec'd on every agent hook fire and the .app-path marker steers that
+        // exec. Locking the subtree to the owner closes the cross-uid surface
+        // (T-1 / T-7). NOTE: this does NOT stop a same-uid attacker, who owns
+        // these files — the same-uid close needs Developer-ID + notarization (#135).
+        let fm = FileManager.default
+        try fm.createDirectory(
+            atPath: zackDir,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try fm.createDirectory(
             atPath: binDir,
             withIntermediateDirectories: true,
-            attributes: nil
+            attributes: [.posixPermissions: 0o700]
         )
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: zackDir)
+        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binDir)
 
         let escapedAppPath = shellDoubleQuoted(appPath)
         let escapedMarkerPath = shellDoubleQuoted(zackDir + "/.app-path")
@@ -272,14 +286,13 @@ public struct HookInstaller {
 
             exit 0
             """
-        try deployScript(content: script, to: binDir + "/bridge")
+        try deployScript(content: script, to: binDir + "/bridge", permissions: 0o700)
 
-        // Write app path marker
-        try appPath.write(
-            toFile: zackDir + "/.app-path",
-            atomically: true,
-            encoding: .utf8
-        )
+        // Write app path marker owner-only (0600) — mirrors the deliberate 0600
+        // lock on the socket node; default write leaves it world-readable (0644).
+        let markerPath = zackDir + "/.app-path"
+        try appPath.write(toFile: markerPath, atomically: true, encoding: .utf8)
+        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: markerPath)
     }
 
     // MARK: - StatusLine Multiplexer
@@ -374,12 +387,14 @@ public struct HookInstaller {
         try? FileManager.default.removeItem(atPath: statusLineMuxOriginalPath)
     }
 
-    /// Write a shell script to disk and chmod 755.
-    private func deployScript(content: String, to path: String) throws {
+    /// Write a shell script to disk and set its mode (default 0o755).
+    /// The hook launcher passes 0o700 so the file directly exec'd on every hook
+    /// fire is not group/other readable or writable (T-1).
+    private func deployScript(content: String, to path: String, permissions: Int = 0o755) throws {
         let url = URL(fileURLWithPath: path)
         try content.write(to: url, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes(
-            [.posixPermissions: 0o755], ofItemAtPath: url.path
+            [.posixPermissions: permissions], ofItemAtPath: url.path
         )
     }
 

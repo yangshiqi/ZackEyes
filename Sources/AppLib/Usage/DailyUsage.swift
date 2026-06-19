@@ -130,9 +130,11 @@ extension UsageTracker {
                   let totals = info["total_token_usage"] as? [String: Any] else { continue }
 
             // Absent component → treat as unchanged (delta 0 for that component).
-            let curInput = (totals["input_tokens"] as? Int) ?? prevInput
-            let curCached = (totals["cached_input_tokens"] as? Int) ?? prevCached
-            let curOutput = (totals["output_tokens"] as? Int) ?? prevOutput
+            // Clamp untrusted cumulative totals so per-turn deltas and tally sums
+            // below cannot overflow Int and trap (T-8).
+            let curInput = UsageTracker.clampTokens((totals["input_tokens"] as? Int) ?? prevInput)
+            let curCached = UsageTracker.clampTokens((totals["cached_input_tokens"] as? Int) ?? prevCached)
+            let curOutput = UsageTracker.clampTokens((totals["output_tokens"] as? Int) ?? prevOutput)
             // Schema assumption (locked by fixtures): a rollout's total_token_usage
             // starts from 0 at turn 1, and `codex --resume` appends to the ORIGINAL
             // file (never a continuation carrying prior totals), so the first totals

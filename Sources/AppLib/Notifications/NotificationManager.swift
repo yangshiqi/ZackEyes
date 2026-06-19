@@ -95,7 +95,7 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         detail: String?
     ) {
         let content = UNMutableNotificationContent()
-        content.title = "⚠️ \(Self.agentTag(agent)) \(projectName) — \(errorLabel)"
+        content.title = "⚠️ \(Self.agentTag(agent)) \(Self.displaySafe(projectName)) — \(errorLabel)"
         let agentName = (agent == .claude) ? "Claude Code" : "Codex"
         content.body = Self.sanitizePrompt(
             detail,
@@ -130,7 +130,7 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         lastPrompt: String?
     ) {
         let content = UNMutableNotificationContent()
-        content.title = "\(Self.agentTag(agent)) \(projectName) — done"
+        content.title = "\(Self.agentTag(agent)) \(Self.displaySafe(projectName)) — done"
         let body = Self.sanitizePrompt(lastPrompt)
         content.body = body
         if playThemeSound() {
@@ -195,7 +195,21 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("<") && trimmed.contains("</") { return fallback }
         let clipped = text.count > maxLength ? String(text.prefix(maxLength)) + "..." : text
-        return clipped
+        return Self.displaySafe(clipped)
+    }
+
+    /// Strip control characters and Unicode bidi/format overrides from text shown
+    /// in a notification title/body, so a crafted prompt or cwd basename cannot
+    /// visually reorder/impersonate which project fired (T-10 / F-008).
+    static func displaySafe(_ input: String) -> String {
+        String(String.UnicodeScalarView(input.unicodeScalars.filter { s in
+            let v = s.value
+            if v < 0x20 || v == 0x7F || (v >= 0x80 && v <= 0x9F) { return false } // C0/DEL/C1
+            // bidi/format overrides + zero-width: 200B-200F, 202A-202E, 2066-2069, FEFF
+            if (0x200B...0x200F).contains(v) || (0x202A...0x202E).contains(v)
+                || (0x2066...0x2069).contains(v) || v == 0xFEFF { return false }
+            return true
+        }))
     }
 
     // MARK: - UNUserNotificationCenterDelegate
