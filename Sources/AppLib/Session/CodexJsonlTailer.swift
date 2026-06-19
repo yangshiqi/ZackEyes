@@ -631,12 +631,12 @@ private final class Watcher: @unchecked Sendable {
         do {
             let endSize = try handle.seekToEnd()
             if endSize < offset {
-                // File truncated/rotated in place (T-9 / F-026): reset to the new
-                // EOF and drop the stale partial so we don't resume mid-record or
-                // go permanently silent.
-                offset = endSize
+                // File truncated/rotated in place (T-9 / F-026). The bytes now in
+                // the file are fresh content, so restart from offset 0 (dropping
+                // the stale partial) and re-read them below — skipping to EOF would
+                // silently lose records written right after the truncation.
+                offset = 0
                 pendingBuffer = ""
-                return
             }
             guard endSize > offset else { return }
             // Bound a single read (T-9): on a huge newline-free flood, skip to a
