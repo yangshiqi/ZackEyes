@@ -40,10 +40,9 @@ public final class UpdateDownloader: ObservableObject {
 
         // Re-validate the filename before using it as a path component (the URL
         // is reconstructed + validated upstream, but this sink must not assume
-        // that — T-4).
+        // that — T-4). Reuse the checker's helper so the rules stay consistent.
         let filename = url.lastPathComponent
-        guard !filename.isEmpty, filename.hasSuffix(".dmg"),
-              !filename.contains("/"), !filename.contains("..") else {
+        guard UpdateChecker.isSafeAssetName(filename) else {
             state = .failed("invalid asset filename")
             return
         }

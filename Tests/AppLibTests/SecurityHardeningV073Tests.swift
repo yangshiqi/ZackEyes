@@ -22,6 +22,13 @@ struct SecurityHardeningV073Tests {
             isSymbolicLink: false, fileSize: UsageTracker.maxTranscriptBytes + 1))
     }
 
+    // T-3 / T-10: notification text strips control + bidi/zero-width overrides
+    // (which could visually impersonate which project fired) but keeps real text.
+    @Test @MainActor func displaySafe_stripsControlAndBidi() {
+        #expect(NotificationManager.displaySafe("a\u{202E}b\u{200B}c\u{0007}") == "abc")
+        #expect(NotificationManager.displaySafe("proj 名字 done") == "proj 名字 done")
+    }
+
     // T-4: only a simple .dmg filename (no path separators / parent refs) is
     // accepted before it is used to build the reconstructed download URL.
     @Test func isSafeAssetName_rejectsTraversalAcceptsPlain() {

@@ -249,8 +249,10 @@ public struct HookInstaller {
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700]
         )
-        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: zackDir)
-        try? fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binDir)
+        // Fail the deploy if the security-critical perms can't be set (a
+        // pre-existing loose dir would otherwise stay group/other-accessible).
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: zackDir)
+        try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: binDir)
 
         let escapedAppPath = shellDoubleQuoted(appPath)
         let escapedMarkerPath = shellDoubleQuoted(zackDir + "/.app-path")
@@ -292,7 +294,7 @@ public struct HookInstaller {
         // lock on the socket node; default write leaves it world-readable (0644).
         let markerPath = zackDir + "/.app-path"
         try appPath.write(toFile: markerPath, atomically: true, encoding: .utf8)
-        try? fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: markerPath)
+        try fm.setAttributes([.posixPermissions: 0o600], ofItemAtPath: markerPath)
     }
 
     // MARK: - StatusLine Multiplexer
@@ -379,7 +381,7 @@ public struct HookInstaller {
             printf '%s\\n' "$INPUT" | \(quotedShellPath(bridgePath)) --event StatusLine --agent claude 2>/dev/null &
             \(displayCommand)
             """
-        try deployScript(content: script, to: statusLineMuxPath)
+        try deployScript(content: script, to: statusLineMuxPath, permissions: 0o700)
     }
 
     private func cleanupStatusLineMuxFiles() {

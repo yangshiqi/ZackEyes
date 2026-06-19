@@ -579,6 +579,30 @@ struct HookInstallerTests {
         #expect(output == "moved:--event:SessionStart\n")
     }
 
+    // MARK: - Launcher subtree is owner-only (T-1 hardening)
+
+    @Test func deployLauncherSetsOwnerOnlyPermissions() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let zackDir = tmpDir.appendingPathComponent(".zackeyes")
+        let installer = HookInstaller(
+            settingsPath: tmpDir.appendingPathComponent("settings.json").path,
+            bridgePath: zackDir.appendingPathComponent("bin/bridge").path
+        )
+        try installer.deployLauncherScript(appPath: "/Applications/ZackEyes.app")
+
+        func mode(_ rel: String) throws -> Int {
+            let path = rel.isEmpty ? zackDir.path : zackDir.appendingPathComponent(rel).path
+            let attrs = try FileManager.default.attributesOfItem(atPath: path)
+            return (attrs[.posixPermissions] as? NSNumber)?.intValue ?? -1
+        }
+        #expect(try mode("") == 0o700)            // ~/.zackeyes
+        #expect(try mode("bin") == 0o700)          // ~/.zackeyes/bin
+        #expect(try mode("bin/bridge") == 0o700)   // exec'd launcher
+        #expect(try mode(".app-path") == 0o600)    // steering marker
+    }
+
     // MARK: - Test 9: launcher has silent missing-app fallback
 
     @Test func launcherScriptFallsBackSilentlyWhenAppCannotBeFound() throws {
