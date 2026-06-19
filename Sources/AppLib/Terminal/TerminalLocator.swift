@@ -299,7 +299,9 @@ public enum TerminalLocator {
     ) -> Bool {
         guard let tty = TTYUtil.ttyPath(pid: Int32(pid)) else { return false }
         let title = sessionTitle(cwd: cwd, sessionId: sessionId, prompt: prompt)
-        let osc = "\u{001B}]2;\(title)\u{0007}"
+        // Strip the whole composed title at the write boundary so no field
+        // (e.g. the cwd basename) can smuggle an escape sequence (T-3).
+        let osc = "\u{001B}]2;\(stripControls(title))\u{0007}"
         guard let data = osc.data(using: .utf8),
               let fh = FileHandle(forWritingAtPath: tty) else { return false }
         defer { try? fh.close() }
@@ -314,18 +316,26 @@ public enum TerminalLocator {
         }
     }
 
-    private static func sanitizeTitlePrompt(_ input: String) -> String {
-        var sanitized = ""
+    /// Strip C0/DEL/C1 control characters (incl. ESC/BEL) and map newlines/tabs
+    /// to spaces. No truncation — safe over a whole composed OSC title so no
+    /// field can smuggle an escape (T-3).
+    private static func stripControls(_ input: String) -> String {
+        var out = ""
         for scalar in input.unicodeScalars {
             if scalar == "\n" || scalar == "\r" || scalar == "\t" {
-                sanitized.append(" ")
-            } else if scalar.value < 0x20 || scalar.value == 0x7F {
-                continue
+                out.append(" ")
+            } else if scalar.value < 0x20 || scalar.value == 0x7F
+                        || (scalar.value >= 0x80 && scalar.value <= 0x9F) {
+                continue   // C0 / DEL / C1
             } else {
-                sanitized.append(Character(scalar))
+                out.append(Character(scalar))
             }
         }
-        return String(sanitized.prefix(30)).trimmingCharacters(in: .whitespaces)
+        return out
+    }
+
+    private static func sanitizeTitlePrompt(_ input: String) -> String {
+        String(stripControls(input).prefix(30)).trimmingCharacters(in: .whitespaces)
     }
 
     /// Run a subprocess with a timeout. Returns stdout or nil on error/timeout.

@@ -23,8 +23,8 @@ public enum TerminalTitleWriter {
             let value = scalar.value
             if scalar == "\n" || scalar == "\r" || scalar == "\t" {
                 out.append(" ")
-            } else if value < 0x20 || value == 0x7F {
-                // other C0 / DEL — drop entirely
+            } else if value < 0x20 || value == 0x7F || (value >= 0x80 && value <= 0x9F) {
+                // other C0 / DEL / C1 — drop entirely
                 continue
             } else {
                 out.append(Character(scalar))
@@ -62,7 +62,9 @@ public enum TerminalTitleWriter {
     /// OSC 2 ("set window title") escape sequence:
     /// `ESC ] 2 ; <title> BEL`
     public static func oscEscape(title: String) -> String {
-        "\u{001B}]2;\(title)\u{0007}"
+        // Sanitize the WHOLE composed title at the escape boundary so no field
+        // (e.g. the cwd basename) can smuggle an escape sequence (T-3).
+        "\u{001B}]2;\(sanitizePrompt(title))\u{0007}"
     }
 
     /// Fire-and-forget OSC 2 write. Silent on every failure path.
