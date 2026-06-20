@@ -29,7 +29,7 @@ final class UpdateDownloaderTests: XCTestCase {
 
         let url = URL(string: "https://example.com/path/ZackEyes-test-cache.dmg")!
         let cached = dir.appendingPathComponent(url.lastPathComponent)
-        try Data("fake dmg".utf8).write(to: cached)
+        try Self.fakeDMGData().write(to: cached)
 
         let d = UpdateDownloader(opener: { _ in /* swallow open */ }, downloadDir: dir)
         await d.download(from: url)
@@ -39,6 +39,55 @@ final class UpdateDownloaderTests: XCTestCase {
         } else {
             XCTFail("expected .ready, got \(d.state)")
         }
+    }
+
+    // #121 — 512-byte fixture carrying the UDIF `koly` trailer so it passes the
+    // disk-image content check.
+    private static func fakeDMGData() -> Data {
+        var d = Data([0x6B, 0x6F, 0x6C, 0x79])   // "koly"
+        d.append(Data(count: 512 - d.count))
+        return d
+    }
+
+    func testRejectsNonDMGContentOnCacheHit() async throws {
+        // A 200-but-wrong-content artifact (a CDN error page, truncated file)
+        // sitting at the download path must NOT be handed to Finder (#121).
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZackEyesTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let url = URL(string: "https://example.com/path/ZackEyes-test-cache.dmg")!
+        let cached = dir.appendingPathComponent(url.lastPathComponent)
+        try Data("<html>404 Not Found</html>".utf8).write(to: cached)
+
+        var opened = false
+        let d = UpdateDownloader(opener: { _ in opened = true }, downloadDir: dir)
+        await d.download(from: url)
+
+        XCTAssertFalse(opened, "non-DMG content must not be opened")
+        if case .failed = d.state {} else { XCTFail("expected .failed, got \(d.state)") }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: cached.path),
+                       "rejected file should be removed")
+    }
+
+    func testLooksLikeDMG() throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZackEyesTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let good = dir.appendingPathComponent("good.dmg")
+        try Self.fakeDMGData().write(to: good)
+        XCTAssertTrue(UpdateDownloader.looksLikeDMG(good))
+
+        let bad = dir.appendingPathComponent("bad.dmg")
+        try Data(repeating: 0x41, count: 600).write(to: bad)   // ≥512B but no koly trailer
+        XCTAssertFalse(UpdateDownloader.looksLikeDMG(bad))
+
+        let short = dir.appendingPathComponent("short.dmg")
+        try Data(repeating: 0, count: 100).write(to: short)    // < 512 bytes
+        XCTAssertFalse(UpdateDownloader.looksLikeDMG(short))
     }
 
     func testMenuLabelIdle() {
