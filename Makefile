@@ -243,7 +243,10 @@ endif
 	./Scripts/bump-website-release.sh "$(VERSION)" ".build/ZackEyes-$(VERSION).dmg" "$$NOTES_FILE"
 	@echo "=== Commit source release + website metadata on release branch ==="
 	git add Resources/Info.plist
-	git commit -m "chore: release v$(VERSION)"
+	@# Tolerate a no-op version bump: if Info.plist was already at VERSION on
+	@# master (e.g. pre-bumped in a separate commit), there's nothing staged —
+	@# skip the commit instead of failing the whole release at this point.
+	git diff --cached --quiet || git commit -m "chore: release v$(VERSION)"
 	git add website/src/lib/release.mjs website/README.md website/src/pages/changelog.astro
 	git commit -m "chore(website): publish v$(VERSION) release metadata"
 	@echo "=== Push release branch + open PR ==="
