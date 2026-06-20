@@ -7,6 +7,34 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.8.0',
+    date: 'Published June 20, 2026',
+    summary: 'ZackEyes 0.8.0 — security-hardening release on top of the new real Dynamic Island.',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Real Dynamic Island — on MacBooks with a notch, the live panel now merges into the physical Dynamic Island instead of a separate simulated pill, and falls back to the screen\'s safe-area inset when the menu bar is auto-hidden.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'Token usage no longer freezes and then jumps during long deep-research and workflow runs: the 5-hour percentage is interpolated from transcript token growth between updates, so it moves smoothly and feeds a steadier burn-rate estimate.',
+          'Codex usage now handles the per-model rate limits that recent Codex versions report, so a freshly-reset per-model limit at 0% no longer hides your higher account-level usage.',
+          'The 5-hour reset countdown stays visible alongside the burn-rate ETA badge instead of being replaced by it.',
+          'The local control socket that gates tool-permission prompts now authenticates its peer, lives in an owner-only directory instead of world-connectable /tmp, and times out cleanly; the bridge verifies it is talking to the real ZackEyes.',
+          'The offline event spool is written owner-only, replays only a fixed allowlist of event types, and no longer trusts attacker-writable on-disk data.',
+          'Terminal titles and notifications are sanitized at the escape-sequence boundary, and session identifiers are validated before use as cache filenames, preventing path traversal.',
+          'The diagnostics export redacts third-party status-line commands, the username (any case), and the hostname.',
+          '"Allow Always" no longer remembers high-risk tools such as Bash — those still ask every time.',
+          'Read caps and overflow/growth guards were added across the Codex token scan, task extraction, token counting, and the file tailer to prevent runaway resource use.',
+          'The updater reconstructs the download URL from trusted components, rejects downgrades, downloads into a private owner-only directory, and verifies the file is a real disk image before opening it.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.7.2',
     date: 'Published June 17, 2026',
     summary: 'Security hardening patch.',
