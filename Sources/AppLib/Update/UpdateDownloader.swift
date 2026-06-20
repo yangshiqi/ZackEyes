@@ -109,7 +109,9 @@ public final class UpdateDownloader: ObservableObject {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
         guard let end = try? handle.seekToEnd(), end >= 512 else { return false }
-        try? handle.seek(toOffset: end - 512)
+        // Guard the seek so a failure returns false rather than reading from the
+        // wrong (end-of-file) offset (Gemini review).
+        guard (try? handle.seek(toOffset: end - 512)) != nil else { return false }
         guard let trailer = try? handle.read(upToCount: 4) else { return false }
         return trailer.elementsEqual([0x6B, 0x6F, 0x6C, 0x79])  // "koly"
     }
