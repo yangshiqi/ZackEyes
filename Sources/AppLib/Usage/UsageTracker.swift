@@ -267,11 +267,13 @@ public final class UsageTracker: ObservableObject {
         snapshot = restored
         // #148 — seed the per-scope map from the cached codex reading so the
         // most-constrained value survives a restart (the first live scan may
-        // only see a fresh per-model scope). Keyed "" like an unnamed account
-        // scope; a fresh account reading overwrites it, and it self-expires on
-        // its own reset.
+        // only see a fresh per-model scope). Keyed under a synthetic name that
+        // can't collide with a real `limit_name` (Codex review #149): the cached
+        // value is the last *max across scopes* and may have come from a named
+        // model limit, so a fresh account ("") reading must NOT overwrite it.
+        // It self-expires on its own reset like any scope.
         if restored.codexFiveHourUsedPct != nil || restored.codexSevenDayUsedPct != nil {
-            codexScopeReadings[""] = CodexRateLimitObservation(
+            codexScopeReadings["\u{0}cached"] = CodexRateLimitObservation(
                 fiveHourUsedPct: restored.codexFiveHourUsedPct,
                 fiveHourResetsAt: restored.codexFiveHourResetsAt,
                 sevenDayUsedPct: restored.codexSevenDayUsedPct,
