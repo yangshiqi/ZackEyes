@@ -241,4 +241,63 @@ struct UsageTrackerCodexTests {
         #expect(obs?.fiveHourUsedPct == 12.5)
         #expect(obs?.sevenDayUsedPct == 3.0)
     }
+
+    // MARK: - #148 multi-scope rate limits
+
+    @Test func mostConstrainedCodexReading_picksHighestNonExpiredScope() {
+        let now = Date()
+        let future = now.addingTimeInterval(3600)
+        let scopes: [String: UsageTracker.CodexRateLimitObservation] = [
+            "": .init(fiveHourUsedPct: 25, fiveHourResetsAt: future,
+                      sevenDayUsedPct: 12, sevenDayResetsAt: future),               // account
+            "GPT-5.3-Codex-Spark": .init(fiveHourUsedPct: 0, fiveHourResetsAt: future,
+                                         sevenDayUsedPct: 0, sevenDayResetsAt: future), // per-model
+        ]
+        let best = UsageTracker.mostConstrainedCodexReading(from: scopes, now: now)
+        // The 0% per-model scope must NOT mask the 25% account scope.
+        #expect(best.fiveHourUsedPct == 25)
+        #expect(best.sevenDayUsedPct == 12)
+    }
+
+    @Test func mostConstrainedCodexReading_skipsExpiredScope() {
+        let now = Date()
+        let past = now.addingTimeInterval(-3600)
+        let future = now.addingTimeInterval(3600)
+        let scopes: [String: UsageTracker.CodexRateLimitObservation] = [
+            "": .init(fiveHourUsedPct: 25, fiveHourResetsAt: past,
+                      sevenDayUsedPct: 12, sevenDayResetsAt: past),                 // window already reset
+            "GPT-5.3-Codex-Spark": .init(fiveHourUsedPct: 3, fiveHourResetsAt: future,
+                                         sevenDayUsedPct: 1, sevenDayResetsAt: future),
+        ]
+        let best = UsageTracker.mostConstrainedCodexReading(from: scopes, now: now)
+        // Expired account reading is stale → the live per-model scope wins.
+        #expect(best.fiveHourUsedPct == 3)
+        #expect(best.sevenDayUsedPct == 1)
+    }
+
+    @Test func scanLatestCodexScopes_collectsLatestPerScope() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let day = currentCodexDayDir(under: tmpDir)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        let id = "019dec85-1111-2222-3333-444455556666"
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id, hour: 14))
+        // Account scope climbs to 25%, then the model switches to Spark@0% for
+        // the tail — the exact shape that made the notch read 100% remaining.
+        try """
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":20.0,"resets_at":4000000000},"secondary":{"used_percent":10.0,"resets_at":4000000000}}}}
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":25.0,"resets_at":4000000000},"secondary":{"used_percent":12.0,"resets_at":4000000000}}}}
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_name":"GPT-5.3-Codex-Spark","primary":{"used_percent":0.0,"resets_at":4000000000},"secondary":{"used_percent":0.0,"resets_at":4000000000}}}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-60)], ofItemAtPath: file.path)
+
+        let scopes = try #require(UsageTracker.scanLatestCodexScopes(rootDir: tmpDir))
+        #expect(scopes[""]?.fiveHourUsedPct == 25.0)                     // account, latest
+        #expect(scopes["GPT-5.3-Codex-Spark"]?.fiveHourUsedPct == 0.0)   // per-model, latest
+        // The fix end-to-end: most-constrained ignores the fresh 0% model scope.
+        let best = UsageTracker.mostConstrainedCodexReading(from: scopes, now: Date())
+        #expect(best.fiveHourUsedPct == 25.0)
+        #expect(best.sevenDayUsedPct == 12.0)
+    }
 }
