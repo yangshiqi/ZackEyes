@@ -441,7 +441,15 @@ public final class UsageTracker: ObservableObject {
         s.codexFiveHourResetsAt = best.fiveHourResetsAt
         s.codexSevenDayUsedPct = best.sevenDayUsedPct
         s.codexSevenDayResetsAt = best.sevenDayResetsAt
-        if let pct = best.fiveHourUsedPct { codexEstimator.record(now, pct: pct) }
+        // Only feed the estimator a genuinely new reading — recording an
+        // unchanged % at a new timestamp injects flat points that distort the
+        // burn-rate ETA (mirrors the #86 Claude-path guard; Gemini review).
+        // `snapshot` still holds the prior value here (s is a local copy).
+        if let pct = best.fiveHourUsedPct,
+           pct != snapshot.codexFiveHourUsedPct
+            || best.fiveHourResetsAt != snapshot.codexFiveHourResetsAt {
+            codexEstimator.record(now, pct: pct)
+        }
         s.codexFiveHourETA = codexEstimator.estimate(
             now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
         snapshot = s
@@ -564,8 +572,12 @@ public final class UsageTracker: ObservableObject {
         let readSize: UInt64 = 1_048_576
         let offset = fileSize > readSize ? fileSize - readSize : 0
         try? handle.seek(toOffset: offset)
-        guard let data = try? handle.readToEnd(),
-              let text = String(data: data, encoding: .utf8) else { return nil }
+        // String(decoding:as:) is lossy — it replaces malformed bytes with
+        // U+FFFD instead of failing the whole decode when the 1MB offset cuts
+        // mid-UTF8-char (Gemini review). The garbled partial first line then
+        // just fails JSON parse and is skipped; the rest decodes correctly.
+        guard let data = try? handle.readToEnd() else { return nil }
+        let text = String(decoding: data, as: UTF8.self)
 
         var scopes: [String: CodexRateLimitObservation] = [:]
         var last: CodexRateLimitObservation? = nil
