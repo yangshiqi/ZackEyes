@@ -153,6 +153,12 @@ public final class SocketServer {
     }
 
     private nonisolated func handleConnection(fd: Int32) async {
+        // #129/F-019 — idle read timeout: the bridge writes its newline-delimited
+        // payload immediately, so a peer that connects then stalls must not pin
+        // this handler forever. read() returns <= 0 after the timeout → break.
+        var rcvTimeout = timeval(tv_sec: 5, tv_usec: 0)
+        _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcvTimeout,
+                       socklen_t(MemoryLayout<timeval>.size))
         var accumulated = Data()
         var buffer = [UInt8](repeating: 0, count: 4096)
         while accumulated.count < 65536 {

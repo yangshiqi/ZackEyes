@@ -119,6 +119,10 @@ public struct IntegrationUninstaller {
     /// PR #111).
     @discardableResult
     public func execute() -> Bool {
+        // #129/F-022 — serialize with HookRepair so a concurrent (re)install
+        // can't re-create the files we're sweeping (or vice versa).
+        HookRepair.hookMutationLock.lock()
+        defer { HookRepair.hookMutationLock.unlock() }
         do {
             try HookInstaller(
                 settingsPath: claudeSettingsPath, bridgePath: bridgePath

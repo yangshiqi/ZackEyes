@@ -23,14 +23,30 @@ public final class UpdateDownloader: ObservableObject {
     @Published public private(set) var state: State = .idle
 
     private let opener: (URL) -> Void
+    private let downloadDir: URL
 
+    /// `downloadDir` is injectable so tests can point at a dir they control;
+    /// production uses a per-launch, owner-only (0700) dir with an unpredictable
+    /// name (#129/F-017) so the DMG path can't be pre-created or swapped by
+    /// another process and the cache-hit branch can't be poisoned. (macOS's temp
+    /// root is already per-user; this is defense in depth.)
     public init(opener: @escaping (URL) -> Void = { url in
         NSWorkspace.shared.open(url)
-    }) {
+    }, downloadDir: URL? = nil) {
         self.opener = opener
+        self.downloadDir = downloadDir ?? Self.makeDownloadDir()
     }
 
-    /// Download the DMG at `url` to tmp/<filename>, then open it with Finder.
+    private static func makeDownloadDir() -> URL {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZackEyes-Update-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        return dir
+    }
+
+    /// Download the DMG at `url` to a private dir, then open it with Finder.
     /// On cache hit, skips the URLSession call entirely.
     public func download(from url: URL) async {
         // Prevent re-entrance: if a previous click is still mid-flight, ignore.
@@ -46,8 +62,7 @@ public final class UpdateDownloader: ObservableObject {
             state = .failed("invalid asset filename")
             return
         }
-        let dest = FileManager.default.temporaryDirectory
-            .appendingPathComponent(filename)
+        let dest = downloadDir.appendingPathComponent(filename)
 
         if FileManager.default.fileExists(atPath: dest.path) {
             state = .ready(dest)

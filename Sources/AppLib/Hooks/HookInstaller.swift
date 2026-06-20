@@ -208,7 +208,7 @@ public struct HookInstaller {
         // Remove statusLine if we own it (direct or mux)
         if let sl = settings["statusLine"] as? [String: Any],
            let cmd = sl["command"] as? String,
-           cmd.contains("zackeyes") {
+           isZackEyesCommand(cmd) {
             // If mux was installed, restore the original command
             if let original = readMuxOriginalCommand() {
                 settings["statusLine"] = [
@@ -440,7 +440,11 @@ public struct HookInstaller {
     }
 
     private func isZackEyesCommand(_ command: String) -> Bool {
-        command.lowercased().contains("zackeyes")
+        // #129/F-018 — match our own commands by the ~/.zackeyes/ path component
+        // (or the configured bridgePath, for test paths outside ~/.zackeyes), not
+        // a bare "zackeyes" substring an unrelated third-party command could also
+        // contain.
+        command.lowercased().contains("/.zackeyes/")
             || command.contains(bridgePath)
             || command.contains(quotedShellPath(bridgePath))
     }
@@ -481,6 +485,10 @@ public struct HookInstaller {
             withJSONObject: settings,
             options: [.prettyPrinted, .sortedKeys]
         )
-        try data.write(to: url, options: .atomic)
+        // #129/F-021 — if settings.json is a symlink (some users link ~/.claude
+        // into a dotfiles repo), write to its TARGET so the atomic rename
+        // replaces the real file, not the link itself with a regular file.
+        let target = url.resolvingSymlinksInPath()
+        try data.write(to: target, options: .atomic)
     }
 }
