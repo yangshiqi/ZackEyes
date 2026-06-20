@@ -65,8 +65,7 @@ public final class UpdateDownloader: ObservableObject {
         let dest = downloadDir.appendingPathComponent(filename)
 
         if FileManager.default.fileExists(atPath: dest.path) {
-            state = .ready(dest)
-            opener(dest)
+            presentDownloadedImage(at: dest)
             return
         }
 
@@ -84,11 +83,37 @@ public final class UpdateDownloader: ObservableObject {
             }
             try? FileManager.default.removeItem(at: dest)
             try FileManager.default.moveItem(at: tmpURL, to: dest)
-            state = .ready(dest)
-            opener(dest)
+            presentDownloadedImage(at: dest)
         } catch {
             state = .failed(error.localizedDescription)
         }
+    }
+
+    /// Validate the download then hand it to Finder. Rejects a 200-but-wrong-
+    /// content response (CDN error page, truncated file) before opening —
+    /// defense-in-depth / robustness on the update path (#121). NOT a substitute
+    /// for Developer-ID notarization (#135), which a no-cost check can't give.
+    private func presentDownloadedImage(at dest: URL) {
+        guard Self.looksLikeDMG(dest) else {
+            try? FileManager.default.removeItem(at: dest)
+            state = .failed("downloaded file is not a valid disk image")
+            return
+        }
+        state = .ready(dest)
+        opener(dest)
+    }
+
+    /// True when `url` ends with the 512-byte UDIF `koly` trailer that every
+    /// `.dmg` carries — a cheap structural check that the bytes are a disk image.
+    static func looksLikeDMG(_ url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        guard let end = try? handle.seekToEnd(), end >= 512 else { return false }
+        // Guard the seek so a failure returns false rather than reading from the
+        // wrong (end-of-file) offset (Gemini review).
+        guard (try? handle.seek(toOffset: end - 512)) != nil else { return false }
+        guard let trailer = try? handle.read(upToCount: 4) else { return false }
+        return trailer.elementsEqual([0x6B, 0x6F, 0x6C, 0x79])  // "koly"
     }
 
     /// Reset to `.idle` so a failed item's menu title goes back to the
