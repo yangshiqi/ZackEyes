@@ -133,6 +133,13 @@ public final class UsageTracker: ObservableObject {
     private var fiveHourAnchorPct: Double?
     private var fiveHourAnchorTokens: Int?
 
+    /// #148 — Codex reports rate limits per named scope (account-level plus
+    /// per-model limits like "GPT-5.3-Codex-Spark"). We remember each scope's
+    /// last reading keyed by `limit_name` ("" when absent) so a fresh per-model
+    /// limit at 0% can't hide a higher account limit that's no longer in the
+    /// scanned tail. Expired scopes (resets_at passed) are pruned on apply.
+    private var codexScopeReadings: [String: CodexRateLimitObservation] = [:]
+
     /// Path where we persist the last received rate_limits snapshot so the UI
     /// can show meaningful data immediately on next launch instead of "no data".
     private let cacheURL: URL = {
@@ -258,6 +265,18 @@ public final class UsageTracker: ObservableObject {
         var restored = cached
         restored.dailyUsage = []   // #84: never trust a persisted (possibly stale) "today"
         snapshot = restored
+        // #148 — seed the per-scope map from the cached codex reading so the
+        // most-constrained value survives a restart (the first live scan may
+        // only see a fresh per-model scope). Keyed "" like an unnamed account
+        // scope; a fresh account reading overwrites it, and it self-expires on
+        // its own reset.
+        if restored.codexFiveHourUsedPct != nil || restored.codexSevenDayUsedPct != nil {
+            codexScopeReadings[""] = CodexRateLimitObservation(
+                fiveHourUsedPct: restored.codexFiveHourUsedPct,
+                fiveHourResetsAt: restored.codexFiveHourResetsAt,
+                sevenDayUsedPct: restored.codexSevenDayUsedPct,
+                sevenDayResetsAt: restored.codexSevenDayResetsAt)
+        }
     }
 
     /// Persist the snapshot's rate_limits fields so we can restore them on next launch.
@@ -296,9 +315,9 @@ public final class UsageTracker: ObservableObject {
         }.value
         claudeFileCache = claudeScan.cache
         let estimated = claudeScan.snapshot
-        let codexObservation = await Task.detached(priority: .utility) { () -> CodexRateLimitObservation? in
+        let codexScopes = await Task.detached(priority: .utility) { () -> [String: CodexRateLimitObservation]? in
             guard let codexDir else { return nil }
-            return Self.scanLatestCodexRateLimits(rootDir: codexDir)
+            return Self.scanLatestCodexScopes(rootDir: codexDir)
         }.value
 
         // #84 daily token scan (Codex), with the per-file parse cache.
@@ -354,14 +373,15 @@ public final class UsageTracker: ObservableObject {
             now: Date(), currentPct: merged.fiveHourUsedPct, resetsAt: merged.fiveHourResetsAt)
         self.snapshot = merged
 
-        if let obs = codexObservation {
-            applyCodexObservation(obs)
+        if let codexScopes, !codexScopes.isEmpty {
+            applyCodexScopes(codexScopes)
         } else {
             // No codex rollout written within the active window → user is
             // not currently using codex. Clear the codex fields so the bar
             // disappears instead of pinning to whatever historical or cached
             // value last landed in the snapshot.
             clearCodexData()
+            codexScopeReadings.removeAll()   // #148 — don't carry scopes into inactivity
         }
     }
 
@@ -399,6 +419,58 @@ public final class UsageTracker: ObservableObject {
         saveToCache()
     }
 
+    /// #148 — apply a scan that may carry multiple named rate-limit scopes.
+    /// Merge each scope's latest reading into the remembered map, prune scopes
+    /// whose windows have all reset, then display the most-constrained reading.
+    private func applyCodexScopes(_ scanned: [String: CodexRateLimitObservation]) {
+        let now = Date()
+        for (k, v) in scanned { codexScopeReadings[k] = v }
+        codexScopeReadings = codexScopeReadings.filter { _, obs in
+            let pAlive = obs.fiveHourResetsAt.map { $0 > now } ?? (obs.fiveHourUsedPct != nil)
+            let sAlive = obs.sevenDayResetsAt.map { $0 > now } ?? (obs.sevenDayUsedPct != nil)
+            return pAlive || sAlive
+        }
+        let best = Self.mostConstrainedCodexReading(from: codexScopeReadings, now: now)
+        var s = snapshot
+        s.lastUpdated = now
+        // Set directly (not the "only-if-present" merge of applyCodexObservation)
+        // so a window with no live scope clears instead of pinning a stale value.
+        s.codexFiveHourUsedPct = best.fiveHourUsedPct
+        s.codexFiveHourResetsAt = best.fiveHourResetsAt
+        s.codexSevenDayUsedPct = best.sevenDayUsedPct
+        s.codexSevenDayResetsAt = best.sevenDayResetsAt
+        if let pct = best.fiveHourUsedPct { codexEstimator.record(now, pct: pct) }
+        s.codexFiveHourETA = codexEstimator.estimate(
+            now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
+        snapshot = s
+        saveToCache()
+    }
+
+    /// #148 — surface the most-constrained (highest used%) non-expired reading
+    /// across all known Codex limit scopes, per window. A scope whose window has
+    /// already reset (resets_at < now) is skipped — its % is stale. Lets a
+    /// per-model scope at 0% never mask a higher account-level scope.
+    nonisolated static func mostConstrainedCodexReading(
+        from scopes: [String: CodexRateLimitObservation], now: Date
+    ) -> CodexRateLimitObservation {
+        var result = CodexRateLimitObservation()
+        for obs in scopes.values {
+            if let pct = obs.fiveHourUsedPct,
+               obs.fiveHourResetsAt.map({ $0 > now }) ?? true,
+               pct > (result.fiveHourUsedPct ?? -1) {
+                result.fiveHourUsedPct = pct
+                result.fiveHourResetsAt = obs.fiveHourResetsAt
+            }
+            if let pct = obs.sevenDayUsedPct,
+               obs.sevenDayResetsAt.map({ $0 > now }) ?? true,
+               pct > (result.sevenDayUsedPct ?? -1) {
+                result.sevenDayUsedPct = pct
+                result.sevenDayResetsAt = obs.sevenDayResetsAt
+            }
+        }
+        return result
+    }
+
     /// Codex rollout-mtime window for "is codex actively running right now".
     /// A rollout file's mtime advances on every event_msg write, so anything
     /// older than this is taken as "the user is not currently using codex" —
@@ -407,16 +479,15 @@ public final class UsageTracker: ObservableObject {
     /// AppDelegate.runLivenessSweep.
     public nonisolated static let codexActiveWindowSeconds: TimeInterval = 15 * 60
 
-    /// Walk the date-partitioned codex sessions tree and return the
-    /// `rate_limits` payload from the most recent `event_msg.token_count`
-    /// event, decoded into a Sendable observation. Returns `nil` if no
-    /// rollout has been written within `recentSeconds` (default
-    /// `codexActiveWindowSeconds` = 15 min). Bounded — only reads the tail
-    /// of each candidate file.
-    nonisolated static func scanLatestCodexRateLimits(
+    /// Walk the date-partitioned codex sessions tree (newest mtime first,
+    /// within `recentSeconds`) and return the first rollout's tail readings —
+    /// the latest reading per named scope plus the overall-last reading.
+    /// Returns `nil` if no rollout was written within the window. Bounded —
+    /// only reads the tail of each candidate file.
+    private nonisolated static func firstActiveCodexReadings(
         rootDir: URL,
-        recentSeconds: TimeInterval = codexActiveWindowSeconds
-    ) -> CodexRateLimitObservation? {
+        recentSeconds: TimeInterval
+    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation)? {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-recentSeconds)
         struct Candidate {
@@ -443,19 +514,39 @@ public final class UsageTracker: ObservableObject {
             }
         }
         // Walk newest-first; first file with a token_count event wins.
-        let sorted = candidates.sorted { $0.mtime > $1.mtime }
-        for c in sorted {
-            if let obs = lastTokenCountObservation(in: c.url) {
-                return obs
+        for c in candidates.sorted(by: { $0.mtime > $1.mtime }) {
+            if let readings = tailCodexReadings(in: c.url) {
+                return readings
             }
         }
         return nil
     }
 
-    /// Tail-scan a codex rollout jsonl for the last `event_msg` line whose
-    /// payload type is `token_count`, and decode its `rate_limits` into a
-    /// Sendable observation.
-    private nonisolated static func lastTokenCountObservation(in url: URL) -> CodexRateLimitObservation? {
+    /// Most recent single `rate_limits` reading (the overall-last token_count).
+    /// Kept for callers/tests that want the raw latest, independent of scope.
+    nonisolated static func scanLatestCodexRateLimits(
+        rootDir: URL,
+        recentSeconds: TimeInterval = codexActiveWindowSeconds
+    ) -> CodexRateLimitObservation? {
+        firstActiveCodexReadings(rootDir: rootDir, recentSeconds: recentSeconds)?.last
+    }
+
+    /// #148 — latest reading per named limit scope (`limit_name`, "" when
+    /// absent) from the active rollout. The caller picks the most-constrained
+    /// across scopes so a per-model limit at 0% can't hide a higher one.
+    nonisolated static func scanLatestCodexScopes(
+        rootDir: URL,
+        recentSeconds: TimeInterval = codexActiveWindowSeconds
+    ) -> [String: CodexRateLimitObservation]? {
+        firstActiveCodexReadings(rootDir: rootDir, recentSeconds: recentSeconds)?.scopes
+    }
+
+    /// Tail-scan a codex rollout jsonl, collecting the latest `rate_limits`
+    /// reading per named scope plus the overall-last reading. Returns `nil`
+    /// when the tail has no `token_count` event.
+    private nonisolated static func tailCodexReadings(
+        in url: URL
+    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation)? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         let fileSize: UInt64
@@ -464,14 +555,18 @@ public final class UsageTracker: ObservableObject {
         } catch {
             return nil
         }
-        // 256KB tail covers many turns of token_count payloads (each ~500B).
-        let readSize: UInt64 = 262_144
+        // #148 — 1MB tail. token_count payloads are ~500B, but large assistant
+        // messages sit between them and Codex interleaves multiple named limit
+        // scopes; a wider tail makes it likelier we capture every active scope's
+        // latest reading in one scan (per-scope persistence covers the rest).
+        let readSize: UInt64 = 1_048_576
         let offset = fileSize > readSize ? fileSize - readSize : 0
         try? handle.seek(toOffset: offset)
         guard let data = try? handle.readToEnd(),
               let text = String(data: data, encoding: .utf8) else { return nil }
 
-        var observation: CodexRateLimitObservation? = nil
+        var scopes: [String: CodexRateLimitObservation] = [:]
+        var last: CodexRateLimitObservation? = nil
         for line in text.split(separator: "\n") {
             guard let lineData = line.data(using: .utf8) else { continue }
             guard let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
@@ -479,9 +574,13 @@ public final class UsageTracker: ObservableObject {
             guard let payload = obj["payload"] as? [String: Any] else { continue }
             guard payload["type"] as? String == "token_count" else { continue }
             guard let rl = payload["rate_limits"] as? [String: Any] else { continue }
-            observation = decodeCodexObservation(from: rl)
+            let name = rl["limit_name"] as? String ?? ""
+            let obs = decodeCodexObservation(from: rl)
+            scopes[name] = obs
+            last = obs
         }
-        return observation
+        guard let last else { return nil }
+        return (scopes, last)
     }
 
     /// Decode codex rate_limits dict into the Sendable observation struct.
