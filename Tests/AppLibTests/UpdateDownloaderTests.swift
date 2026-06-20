@@ -19,15 +19,19 @@ final class UpdateDownloaderTests: XCTestCase {
     }
 
     func testCacheHitTransitionsToReadyWithoutNetwork() async throws {
-        // Pre-place a fake DMG in tmp so download() takes the cache-hit path.
-        let url = URL(string: "https://example.com/path/ZackEyes-test-cache.dmg")!
-        let cached = FileManager.default.temporaryDirectory
-            .appendingPathComponent(url.lastPathComponent)
-        try? FileManager.default.removeItem(at: cached)
-        try Data("fake dmg".utf8).write(to: cached)
-        defer { try? FileManager.default.removeItem(at: cached) }
+        // Pre-place a fake DMG in an injected download dir so download() takes
+        // the cache-hit path. (Production's dir is per-launch + unpredictable,
+        // #129/F-017 — so the test injects one it controls.)
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("ZackEyesTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
 
-        let d = UpdateDownloader(opener: { _ in /* swallow open */ })
+        let url = URL(string: "https://example.com/path/ZackEyes-test-cache.dmg")!
+        let cached = dir.appendingPathComponent(url.lastPathComponent)
+        try Data("fake dmg".utf8).write(to: cached)
+
+        let d = UpdateDownloader(opener: { _ in /* swallow open */ }, downloadDir: dir)
         await d.download(from: url)
 
         if case .ready(let path) = d.state {
