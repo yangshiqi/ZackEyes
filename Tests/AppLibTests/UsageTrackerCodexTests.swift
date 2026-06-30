@@ -204,6 +204,25 @@ struct UsageTrackerCodexTests {
         #expect(snap.hasClaudeData && snap.hasCodexData)
     }
 
+    @Test func displayAgent_honorsPreferredAgentWhenBothHaveData() {
+        var snap = UsageTracker.Snapshot.empty
+        snap.fiveHourUsedPct = 12
+        snap.codexFiveHourUsedPct = 34
+
+        #expect(snap.displayAgent(preferred: .claude) == .claude)
+        #expect(snap.displayAgent(preferred: .codex) == .codex)
+    }
+
+    @Test func displayAgent_fallsBackToOnlyAgentWithData() {
+        var codexOnly = UsageTracker.Snapshot.empty
+        codexOnly.codexSevenDayUsedPct = 31
+        #expect(codexOnly.displayAgent(preferred: .claude) == .codex)
+
+        var claudeOnly = UsageTracker.Snapshot.empty
+        claudeOnly.sevenDayUsedPct = 18
+        #expect(claudeOnly.displayAgent(preferred: .codex) == .claude)
+    }
+
     // MARK: - scanLatestCodexRateLimits picks newest file's last token_count
 
     @Test func scanLatestCodexRateLimits_returnsMostRecentObservation() throws {
@@ -537,6 +556,33 @@ struct UsageTrackerCodexTests {
         let best = UsageTracker.mostConstrainedCodexReading(from: scopes, now: Date())
         #expect(best.fiveHourUsedPct == 25.0)
         #expect(best.sevenDayUsedPct == 12.0)
+    }
+
+    @Test func scanLatestCodexScopes_premiumNullDoesNotEraseCodexAccountQuota() throws {
+        // Codex CLI 0.137 emits these back-to-back: the real account quota is
+        // followed by an unnamed premium scope whose windows are null. They
+        // have distinct limit_id values and must not overwrite each other.
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let day = currentCodexDayDir(under: tmpDir)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        let id = "019f0d8a-1111-2222-3333-444455556666"
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id, hour: 14))
+        try """
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","limit_name":null,"primary":{"used_percent":64.0,"resets_at":4000000000},"secondary":{"used_percent":29.0,"resets_at":4000000000}}}}
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"premium","limit_name":null,"primary":null,"secondary":null,"credits":{"has_credits":false,"unlimited":false,"balance":"0"}}}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-5)], ofItemAtPath: file.path)
+
+        let scopes = try #require(UsageTracker.scanLatestCodexScopes(rootDir: tmpDir))
+        #expect(scopes[""]?.fiveHourUsedPct == 64.0)
+        #expect(scopes[""]?.sevenDayUsedPct == 29.0)
+        #expect(scopes["id:premium"]?.fiveHourUsedPct == nil)
+
+        let best = UsageTracker.mostConstrainedCodexReading(from: scopes, now: Date())
+        #expect(best.fiveHourUsedPct == 64.0)
+        #expect(best.sevenDayUsedPct == 29.0)
     }
 
     // MARK: - scanLatestCodexState surfaces the block from the latest reading

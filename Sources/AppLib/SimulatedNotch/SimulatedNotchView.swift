@@ -75,7 +75,7 @@ struct SimulatedNotchView: View {
     @ViewBuilder
     private var compactContent: some View {
         let snap = usageTracker.snapshot
-        let agent = modeStore.compactAgent
+        let agent = effectiveCompactAgent(for: snap)
         let fivePct = (agent == .codex) ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct
         let sevenPct = (agent == .codex) ? snap.codexSevenDayUsedPct : snap.sevenDayUsedPct
         let eta = (agent == .codex) ? snap.codexFiveHourETA : snap.fiveHourETA
@@ -142,7 +142,7 @@ struct SimulatedNotchView: View {
     @ViewBuilder
     private var expandedContent: some View {
         let snap = usageTracker.snapshot
-        let agent = modeStore.compactAgent
+        let agent = effectiveCompactAgent(for: snap)
         let fivePct = (agent == .codex) ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct
         let fiveResets = (agent == .codex) ? snap.codexFiveHourResetsAt : snap.fiveHourResetsAt
         let sevenPct = (agent == .codex) ? snap.codexSevenDayUsedPct : snap.sevenDayUsedPct
@@ -176,6 +176,20 @@ struct SimulatedNotchView: View {
             Image(systemName: "bubble.left.fill")
                 .font(.system(size: 9))
                 .foregroundColor(.white.opacity(0.6))
+        }
+    }
+
+    /// Honor the user's preference when both agents have data. If the selected
+    /// agent has no quota reading but the other one does, show the available
+    /// data instead of leaving the always-visible pill stuck on an em dash.
+    private func effectiveCompactAgent(for snapshot: UsageTracker.Snapshot) -> AgentKind {
+        switch modeStore.compactAgent {
+        case .claude where !snapshot.hasClaudeData && snapshot.hasCodexData:
+            return .codex
+        case .codex where !snapshot.hasCodexData && snapshot.hasClaudeData:
+            return .claude
+        default:
+            return modeStore.compactAgent
         }
     }
 
