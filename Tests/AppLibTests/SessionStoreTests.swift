@@ -272,6 +272,116 @@ struct SessionStoreTests {
         #expect(store.sessions["codex-1"]?.source == .detected)
     }
 
+    // MARK: - Codex error surfacing (usage-limit hit / API failure)
+
+    @Test func recordCodexErrorSurfacesUsageLimitOnBanner() {
+        let store = SessionStore()
+        let at = Date(timeIntervalSince1970: 1_777_966_338)
+        let message = "You've hit your usage limit. Upgrade to Pro, visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 7:34 PM."
+
+        let result = store.recordCodexError(
+            sessionId: "codex-err",
+            cwd: "/Users/test/proj",
+            message: message,
+            errorInfo: "usage_limit_exceeded",
+            transcriptPath: "/tmp/rollout.jsonl",
+            observedAt: at
+        )
+
+        #expect(result.isNew)
+        let session = store.sessions["codex-err"]
+        #expect(session?.agent == .codex)
+        #expect(session?.source == .detected)
+        #expect(session?.errorMessage == "Usage limit reached")
+        #expect(session?.errorAt == at)
+        // Full text mirrored into lastAssistantMessage so the banner detail
+        // shows the reset time + link (mirrors Claude's error path).
+        #expect(session?.lastAssistantMessage == message)
+    }
+
+    @Test func recordCodexErrorDedupesRepeatWithinWindow() {
+        let store = SessionStore()
+        let first = Date(timeIntervalSince1970: 1_777_966_338)
+        let message = "You've hit your usage limit. Try again at 7:34 PM."
+
+        let r1 = store.recordCodexError(
+            sessionId: "codex-err", cwd: "/p", message: message,
+            errorInfo: "usage_limit_exceeded", transcriptPath: "/tmp/r.jsonl",
+            observedAt: first
+        )
+        // 16s later — same ongoing limit, should NOT re-notify.
+        let secondAt = first.addingTimeInterval(16)
+        let r2 = store.recordCodexError(
+            sessionId: "codex-err", cwd: "/p", message: message,
+            errorInfo: "usage_limit_exceeded", transcriptPath: "/tmp/r.jsonl",
+            observedAt: secondAt
+        )
+        // Well past the window SINCE THE LAST error — a fresh attempt failing
+        // again (codex's real pattern is a ~48-min-later retry) re-notifies.
+        let thirdAt = secondAt.addingTimeInterval(SessionStore.codexErrorNotifyWindow + 5)
+        let r3 = store.recordCodexError(
+            sessionId: "codex-err", cwd: "/p", message: message,
+            errorInfo: "usage_limit_exceeded", transcriptPath: "/tmp/r.jsonl",
+            observedAt: thirdAt
+        )
+
+        #expect(r1.isNew)
+        #expect(r2.isNew == false)
+        #expect(r3.isNew)
+        // Banner is always refreshed regardless of dedup.
+        #expect(store.sessions["codex-err"]?.errorAt == thirdAt)
+    }
+
+    @Test func recordCodexTaskCompleteClearsErrorOnRecovery() {
+        let store = SessionStore()
+        let at = Date(timeIntervalSince1970: 1_777_966_338)
+        store.recordCodexError(
+            sessionId: "codex-err", cwd: "/p", message: "You've hit your usage limit.",
+            errorInfo: "usage_limit_exceeded", transcriptPath: "/tmp/r.jsonl",
+            observedAt: at
+        )
+        #expect(store.sessions["codex-err"]?.errorMessage == "Usage limit reached")
+
+        // The error turn's own task_complete carries no reply — must NOT clear.
+        store.recordCodexTaskComplete(
+            sessionId: "codex-err", cwd: "/p", lastAgentMessage: nil,
+            transcriptPath: "/tmp/r.jsonl", completedAt: at.addingTimeInterval(1)
+        )
+        #expect(store.sessions["codex-err"]?.errorMessage == "Usage limit reached")
+
+        // A later turn that actually replies = recovered; clear the banner.
+        store.recordCodexTaskComplete(
+            sessionId: "codex-err", cwd: "/p", lastAgentMessage: "back online",
+            transcriptPath: "/tmp/r.jsonl", completedAt: at.addingTimeInterval(3600)
+        )
+        #expect(store.sessions["codex-err"]?.errorMessage == nil)
+        #expect(store.sessions["codex-err"]?.errorAt == nil)
+    }
+
+    @Test func codexErrorLabelMapsKnownCodesThenFallsBack() {
+        #expect(SessionStore.codexErrorLabel(
+            errorInfo: "usage_limit_exceeded",
+            message: "anything"
+        ) == "Usage limit reached")
+        // Unknown code → fall back to the generic detector on the message.
+        #expect(SessionStore.codexErrorLabel(
+            errorInfo: "some_future_code",
+            message: "503 Service Unavailable from upstream"
+        ) == "Service unavailable (503)")
+        // Nothing recognizable → generic label, never empty.
+        #expect(SessionStore.codexErrorLabel(
+            errorInfo: nil,
+            message: "weird unparseable failure"
+        ) == "Codex error")
+    }
+
+    @Test func detectErrorMatchesHitUsageLimitPhrasing() {
+        // Codex's exact phrasing uses "hit", not "reached"/"exceeded".
+        #expect(SessionStore.detectError(
+            in: "You've hit your usage limit. Try again at 7:34 PM."
+        ) == "Usage limit reached")
+    }
+
     @Test func recordCodexContextPopulatesContextFields() {
         let store = SessionStore()
         let observedAt = Date(timeIntervalSince1970: 1_777_962_860)

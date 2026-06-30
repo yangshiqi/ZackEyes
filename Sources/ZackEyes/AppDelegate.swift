@@ -869,6 +869,34 @@ extension AppDelegate: CodexJsonlTailerDelegate {
         )
     }
 
+    /// Tailer detected Codex's `event_msg.error` (usage-limit hit / API
+    /// failure). Codex hooks never deliver errors, so this jsonl path is the
+    /// only way the popup learns about them. Surface to the session's error
+    /// banner, fire one notification per fresh error (retry bursts are
+    /// deduped in `recordCodexError`), and force the panel open so the user
+    /// can't miss it — mirrors the Claude error path's `forceUiExpand`.
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectError event: CodexErrorEvent) {
+        let result = sessionStore.recordCodexError(
+            sessionId: event.sessionId,
+            cwd: event.cwd,
+            message: event.message,
+            errorInfo: event.errorInfo,
+            transcriptPath: event.transcriptPath,
+            observedAt: Date()
+        )
+
+        guard result.isNew else { return }
+
+        NotificationManager.shared.notifyError(
+            sessionId: event.sessionId,
+            agent: .codex,
+            projectName: result.session.displayName,
+            errorLabel: result.session.errorMessage ?? "Codex error",
+            detail: event.message
+        )
+        forceUiExpand()
+    }
+
     /// Tailer detected Codex's `event_msg.token_count` context metrics.
     /// Codex hooks do not carry Claude-style `context_window`, so this path
     /// fills the same SessionInfo fields from rollout JSONL.

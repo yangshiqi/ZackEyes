@@ -31,6 +31,9 @@ public protocol CodexJsonlTailerDelegate: AnyObject {
 
     @MainActor
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectPolicyChanged event: CodexPolicyEvent)
+
+    @MainActor
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectError event: CodexErrorEvent)
 }
 
 public struct CodexTaskStartedEvent: Sendable {
@@ -99,12 +102,27 @@ public struct CodexSubagentEvent: Sendable {
     public let transcriptPath: String
 }
 
+/// Codex writes terminal-turn failures (usage-limit hit, server/auth errors)
+/// as `event_msg.payload.type == "error"`, carrying a human-readable `message`
+/// plus an optional structured `codex_error_info` code (e.g.
+/// `"usage_limit_exceeded"`). Codex hooks never deliver these — the rollout
+/// JSONL is the only source — so the tailer surfaces them to the popup's error
+/// banner the same way Claude's API errors flow.
+public struct CodexErrorEvent: Sendable {
+    public let sessionId: String
+    public let cwd: String?
+    public let message: String
+    public let errorInfo: String?
+    public let transcriptPath: String
+}
+
 public enum CodexTaskLifecycleEvent: Sendable {
     case started(CodexTaskStartedEvent)
     case complete(CodexTaskCompleteEvent)
     case tokenCount(CodexTokenCountEvent)
     case modelChanged(CodexModelEvent)
     case policyChanged(CodexPolicyEvent)
+    case error(CodexErrorEvent)
 }
 
 @MainActor
@@ -227,6 +245,11 @@ public final class CodexJsonlTailer {
                 guard let self = self else { return }
                 self.delegate?.codexTailer(self, didDetectPolicyChanged: event)
             }
+        }, onError: { [weak self] event in
+            Task { @MainActor in
+                guard let self = self else { return }
+                self.delegate?.codexTailer(self, didDetectError: event)
+            }
         }, onClosed: { [weak self] closedURL in
             Task { @MainActor in
                 self?.watchers.removeValue(forKey: closedURL)
@@ -337,6 +360,22 @@ extension CodexJsonlTailer {
                     transcriptPath: transcriptPath
                 ) {
                     events.append(.tokenCount(event))
+                }
+
+            case "error":
+                // Usage-limit hit / API failure. Only surface when there's a
+                // human-readable message — an empty/whitespace one carries no
+                // signal for the banner.
+                if let message = (payload["message"] as? String)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                   !message.isEmpty {
+                    events.append(.error(CodexErrorEvent(
+                        sessionId: sessionId,
+                        cwd: cwd,
+                        message: message,
+                        errorInfo: payload["codex_error_info"] as? String,
+                        transcriptPath: transcriptPath
+                    )))
                 }
 
             default:
@@ -484,6 +523,7 @@ private final class Watcher: @unchecked Sendable {
     private let onModelChanged: (CodexModelEvent) -> Void
     private let onSubagent: (CodexSubagentEvent) -> Void
     private let onPolicyChanged: (CodexPolicyEvent) -> Void
+    private let onError: (CodexErrorEvent) -> Void
     private let onClosed: (URL) -> Void
     /// Guards `isCancelled` so the MainActor `stop()` path and the
     /// DispatchSource event handler (private queue, fires on .delete /
@@ -499,6 +539,7 @@ private final class Watcher: @unchecked Sendable {
         onModelChanged: @escaping (CodexModelEvent) -> Void,
         onSubagent: @escaping (CodexSubagentEvent) -> Void,
         onPolicyChanged: @escaping (CodexPolicyEvent) -> Void,
+        onError: @escaping (CodexErrorEvent) -> Void,
         onClosed: @escaping (URL) -> Void
     ) {
         // Codex session id is encoded in the rollout filename; bail if we
@@ -523,6 +564,7 @@ private final class Watcher: @unchecked Sendable {
         self.onModelChanged = onModelChanged
         self.onSubagent = onSubagent
         self.onPolicyChanged = onPolicyChanged
+        self.onError = onError
         self.onClosed = onClosed
 
         // Read session_meta once for cwd. Best-effort — if the file doesn't
@@ -669,6 +711,8 @@ private final class Watcher: @unchecked Sendable {
                     onModelChanged(modelEvent)
                 case .policyChanged(let policyEvent):
                     onPolicyChanged(policyEvent)
+                case .error(let errorEvent):
+                    onError(errorEvent)
                 }
             }
         } catch {

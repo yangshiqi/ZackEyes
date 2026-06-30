@@ -174,6 +174,75 @@ struct CodexJsonlTailerTests {
         #expect(pending == "")
     }
 
+    // MARK: - Error events (usage-limit hit / API failure)
+
+    @Test func parsesUsageLimitErrorEvent() {
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"error","message":"You've hit your usage limit. Upgrade to Pro (https://chatgpt.com/explore/pro), visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at 7:34 PM.","codex_error_info":"usage_limit_exceeded"}}\n
+            """
+
+        let events = CodexJsonlTailer.parseTaskLifecycleEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+
+        #expect(events.count == 1)
+        guard case let .error(event) = events.first else {
+            Issue.record("Expected error event")
+            return
+        }
+        #expect(event.sessionId == sid)
+        #expect(event.cwd == cwd)
+        #expect(event.message.hasPrefix("You've hit your usage limit."))
+        #expect(event.errorInfo == "usage_limit_exceeded")
+        #expect(event.transcriptPath == path)
+        #expect(pending == "")
+    }
+
+    @Test func errorEventWithoutMessageIsIgnored() {
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"error","codex_error_info":"usage_limit_exceeded"}}
+            {"type":"event_msg","payload":{"type":"error","message":"   "}}\n
+            """
+
+        let events = CodexJsonlTailer.parseTaskLifecycleEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+
+        #expect(events.isEmpty)
+    }
+
+    @Test func errorImmediatelyFollowedByEmptyTaskComplete() {
+        // Real codex rollout shape: the usage-limit `error` row is written
+        // right before a `task_complete` with `last_agent_message: null`.
+        // Both must parse; the task_complete must NOT flag a user-facing
+        // notification (else the popup double-reports "done" + the error).
+        var pending = ""
+        let chunk = """
+            {"type":"event_msg","payload":{"type":"error","message":"You've hit your usage limit.","codex_error_info":"usage_limit_exceeded"}}
+            {"type":"event_msg","payload":{"type":"task_complete","turn_id":"t1","last_agent_message":null,"completed_at":1777966338,"duration_ms":1960}}\n
+            """
+
+        let events = CodexJsonlTailer.parseTaskLifecycleEvents(
+            chunk: chunk, pending: &pending,
+            sessionId: sid, cwd: cwd, transcriptPath: path
+        )
+
+        #expect(events.count == 2)
+        guard case .error = events[0] else {
+            Issue.record("Expected error event first")
+            return
+        }
+        guard case let .complete(complete) = events[1] else {
+            Issue.record("Expected task_complete event second")
+            return
+        }
+        #expect(complete.shouldNotifyUser == false)
+    }
+
     @Test func parsesTurnContextPolicyEvent() {
         var pending = ""
         // Single turn_context row that carries both model + policy fields.

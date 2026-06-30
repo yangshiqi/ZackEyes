@@ -27,6 +27,15 @@ public final class UsageTracker: ObservableObject {
         public var codexSevenDayUsedPct: Double?
         public var codexSevenDayResetsAt: Date?
 
+        /// Codex is temporarily unavailable (limit reached / out of credits /
+        /// window at 100%). Drives the "limit reached" treatment in the usage
+        /// header — the bars alone can't, since a credit-gated block leaves the
+        /// window `used_percent` near 0.
+        public var codexLimitReached: Bool = false
+        /// When the codex block is expected to lift (the 5h/7d window reset, if
+        /// known). Shown as a "resets in …" countdown alongside the indicator.
+        public var codexLimitResetsAt: Date? = nil
+
         // Fallback estimates from transcript scanning (Claude-only)
         public var tokens5h: Int
         public var tokens7d: Int
@@ -51,6 +60,10 @@ public final class UsageTracker: ObservableObject {
         // `dailyUsage` is intentionally excluded from Codable: it is rebuilt on
         // every refresh and must never restore a stale "today" — and omitting it
         // keeps pre-#84 usage-cache.json (without this key) decodable on upgrade.
+        // `codexLimitReached` / `codexLimitResetsAt` are likewise excluded: the
+        // block state is live/derived (recomputed each refresh from the codex
+        // rollout), so it must never restore stale across launches — a recovered
+        // account shouldn't show "limit reached" until the first scan confirms.
         private enum CodingKeys: String, CodingKey {
             case fiveHourUsedPct, fiveHourResetsAt, sevenDayUsedPct, sevenDayResetsAt
             case codexFiveHourUsedPct, codexFiveHourResetsAt, codexSevenDayUsedPct, codexSevenDayResetsAt
@@ -78,7 +91,7 @@ public final class UsageTracker: ObservableObject {
         }
 
         public var hasCodexData: Bool {
-            codexFiveHourUsedPct != nil || codexSevenDayUsedPct != nil
+            codexFiveHourUsedPct != nil || codexSevenDayUsedPct != nil || codexLimitReached
         }
 
         public var hasRealData: Bool { hasClaudeData || hasCodexData }
@@ -302,6 +315,12 @@ public final class UsageTracker: ObservableObject {
         public var fiveHourResetsAt: Date?
         public var sevenDayUsedPct: Double?
         public var sevenDayResetsAt: Date?
+        /// Codex is currently blocked: it reported a reached limit, ran out of
+        /// credits, or a window is at 100%. Distinct from `usedPct` because on
+        /// credit-gated plans (e.g. prolite) the window `used_percent` stays ~0
+        /// while the account is out of credits — so the bars alone never reflect
+        /// the block. See `decodeCodexObservation`.
+        public var limitReached: Bool = false
     }
 
     /// Rescan all recent JSONL files and update the snapshot.
@@ -317,9 +336,9 @@ public final class UsageTracker: ObservableObject {
         }.value
         claudeFileCache = claudeScan.cache
         let estimated = claudeScan.snapshot
-        let codexScopes = await Task.detached(priority: .utility) { () -> [String: CodexRateLimitObservation]? in
+        let codexState = await Task.detached(priority: .utility) { () -> CodexScanState? in
             guard let codexDir else { return nil }
-            return Self.scanLatestCodexScopes(rootDir: codexDir)
+            return Self.scanLatestCodexState(rootDir: codexDir)
         }.value
 
         // #84 daily token scan (Codex), with the per-file parse cache.
@@ -375,8 +394,17 @@ public final class UsageTracker: ObservableObject {
             now: Date(), currentPct: merged.fiveHourUsedPct, resetsAt: merged.fiveHourResetsAt)
         self.snapshot = merged
 
-        if let codexScopes, !codexScopes.isEmpty {
-            applyCodexScopes(codexScopes)
+        // Apply when there are per-window scopes OR a block flag. The two are
+        // derived from the same token_count reading so scopes is non-empty
+        // whenever limitReached is true today, but the explicit `|| limitReached`
+        // keeps a credits-only reading (no per-window data) surfacing the block
+        // even if `tailCodexReadings` ever stops emitting an empty scope for it.
+        if let codexState, !codexState.scopes.isEmpty || codexState.limitReached {
+            applyCodexScopes(
+                codexState.scopes,
+                limitReached: codexState.limitReached,
+                limitResetsAt: codexState.limitResetsAt
+            )
         } else {
             // No codex rollout written within the active window → user is
             // not currently using codex. Clear the codex fields so the bar
@@ -394,12 +422,15 @@ public final class UsageTracker: ObservableObject {
             && s.codexFiveHourResetsAt == nil
             && s.codexSevenDayUsedPct == nil
             && s.codexSevenDayResetsAt == nil
-            && s.codexFiveHourETA == nil { return }
+            && s.codexFiveHourETA == nil
+            && !s.codexLimitReached { return }
         s.codexFiveHourUsedPct = nil
         s.codexFiveHourResetsAt = nil
         s.codexSevenDayUsedPct = nil
         s.codexSevenDayResetsAt = nil
         s.codexFiveHourETA = nil   // #86 — codex inactive → no countdown
+        s.codexLimitReached = false   // codex inactive → no "limit reached" badge
+        s.codexLimitResetsAt = nil
         snapshot = s
         saveToCache()
     }
@@ -417,6 +448,10 @@ public final class UsageTracker: ObservableObject {
         if let v = obs.sevenDayResetsAt { s.codexSevenDayResetsAt = v }
         s.codexFiveHourETA = codexEstimator.estimate(
             now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
+        s.codexLimitReached = obs.limitReached
+        s.codexLimitResetsAt = obs.limitReached
+            ? (obs.fiveHourResetsAt ?? obs.sevenDayResetsAt ?? s.codexFiveHourResetsAt)
+            : nil
         snapshot = s
         saveToCache()
     }
@@ -424,7 +459,11 @@ public final class UsageTracker: ObservableObject {
     /// #148 — apply a scan that may carry multiple named rate-limit scopes.
     /// Merge each scope's latest reading into the remembered map, prune scopes
     /// whose windows have all reset, then display the most-constrained reading.
-    private func applyCodexScopes(_ scanned: [String: CodexRateLimitObservation]) {
+    private func applyCodexScopes(
+        _ scanned: [String: CodexRateLimitObservation],
+        limitReached: Bool = false,
+        limitResetsAt: Date? = nil
+    ) {
         let now = Date()
         for (k, v) in scanned { codexScopeReadings[k] = v }
         codexScopeReadings = codexScopeReadings.filter { _, obs in
@@ -433,25 +472,45 @@ public final class UsageTracker: ObservableObject {
             return pAlive || sAlive
         }
         let best = Self.mostConstrainedCodexReading(from: codexScopeReadings, now: now)
+        // Safety net: the 5h/7d % is only a trustworthy account-quota reading
+        // when a LIVE account-level scope is present (empty `limit_name`). A
+        // per-model scope alone — e.g. gpt-5.5 writes only "GPT-5.3-Codex-Spark"
+        // at 0% while its account scope comes through null — is NOT the account
+        // quota; rendering its 0% as "100% remaining" misleads (the real account
+        // usage lives only in response headers codex doesn't write to the
+        // rollout). With no account reading we leave 5h/7d unknown (the bar
+        // hides / shows "—"); the block flag below still surfaces a reached /
+        // out-of-credits state.
+        //
+        // The persisted cache seed ("\0cached") is deliberately NOT counted: it
+        // carries no provenance (loadFromCache restores a prior DISPLAY value
+        // that may have come from a per-model scope), so trusting it would let a
+        // stale per-model 0% defeat the safety net on restart (codex-review P1).
+        let hasAccountReading = codexScopeReadings.contains { key, obs in
+            key.isEmpty && (obs.fiveHourUsedPct != nil || obs.sevenDayUsedPct != nil)
+        }
+        let display = hasAccountReading ? best : CodexRateLimitObservation()
         var s = snapshot
         s.lastUpdated = now
         // Set directly (not the "only-if-present" merge of applyCodexObservation)
         // so a window with no live scope clears instead of pinning a stale value.
-        s.codexFiveHourUsedPct = best.fiveHourUsedPct
-        s.codexFiveHourResetsAt = best.fiveHourResetsAt
-        s.codexSevenDayUsedPct = best.sevenDayUsedPct
-        s.codexSevenDayResetsAt = best.sevenDayResetsAt
+        s.codexFiveHourUsedPct = display.fiveHourUsedPct
+        s.codexFiveHourResetsAt = display.fiveHourResetsAt
+        s.codexSevenDayUsedPct = display.sevenDayUsedPct
+        s.codexSevenDayResetsAt = display.sevenDayResetsAt
         // Only feed the estimator a genuinely new reading — recording an
         // unchanged % at a new timestamp injects flat points that distort the
         // burn-rate ETA (mirrors the #86 Claude-path guard; Gemini review).
         // `snapshot` still holds the prior value here (s is a local copy).
-        if let pct = best.fiveHourUsedPct,
+        if let pct = display.fiveHourUsedPct,
            pct != snapshot.codexFiveHourUsedPct
-            || best.fiveHourResetsAt != snapshot.codexFiveHourResetsAt {
+            || display.fiveHourResetsAt != snapshot.codexFiveHourResetsAt {
             codexEstimator.record(now, pct: pct)
         }
         s.codexFiveHourETA = codexEstimator.estimate(
             now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
+        s.codexLimitReached = limitReached
+        s.codexLimitResetsAt = limitReached ? (limitResetsAt ?? s.codexFiveHourResetsAt) : nil
         snapshot = s
         saveToCache()
     }
@@ -489,11 +548,18 @@ public final class UsageTracker: ObservableObject {
     /// AppDelegate.runLivenessSweep.
     public nonisolated static let codexActiveWindowSeconds: TimeInterval = 15 * 60
 
-    /// Walk the date-partitioned codex sessions tree (newest mtime first,
-    /// within `recentSeconds`) and return the first rollout's tail readings —
-    /// the latest reading per named scope plus the overall-last reading.
-    /// Returns `nil` if no rollout was written within the window. Bounded —
-    /// only reads the tail of each candidate file.
+    /// Walk the date-partitioned codex sessions tree and merge the tail
+    /// readings of EVERY rollout active within `recentSeconds`, newest-first.
+    /// Returns the latest reading per named scope (across all active rollouts)
+    /// plus the overall-newest rollout's last reading. Returns `nil` if no
+    /// rollout was written within the window. Bounded — only the tail of each
+    /// candidate file is read.
+    ///
+    /// Merging across rollouts (not just the newest one) matters when several
+    /// codex sessions run concurrently: a chatty per-model session reporting
+    /// `GPT-…-Spark` at 0% must NOT hide the account-level 5h/7d usage that a
+    /// quieter session writes to a different rollout. Reading only the newest
+    /// file pinned the bars to whichever session wrote last (the 0% bug).
     private nonisolated static func firstActiveCodexReadings(
         rootDir: URL,
         recentSeconds: TimeInterval
@@ -523,13 +589,55 @@ public final class UsageTracker: ObservableObject {
                 candidates.append(Candidate(url: file, mtime: mod))
             }
         }
-        // Walk newest-first; first file with a token_count event wins.
+        // Walk newest-first, merging every active rollout's scopes. When the
+        // SAME scope name appears across rollouts (e.g. concurrent codex
+        // sessions on different accounts both writing an unnamed "account"
+        // scope — one out of credits at null, one with real 6%/27% usage), keep
+        // the HIGHER non-expired used% per window rather than letting whichever
+        // wrote last win. This is the "stuck at 100%" fix: a chatty 0%/null
+        // session must not mask a quieter session's real usage. `last` is the
+        // overall-newest rollout's final reading — used for the block flag.
+        let now = Date()
+        var mergedScopes: [String: CodexRateLimitObservation] = [:]
+        var overallLast: CodexRateLimitObservation?
         for c in candidates.sorted(by: { $0.mtime > $1.mtime }) {
-            if let readings = tailCodexReadings(in: c.url) {
-                return readings
+            guard let readings = tailCodexReadings(in: c.url) else { continue }
+            if overallLast == nil { overallLast = readings.last }
+            for (name, obs) in readings.scopes {
+                mergedScopes[name] = mergeCodexObservations(mergedScopes[name], obs, now: now)
             }
         }
-        return nil
+        guard let last = overallLast else { return nil }
+        return (mergedScopes, last)
+    }
+
+    /// Combine two readings of the same scope, keeping the higher non-expired
+    /// used% per window and OR-ing the block flag. Mirrors the per-axis,
+    /// reset-gated max in `mostConstrainedCodexReading` so a stale pre-reset
+    /// spike (resets_at already passed) can't pin the merged value.
+    nonisolated static func mergeCodexObservations(
+        _ existing: CodexRateLimitObservation?,
+        _ incoming: CodexRateLimitObservation,
+        now: Date
+    ) -> CodexRateLimitObservation {
+        guard var merged = existing else { return incoming }
+        if let pct = incoming.fiveHourUsedPct,
+           incoming.fiveHourResetsAt.map({ $0 > now }) ?? true,
+           pct > (merged.fiveHourUsedPct ?? -1) {
+            merged.fiveHourUsedPct = pct
+            merged.fiveHourResetsAt = incoming.fiveHourResetsAt
+        }
+        if let pct = incoming.sevenDayUsedPct,
+           incoming.sevenDayResetsAt.map({ $0 > now }) ?? true,
+           pct > (merged.sevenDayUsedPct ?? -1) {
+            merged.sevenDayUsedPct = pct
+            merged.sevenDayResetsAt = incoming.sevenDayResetsAt
+        }
+        // `limitReached` is intentionally NOT merged here: the block flag is
+        // derived solely from the newest reading in `scanLatestCodexState`, so
+        // a merged scope's flag is never read (and OR-ing would re-introduce the
+        // stale-blocked pin this design avoids). Keep the newest scope's value.
+        return merged
     }
 
     /// Most recent single `rate_limits` reading (the overall-last token_count).
@@ -549,6 +657,41 @@ public final class UsageTracker: ObservableObject {
         recentSeconds: TimeInterval = codexActiveWindowSeconds
     ) -> [String: CodexRateLimitObservation]? {
         firstActiveCodexReadings(rootDir: rootDir, recentSeconds: recentSeconds)?.scopes
+    }
+
+    /// Sendable bundle returned to the @MainActor from the detached codex scan:
+    /// the per-scope used% readings (for the bars) plus the block state derived
+    /// from the single most-recent reading (for the "limit reached" indicator).
+    /// `limitReached` is taken from `last`, not the scope max, so it reflects
+    /// the current account state rather than pinning a stale blocked scope.
+    public struct CodexScanState: Sendable {
+        public var scopes: [String: CodexRateLimitObservation]
+        public var limitReached: Bool
+        public var limitResetsAt: Date?
+    }
+
+    nonisolated static func scanLatestCodexState(
+        rootDir: URL,
+        recentSeconds: TimeInterval = codexActiveWindowSeconds
+    ) -> CodexScanState? {
+        guard let readings = firstActiveCodexReadings(rootDir: rootDir, recentSeconds: recentSeconds) else {
+            return nil
+        }
+        // Block state + reset come from the SINGLE newest reading only — never
+        // OR'd across scopes. Codex replicates the account-level credits /
+        // `rate_limit_reached_type` into every reading's `rate_limits` (any
+        // session's request reflects the current account state), so the newest
+        // reading already catches out-of-credits regardless of which session
+        // wrote it. OR-ing across active scopes instead pinned the badge to a
+        // stale blocked rollout for up to the 15-min window after the user
+        // recovered (codex-review P1). Newest-only clears on recovery and keeps
+        // the reset matched to the reading the flag came from.
+        let last = readings.last
+        return CodexScanState(
+            scopes: readings.scopes,
+            limitReached: last.limitReached,
+            limitResetsAt: last.fiveHourResetsAt ?? last.sevenDayResetsAt
+        )
     }
 
     /// Tail-scan a codex rollout jsonl, collecting the latest `rate_limits`
@@ -631,7 +774,40 @@ public final class UsageTracker: ObservableObject {
                 obs.sevenDayResetsAt = Date(timeIntervalSince1970: secs)
             }
         }
+        obs.limitReached = codexLimitReached(from: rl, obs: obs)
         return obs
+    }
+
+    /// Decide whether Codex is currently blocked from this `rate_limits` reading.
+    /// Three independent signals (any one is enough):
+    ///   1. `rate_limit_reached_type` is set — codex explicitly hit a window.
+    ///   2. Out of credits — `credits.has_credits == false`, not `unlimited`, and
+    ///      a parsed `balance` of 0. (On credit-gated plans the window
+    ///      `used_percent` stays ~0, so this is the only signal that fires.)
+    ///   3. Either window is at 100% used.
+    /// Conservative on credits: a nil/blank `balance` is treated as "unknown,
+    /// not blocked" so a non-credit plan never false-flags.
+    nonisolated static func codexLimitReached(
+        from rl: [String: Any], obs: CodexRateLimitObservation
+    ) -> Bool {
+        if let reached = rl["rate_limit_reached_type"] as? String, !reached.isEmpty {
+            return true
+        }
+        if let credits = rl["credits"] as? [String: Any] {
+            let hasCredits = credits["has_credits"] as? Bool ?? true
+            let unlimited = credits["unlimited"] as? Bool ?? false
+            let balanceZero: Bool
+            switch credits["balance"] {
+            case let s as String: balanceZero = (Double(s) ?? 1) <= 0
+            case let d as Double:  balanceZero = d <= 0
+            case let i as Int:     balanceZero = i <= 0
+            default:               balanceZero = false  // null/absent → unknown
+            }
+            if !hasCredits && !unlimited && balanceZero { return true }
+        }
+        if let p = obs.fiveHourUsedPct, p >= 100 { return true }
+        if let s = obs.sevenDayUsedPct, s >= 100 { return true }
+        return false
     }
 
     // MARK: - Codex Daily Token Scan
