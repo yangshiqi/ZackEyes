@@ -13,4 +13,9 @@ extension Color {
         default:    return Color(red: 0.95, green: 0.30, blue: 0.30)  // red
         }
     }
+
+    /// Red used for an exhausted / "limit reached" usage cell. Matches the
+    /// top of the traffic-light scale (and the session error banner) so a
+    /// blocked agent reads consistently across the app.
+    static let usageLimitRed = Color(red: 0.95, green: 0.30, blue: 0.30)
 }

@@ -481,6 +481,12 @@ public final class SessionStore: ObservableObject {
         if session.transcriptPath == nil { session.transcriptPath = transcriptPath }
         if let msg = lastAgentMessage, !msg.isEmpty {
             session.lastAssistantMessage = msg
+            // A real reply this turn = the agent recovered. Clear any error
+            // banner left by a prior usage-limit hit. The error turn's OWN
+            // task_complete carries a nil/empty message (see real rollouts),
+            // so this never wrongly clears the error it just surfaced.
+            session.errorMessage = nil
+            session.errorAt = nil
         }
         if didCreateSession {
             session.source = .detected
@@ -490,6 +496,84 @@ public final class SessionStore: ObservableObject {
         session.lastActiveAt = completedAt
         sessions[sessionId] = session
         return session
+    }
+
+    /// Notification dedup window for repeated identical Codex errors. Codex
+    /// retries a usage-limit'd turn within seconds, re-emitting the same
+    /// `error` row; collapse those into one notification while still keeping
+    /// the banner fresh. A fresh attempt failing again after the window
+    /// re-notifies.
+    public static let codexErrorNotifyWindow: TimeInterval = 120
+
+    /// Surface a Codex `event_msg.error` (usage-limit hit / API failure) on the
+    /// owning session so the popup's error banner + a system notification fire.
+    /// This is the jsonl-tailer path — Codex hooks never carry errors, so it's
+    /// the only source, and (unlike task_complete) it must surface for hooked
+    /// `.live` sessions too. Returns the updated session plus `isNew`: whether
+    /// this error is worth notifying on (false for a deduped retry burst).
+    @discardableResult
+    public func recordCodexError(
+        sessionId: String,
+        cwd: String?,
+        message: String,
+        errorInfo: String?,
+        transcriptPath: String?,
+        observedAt: Date
+    ) -> (session: SessionInfo, isNew: Bool) {
+        let label = Self.codexErrorLabel(errorInfo: errorInfo, message: message)
+        let didCreateSession = sessions[sessionId] == nil
+        var session = sessions[sessionId]
+            ?? SessionInfo(
+                id: sessionId,
+                cwd: cwd,
+                agent: .codex,
+                state: .idle,
+                startedAt: observedAt
+            )
+        session.agent = .codex
+        if session.cwd == nil { session.cwd = cwd }
+        if session.transcriptPath == nil { session.transcriptPath = transcriptPath }
+        if didCreateSession { session.source = .detected }
+
+        // Dedup: same label AND same message still showing from within the
+        // window = the same ongoing limit, not a fresh event. Keying on the
+        // message too (not just the label) avoids collapsing two DISTINCT
+        // failures that share a generic label (e.g. both "Codex error"); a real
+        // usage-limit retry burst carries an identical message (same reset
+        // time) within the window, so burst-dedup is unaffected (CodeRabbit PR
+        // review). `session.lastAssistantMessage` here is the prior error's
+        // message — recordCodexError stamps it below.
+        let isNew: Bool
+        if let priorLabel = session.errorMessage, priorLabel == label,
+           session.lastAssistantMessage == message,
+           let priorAt = session.errorAt,
+           observedAt.timeIntervalSince(priorAt) < Self.codexErrorNotifyWindow {
+            isNew = false
+        } else {
+            isNew = true
+        }
+
+        session.errorMessage = label
+        session.errorAt = observedAt
+        // Mirror Claude's error path, where the full error text lives in the
+        // assistant message: stash the message so the banner detail shows the
+        // reset time + link.
+        session.lastAssistantMessage = message
+        session.lastActiveAt = observedAt
+        sessions[sessionId] = session
+        return (session, isNew)
+    }
+
+    /// Map a Codex `event_msg.error` to a short banner label. Prefers the
+    /// structured `codex_error_info` code, then the generic assistant-output
+    /// detector on the message, then a generic fallback (never empty).
+    public static func codexErrorLabel(errorInfo: String?, message: String) -> String {
+        switch errorInfo {
+        case "usage_limit_exceeded": return "Usage limit reached"
+        default: break
+        }
+        if let detected = detectError(in: message) { return detected }
+        return "Codex error"
     }
 
     public func recordCodexTaskStarted(
@@ -818,8 +902,20 @@ public final class SessionStore: ObservableObject {
         if lower.contains("quota") && lower.contains("exceeded") {
             return "Quota exceeded"
         }
+        // Guard against negated phrasing — an assistant message like "your usage
+        // limit has not been reached yet" must NOT raise the banner (Gemini PR
+        // review). A plain `!contains("not reached")` misses "not BEEN reached",
+        // so match a negation ("not" / "n't") within a short span before the
+        // trigger word instead. The real codex error ("You've hit your usage
+        // limit") has no such negation, so it still matches.
+        let negatedUsageLimit = lower.range(
+            of: "(?:\\bnot\\b|n['\u{2019}]t)[^.]{0,25}?(?:reached|exceeded|hit)",
+            options: .regularExpression
+        ) != nil
         if lower.contains("usage limit") &&
-            (lower.contains("reached") || lower.contains("exceeded")) {
+            (lower.contains("reached") || lower.contains("exceeded")
+                || lower.contains("hit")),
+           !negatedUsageLimit {
             return "Usage limit reached"
         }
 
