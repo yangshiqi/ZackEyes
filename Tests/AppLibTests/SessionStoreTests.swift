@@ -332,6 +332,26 @@ struct SessionStoreTests {
         #expect(store.sessions["codex-err"]?.errorAt == thirdAt)
     }
 
+    @Test func recordCodexErrorDistinctMessagesNotCollapsed() {
+        // Two DIFFERENT failures that share the generic "Codex error" label,
+        // within the dedup window, must both notify — dedup keys on the message
+        // too, not just the label (CodeRabbit PR review).
+        let store = SessionStore()
+        let at = Date(timeIntervalSince1970: 1_777_966_338)
+        let r1 = store.recordCodexError(
+            sessionId: "codex-err", cwd: "/p", message: "network blip alpha",
+            errorInfo: nil, transcriptPath: "/tmp/r.jsonl", observedAt: at
+        )
+        let r2 = store.recordCodexError(
+            sessionId: "codex-err", cwd: "/p", message: "totally different failure beta",
+            errorInfo: nil, transcriptPath: "/tmp/r.jsonl", observedAt: at.addingTimeInterval(10)
+        )
+        #expect(r1.session.errorMessage == "Codex error")  // same generic label
+        #expect(r2.session.errorMessage == "Codex error")
+        #expect(r1.isNew)
+        #expect(r2.isNew)   // distinct message → not collapsed despite same label
+    }
+
     @Test func recordCodexTaskCompleteClearsErrorOnRecovery() {
         let store = SessionStore()
         let at = Date(timeIntervalSince1970: 1_777_966_338)
@@ -380,6 +400,16 @@ struct SessionStoreTests {
         #expect(SessionStore.detectError(
             in: "You've hit your usage limit. Try again at 7:34 PM."
         ) == "Usage limit reached")
+    }
+
+    @Test func detectErrorIgnoresNegatedUsageLimit() {
+        // Negated phrasing must NOT raise the banner (Gemini PR review).
+        #expect(SessionStore.detectError(
+            in: "Your usage limit has not been reached yet."
+        ) == nil)
+        #expect(SessionStore.detectError(
+            in: "Good news: the usage limit was not exceeded this month."
+        ) == nil)
     }
 
     @Test func recordCodexContextPopulatesContextFields() {

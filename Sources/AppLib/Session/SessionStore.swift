@@ -535,10 +535,17 @@ public final class SessionStore: ObservableObject {
         if session.transcriptPath == nil { session.transcriptPath = transcriptPath }
         if didCreateSession { session.source = .detected }
 
-        // Dedup: same label still showing from within the window = the same
-        // ongoing limit, not a fresh event.
+        // Dedup: same label AND same message still showing from within the
+        // window = the same ongoing limit, not a fresh event. Keying on the
+        // message too (not just the label) avoids collapsing two DISTINCT
+        // failures that share a generic label (e.g. both "Codex error"); a real
+        // usage-limit retry burst carries an identical message (same reset
+        // time) within the window, so burst-dedup is unaffected (CodeRabbit PR
+        // review). `session.lastAssistantMessage` here is the prior error's
+        // message — recordCodexError stamps it below.
         let isNew: Bool
         if let priorLabel = session.errorMessage, priorLabel == label,
+           session.lastAssistantMessage == message,
            let priorAt = session.errorAt,
            observedAt.timeIntervalSince(priorAt) < Self.codexErrorNotifyWindow {
             isNew = false
@@ -895,9 +902,20 @@ public final class SessionStore: ObservableObject {
         if lower.contains("quota") && lower.contains("exceeded") {
             return "Quota exceeded"
         }
+        // Guard against negated phrasing — an assistant message like "your usage
+        // limit has not been reached yet" must NOT raise the banner (Gemini PR
+        // review). A plain `!contains("not reached")` misses "not BEEN reached",
+        // so match a negation ("not" / "n't") within a short span before the
+        // trigger word instead. The real codex error ("You've hit your usage
+        // limit") has no such negation, so it still matches.
+        let negatedUsageLimit = lower.range(
+            of: "(?:\\bnot\\b|n['\u{2019}]t)[^.]{0,25}?(?:reached|exceeded|hit)",
+            options: .regularExpression
+        ) != nil
         if lower.contains("usage limit") &&
             (lower.contains("reached") || lower.contains("exceeded")
-                || lower.contains("hit")) {
+                || lower.contains("hit")),
+           !negatedUsageLimit {
             return "Usage limit reached"
         }
 

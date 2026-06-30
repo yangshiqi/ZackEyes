@@ -278,10 +278,12 @@ struct SimulatedNotchFullView: View {
         let color = cell.isExhausted ? Color.usageLimitRed : barColor(for: used)
         let hasData = usedPct != nil || limitReached
         let accent = AgentBadge.accentColor(for: agent)
-        // When the block is window-based the per-window reset is already shown;
-        // when it's credit-based (no per-window reset) fall back to the
-        // account-level reset carried alongside the limit flag.
-        let resetDisplay = (cell.isExhausted ? (resetsAt ?? limitResetsAt) : resetsAt)?.usageResetDisplay
+        // Exhausted: prefer the BLOCK's reset (the binding window codex is
+        // actually limited on) over this cell's own window reset — a 5h headline
+        // blocked by the 7d window should count down to the 7d reset, not 5h
+        // (CodeRabbit PR review). Falls back to the cell reset when no block
+        // reset is known.
+        let resetDisplay = (cell.isExhausted ? (limitResetsAt ?? resetsAt) : resetsAt)?.usageResetDisplay
 
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 4) {
@@ -618,7 +620,7 @@ struct SimulatedNotchFullView: View {
         let color = cell.isExhausted ? Color.usageLimitRed : barColor(for: used)
         let hasData = usedPct != nil || limitReached
         let accent = AgentBadge.accentColor(for: agent)
-        let resetDisplay = (cell.isExhausted ? (resetsAt ?? limitResetsAt) : resetsAt)?.usageResetDisplay
+        let resetDisplay = (cell.isExhausted ? (limitResetsAt ?? resetsAt) : resetsAt)?.usageResetDisplay
 
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {

@@ -687,10 +687,17 @@ public final class UsageTracker: ObservableObject {
         // recovered (codex-review P1). Newest-only clears on recovery and keeps
         // the reset matched to the reading the flag came from.
         let last = readings.last
+        // Reset for the block = the reset of the window that's actually binding
+        // (higher used%), so a 7d-window block counts down to the 7d reset
+        // instead of always the 5h one (CodeRabbit PR review). A credits-only
+        // block has no clean window reset — fall back to whichever is present.
+        let blockReset = ((last.sevenDayUsedPct ?? -1) > (last.fiveHourUsedPct ?? -1)
+            ? last.sevenDayResetsAt : last.fiveHourResetsAt)
+            ?? last.fiveHourResetsAt ?? last.sevenDayResetsAt
         return CodexScanState(
             scopes: readings.scopes,
             limitReached: last.limitReached,
-            limitResetsAt: last.fiveHourResetsAt ?? last.sevenDayResetsAt
+            limitResetsAt: blockReset
         )
     }
 
