@@ -7,6 +7,25 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.8.1',
+    date: 'Published June 30, 2026',
+    summary: 'Codex usage-limit visibility and accurate 5h/7d quota.',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Codex usage-limit visibility: when Codex hits its usage limit or runs out of credits, the panel now shows a "limit reached" banner and a notification instead of staying silent.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'Codex 5h/7d usage now reflects your real account quota: concurrent Codex sessions no longer mask each other\'s usage, and an unreported account number no longer shows as "100% remaining".'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.8.0',
     date: 'Published June 20, 2026',
     summary: 'ZackEyes 0.8.0 — security-hardening release on top of the new real Dynamic Island.',
