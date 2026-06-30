@@ -7,6 +7,30 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.7.3',
+    date: 'Published June 30, 2026',
+    summary: 'Native Dynamic Island on M-series notch Macs, Codex usage-limit visibility, plus a security and stability batch.',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Native Dynamic Island on M-series notch MacBooks: the panel merges into the physical notch instead of floating below it.',
+          'Codex usage-limit visibility: when Codex hits its usage limit or runs out of credits, the panel shows a "limit reached" banner and a notification instead of staying silent.',
+          'The 5-hour reset countdown is now shown next to the burn-rate ETA.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'Codex 5h/7d usage now tracks your real account quota: concurrent Codex sessions no longer mask each other, and an unreported account number no longer shows as "100% remaining".',
+          'Fixed a launch crash on macOS 15 (Sequoia).',
+          'Security hardening: authenticated the local control socket (peer credentials, owner-only, off /tmp), tightened diagnostics redaction, excluded high-risk tools from "Allow Always", and closed several path-traversal and replay items.',
+          'The updater verifies a download is a real disk image and rejects downgrades before opening it.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.8.0',
     date: 'Published June 20, 2026',
     summary: 'ZackEyes 0.8.0 — security-hardening release on top of the new real Dynamic Island.',
