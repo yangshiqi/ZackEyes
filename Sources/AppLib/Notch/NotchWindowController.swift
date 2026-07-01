@@ -3,7 +3,7 @@ import SwiftUI
 
 /// States the notch panel can be in. `compact` is the always-visible
 /// default (a pill that sits in the notch row). `expanded` is the full
-/// drop-down on hover.
+/// drop-down after an intentional hover dwell.
 ///
 /// There is no "collapsed" state — Dynamic Island is meant to be visible
 /// at all times.
@@ -53,7 +53,12 @@ public final class NotchWindowController {
     private var localClickMonitor: Any?
     private var screenObserver: NSObjectProtocol?
     private var collapseWorkItem: DispatchWorkItem?
+    private var hoverExpandWorkItem: DispatchWorkItem?
+    private var hoverIntent = HoverIntentTracker()
     private var visibility: NotchVisibility
+
+    private let hoverDwellDuration: TimeInterval = 0.25
+    private let hoverMovementTolerance: CGFloat = 8
 
     // Window dimensions. The host panel is sized for the largest state
     // (expanded) and never resized; SwiftUI draws the narrow pill inside
@@ -86,6 +91,7 @@ public final class NotchWindowController {
     }
 
     public func teardown() {
+        cancelPendingHoverExpansion()
         stopMouseMonitor()
         stopOutsideClickMonitoring()
         stopScreenObserver()
@@ -97,6 +103,7 @@ public final class NotchWindowController {
 
     /// Force-expand the panel (called when a PermissionRequest arrives).
     public func forceExpand() {
+        cancelPendingHoverExpansion()
         if let panel, !panel.isVisible {
             panel.orderFrontRegardless()
         }
@@ -126,6 +133,7 @@ public final class NotchWindowController {
         guard let panel = panel else { return }
         let shouldShow = shouldBeVisible
         if !shouldShow && currentState != .expanded {
+            cancelPendingHoverExpansion()
             panel.orderOut(nil)
         } else if shouldShow && !panel.isVisible {
             panel.orderFrontRegardless()
@@ -204,6 +212,7 @@ public final class NotchWindowController {
     // MARK: - State transitions
 
     public func updatePanelState(_ newState: PanelState) {
+        cancelPendingHoverExpansion()
         guard newState != currentState || panel == nil else { return }
 
         currentState = newState
@@ -293,12 +302,14 @@ public final class NotchWindowController {
             // .whenActive with no sessions) it should not auto-expand on
             // hover — only hotkey / menu / explicit event brings it back.
             if !shouldBeVisible { return }
-            // Expand the moment the cursor enters the menu-bar row within
-            // our horizontal pill span.
+            // Begin hover intent inside the menu-bar row. Fast pass-through
+            // movement resets or cancels the dwell instead of expanding.
             let pill = compactPillRect(on: screen, notchHeight: notchHeight)
             if pill.contains(mouse) {
                 cancelCollapseWorkItem()
-                updatePanelState(.expanded)
+                scheduleHoverExpansion(from: mouse, in: pill)
+            } else {
+                cancelPendingHoverExpansion()
             }
 
         case .expanded:
@@ -319,6 +330,42 @@ public final class NotchWindowController {
 
     private var stickyOpen: Bool {
         viewModel.sessionStore.sessions.values.contains { $0.pendingPermission != nil }
+    }
+
+    private func scheduleHoverExpansion(from mouse: CGPoint, in activationArea: CGRect) {
+        guard let token = hoverIntent.observe(
+            mouse,
+            movementTolerance: hoverMovementTolerance
+        ) else { return }
+
+        hoverExpandWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.hoverExpandWorkItem = nil
+                guard self.currentState == .compact,
+                      self.shouldBeVisible,
+                      activationArea.contains(NSEvent.mouseLocation),
+                      self.hoverIntent.consume(token)
+                else {
+                    self.hoverIntent.cancel()
+                    return
+                }
+                self.updatePanelState(.expanded)
+            }
+        }
+        hoverExpandWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + hoverDwellDuration,
+            execute: workItem
+        )
+    }
+
+    private func cancelPendingHoverExpansion() {
+        hoverExpandWorkItem?.cancel()
+        hoverExpandWorkItem = nil
+        hoverIntent.cancel()
     }
 
     private func scheduleCollapse() {
@@ -404,6 +451,7 @@ public final class NotchWindowController {
     }
 
     private func handleScreenChange() {
+        cancelPendingHoverExpansion()
         panel?.orderOut(nil)
         panel = nil
         createPanel()
