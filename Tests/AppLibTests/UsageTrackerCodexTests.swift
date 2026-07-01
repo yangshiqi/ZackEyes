@@ -173,6 +173,7 @@ struct UsageTrackerCodexTests {
         let snap = tracker.snapshot
         #expect(snap.codexFiveHourUsedPct == 25.0)
         #expect(snap.codexSevenDayUsedPct == 60.0)
+        #expect(snap.codexLastUpdated != nil)
         #expect(snap.hasCodexData)
         // Claude side stays empty.
         #expect(snap.fiveHourUsedPct == nil)
@@ -288,8 +289,9 @@ struct UsageTrackerCodexTests {
         try """
             {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":99.0,"resets_at":1}}}}
             """.write(to: file, atomically: true, encoding: .utf8)
-        // 30 min old — outside the 15-min active window. Codex isn't running
-        // right now, so we want the bar gone.
+        // 30 min old — outside the 15-min discovery window, so the scanner
+        // returns no new observation. refresh() separately retains any cached
+        // quota until its resets_at boundary.
         try FileManager.default.setAttributes(
             [.modificationDate: Date().addingTimeInterval(-30 * 60)],
             ofItemAtPath: file.path
@@ -298,7 +300,7 @@ struct UsageTrackerCodexTests {
         #expect(obs == nil)
     }
 
-    @Test @MainActor func refresh_clearsCodexData_whenNoRecentRollout() async throws {
+    @Test @MainActor func refresh_retainsCodexData_whenNoRecentRollout() async throws {
         // tmp codex dir has no recent rollout files.
         let tmpDir = try makeTmpDir()
         defer { try? FileManager.default.removeItem(at: tmpDir) }
@@ -307,20 +309,68 @@ struct UsageTrackerCodexTests {
             projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
             codexSessionsDir: tmpDir
         )
-        // Seed codex fields as if a previous run captured them. After
-        // refresh, since no rollout in tmpDir is within the active window,
-        // they must be cleared so the bar disappears.
+        // An idle Codex process does not write its rollout. The last reliable
+        // quota remains valid until each server-provided reset boundary.
         tracker.updateFromCodexRateLimits([
-            "primary":   ["used_percent": 25.0, "resets_at": 1_777_700_000],
-            "secondary": ["used_percent": 42.0, "resets_at": 1_777_800_000],
+            "primary":   ["used_percent": 25.0, "resets_at": 4_000_000_000],
+            "secondary": ["used_percent": 42.0, "resets_at": 4_100_000_000],
         ])
+        let observedAt = try #require(tracker.snapshot.codexLastUpdated)
         #expect(tracker.snapshot.hasCodexData)
 
         await tracker.refresh()
 
+        #expect(tracker.snapshot.codexFiveHourUsedPct == 25.0)
+        #expect(tracker.snapshot.codexSevenDayUsedPct == 42.0)
+        #expect(tracker.snapshot.codexLastUpdated == observedAt)
+        #expect(tracker.snapshot.hasCodexData)
+    }
+
+    @Test @MainActor func refresh_expiresCodexWindowsIndependently() async throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: tmpDir
+        )
+        tracker.updateFromCodexRateLimits([
+            "primary":   ["used_percent": 25.0, "resets_at": 1],
+            "secondary": ["used_percent": 42.0, "resets_at": 4_100_000_000],
+        ])
+
+        await tracker.refresh()
+
         #expect(tracker.snapshot.codexFiveHourUsedPct == nil)
-        #expect(tracker.snapshot.codexSevenDayUsedPct == nil)
-        #expect(!tracker.snapshot.hasCodexData)
+        #expect(tracker.snapshot.codexFiveHourResetsAt == nil)
+        #expect(tracker.snapshot.codexSevenDayUsedPct == 42.0)
+        #expect(tracker.snapshot.codexSevenDayResetsAt?.timeIntervalSince1970 == 4_100_000_000)
+        #expect(tracker.snapshot.hasCodexData)
+    }
+
+    @Test @MainActor func refresh_usesRolloutMtimeForCodexFreshness() async throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let day = currentCodexDayDir(under: tmpDir)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        let id = "019dec85-fade-fade-fade-fadefadefade"
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id, hour: 14))
+        try """
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":25.0,"resets_at":4000000000},"secondary":{"used_percent":42.0,"resets_at":4100000000}}}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        let fileMtime = Date().addingTimeInterval(-5 * 60)
+        try FileManager.default.setAttributes([.modificationDate: fileMtime], ofItemAtPath: file.path)
+
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: tmpDir
+        )
+        await tracker.refresh()
+        let first = try #require(tracker.snapshot.codexLastUpdated)
+        #expect(abs(first.timeIntervalSince(fileMtime)) < 1)
+
+        await tracker.refresh()
+        #expect(tracker.snapshot.codexLastUpdated == first)
     }
 
     @Test @MainActor func refresh_surfacesLimitFromCreditsOnlyRollout() async throws {

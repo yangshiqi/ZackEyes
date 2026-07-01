@@ -221,7 +221,8 @@ struct SimulatedNotchFullView: View {
                 TodayConsumptionRow(days: snap.dailyUsage)
             }
             // #45 — usage freshness footnote (stale numbers shouldn't read as live).
-            if snap.hasRealData, let lastUpdated = snap.lastUpdated {
+            let freshness = codexOnly ? snap.codexLastUpdated : snap.lastUpdated
+            if snap.hasRealData, let lastUpdated = freshness {
                 UsageFreshnessLabel(lastUpdated: lastUpdated)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }

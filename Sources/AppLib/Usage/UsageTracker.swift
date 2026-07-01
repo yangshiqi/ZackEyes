@@ -45,6 +45,10 @@ public final class UsageTracker: ObservableObject {
         // Last time we received fresh rate_limits data from any source
         public var lastUpdated: Date?
 
+        // Modification time of the rollout that supplied the latest Codex
+        // quota reading. A rescan of the same file must not refresh this.
+        public var codexLastUpdated: Date? = nil
+
         // #84 — per-local-day consumption (tokens + cost), 7 entries oldest→today.
         // NOT trusted from cache (cleared on load, rebuilt by refresh) to avoid a
         // stale "today" after midnight.
@@ -67,7 +71,7 @@ public final class UsageTracker: ObservableObject {
         private enum CodingKeys: String, CodingKey {
             case fiveHourUsedPct, fiveHourResetsAt, sevenDayUsedPct, sevenDayResetsAt
             case codexFiveHourUsedPct, codexFiveHourResetsAt, codexSevenDayUsedPct, codexSevenDayResetsAt
-            case tokens5h, tokens7d, messages5h, messages7d, lastUpdated
+            case tokens5h, tokens7d, messages5h, messages7d, lastUpdated, codexLastUpdated
         }
 
         public static let empty = Snapshot(
@@ -296,6 +300,12 @@ public final class UsageTracker: ObservableObject {
         }
         var restored = cached
         restored.dailyUsage = []   // #84: never trust a persisted (possibly stale) "today"
+        if restored.codexLastUpdated == nil,
+           restored.codexFiveHourUsedPct != nil || restored.codexSevenDayUsedPct != nil {
+            // Best-effort migration for caches written before the per-agent
+            // timestamp existed.
+            restored.codexLastUpdated = restored.lastUpdated
+        }
         snapshot = restored
         // #148 — seed the per-scope map from the cached codex reading so the
         // most-constrained value survives a restart (the first live scan may
@@ -422,34 +432,49 @@ public final class UsageTracker: ObservableObject {
             applyCodexScopes(
                 codexState.scopes,
                 limitReached: codexState.limitReached,
-                limitResetsAt: codexState.limitResetsAt
+                limitResetsAt: codexState.limitResetsAt,
+                observedAt: codexState.observedAt
             )
         } else {
-            // No codex rollout written within the active window → user is
-            // not currently using codex. Clear the codex fields so the bar
-            // disappears instead of pinning to whatever historical or cached
-            // value last landed in the snapshot.
-            clearCodexData()
-            codexScopeReadings.removeAll()   // #148 — don't carry scopes into inactivity
+            // No recent rollout means Codex is idle, not that the last quota
+            // reading is invalid. Retain each window until its own reset.
+            expireCodexWindows(now: Date())
         }
     }
 
-    private func clearCodexData() {
+    private func expireCodexWindows(now: Date) {
         var s = snapshot
-        // Skip the Published mutation + cache write when nothing changes.
-        if s.codexFiveHourUsedPct == nil
-            && s.codexFiveHourResetsAt == nil
-            && s.codexSevenDayUsedPct == nil
-            && s.codexSevenDayResetsAt == nil
-            && s.codexFiveHourETA == nil
-            && !s.codexLimitReached { return }
-        s.codexFiveHourUsedPct = nil
-        s.codexFiveHourResetsAt = nil
-        s.codexSevenDayUsedPct = nil
-        s.codexSevenDayResetsAt = nil
-        s.codexFiveHourETA = nil   // #86 — codex inactive → no countdown
-        s.codexLimitReached = false   // codex inactive → no "limit reached" badge
-        s.codexLimitResetsAt = nil
+        var changed = false
+        if let reset = s.codexFiveHourResetsAt, reset <= now {
+            s.codexFiveHourUsedPct = nil
+            s.codexFiveHourResetsAt = nil
+            changed = true
+        }
+        if let reset = s.codexSevenDayResetsAt, reset <= now {
+            s.codexSevenDayUsedPct = nil
+            s.codexSevenDayResetsAt = nil
+            changed = true
+        }
+        let agedETA = codexEstimator.estimate(
+            now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
+        if s.codexFiveHourETA != agedETA {
+            s.codexFiveHourETA = agedETA
+            changed = true
+        }
+        // A credits-only block without a reset boundary could otherwise pin
+        // forever after the account recovers while Codex remains idle.
+        if s.codexLimitReached,
+           s.codexLimitResetsAt.map({ $0 <= now }) ?? true {
+            s.codexLimitReached = false
+            s.codexLimitResetsAt = nil
+            changed = true
+        }
+        codexScopeReadings = codexScopeReadings.filter { _, obs in
+            let primaryValid = obs.fiveHourResetsAt.map { $0 > now } ?? (obs.fiveHourUsedPct != nil)
+            let secondaryValid = obs.sevenDayResetsAt.map { $0 > now } ?? (obs.sevenDayUsedPct != nil)
+            return primaryValid || secondaryValid
+        }
+        guard changed else { return }
         snapshot = s
         saveToCache()
     }
@@ -458,6 +483,7 @@ public final class UsageTracker: ObservableObject {
         var s = snapshot
         let now = Date()
         s.lastUpdated = now
+        s.codexLastUpdated = now
         if let v = obs.fiveHourUsedPct {
             s.codexFiveHourUsedPct = v
             codexEstimator.record(now, pct: v)   // #86 — same estimator, codex axis
@@ -481,7 +507,8 @@ public final class UsageTracker: ObservableObject {
     private func applyCodexScopes(
         _ scanned: [String: CodexRateLimitObservation],
         limitReached: Bool = false,
-        limitResetsAt: Date? = nil
+        limitResetsAt: Date? = nil,
+        observedAt: Date
     ) {
         let now = Date()
         for (k, v) in scanned { codexScopeReadings[k] = v }
@@ -510,7 +537,10 @@ public final class UsageTracker: ObservableObject {
         }
         let display = hasAccountReading ? best : CodexRateLimitObservation()
         var s = snapshot
-        s.lastUpdated = now
+        s.codexLastUpdated = observedAt
+        if s.lastUpdated.map({ observedAt > $0 }) ?? true {
+            s.lastUpdated = observedAt
+        }
         // Set directly (not the "only-if-present" merge of applyCodexObservation)
         // so a window with no live scope clears instead of pinning a stale value.
         s.codexFiveHourUsedPct = display.fiveHourUsedPct
@@ -582,7 +612,7 @@ public final class UsageTracker: ObservableObject {
     private nonisolated static func firstActiveCodexReadings(
         rootDir: URL,
         recentSeconds: TimeInterval
-    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation)? {
+    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation, observedAt: Date)? {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-recentSeconds)
         struct Candidate {
@@ -619,15 +649,19 @@ public final class UsageTracker: ObservableObject {
         let now = Date()
         var mergedScopes: [String: CodexRateLimitObservation] = [:]
         var overallLast: CodexRateLimitObservation?
+        var overallObservedAt: Date?
         for c in candidates.sorted(by: { $0.mtime > $1.mtime }) {
             guard let readings = tailCodexReadings(in: c.url) else { continue }
-            if overallLast == nil { overallLast = readings.last }
+            if overallLast == nil {
+                overallLast = readings.last
+                overallObservedAt = c.mtime
+            }
             for (name, obs) in readings.scopes {
                 mergedScopes[name] = mergeCodexObservations(mergedScopes[name], obs, now: now)
             }
         }
-        guard let last = overallLast else { return nil }
-        return (mergedScopes, last)
+        guard let last = overallLast, let observedAt = overallObservedAt else { return nil }
+        return (mergedScopes, last, observedAt)
     }
 
     /// Combine two readings of the same scope, keeping the higher non-expired
@@ -689,6 +723,7 @@ public final class UsageTracker: ObservableObject {
         public var scopes: [String: CodexRateLimitObservation]
         public var limitReached: Bool
         public var limitResetsAt: Date?
+        public var observedAt: Date
     }
 
     nonisolated static func scanLatestCodexState(
@@ -718,7 +753,8 @@ public final class UsageTracker: ObservableObject {
         return CodexScanState(
             scopes: readings.scopes,
             limitReached: last.limitReached,
-            limitResetsAt: blockReset
+            limitResetsAt: blockReset,
+            observedAt: readings.observedAt
         )
     }
 
