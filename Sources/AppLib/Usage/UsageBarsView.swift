@@ -21,12 +21,18 @@ struct UsageBarsView<Trailing: View>: View {
 
     var body: some View {
         let snap = usageTracker.snapshot
+        let agent = snap.displayAgent(preferred: usageTracker.compactAgent)
+        let fivePct = snap.fiveHourUsedPct(for: agent)
+        let fiveReset = agent == .codex ? snap.codexFiveHourResetsAt : snap.fiveHourResetsAt
+        let fiveETA = agent == .codex ? snap.codexFiveHourETA : snap.fiveHourETA
+        let sevenPct = snap.sevenDayUsedPct(for: agent)
+        let sevenReset = agent == .codex ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
         VStack(spacing: 8) {
-            usageBar(label: "5h", usedPct: snap.fiveHourUsedPct,
-                     resetsAt: snap.fiveHourResetsAt, eta: snap.fiveHourETA) {
+            usageBar(label: "5h", usedPct: fivePct,
+                     resetsAt: fiveReset, eta: fiveETA) {
                 trailing
             }
-            usageBar(label: "7d", usedPct: snap.sevenDayUsedPct, resetsAt: snap.sevenDayResetsAt) {
+            usageBar(label: "7d", usedPct: sevenPct, resetsAt: sevenReset) {
                 EmptyView()
             }
             if usageTracker.showTodayConsumption, snap.hasConsumption {

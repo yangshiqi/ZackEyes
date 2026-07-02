@@ -99,6 +99,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // so daily cost is available from the first refresh.
         usageTracker = UsageTracker()
         usageTracker.pricingStore = ps
+        usageTracker.compactAgent = ConfigStore().loadCompactAgent()
         // #78: let SessionStore price Codex per-session cost (raw model id →
         // ModelPrice) without coupling it to PricingStore/Bundle.
         sessionStore.codexPriceLookup = { [weak ps] model in ps?.price(for: model) }
@@ -202,7 +203,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hotKeyManager = hk
 
-        // Listen for hotkey config changes from the recorder UI
+        // Listen for compact-agent selection changes from the status-bar menu
+        NotificationCenter.default.addObserver(
+            forName: .compactAgentChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let agent = notification.userInfo?["agent"] as? AgentKind else { return }
+            Task { @MainActor in self?.usageTracker.compactAgent = agent }
+        }
+
         NotificationCenter.default.addObserver(
             forName: .hotkeyConfigChanged,
             object: nil,

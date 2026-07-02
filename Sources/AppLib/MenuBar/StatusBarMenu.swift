@@ -1,4 +1,5 @@
 import AppKit
+import Shared
 
 /// Builds the right-click context menu for the status-bar icon. Used by
 /// both paths: on simulated-notch Macs this menu duplicates parts of the
@@ -69,6 +70,8 @@ public final class StatusBarMenu: NSObject {
         menu.addItem(hotkey)
 
         menu.addItem(visibilitySubmenuItem())
+
+        menu.addItem(compactDisplaySubmenuItem())
 
         menu.addItem(themeSubmenuItem())
 
@@ -181,6 +184,17 @@ public final class StatusBarMenu: NSObject {
         )
     }
 
+    @objc private func compactAgentClicked(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem,
+              let raw = item.representedObject as? String,
+              let agent = AgentKind(rawValue: raw) else { return }
+        ConfigStore().saveCompactAgent(agent)
+        NotificationCenter.default.post(
+            name: .compactAgentChanged, object: nil,
+            userInfo: ["agent": agent]
+        )
+    }
+
     @objc private func checkUpdatesClicked(_ sender: Any?) {
         updateChecker.checkNow()
     }
@@ -238,6 +252,25 @@ public final class StatusBarMenu: NSObject {
             submenu.addItem(item)
         }
         let parent = NSMenuItem(title: "Dynamic Island", action: nil, keyEquivalent: "")
+        parent.submenu = submenu
+        return parent
+    }
+
+    private func compactDisplaySubmenuItem() -> NSMenuItem {
+        let current = ConfigStore().loadCompactAgent()
+        let submenu = NSMenu()
+        for agent in [AgentKind.claude, .codex] {
+            let item = NSMenuItem(
+                title: agent == .claude ? "Claude" : "Codex",
+                action: #selector(compactAgentClicked(_:)),
+                keyEquivalent: ""
+            )
+            item.target = self
+            item.representedObject = agent.rawValue
+            item.state = (agent == current) ? .on : .off
+            submenu.addItem(item)
+        }
+        let parent = NSMenuItem(title: "Compact display", action: nil, keyEquivalent: "")
         parent.submenu = submenu
         return parent
     }

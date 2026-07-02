@@ -110,6 +110,21 @@ public final class UsageTracker: ObservableObject {
             case .codex:  return codexFiveHourUsedPct
             }
         }
+
+        public func sevenDayUsedPct(for agent: AgentKind) -> Double? {
+            switch agent {
+            case .claude: return sevenDayUsedPct
+            case .codex:  return codexSevenDayUsedPct
+            }
+        }
+
+        public func displayAgent(preferred: AgentKind) -> AgentKind {
+            switch preferred {
+            case .claude where !hasClaudeData && hasCodexData: return .codex
+            case .codex where !hasCodexData && hasClaudeData: return .claude
+            default: return preferred
+            }
+        }
     }
 
     @Published public private(set) var snapshot: Snapshot = .empty
@@ -118,6 +133,10 @@ public final class UsageTracker: ObservableObject {
     /// shown. Default true; seeded from `ConfigStore` by `AppDelegate`, toggled
     /// from the gear menu. Both expanded notch headers observe this.
     @Published public var showTodayConsumption: Bool = true
+
+    /// Agent selected for single-agent quota surfaces, including the physical
+    /// notch path. Stored by ConfigStore and updated live from either menu.
+    @Published public var compactAgent: AgentKind = .claude
 
     /// Pricing source for daily cost (both `@MainActor`; read after the detached
     /// scan returns). Weak so it never extends the store's lifetime.
@@ -649,9 +668,11 @@ public final class UsageTracker: ObservableObject {
         firstActiveCodexReadings(rootDir: rootDir, recentSeconds: recentSeconds)?.last
     }
 
-    /// #148 — latest reading per named limit scope (`limit_name`, "" when
-    /// absent) from the active rollout. The caller picks the most-constrained
-    /// across scopes so a per-model limit at 0% can't hide a higher one.
+    /// #148 — latest reading per limit scope from the active rollout. Named
+    /// scopes use `limit_name`; unnamed non-account scopes fall back to
+    /// `limit_id`, while the Codex account scope keeps the empty key. The
+    /// caller picks the most-constrained across scopes so a per-model or
+    /// premium limit can't hide the account quota.
     nonisolated static func scanLatestCodexScopes(
         rootDir: URL,
         recentSeconds: TimeInterval = codexActiveWindowSeconds
@@ -738,13 +759,29 @@ public final class UsageTracker: ObservableObject {
             guard let payload = obj["payload"] as? [String: Any] else { continue }
             guard payload["type"] as? String == "token_count" else { continue }
             guard let rl = payload["rate_limits"] as? [String: Any] else { continue }
-            let name = rl["limit_name"] as? String ?? ""
+            let name = codexScopeKey(from: rl)
             let obs = decodeCodexObservation(from: rl)
             scopes[name] = obs
             last = obs
         }
         guard let last else { return nil }
         return (scopes, last)
+    }
+
+    /// Codex 0.137 can emit an account-level `limit_id: "codex"` reading and
+    /// immediately follow it with an unnamed `limit_id: "premium"` reading.
+    /// The latter may have null windows. Treating both as the empty unnamed
+    /// scope lets that empty premium observation erase valid 5h/7d data.
+    private nonisolated static func codexScopeKey(from rateLimits: [String: Any]) -> String {
+        if let name = rateLimits["limit_name"] as? String, !name.isEmpty {
+            return name
+        }
+        if let id = rateLimits["limit_id"] as? String,
+           !id.isEmpty,
+           id.caseInsensitiveCompare("codex") != .orderedSame {
+            return "id:\(id)"
+        }
+        return ""
     }
 
     /// Decode codex rate_limits dict into the Sendable observation struct.

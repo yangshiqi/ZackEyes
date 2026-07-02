@@ -75,9 +75,9 @@ struct SimulatedNotchView: View {
     @ViewBuilder
     private var compactContent: some View {
         let snap = usageTracker.snapshot
-        let agent = modeStore.compactAgent
-        let fivePct = (agent == .codex) ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct
-        let sevenPct = (agent == .codex) ? snap.codexSevenDayUsedPct : snap.sevenDayUsedPct
+        let agent = snap.displayAgent(preferred: modeStore.compactAgent)
+        let fivePct = snap.fiveHourUsedPct(for: agent)
+        let sevenPct = snap.sevenDayUsedPct(for: agent)
         let eta = (agent == .codex) ? snap.codexFiveHourETA : snap.fiveHourETA
         // #86 — imminent cap (≤30 min) takes the 5h slot; 7d stays put.
         if let urgent = eta?.pillUrgentLabel {
@@ -142,10 +142,10 @@ struct SimulatedNotchView: View {
     @ViewBuilder
     private var expandedContent: some View {
         let snap = usageTracker.snapshot
-        let agent = modeStore.compactAgent
-        let fivePct = (agent == .codex) ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct
+        let agent = snap.displayAgent(preferred: modeStore.compactAgent)
+        let fivePct = snap.fiveHourUsedPct(for: agent)
         let fiveResets = (agent == .codex) ? snap.codexFiveHourResetsAt : snap.fiveHourResetsAt
-        let sevenPct = (agent == .codex) ? snap.codexSevenDayUsedPct : snap.sevenDayUsedPct
+        let sevenPct = snap.sevenDayUsedPct(for: agent)
         let sevenResets = (agent == .codex) ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
 
         usageStat(

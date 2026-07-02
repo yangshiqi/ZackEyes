@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import Shared
 
 /// Manages a floating simulated-notch panel that morphs between two states:
 /// - **compact**: narrow pill (220×32) with status icon + 5h/7d remaining
@@ -41,6 +42,7 @@ public final class SimulatedNotchController {
     private let moveSnapThreshold: CGFloat = 10
     private var moveModeObserver: NSObjectProtocol?
     private var resetPositionObserver: NSObjectProtocol?
+    private var compactAgentObserver: NSObjectProtocol?
     private var moveDownMonitor: Any?
     private var moveDragMonitor: Any?
     private var moveUpMonitor: Any?
@@ -101,6 +103,12 @@ public final class SimulatedNotchController {
         observeScreenChanges()
         observeMouseMovement()
         observeMoveModeRequests()
+        compactAgentObserver = NotificationCenter.default.addObserver(
+            forName: .compactAgentChanged, object: nil, queue: .main
+        ) { [weak self] notification in
+            guard let agent = notification.userInfo?["agent"] as? AgentKind else { return }
+            Task { @MainActor in self?.modeStore.compactAgent = agent }
+        }
         usageTracker.start(intervalSeconds: 30)
     }
 
@@ -111,6 +119,7 @@ public final class SimulatedNotchController {
         stopMoveMonitors()
         if let observer = moveModeObserver { NotificationCenter.default.removeObserver(observer) }
         if let observer = resetPositionObserver { NotificationCenter.default.removeObserver(observer) }
+        if let observer = compactAgentObserver { NotificationCenter.default.removeObserver(observer) }
         if let observer = screenObserver { NotificationCenter.default.removeObserver(observer) }
         panel?.orderOut(nil)
         panel = nil
