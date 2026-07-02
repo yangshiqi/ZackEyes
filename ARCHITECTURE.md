@@ -248,6 +248,8 @@ PricingStore.start()
 | `DiagnosticsReport` | `Sources/AppLib/Diagnostics/DiagnosticsReport.swift` | #47 隐私安全诊断报告（固定 schema）：版本/OS/arch + HookHealth 布尔值 + 用量新鲜度，复用 `HookHealth`。唯一自由文本字段（statusLine 第三方命令）经 `Redactor` 脱敏；绝不含 prompt/assistant/工具参数/完整配置内容。`generate` 纯函数（依赖注入），`current()` 为薄 `@MainActor` 聚合层。 |
 | `DiagnosticsWindow` | `Sources/AppLib/MenuBar/DiagnosticsWindow.swift` | #47 导出审阅窗口（`KeyablePanel` 仿 `HookStatusWindow`）：滚动展示脱敏报告 + Copy/Save…/Close，用户分享前可先审阅内容。两菜单"Export Diagnostics…"共用同一实例。 |
 
+> **两套齿轮菜单（易分叉，见 #164）**：物理刘海（`NotchWindowController`）的齿轮复用 `StatusBarMenu.buildMenu()`（`AppDelegate` 把 `wc.showMenu` 接到它），模拟刘海用自己的 `SimulatedNotchFullView.popGearMenu()`。两者由不同代码构建，需手动保持同步。`#160` 起 `StatusBarMenu` 补上 **Compact display**；但 **Show today's consumption** 开关目前仍只在模拟刘海菜单里（物理刘海缺，#164 跟踪）。**Move Notch** 物理刘海故意不提供（硬件位置固定）。
+
 **全局功能**
 | 模块 | 文件 | 职责 |
 |------|------|------|
