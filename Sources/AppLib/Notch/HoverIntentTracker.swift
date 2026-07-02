@@ -4,7 +4,7 @@
 /// controllers own the delay and geometry checks; this type only guarantees
 /// that duplicate mouse-move events do not restart the dwell timer and that a
 /// callback scheduled before cancellation can no longer expand the panel.
-import CoreGraphics
+import Foundation
 
 public struct HoverIntentTracker: Sendable {
     public typealias Token = UInt64

@@ -343,15 +343,18 @@ public final class NotchWindowController {
         let workItem = DispatchWorkItem { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                // Consume the token FIRST. The `Task` hop means a stale work
+                // item can run after a newer hover intent was scheduled; if we
+                // checked geometry first and then called `cancel()` on failure,
+                // that stale task would wipe the newer candidate's token and
+                // suppress a legitimate expansion. A failed consume => the token
+                // was superseded or cancelled, so bail without touching state.
+                guard self.hoverIntent.consume(token) else { return }
                 self.hoverExpandWorkItem = nil
                 guard self.currentState == .compact,
                       self.shouldBeVisible,
-                      activationArea.contains(NSEvent.mouseLocation),
-                      self.hoverIntent.consume(token)
-                else {
-                    self.hoverIntent.cancel()
-                    return
-                }
+                      activationArea.contains(NSEvent.mouseLocation)
+                else { return }
                 self.updatePanelState(.expanded)
             }
         }

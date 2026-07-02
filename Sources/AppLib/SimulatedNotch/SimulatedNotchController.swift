@@ -391,16 +391,19 @@ public final class SimulatedNotchController {
         let workItem = DispatchWorkItem { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                // Consume the token FIRST. The `Task` hop means a stale work
+                // item can run after a newer hover intent was scheduled; if we
+                // checked geometry first and then called `cancel()` on failure,
+                // that stale task would wipe the newer candidate's token and
+                // suppress a legitimate expansion. A failed consume => the token
+                // was superseded or cancelled, so bail without touching state.
+                guard self.hoverIntent.consume(token) else { return }
                 self.hoverExpandWorkItem = nil
                 guard self.mode != .full,
                       !self.modeStore.isMovingNotch,
                       self.shouldBeVisible,
-                      activationArea.contains(NSEvent.mouseLocation),
-                      self.hoverIntent.consume(token)
-                else {
-                    self.hoverIntent.cancel()
-                    return
-                }
+                      activationArea.contains(NSEvent.mouseLocation)
+                else { return }
                 self.setMode(.full)
             }
         }
@@ -622,6 +625,9 @@ public final class SimulatedNotchController {
                 guard let self = self,
                       let panel = self.panel,
                       let screen = self.primaryScreen() else { return }
+                // A display reconfiguration invalidates the activation-area
+                // rect captured by any in-flight hover dwell — drop it.
+                self.cancelPendingHoverExpansion()
                 // Recompute fullHeight in case the screen size changed.
                 self.fullHeight = min(480, screen.visibleFrame.height - 60)
                 panel.setFrame(self.currentFrame(on: screen), display: true)
@@ -649,6 +655,9 @@ public final class SimulatedNotchController {
 
     public func applyVisibility(_ v: NotchVisibility) {
         visibility = v
+        // A visibility change can pull the panel off-screen mid-dwell; drop any
+        // pending hover expansion so it can't fire against the new state.
+        cancelPendingHoverExpansion()
         guard let panel = panel else { return }
         let shouldShow = shouldBeVisible
         if !shouldShow && mode != .full {
