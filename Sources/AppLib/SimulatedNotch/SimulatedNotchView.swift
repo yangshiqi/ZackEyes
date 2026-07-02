@@ -75,9 +75,9 @@ struct SimulatedNotchView: View {
     @ViewBuilder
     private var compactContent: some View {
         let snap = usageTracker.snapshot
-        let agent = effectiveCompactAgent(for: snap)
-        let fivePct = (agent == .codex) ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct
-        let sevenPct = (agent == .codex) ? snap.codexSevenDayUsedPct : snap.sevenDayUsedPct
+        let agent = snap.displayAgent(preferred: modeStore.compactAgent)
+        let fivePct = snap.fiveHourUsedPct(for: agent)
+        let sevenPct = snap.sevenDayUsedPct(for: agent)
         let eta = (agent == .codex) ? snap.codexFiveHourETA : snap.fiveHourETA
         // #86 — imminent cap (≤30 min) takes the 5h slot; 7d stays put.
         if let urgent = eta?.pillUrgentLabel {
@@ -142,10 +142,10 @@ struct SimulatedNotchView: View {
     @ViewBuilder
     private var expandedContent: some View {
         let snap = usageTracker.snapshot
-        let agent = effectiveCompactAgent(for: snap)
-        let fivePct = (agent == .codex) ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct
+        let agent = snap.displayAgent(preferred: modeStore.compactAgent)
+        let fivePct = snap.fiveHourUsedPct(for: agent)
         let fiveResets = (agent == .codex) ? snap.codexFiveHourResetsAt : snap.fiveHourResetsAt
-        let sevenPct = (agent == .codex) ? snap.codexSevenDayUsedPct : snap.sevenDayUsedPct
+        let sevenPct = snap.sevenDayUsedPct(for: agent)
         let sevenResets = (agent == .codex) ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
 
         usageStat(
@@ -176,20 +176,6 @@ struct SimulatedNotchView: View {
             Image(systemName: "bubble.left.fill")
                 .font(.system(size: 9))
                 .foregroundColor(.white.opacity(0.6))
-        }
-    }
-
-    /// Honor the user's preference when both agents have data. If the selected
-    /// agent has no quota reading but the other one does, show the available
-    /// data instead of leaving the always-visible pill stuck on an em dash.
-    private func effectiveCompactAgent(for snapshot: UsageTracker.Snapshot) -> AgentKind {
-        switch modeStore.compactAgent {
-        case .claude where !snapshot.hasClaudeData && snapshot.hasCodexData:
-            return .codex
-        case .codex where !snapshot.hasCodexData && snapshot.hasClaudeData:
-            return .claude
-        default:
-            return modeStore.compactAgent
         }
     }
 

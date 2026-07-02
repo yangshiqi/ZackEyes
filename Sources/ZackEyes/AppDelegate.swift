@@ -203,7 +203,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hotKeyManager = hk
 
-        // Listen for hotkey config changes from the recorder UI
+        // Listen for compact-agent selection changes from the status-bar menu
         NotificationCenter.default.addObserver(
             forName: .compactAgentChanged,
             object: nil,
