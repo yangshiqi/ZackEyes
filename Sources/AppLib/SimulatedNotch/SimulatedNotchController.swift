@@ -56,6 +56,11 @@ public final class SimulatedNotchController {
         set { modeStore.mode = newValue }
     }
     private var collapseWorkItem: DispatchWorkItem?
+    private var hoverExpandWorkItem: DispatchWorkItem?
+    private var hoverIntent = HoverIntentTracker()
+
+    private let hoverDwellDuration: TimeInterval = 0.25
+    private let hoverMovementTolerance: CGFloat = 8
 
     // Real MacBook Pro Dynamic Island is roughly 220pt wide × 32pt tall
     private let compactWidth: CGFloat = 220
@@ -113,6 +118,7 @@ public final class SimulatedNotchController {
     }
 
     public func teardown() {
+        cancelPendingHoverExpansion()
         usageTracker.stop()
         if let mon = mouseMonitor { NSEvent.removeMonitor(mon) }
         stopOutsideClickMonitoring()
@@ -228,6 +234,7 @@ public final class SimulatedNotchController {
     /// animate together using a single matched timing curve so the morph
     /// is one continuous motion — no two-clock drift, no jitter.
     private func setMode(_ newMode: NotchMode) {
+        cancelPendingHoverExpansion()
         guard mode != newMode else { return }
         guard let panel = panel, let screen = primaryScreen() else {
             modeStore.mode = newMode
@@ -317,7 +324,7 @@ public final class SimulatedNotchController {
         modeStore.isAboutShown = false
     }
 
-    // MARK: - Mouse hover (compact ↔ full)
+    // MARK: - Mouse hover intent (compact ↔ full)
 
     private func observeMouseMovement() {
         mouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: .mouseMoved) { [weak self] _ in
@@ -355,11 +362,11 @@ public final class SimulatedNotchController {
 
         if hoverArea.contains(location) {
             collapseWorkItem?.cancel()
-            // Hover anywhere over the notch → expand to full
             if mode != .full {
-                setMode(.full)
+                scheduleHoverExpansion(from: location, in: hoverArea)
             }
         } else {
+            cancelPendingHoverExpansion()
             // Mouse left the area. STICKY EXCEPTION: don't collapse while
             // any interactive overlay is on the panel — pending permission,
             // open gear menu, or About card.
@@ -380,6 +387,46 @@ public final class SimulatedNotchController {
             collapseWorkItem = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35, execute: work)
         }
+    }
+
+    private func scheduleHoverExpansion(from mouse: CGPoint, in activationArea: CGRect) {
+        guard let token = hoverIntent.observe(
+            mouse,
+            movementTolerance: hoverMovementTolerance
+        ) else { return }
+
+        hoverExpandWorkItem?.cancel()
+
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // Consume the token FIRST. The `Task` hop means a stale work
+                // item can run after a newer hover intent was scheduled; if we
+                // checked geometry first and then called `cancel()` on failure,
+                // that stale task would wipe the newer candidate's token and
+                // suppress a legitimate expansion. A failed consume => the token
+                // was superseded or cancelled, so bail without touching state.
+                guard self.hoverIntent.consume(token) else { return }
+                self.hoverExpandWorkItem = nil
+                guard self.mode != .full,
+                      !self.modeStore.isMovingNotch,
+                      self.shouldBeVisible,
+                      activationArea.contains(NSEvent.mouseLocation)
+                else { return }
+                self.setMode(.full)
+            }
+        }
+        hoverExpandWorkItem = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + hoverDwellDuration,
+            execute: workItem
+        )
+    }
+
+    private func cancelPendingHoverExpansion() {
+        hoverExpandWorkItem?.cancel()
+        hoverExpandWorkItem = nil
+        hoverIntent.cancel()
     }
 
     /// True when any session is currently waiting on a user answer. While
@@ -587,6 +634,9 @@ public final class SimulatedNotchController {
                 guard let self = self,
                       let panel = self.panel,
                       let screen = self.primaryScreen() else { return }
+                // A display reconfiguration invalidates the activation-area
+                // rect captured by any in-flight hover dwell — drop it.
+                self.cancelPendingHoverExpansion()
                 // Recompute fullHeight in case the screen size changed.
                 self.fullHeight = min(480, screen.visibleFrame.height - 60)
                 panel.setFrame(self.currentFrame(on: screen), display: true)
@@ -614,6 +664,9 @@ public final class SimulatedNotchController {
 
     public func applyVisibility(_ v: NotchVisibility) {
         visibility = v
+        // A visibility change can pull the panel off-screen mid-dwell; drop any
+        // pending hover expansion so it can't fire against the new state.
+        cancelPendingHoverExpansion()
         guard let panel = panel else { return }
         let shouldShow = shouldBeVisible
         if !shouldShow && mode != .full {
