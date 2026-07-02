@@ -7,6 +7,26 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.8.2',
+    date: 'Published July 2, 2026',
+    summary: 'Codex quota on notched Macs, and calmer notch expansion.',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'On MacBooks with a notch, a "Compact display" menu option to choose whether the pill shows Claude or Codex quota.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'Codex 5h/7d usage now appears on MacBooks with a physical notch instead of showing "no data": the notch shows the selected agent\'s quota, falls back to whichever agent has data, and an empty Codex "premium" record can no longer overwrite your real account quota.',
+          'The notch no longer pops open when the cursor merely passes through it (for example, moving between vertically stacked displays); it now waits for a brief, intentional hover before expanding.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.8.1',
     date: 'Published June 30, 2026',
     summary: 'Codex usage-limit visibility and accurate 5h/7d quota.',
