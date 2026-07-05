@@ -50,6 +50,11 @@ struct TodayConsumptionRow: View {
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .foregroundColor(.white.opacity(0.45))
                 }
+                if let comp = Self.compositionLine(for: shown) {
+                    Text(comp)
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.38))
+                }
             }
             Spacer(minLength: 8)
             // 7-day daily-token sparkline — right of the text block, spanning both
@@ -66,6 +71,20 @@ struct TodayConsumptionRow: View {
         var parts: [String] = []
         if day.claudeTokens > 0 { parts.append("C \(humanizeTokens(day.claudeTokens))") }
         if day.codexTokens > 0 { parts.append("X \(humanizeTokens(day.codexTokens))") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// Token-type composition ("in 320K · out 45K · cache 120K↑/4.1M↓"); each part
+    /// omitted when zero, nil if all zero. cache read (↓) is the reuse that the
+    /// headline total excludes — surfacing it here is the point of the breakdown (#167).
+    static func compositionLine(for day: DayUsage) -> String? {
+        var parts: [String] = []
+        if day.inputTokens > 0 { parts.append("in \(humanizeTokens(day.inputTokens))") }
+        if day.outputTokens > 0 { parts.append("out \(humanizeTokens(day.outputTokens))") }
+        var cache: [String] = []
+        if day.cacheWriteTokens > 0 { cache.append("\(humanizeTokens(day.cacheWriteTokens))↑") }
+        if day.cacheReadTokens > 0 { cache.append("\(humanizeTokens(day.cacheReadTokens))↓") }
+        if !cache.isEmpty { parts.append("cache " + cache.joined(separator: "/")) }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 

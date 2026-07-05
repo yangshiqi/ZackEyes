@@ -170,6 +170,50 @@ struct DailyUsageTests {
         #expect(t.codexTokens == 750)    // uncached(10000-9300)+output(50); 9300 cached reuse excluded
     }
 
+    // MARK: - #167 token-composition breakdown fields
+
+    @Test func breakdownFieldsClaude() {
+        let today = Self.utc.startOfDay(for: Self.now)
+        let claude: [Date: [String: ModelTokenTally]] = [
+            today: ["claude-opus-4-8": ModelTokenTally(input: 100, output: 10, cacheRead: 1000, cacheCreate: 50)]
+        ]
+        let t = UsageTracker.buildDailyUsage(claude: claude, codex: [:], pricing: .empty, calendar: Self.utc, now: Self.now).last!
+        #expect(t.inputTokens == 100)
+        #expect(t.outputTokens == 10)
+        #expect(t.cacheWriteTokens == 50)     // claude cache_creation
+        #expect(t.cacheReadTokens == 1000)    // preserved for display, excluded from count
+        #expect(t.claudeTokens == t.inputTokens + t.outputTokens + t.cacheWriteTokens)  // invariant
+    }
+
+    @Test func breakdownFieldsCodexExcludesCachedFromInput() {
+        let today = Self.utc.startOfDay(for: Self.now)
+        let codex: [Date: [String: ModelTokenTally]] = [
+            today: ["gpt-5.5": ModelTokenTally(input: 1000, output: 20, cacheRead: 600, cacheCreate: 0)]
+        ]
+        let t = UsageTracker.buildDailyUsage(claude: [:], codex: codex, pricing: .empty, calendar: Self.utc, now: Self.now).last!
+        #expect(t.inputTokens == 400)         // uncached (1000 − 600 cached)
+        #expect(t.outputTokens == 20)
+        #expect(t.cacheWriteTokens == 0)      // codex has no cache-creation
+        #expect(t.cacheReadTokens == 600)
+        #expect(t.codexTokens == t.inputTokens + t.outputTokens + t.cacheWriteTokens)  // invariant
+    }
+
+    @Test func breakdownFieldsCombineBothAgents() {
+        let today = Self.utc.startOfDay(for: Self.now)
+        let claude: [Date: [String: ModelTokenTally]] = [
+            today: ["claude-opus-4-8": ModelTokenTally(input: 100, output: 10, cacheRead: 30, cacheCreate: 5)]
+        ]
+        let codex: [Date: [String: ModelTokenTally]] = [
+            today: ["gpt-5.5": ModelTokenTally(input: 200, output: 20, cacheRead: 50, cacheCreate: 0)]
+        ]
+        let t = UsageTracker.buildDailyUsage(claude: claude, codex: codex, pricing: .empty, calendar: Self.utc, now: Self.now).last!
+        #expect(t.inputTokens == 250)         // claude 100 + codex uncached (200 − 50)
+        #expect(t.outputTokens == 30)         // 10 + 20
+        #expect(t.cacheWriteTokens == 5)      // claude only
+        #expect(t.cacheReadTokens == 80)      // 30 + 50
+        #expect(t.totalTokens == t.inputTokens + t.outputTokens + t.cacheWriteTokens)  // invariant
+    }
+
     @Test func codexModelSwitchMidFileAttributesDeltasCorrectly() {
         // turn_context(A) → token_count(cum 100/0/10) → turn_context(B) → token_count(cum 300/0/30)
         // delta1 = 100in/10out → model A ; delta2 = 200in/20out → model B

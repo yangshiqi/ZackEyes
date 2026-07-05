@@ -20,12 +20,25 @@ public struct DayUsage: Sendable, Codable, Equatable {
     public var claudeCostUSD: Double?    // nil = no priced Claude tokens that day
     public var codexCostUSD: Double?     // nil = no priced Codex tokens that day
     public var anyUnpriced: Bool         // some tokens lacked a price → combined cost is a floor (≥)
+    // Token composition across both agents (display-only breakdown; does NOT change the
+    // count or cost口径). Invariant: totalTokens == inputTokens + outputTokens + cacheWriteTokens.
+    // cacheReadTokens (cache reuse) is deliberately excluded from the headline count but
+    // surfaced here for transparency — see #167. Codex has no cache-creation, so its
+    // contribution to cacheWriteTokens is always 0.
+    public var inputTokens: Int          // uncached input (Codex: input − cached)
+    public var outputTokens: Int
+    public var cacheWriteTokens: Int     // Claude cache_creation only
+    public var cacheReadTokens: Int      // Claude cache_read + Codex cached_input
     public var totalTokens: Int { claudeTokens + codexTokens }
 
     public init(dayStart: Date, claudeTokens: Int = 0, codexTokens: Int = 0,
-                claudeCostUSD: Double? = nil, codexCostUSD: Double? = nil, anyUnpriced: Bool = false) {
+                claudeCostUSD: Double? = nil, codexCostUSD: Double? = nil, anyUnpriced: Bool = false,
+                inputTokens: Int = 0, outputTokens: Int = 0,
+                cacheWriteTokens: Int = 0, cacheReadTokens: Int = 0) {
         self.dayStart = dayStart; self.claudeTokens = claudeTokens; self.codexTokens = codexTokens
         self.claudeCostUSD = claudeCostUSD; self.codexCostUSD = codexCostUSD; self.anyUnpriced = anyUnpriced
+        self.inputTokens = inputTokens; self.outputTokens = outputTokens
+        self.cacheWriteTokens = cacheWriteTokens; self.cacheReadTokens = cacheReadTokens
     }
 }
 
@@ -70,6 +83,10 @@ extension UsageTracker {
                     // cache_read (the same context re-read every turn) is excluded so the count
                     // isn't inflated by reuse; cost below still bills all four at their rates.
                     u.claudeTokens += t.input + t.output + t.cacheCreate
+                    u.inputTokens += t.input
+                    u.outputTokens += t.output
+                    u.cacheWriteTokens += t.cacheCreate
+                    u.cacheReadTokens += t.cacheRead
                     if let p = pricing.price(for: model) {
                         cost += Double(t.input) * p.inputPerToken
                               + Double(t.output) * p.outputPerToken
@@ -88,6 +105,9 @@ extension UsageTracker {
                     // it so the count is distinct tokens, same convention as Claude above.
                     let uncached = max(0, t.input - t.cacheRead)
                     u.codexTokens += uncached + t.output
+                    u.inputTokens += uncached
+                    u.outputTokens += t.output
+                    u.cacheReadTokens += t.cacheRead   // codex has no cache-creation
                     if let p = pricing.price(for: model) {
                         cost += Double(uncached) * p.inputPerToken
                               + Double(t.cacheRead) * p.cacheReadPerToken
