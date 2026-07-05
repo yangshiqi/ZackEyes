@@ -21,7 +21,7 @@ public struct DayUsage: Sendable, Codable, Equatable {
     public var codexCostUSD: Double?     // nil = no priced Codex tokens that day
     public var anyUnpriced: Bool         // some tokens lacked a price → combined cost is a floor (≥)
     // Token composition across both agents (display-only breakdown; does NOT change the
-    // count or cost口径). Invariant: totalTokens == inputTokens + outputTokens + cacheWriteTokens.
+    // count or cost basis). Invariant: totalTokens == inputTokens + outputTokens + cacheWriteTokens.
     // cacheReadTokens (cache reuse) is deliberately excluded from the headline count but
     // surfaced here for transparency — see #167. Codex has no cache-creation, so its
     // contribution to cacheWriteTokens is always 0.

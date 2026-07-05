@@ -67,7 +67,7 @@ struct TodayConsumptionRow: View {
     // MARK: - Pure helpers (unit-tested)
 
     /// Per-agent subline ("C 1.1M · X 0.3M"); omits a zero agent, nil if both zero.
-    static func subline(for day: DayUsage) -> String? {
+    nonisolated static func subline(for day: DayUsage) -> String? {
         var parts: [String] = []
         if day.claudeTokens > 0 { parts.append("C \(humanizeTokens(day.claudeTokens))") }
         if day.codexTokens > 0 { parts.append("X \(humanizeTokens(day.codexTokens))") }
@@ -77,7 +77,7 @@ struct TodayConsumptionRow: View {
     /// Token-type composition ("in 320K · out 45K · cache 120K↑/4.1M↓"); each part
     /// omitted when zero, nil if all zero. cache read (↓) is the reuse that the
     /// headline total excludes — surfacing it here is the point of the breakdown (#167).
-    static func compositionLine(for day: DayUsage) -> String? {
+    nonisolated static func compositionLine(for day: DayUsage) -> String? {
         var parts: [String] = []
         if day.inputTokens > 0 { parts.append("in \(humanizeTokens(day.inputTokens))") }
         if day.outputTokens > 0 { parts.append("out \(humanizeTokens(day.outputTokens))") }
