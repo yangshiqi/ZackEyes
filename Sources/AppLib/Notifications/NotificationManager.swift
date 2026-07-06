@@ -191,8 +191,12 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         content.interruptionLevel = .timeSensitive
         content.userInfo = ["sessionId": sessionId]
 
+        // Stable per-session identifier (not timestamped): a "waiting" notice is
+        // transient — once answered it's stale — so a new prompt should overwrite
+        // the prior one instead of piling up in Notification Center. Delivery +
+        // sound still fire on the replacement; the ID only affects accumulation.
         let request = UNNotificationRequest(
-            identifier: "session-waiting-\(sessionId)-\(Int(Date().timeIntervalSince1970))",
+            identifier: "session-waiting-\(sessionId)",
             content: content,
             trigger: nil
         )

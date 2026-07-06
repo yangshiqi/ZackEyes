@@ -784,6 +784,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Dynamic Island morph) when it exists; falls back to the real-notch
     /// window controller; falls back to the legacy menu bar popover only
     /// when neither richer surface is in play.
+    private func forceUiExpand() {
+        if let sn = simulatedNotch {
+            sn.forceExpand()
+            return
+        }
+        if let wc = windowController {
+            wc.forceExpand()
+            return
+        }
+        menuBarFallback?.showPopover()
+    }
+
     /// Chime + system-notify when an agent blocks MID-TASK waiting on the user
     /// (permission / AskUserQuestion). Codex-reviewed #169 gating: never on
     /// replayed events, only when the config toggle is on, and at most once per
@@ -795,6 +807,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func maybeNotifyWaiting(event: BridgeEvent, sessionId: String, kind: WaitingKind) {
         guard !event.isReplayed else { return }
         guard ConfigStore().loadNotifyWaitingForInput() else { return }
+        // Bound the cooldown map to live sessions: session IDs are unique and this
+        // app runs for days, so without pruning it grows unbounded. The current
+        // sessionId always survives (handlePermissionRequest just created it).
+        let activeSessionIds = Set(sessionStore.sessions.keys)
+        lastWaitingAlertAt = lastWaitingAlertAt.filter { activeSessionIds.contains($0.key) }
         let now = Date()
         guard WaitingAlertGate.shouldAlert(
             lastAlertedAt: lastWaitingAlertAt[sessionId], now: now, cooldown: 12
@@ -806,18 +823,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             projectName: sessionStore.sessions[sessionId]?.displayName ?? "session",
             kind: kind
         )
-    }
-
-    private func forceUiExpand() {
-        if let sn = simulatedNotch {
-            sn.forceExpand()
-            return
-        }
-        if let wc = windowController {
-            wc.forceExpand()
-            return
-        }
-        menuBarFallback?.showPopover()
     }
 }
 
