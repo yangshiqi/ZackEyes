@@ -251,4 +251,29 @@ final class ConfigStoreTests: XCTestCase {
         XCTAssertFalse(store.loadShowTodayConsumption())
     }
 
+    // MARK: - #169 Notify waiting for input
+
+    func testNotifyWaitingForInputDefaultsTrue() {
+        let store = ConfigStore(directory: tmpDir.path)
+        XCTAssertTrue(store.loadNotifyWaitingForInput())   // default ON
+    }
+
+    func testNotifyWaitingForInputRoundTrips() {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveNotifyWaitingForInput(false)
+        XCTAssertFalse(store.loadNotifyWaitingForInput())
+        store.saveNotifyWaitingForInput(true)
+        XCTAssertTrue(store.loadNotifyWaitingForInput())
+    }
+
+    func testSaveNotifyWaitingForInputPreservesOtherKeys() {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveCompactAgent(.codex)
+        store.saveShowTodayConsumption(false)
+        store.saveNotifyWaitingForInput(false)
+        XCTAssertEqual(store.loadCompactAgent(), .codex)
+        XCTAssertFalse(store.loadShowTodayConsumption())
+        XCTAssertFalse(store.loadNotifyWaitingForInput())
+    }
+
 }

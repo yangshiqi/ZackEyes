@@ -143,6 +143,16 @@ final class GearMenuTarget: NSObject {
         (sender as? NSMenuItem)?.state = next ? .on : .off
     }
 
+    /// #169 — toggle the "chime/notify when an agent blocks waiting on the user"
+    /// preference. Persists straight to ConfigStore (no UsageTracker mirror: the
+    /// flag is only read at notify time, not bound to any live UI).
+    @objc func toggleNotifyWaitingClicked(_ sender: Any?) {
+        modeStore?.isMenuOpen = false
+        let next = !ConfigStore().loadNotifyWaitingForInput()
+        ConfigStore().saveNotifyWaitingForInput(next)
+        (sender as? NSMenuItem)?.state = next ? .on : .off
+    }
+
     @objc func soundClicked(_ sender: Any?) {
         guard let item = sender as? NSMenuItem,
               let file = item.representedObject as? String else { return }

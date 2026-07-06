@@ -531,6 +531,15 @@ struct SimulatedNotchFullView: View {
         todayConsumption.state = usageTracker.showTodayConsumption ? .on : .off
         menu.addItem(todayConsumption)
 
+        let waitingNotify = NSMenuItem(
+            title: "Sound when waiting for input",
+            action: #selector(GearMenuTarget.toggleNotifyWaitingClicked(_:)),
+            keyEquivalent: ""
+        )
+        waitingNotify.target = GearMenuTarget.shared
+        waitingNotify.state = ConfigStore().loadNotifyWaitingForInput() ? .on : .off
+        menu.addItem(waitingNotify)
+
         // Low-frequency maintenance actions sink to the bottom (macOS
         // convention: diagnostics/destructive near Quit, fenced by
         // separators) so daily toggles stay at eye level.

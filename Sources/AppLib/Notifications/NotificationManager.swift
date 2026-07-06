@@ -3,6 +3,12 @@ import UserNotifications
 import AppKit
 import Shared
 
+/// What kind of blocked-waiting prompt triggered the alert (#169).
+public enum WaitingKind: Sendable {
+    case permission   // a tool-permission confirmation
+    case question     // an AskUserQuestion choice
+}
+
 /// Manages macOS user notifications for session events.
 @MainActor
 public final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
@@ -158,6 +164,45 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         }
     }
 
+    /// Post a notification when an agent blocks MID-TASK waiting on the user —
+    /// a tool-permission confirmation or an AskUserQuestion choice. Distinct
+    /// from `notifySessionFinished` (the turn is NOT done; the agent can't
+    /// proceed until the user acts), so it's marked time-sensitive. Callers own
+    /// the gating (replay / config / per-session cooldown) — see
+    /// `AppDelegate.maybeNotifyWaiting` + `WaitingAlertGate`. (#169)
+    public func notifyWaitingForUser(
+        sessionId: String,
+        agent: AgentKind,
+        projectName: String,
+        kind: WaitingKind
+    ) {
+        let content = UNMutableNotificationContent()
+        let what = (kind == .question) ? "needs your input" : "needs permission"
+        content.title = "\(Self.agentTag(agent)) \(Self.displaySafe(projectName)) — \(what)"
+        let agentName = (agent == .claude) ? "Claude Code" : "Codex"
+        content.body = "\(agentName) is waiting for you. Click to jump to the terminal."
+        // Same fallback contract as the other notifiers: only fall back to the
+        // system sound when no custom theme sound played (avoids double / no sound).
+        if playThemeSound() {
+            content.sound = nil
+        } else {
+            content.sound = .default
+        }
+        content.interruptionLevel = .timeSensitive
+        content.userInfo = ["sessionId": sessionId]
+
+        let request = UNNotificationRequest(
+            identifier: "session-waiting-\(sessionId)-\(Int(Date().timeIntervalSince1970))",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { @Sendable error in
+            if let error = error {
+                NSLog("ZackEyes: waiting notification post failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
     /// Post a notification for a new app version. Only sends once per version
     /// (tracked via UserDefaults).
     public func notifyUpdateAvailable(version: String, releaseURL: URL) {
@@ -245,5 +290,18 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
                 self?.onSessionTap?(sessionId)
             }
         }
+    }
+}
+
+/// Per-session throttle for blocked-waiting alerts (#169). Fires at most once
+/// per `cooldown` per session so rapid AskUserQuestion bursts (e.g. brainstorming)
+/// and any redelivered pending don't chime repeatedly. Pure + nonisolated so it's
+/// unit-testable without the notification side effects.
+public enum WaitingAlertGate {
+    /// True when enough time has elapsed since the last alert for this session.
+    /// `lastAlertedAt == nil` (never alerted) → true.
+    public static func shouldAlert(lastAlertedAt: Date?, now: Date, cooldown: TimeInterval) -> Bool {
+        guard let last = lastAlertedAt else { return true }
+        return now.timeIntervalSince(last) >= cooldown
     }
 }
