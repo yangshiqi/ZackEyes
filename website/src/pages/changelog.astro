@@ -7,6 +7,19 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.8.3',
+    date: 'Published July 6, 2026',
+    summary: 'Added: Today row now breaks tokens into input / output / cache-write / cache-read, surfacing the cached portion (especially cache read) that the headline count excludes (#167). Added: Chime and macOS notification when an agent blocks mid-task waiting for input (a permission prompt or an AskUserQuestion choice), with a Sound when waiting for input gear-menu toggle; on by default with a per-session cooldown (#169).',
+    highlights: [
+      {
+        label: 'Notes',
+        items: [
+          // TODO: fill in highlights before merging.
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.8.2',
     date: 'Published July 2, 2026',
     summary: 'Codex quota on notched Macs, and calmer notch expansion.',
