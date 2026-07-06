@@ -34,6 +34,22 @@ struct TodayConsumptionRowTests {
         #expect(TodayConsumptionRow.combinedCost(DayUsage(dayStart: d, claudeCostUSD: nil, codexCostUSD: 2.5)) == 2.5)
     }
 
+    @Test func compositionLine() {
+        let d = Date(timeIntervalSince1970: 0)
+        // all four present (Claude-typical): cache write ↑ / cache read ↓
+        let full = DayUsage(dayStart: d, inputTokens: 320_000, outputTokens: 45_000,
+                            cacheWriteTokens: 120_000, cacheReadTokens: 4_100_000)
+        #expect(TodayConsumptionRow.compositionLine(for: full) == "in 320K · out 45K · cache 120K↑/4.1M↓")
+        // in/out only (no cache activity)
+        let plain = DayUsage(dayStart: d, inputTokens: 700, outputTokens: 50)
+        #expect(TodayConsumptionRow.compositionLine(for: plain) == "in 700 · out 50")
+        // cache read only → single ↓ segment
+        let readOnly = DayUsage(dayStart: d, cacheReadTokens: 42_000)
+        #expect(TodayConsumptionRow.compositionLine(for: readOnly) == "cache 42K↓")
+        // all zero → nil
+        #expect(TodayConsumptionRow.compositionLine(for: DayUsage(dayStart: d)) == nil)
+    }
+
     @Test func hasConsumption() {
         let d = Date(timeIntervalSince1970: 0)
         var snap = UsageTracker.Snapshot.empty
