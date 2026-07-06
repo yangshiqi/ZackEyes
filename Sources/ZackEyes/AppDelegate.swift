@@ -12,6 +12,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarFallback: MenuBarFallback?
     private var simulatedNotch: SimulatedNotchController?
     private var usageTracker: UsageTracker!
+
+    /// Last blocked-waiting alert time per session, for the #169 per-session
+    /// cooldown (see `maybeNotifyWaiting`).
+    private var lastWaitingAlertAt: [String: Date] = [:]
     private var hotKeyManager: HotKeyManager?
     private var updateChecker: UpdateChecker?
     private var updateDownloader: UpdateDownloader?
@@ -593,6 +597,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             simulatedNotch?.dismissAboutOverlay()
             forceUiExpand()
+            maybeNotifyWaiting(event: event, sessionId: sid, kind: .permission)
 
         case "PreToolUse" where event.toolName == "AskUserQuestion":
             // Path 2: the bridge already fired-and-forgot, so there's no
@@ -623,6 +628,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             simulatedNotch?.dismissAboutOverlay()
             forceUiExpand()
+            maybeNotifyWaiting(event: event, sessionId: sid, kind: .question)
 
         default:
             // Always log the agent so codex/claude bugs can be told apart
@@ -788,6 +794,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         menuBarFallback?.showPopover()
+    }
+
+    /// Chime + system-notify when an agent blocks MID-TASK waiting on the user
+    /// (permission / AskUserQuestion). Codex-reviewed #169 gating: never on
+    /// replayed events, only when the config toggle is on, and at most once per
+    /// per-session cooldown so AskUQ bursts don't spam. Auto-allowed permissions
+    /// never reach here — they early-return before the pending is built (see the
+    /// `isToolAutoAllowed` / AskUQ-drop branches), so this only fires for prompts
+    /// that actually render a waiting surface. `event.agent` keeps it agent-neutral
+    /// (no Claude-only liveness assumptions for Codex).
+    private func maybeNotifyWaiting(event: BridgeEvent, sessionId: String, kind: WaitingKind) {
+        guard !event.isReplayed else { return }
+        guard ConfigStore().loadNotifyWaitingForInput() else { return }
+        // Bound the cooldown map to live sessions: session IDs are unique and this
+        // app runs for days, so without pruning it grows unbounded. The current
+        // sessionId always survives (handlePermissionRequest just created it).
+        let activeSessionIds = Set(sessionStore.sessions.keys)
+        lastWaitingAlertAt = lastWaitingAlertAt.filter { activeSessionIds.contains($0.key) }
+        let now = Date()
+        guard WaitingAlertGate.shouldAlert(
+            lastAlertedAt: lastWaitingAlertAt[sessionId], now: now, cooldown: 12
+        ) else { return }
+        lastWaitingAlertAt[sessionId] = now
+        NotificationManager.shared.notifyWaitingForUser(
+            sessionId: sessionId,
+            agent: event.agent,
+            projectName: sessionStore.sessions[sessionId]?.displayName ?? "session",
+            kind: kind
+        )
     }
 }
 
