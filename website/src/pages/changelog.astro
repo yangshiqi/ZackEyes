@@ -7,6 +7,19 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.8.4',
+    date: 'Published July 7, 2026',
+    summary: 'Fixed: Codex 5h/7d quota no longer collapses to No Data after the session goes idle; the last reliable reading is retained until each window resets, instead of being cleared on the 15-minute rollout activity window (#162). Fixed: Codex usage-limit badge now shows a correct resets-in countdown that targets the binding window, survives the block and an app restart, and no longer lingers forever or vanishes on idle (#172).',
+    highlights: [
+      {
+        label: 'Notes',
+        items: [
+          // TODO: fill in highlights before merging.
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.8.3',
     date: 'Published July 6, 2026',
     summary: 'Added: Today row now breaks tokens into input / output / cache-write / cache-read, surfacing the cached portion (especially cache read) that the headline count excludes (#167). Added: Chime and macOS notification when an agent blocks mid-task waiting for input (a permission prompt or an AskUserQuestion choice), with a Sound when waiting for input gear-menu toggle; on by default with a per-session cooldown (#169).',
