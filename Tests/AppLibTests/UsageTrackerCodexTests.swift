@@ -803,6 +803,8 @@ struct UsageTrackerCodexTests {
         #expect(UsageTracker.bindingReset(fiveUsed: 44, fiveReset: a, sevenUsed: 98, sevenReset: b) == b)
         // 5h used% higher → 5h reset wins.
         #expect(UsageTracker.bindingReset(fiveUsed: 98, fiveReset: a, sevenUsed: 44, sevenReset: b) == a)
+        // Equal exhaustion (both 100%) → prefer 7d: the 5h reset passing won't unblock.
+        #expect(UsageTracker.bindingReset(fiveUsed: 100, fiveReset: a, sevenUsed: 100, sevenReset: b) == b)
         // Only one window present → that one, regardless of the missing side.
         #expect(UsageTracker.bindingReset(fiveUsed: nil, fiveReset: nil, sevenUsed: 10, sevenReset: b) == b)
         #expect(UsageTracker.bindingReset(fiveUsed: 10, fiveReset: a, sevenUsed: nil, sevenReset: nil) == a)

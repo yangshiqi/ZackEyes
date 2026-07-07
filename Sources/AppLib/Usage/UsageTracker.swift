@@ -534,7 +534,10 @@ public final class UsageTracker: ObservableObject {
         fiveUsed: Double?, fiveReset: Date?,
         sevenUsed: Double?, sevenReset: Date?
     ) -> Date? {
-        let preferSeven = (sevenUsed ?? -1) > (fiveUsed ?? -1)
+        // `>=` (not `>`): when both windows are equally exhausted (e.g. both 100%),
+        // the 5h reset passing doesn't unblock — the user is still 7d-blocked — so
+        // the later 7d reset is the binding one (Gemini review #173).
+        let preferSeven = (sevenUsed ?? -1) >= (fiveUsed ?? -1)
         return (preferSeven ? sevenReset : fiveReset) ?? fiveReset ?? sevenReset
     }
 
@@ -556,8 +559,12 @@ public final class UsageTracker: ObservableObject {
             now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
         s.codexLimitReached = obs.limitReached
         if obs.limitReached {
-            if let live = obs.fiveHourResetsAt ?? obs.sevenDayResetsAt {
-                // This reading's own reset is authoritative — trust it as-is.
+            if let live = Self.bindingReset(
+                fiveUsed: obs.fiveHourUsedPct, fiveReset: obs.fiveHourResetsAt,
+                sevenUsed: obs.sevenDayUsedPct, sevenReset: obs.sevenDayResetsAt) {
+                // This reading's own reset is authoritative — trust it as-is, but
+                // pick the BINDING window (higher used%) so a 7d block doesn't
+                // surface the sooner 5h reset (Gemini review #173).
                 s.codexLimitResetsAt = live
             } else {
                 // Block reading with no window (out-of-credits) → reuse the last
