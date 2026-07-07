@@ -686,4 +686,199 @@ struct UsageTrackerCodexTests {
         let state = try #require(UsageTracker.scanLatestCodexState(rootDir: tmpDir))
         #expect(state.limitReached == false)   // newest (recovered) wins, no stale pin
     }
+
+    // MARK: - Reset retention across the block transition
+
+    /// The reported bug: codex drops the 5h/7d windows (incl. `resets_at`) the
+    /// moment it reports a block — the out-of-credits reading has null
+    /// primary/secondary. Without retention the "limit" badge shows no reset
+    /// countdown. The tracker must keep the last-known window reset as the block
+    /// reset so "resets in …" survives the transition.
+    @Test @MainActor func refresh_blockWithoutWindow_retainsPriorResetAsLimitReset() async throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let day = currentCodexDayDir(under: tmpDir)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: tmpDir
+        )
+        // 1) Healthy reading first — captures a real FUTURE 7d reset into the
+        //    snapshot (this is the value codex will stop reporting once blocked).
+        let future7d = Int(Date().addingTimeInterval(6 * 24 * 3600).timeIntervalSince1970)
+        tracker.updateFromCodexRateLimits([
+            "primary":   ["used_percent": 44.0, "resets_at": Int(Date().addingTimeInterval(1800).timeIntervalSince1970)],
+            "secondary": ["used_percent": 98.0, "resets_at": future7d],
+        ])
+        #expect(tracker.snapshot.codexSevenDayResetsAt != nil)
+
+        // 2) Now codex reports the block with NO window data (out-of-credits shape).
+        let id = "019dec85-b10c-b10c-b10c-b10cb10cb10c"
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id, hour: 14))
+        try """
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"premium","limit_name":null,"primary":null,"secondary":null,"credits":{"has_credits":false,"unlimited":false,"balance":"0"},"plan_type":"prolite"}}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-60)], ofItemAtPath: file.path)
+
+        await tracker.refresh()
+
+        #expect(tracker.snapshot.codexLimitReached)
+        #expect(tracker.snapshot.codexFiveHourUsedPct == nil)             // window data is gone
+        // The fix: the countdown source is retained instead of vanishing.
+        #expect(tracker.snapshot.codexLimitResetsAt != nil)
+        #expect((tracker.snapshot.codexLimitResetsAt ?? .distantPast) > Date())
+    }
+
+    /// Retention must NOT resurrect a reset that has already passed — it would
+    /// render as "resets now" and mislead. A stale prior reset is dropped.
+    @Test @MainActor func refresh_blockWithStalePriorReset_showsNoCountdown() async throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let day = currentCodexDayDir(under: tmpDir)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: tmpDir
+        )
+        // Healthy reading whose window reset is already in the PAST.
+        tracker.updateFromCodexRateLimits([
+            "primary": ["used_percent": 50.0, "resets_at": Int(Date().addingTimeInterval(-3600).timeIntervalSince1970)],
+        ])
+
+        let id = "019dec85-5741-5741-5741-574157415741"
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id, hour: 14))
+        try """
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"premium","limit_name":null,"primary":null,"secondary":null,"credits":{"has_credits":false,"unlimited":false,"balance":"0"}}}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-60)], ofItemAtPath: file.path)
+
+        await tracker.refresh()
+
+        #expect(tracker.snapshot.codexLimitReached)
+        #expect(tracker.snapshot.codexLimitResetsAt == nil)   // stale reset dropped, honest blank
+    }
+
+    /// Single-reading (jsonl-tail) path: a block reading with no window keeps the
+    /// reset the prior healthy reading carried, future-guarded.
+    @Test func updateFromCodexRateLimits_blockAfterHealthy_retainsReset() {
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: nil
+        )
+        let future = Int(Date().addingTimeInterval(3600).timeIntervalSince1970)
+        tracker.updateFromCodexRateLimits(["primary": ["used_percent": 44.0, "resets_at": future]])
+        // Block: credits exhausted, primary/secondary absent.
+        tracker.updateFromCodexRateLimits([
+            "credits": ["has_credits": false, "unlimited": false, "balance": "0"],
+        ])
+        #expect(tracker.snapshot.codexLimitReached)
+        #expect(tracker.snapshot.codexLimitResetsAt?.timeIntervalSince1970 == Double(future))
+    }
+
+    /// `codexLimitResetsAt` must survive an app restart (it is the only reset
+    /// source once blocked), while `codexLimitReached` stays live-derived.
+    @Test func snapshot_persistsCodexLimitResetsAt_butNotLimitReached() throws {
+        var snap = UsageTracker.Snapshot.empty
+        snap.codexLimitResetsAt = Date(timeIntervalSince1970: 4_000_000_000)
+        snap.codexLimitReached = true
+
+        let data = try JSONEncoder().encode(snap)
+        let decoded = try JSONDecoder().decode(UsageTracker.Snapshot.self, from: data)
+
+        #expect(decoded.codexLimitResetsAt?.timeIntervalSince1970 == 4_000_000_000)
+        #expect(decoded.codexLimitReached == false)   // live-derived, never restored stale
+    }
+
+    /// #172 (codex-review P2): the retained block reset must point at the BINDING
+    /// window — the one with the higher last-known used% — not simply 5h-first. A
+    /// 7d-exhaustion block with a sooner 5h reset must count down to the 7d reset.
+    @Test func bindingReset_prefersHigherUsedWindow() {
+        let a = Date(timeIntervalSince1970: 1_000_000_000)   // "5h" reset
+        let b = Date(timeIntervalSince1970: 2_000_000_000)   // "7d" reset
+        // 7d used% higher → 7d reset wins even though 5h reset is sooner.
+        #expect(UsageTracker.bindingReset(fiveUsed: 44, fiveReset: a, sevenUsed: 98, sevenReset: b) == b)
+        // 5h used% higher → 5h reset wins.
+        #expect(UsageTracker.bindingReset(fiveUsed: 98, fiveReset: a, sevenUsed: 44, sevenReset: b) == a)
+        // Equal exhaustion (both 100%) → prefer 7d: the 5h reset passing won't unblock.
+        #expect(UsageTracker.bindingReset(fiveUsed: 100, fiveReset: a, sevenUsed: 100, sevenReset: b) == b)
+        // Only one window present → that one, regardless of the missing side.
+        #expect(UsageTracker.bindingReset(fiveUsed: nil, fiveReset: nil, sevenUsed: 10, sevenReset: b) == b)
+        #expect(UsageTracker.bindingReset(fiveUsed: 10, fiveReset: a, sevenUsed: nil, sevenReset: nil) == a)
+        #expect(UsageTracker.bindingReset(fiveUsed: nil, fiveReset: nil, sevenUsed: nil, sevenReset: nil) == nil)
+    }
+
+    /// End-to-end: 7d weekly exhausted (98%, resets in ~6d) while 5h sits at 44%
+    /// (resets in ~30min). The block must count down to the 7d reset, not the
+    /// sooner 5h one (the real prolite scenario).
+    @Test @MainActor func refresh_blockPrefersBindingWindowReset() async throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let day = currentCodexDayDir(under: tmpDir)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: tmpDir
+        )
+        let fiveReset = Int(Date().addingTimeInterval(1800).timeIntervalSince1970)          // ~30min (sooner)
+        let sevenReset = Int(Date().addingTimeInterval(6 * 24 * 3600).timeIntervalSince1970) // ~6d   (binding)
+        tracker.updateFromCodexRateLimits([
+            "primary":   ["used_percent": 44.0, "resets_at": fiveReset],
+            "secondary": ["used_percent": 98.0, "resets_at": sevenReset],
+        ])
+
+        let id = "019dec85-b1nd-b1nd-b1nd-b1ndb1ndb1nd"
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id, hour: 14))
+        try """
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"premium","limit_name":null,"primary":null,"secondary":null,"credits":{"has_credits":false,"unlimited":false,"balance":"0"},"plan_type":"prolite"}}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-60)], ofItemAtPath: file.path)
+
+        await tracker.refresh()
+
+        #expect(tracker.snapshot.codexLimitReached)
+        // Binding = 7d (higher used%): countdown points at the 7d reset, not 5h.
+        #expect(tracker.snapshot.codexLimitResetsAt?.timeIntervalSince1970 == Double(sevenReset))
+    }
+
+    // MARK: - Absolute staleness cap + reset-less block retention (#166 A/C follow-up)
+
+    @Test func codexDataFullyStale_boundaryBehavior() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        #expect(UsageTracker.codexDataFullyStale(lastUpdated: nil, now: now) == false)
+        // Older than the 7d cap → stale.
+        #expect(UsageTracker.codexDataFullyStale(lastUpdated: now.addingTimeInterval(-8 * 24 * 3600), now: now))
+        // Within the cap → not stale.
+        #expect(UsageTracker.codexDataFullyStale(lastUpdated: now.addingTimeInterval(-24 * 3600), now: now) == false)
+        #expect(UsageTracker.codexDataFullyStale(lastUpdated: now.addingTimeInterval(-6 * 24 * 3600), now: now) == false)
+    }
+
+    /// CodeRabbit (#166): a credits-only block with NO reset boundary must NOT be
+    /// dropped merely because Codex went idle 15 min — that isn't a confirmed
+    /// recovery. It persists (the 7d staleness cap is the real backstop).
+    @Test @MainActor func refresh_idleKeepsResetlessBlock() async throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: tmpDir
+        )
+        // No prior window → codexLimitResetsAt stays nil.
+        tracker.updateFromCodexRateLimits([
+            "credits": ["has_credits": false, "unlimited": false, "balance": "0"],
+        ])
+        #expect(tracker.snapshot.codexLimitReached)
+        #expect(tracker.snapshot.codexLimitResetsAt == nil)
+
+        // Idle refresh (empty codex dir → expireCodexWindows). codexLastUpdated is
+        // recent so the cap doesn't fire; the badge must survive 15-min idle.
+        await tracker.refresh()
+
+        #expect(tracker.snapshot.codexLimitReached)
+    }
 }
