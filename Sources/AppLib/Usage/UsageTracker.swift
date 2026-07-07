@@ -461,8 +461,14 @@ public final class UsageTracker: ObservableObject {
             s.codexFiveHourETA = agedETA
             changed = true
         }
-        // A credits-only block without a reset boundary could otherwise pin
-        // forever after the account recovers while Codex remains idle.
+        // Clear the block when its reset actually passed — OR (the `?? true`) when
+        // there was never a reset boundary. That nil-reset case is the credits-only
+        // block: with no boundary it could otherwise pin forever after the account
+        // recovers while Codex stays idle, so 15-min idle is the safety valve.
+        // (CodeRabbit flagged the premature-drop risk here. Once #172 lands,
+        // codexLimitResetsAt is retained from the last window so nil-reset is rare
+        // and the badge persists to its real reset; an absolute staleness cap for
+        // the genuinely reset-less case is tracked on the #172 side.)
         if s.codexLimitReached,
            s.codexLimitResetsAt.map({ $0 <= now }) ?? true {
             s.codexLimitReached = false
@@ -482,7 +488,9 @@ public final class UsageTracker: ObservableObject {
     private func applyCodexObservation(_ obs: CodexRateLimitObservation) {
         var s = snapshot
         let now = Date()
-        s.lastUpdated = now
+        // #166 review (Gemini): `lastUpdated` is Claude-only now that Codex has its
+        // own `codexLastUpdated`; the codex path must not touch it, so a codex read
+        // can't make a stale Claude reading read as freshly updated.
         s.codexLastUpdated = now
         if let v = obs.fiveHourUsedPct {
             s.codexFiveHourUsedPct = v
@@ -537,10 +545,10 @@ public final class UsageTracker: ObservableObject {
         }
         let display = hasAccountReading ? best : CodexRateLimitObservation()
         var s = snapshot
+        // #166 review (Gemini): `lastUpdated` stays Claude-only — the codex path
+        // records its own freshness in `codexLastUpdated` and no longer bumps the
+        // shared timestamp (which would mask Claude staleness in the split header).
         s.codexLastUpdated = observedAt
-        if s.lastUpdated.map({ observedAt > $0 }) ?? true {
-            s.lastUpdated = observedAt
-        }
         // Set directly (not the "only-if-present" merge of applyCodexObservation)
         // so a window with no live scope clears instead of pinning a stale value.
         s.codexFiveHourUsedPct = display.fiveHourUsedPct
