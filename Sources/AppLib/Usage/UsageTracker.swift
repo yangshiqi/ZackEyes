@@ -456,9 +456,39 @@ public final class UsageTracker: ObservableObject {
         }
     }
 
+    /// #166 findings A/C — once the last real Codex reading is older than the
+    /// longest window (7d), nothing we still hold can be valid. Backstops the idle
+    /// path so a reset-less window or a credits-only block (no reset boundary)
+    /// can't pin the bar/badge forever.
+    nonisolated static func codexDataFullyStale(
+        lastUpdated: Date?, now: Date, cap: TimeInterval = 7 * 24 * 3600
+    ) -> Bool {
+        guard let last = lastUpdated else { return false }
+        return now.timeIntervalSince(last) > cap
+    }
+
     private func expireCodexWindows(now: Date) {
         var s = snapshot
         var changed = false
+        // Absolute staleness backstop (#166 A/C): drop ALL codex data (windows +
+        // badge) once the last reading is older than the longest window, then stop —
+        // otherwise a reset-less reading would linger indefinitely (only marked
+        // stale). Fires at most once: it nils codexLastUpdated, so the next tick is
+        // a no-op.
+        if Self.codexDataFullyStale(lastUpdated: s.codexLastUpdated, now: now) {
+            s.codexFiveHourUsedPct = nil
+            s.codexFiveHourResetsAt = nil
+            s.codexSevenDayUsedPct = nil
+            s.codexSevenDayResetsAt = nil
+            s.codexFiveHourETA = nil
+            s.codexLimitReached = false
+            s.codexLimitResetsAt = nil
+            s.codexLastUpdated = nil
+            codexScopeReadings.removeAll()
+            snapshot = s
+            saveToCache()
+            return
+        }
         if let reset = s.codexFiveHourResetsAt, reset <= now {
             s.codexFiveHourUsedPct = nil
             s.codexFiveHourResetsAt = nil
@@ -475,16 +505,12 @@ public final class UsageTracker: ObservableObject {
             s.codexFiveHourETA = agedETA
             changed = true
         }
-        // Clear the block when its reset actually passed — OR (the `?? true`) when
-        // there was never a reset boundary. That nil-reset case is the credits-only
-        // block: with no boundary it could otherwise pin forever after the account
-        // recovers while Codex stays idle, so 15-min idle is the safety valve.
-        // (CodeRabbit flagged the premature-drop risk here. Once #172 lands,
-        // codexLimitResetsAt is retained from the last window so nil-reset is rare
-        // and the badge persists to its real reset; an absolute staleness cap for
-        // the genuinely reset-less case is tracked on the #172 side.)
-        if s.codexLimitReached,
-           s.codexLimitResetsAt.map({ $0 <= now }) ?? true {
+        // Clear the block only when its reset actually passed (CodeRabbit review on
+        // #166): 15-min idle alone is NOT a confirmed recovery, so a still-blocked
+        // credits-only account keeps its badge. The reset-less case (nil
+        // codexLimitResetsAt) no longer drops here — the absolute staleness cap above
+        // is its backstop, so it can't pin forever either.
+        if s.codexLimitReached, let resetsAt = s.codexLimitResetsAt, resetsAt <= now {
             s.codexLimitReached = false
             s.codexLimitResetsAt = nil
             changed = true

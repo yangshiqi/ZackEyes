@@ -843,4 +843,40 @@ struct UsageTrackerCodexTests {
         // Binding = 7d (higher used%): countdown points at the 7d reset, not 5h.
         #expect(tracker.snapshot.codexLimitResetsAt?.timeIntervalSince1970 == Double(sevenReset))
     }
+
+    // MARK: - Absolute staleness cap + reset-less block retention (#166 A/C follow-up)
+
+    @Test func codexDataFullyStale_boundaryBehavior() {
+        let now = Date(timeIntervalSince1970: 2_000_000_000)
+        #expect(UsageTracker.codexDataFullyStale(lastUpdated: nil, now: now) == false)
+        // Older than the 7d cap → stale.
+        #expect(UsageTracker.codexDataFullyStale(lastUpdated: now.addingTimeInterval(-8 * 24 * 3600), now: now))
+        // Within the cap → not stale.
+        #expect(UsageTracker.codexDataFullyStale(lastUpdated: now.addingTimeInterval(-24 * 3600), now: now) == false)
+        #expect(UsageTracker.codexDataFullyStale(lastUpdated: now.addingTimeInterval(-6 * 24 * 3600), now: now) == false)
+    }
+
+    /// CodeRabbit (#166): a credits-only block with NO reset boundary must NOT be
+    /// dropped merely because Codex went idle 15 min — that isn't a confirmed
+    /// recovery. It persists (the 7d staleness cap is the real backstop).
+    @Test @MainActor func refresh_idleKeepsResetlessBlock() async throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: tmpDir
+        )
+        // No prior window → codexLimitResetsAt stays nil.
+        tracker.updateFromCodexRateLimits([
+            "credits": ["has_credits": false, "unlimited": false, "balance": "0"],
+        ])
+        #expect(tracker.snapshot.codexLimitReached)
+        #expect(tracker.snapshot.codexLimitResetsAt == nil)
+
+        // Idle refresh (empty codex dir → expireCodexWindows). codexLastUpdated is
+        // recent so the cap doesn't fire; the badge must survive 15-min idle.
+        await tracker.refresh()
+
+        #expect(tracker.snapshot.codexLimitReached)
+    }
 }
