@@ -221,7 +221,14 @@ struct SimulatedNotchFullView: View {
                 TodayConsumptionRow(days: snap.dailyUsage)
             }
             // #45 — usage freshness footnote (stale numbers shouldn't read as live).
-            if snap.hasRealData, let lastUpdated = snap.lastUpdated {
+            // #166 review (Gemini): in the split header both agents show, so the one
+            // shared footnote must reflect the STALEST data on screen (the oldest of
+            // the two per-agent timestamps), not just Claude's. Single-agent uses its
+            // own timestamp.
+            let freshness: Date? = bothActive
+                ? [snap.lastUpdated, snap.codexLastUpdated].compactMap { $0 }.min()
+                : (codexOnly ? snap.codexLastUpdated : snap.lastUpdated)
+            if snap.hasRealData, let lastUpdated = freshness {
                 UsageFreshnessLabel(lastUpdated: lastUpdated)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
