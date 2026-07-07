@@ -64,13 +64,20 @@ public final class UsageTracker: ObservableObject {
         // `dailyUsage` is intentionally excluded from Codable: it is rebuilt on
         // every refresh and must never restore a stale "today" — and omitting it
         // keeps pre-#84 usage-cache.json (without this key) decodable on upgrade.
-        // `codexLimitReached` / `codexLimitResetsAt` are likewise excluded: the
-        // block state is live/derived (recomputed each refresh from the codex
-        // rollout), so it must never restore stale across launches — a recovered
-        // account shouldn't show "limit reached" until the first scan confirms.
+        // `codexLimitReached` is excluded: the block *state* is live/derived
+        // (recomputed each refresh from the codex rollout), so it must never
+        // restore stale across launches — a recovered account shouldn't show
+        // "limit reached" until the first scan confirms.
+        // `codexLimitResetsAt` IS persisted, though: codex drops the 5h/7d windows
+        // (incl. resets_at) the instant it reports a block, so without persistence a
+        // restart-while-blocked loses the reset entirely (the only other source is an
+        // inactive, un-scanned rollout). It's safe to restore because the UI only
+        // reads it while codexLimitReached (re-derived live) is true, and the apply
+        // path only keeps it while it is still in the future.
         private enum CodingKeys: String, CodingKey {
             case fiveHourUsedPct, fiveHourResetsAt, sevenDayUsedPct, sevenDayResetsAt
             case codexFiveHourUsedPct, codexFiveHourResetsAt, codexSevenDayUsedPct, codexSevenDayResetsAt
+            case codexLimitResetsAt
             case tokens5h, tokens7d, messages5h, messages7d, lastUpdated, codexLastUpdated
         }
 
@@ -306,6 +313,13 @@ public final class UsageTracker: ObservableObject {
             // timestamp existed.
             restored.codexLastUpdated = restored.lastUpdated
         }
+        // #172 — a persisted block reset that has already passed must not linger.
+        // The views only read it while codexLimitReached (left false on load,
+        // re-derived by the first scan), but guarding here keeps the field honest
+        // for any future reader and avoids a one-frame stale "resets now".
+        if let reset = restored.codexLimitResetsAt, reset <= Date() {
+            restored.codexLimitResetsAt = nil
+        }
         snapshot = restored
         // #148 — seed the per-scope map from the cached codex reading so the
         // most-constrained value survives a restart (the first live scan may
@@ -485,6 +499,19 @@ public final class UsageTracker: ObservableObject {
         saveToCache()
     }
 
+    /// Reset of the window that most likely bound a block — the one with the
+    /// higher last-known used% (mirrors `scanLatestCodexState`'s blockReset). When
+    /// the block reading carries no window of its own, the retained countdown must
+    /// point at the axis that's actually exhausted: a 7d-window block must not
+    /// surface the sooner 5h reset. Falls back to whichever reset is present.
+    nonisolated static func bindingReset(
+        fiveUsed: Double?, fiveReset: Date?,
+        sevenUsed: Double?, sevenReset: Date?
+    ) -> Date? {
+        let preferSeven = (sevenUsed ?? -1) > (fiveUsed ?? -1)
+        return (preferSeven ? sevenReset : fiveReset) ?? fiveReset ?? sevenReset
+    }
+
     private func applyCodexObservation(_ obs: CodexRateLimitObservation) {
         var s = snapshot
         let now = Date()
@@ -502,9 +529,25 @@ public final class UsageTracker: ObservableObject {
         s.codexFiveHourETA = codexEstimator.estimate(
             now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
         s.codexLimitReached = obs.limitReached
-        s.codexLimitResetsAt = obs.limitReached
-            ? (obs.fiveHourResetsAt ?? obs.sevenDayResetsAt ?? s.codexFiveHourResetsAt)
-            : nil
+        if obs.limitReached {
+            if let live = obs.fiveHourResetsAt ?? obs.sevenDayResetsAt {
+                // This reading's own reset is authoritative — trust it as-is.
+                s.codexLimitResetsAt = live
+            } else {
+                // Block reading with no window (out-of-credits) → reuse the last
+                // window reset we still hold. Prefer the BINDING window (higher
+                // last-known used%) so a 7d-exhaustion block counts down to the 7d
+                // reset, not a sooner-but-irrelevant 5h reset. Future-only: a lapsed
+                // one would render as "resets now" and mislead.
+                let remembered = Self.bindingReset(
+                    fiveUsed: s.codexFiveHourUsedPct, fiveReset: s.codexFiveHourResetsAt,
+                    sevenUsed: s.codexSevenDayUsedPct, sevenReset: s.codexSevenDayResetsAt)
+                    ?? snapshot.codexLimitResetsAt
+                s.codexLimitResetsAt = remembered.flatMap { $0 > now ? $0 : nil }
+            }
+        } else {
+            s.codexLimitResetsAt = nil
+        }
         snapshot = s
         saveToCache()
     }
@@ -567,7 +610,28 @@ public final class UsageTracker: ObservableObject {
         s.codexFiveHourETA = codexEstimator.estimate(
             now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
         s.codexLimitReached = limitReached
-        s.codexLimitResetsAt = limitReached ? (limitResetsAt ?? s.codexFiveHourResetsAt) : nil
+        if limitReached {
+            if let live = limitResetsAt {
+                // The block reading carried its own window reset — authoritative.
+                s.codexLimitResetsAt = live
+            } else {
+                // Out-of-credits block: codex nulls primary/secondary, so `display`
+                // above cleared the live window resets. Fall back to the reset we
+                // already remembered, else the prior snapshot's BINDING window reset
+                // (higher last-known used% — a 7d-exhaustion block must count down to
+                // the 7d reset, not a sooner 5h one) so the "resets in …" countdown
+                // survives the transition + a restart. Future-only: a lapsed reset
+                // would show "resets now" and mislead — once it passes we honestly
+                // show no countdown until codex reports fresh windows.
+                let remembered = snapshot.codexLimitResetsAt
+                    ?? Self.bindingReset(
+                        fiveUsed: snapshot.codexFiveHourUsedPct, fiveReset: snapshot.codexFiveHourResetsAt,
+                        sevenUsed: snapshot.codexSevenDayUsedPct, sevenReset: snapshot.codexSevenDayResetsAt)
+                s.codexLimitResetsAt = remembered.flatMap { $0 > now ? $0 : nil }
+            }
+        } else {
+            s.codexLimitResetsAt = nil
+        }
         snapshot = s
         saveToCache()
     }
