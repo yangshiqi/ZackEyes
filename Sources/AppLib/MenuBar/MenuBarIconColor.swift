@@ -7,9 +7,9 @@ import Shared
 ///
 /// **Rule** (issue #27): the star color encodes the 5-hour subscriber-window
 /// usage of whichever agent the user is currently working with —
-///   <50% used → teal  (plenty of headroom)
-///   <85% used → orange (tight)
-///   ≥85% used → red    (about to throttle)
+///   <50% used → Activity  (plenty of headroom)
+///   <85% used → Attention (tight)
+///   ≥85% used → Critical  (about to throttle)
 /// When no rate-limit data is available the star falls back to white.
 ///
 /// "Currently working" mirrors `SessionStore.primarySession`'s priority
@@ -33,16 +33,6 @@ public enum MenuBarIconColor {
         return preference.first { snapshot.fiveHourUsedPct(for: $0) != nil }
     }
 
-    /// Traffic-light tints. RGB matches `Color.usageLevelColor` (SwiftUI
-    /// variant used by the notch) so the menu bar and notch never disagree
-    /// on what "tight" looks like. The same triad shows up in
-    /// NotchViewModel and SimulatedNotchView; unifying across the four
-    /// sites needs a shared `(NSColor, Color)` pair on one type — separate
-    /// refactor.
-    private static let teal   = NSColor(red: 0.31, green: 0.80, blue: 0.77, alpha: 1.0)
-    private static let orange = NSColor(red: 0.96, green: 0.65, blue: 0.14, alpha: 1.0)
-    private static let red    = NSColor(red: 0.95, green: 0.30, blue: 0.30, alpha: 1.0)
-
     /// Color for the menu-bar star. White when no agent has quota data.
     public static func tint(
         primaryAgent: AgentKind?,
@@ -53,9 +43,9 @@ public enum MenuBarIconColor {
             return .white
         }
         switch pct {
-        case ..<50: return teal
-        case ..<85: return orange
-        default:    return red
+        case ..<50: return AppColors.activity.nsColor
+        case ..<85: return AppColors.attention.nsColor
+        default:    return AppColors.critical.nsColor
         }
     }
 }

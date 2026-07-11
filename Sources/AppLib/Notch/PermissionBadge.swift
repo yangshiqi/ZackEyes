@@ -38,9 +38,9 @@ struct PermissionBadge: View {
 
     private var color: Color {
         switch risk {
-        case .plan: return Color(red: 0.40, green: 0.66, blue: 0.96)  // blue
-        case .auto: return Color(red: 0.96, green: 0.74, blue: 0.20)  // amber
-        case .yolo: return Color(red: 0.95, green: 0.30, blue: 0.30)  // red
+        case .plan: return AppColors.information.color
+        case .auto: return AppColors.attention.color
+        case .yolo: return AppColors.critical.color
         }
     }
 }

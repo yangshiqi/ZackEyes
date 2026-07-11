@@ -4,6 +4,7 @@ struct NotchExpandedView: View {
     @ObservedObject var viewModel: NotchViewModel
     @State private var pulseOpacity: Double = 1.0
     @State private var tick: Date = Date()
+    @State private var recentExpanded = false
     /// #43 — session ids whose resting-card recap is expanded to full text.
     @State private var expandedRecaps: Set<String> = []
 
@@ -15,14 +16,23 @@ struct NotchExpandedView: View {
 
     var body: some View {
         let theme = currentTheme
+        let sections = SessionListPresentation.sections(
+            from: viewModel.sessionStore.orderedSessions
+        )
         VStack(alignment: .leading, spacing: 12) {
             if viewModel.sessionStore.sessions.isEmpty {
                 emptyState
             } else {
-                // List all sessions (most recent first)
-                VStack(spacing: 10) {
-                    ForEach(viewModel.sessionStore.orderedSessions, id: \.id) { session in
-                        sessionCard(session, theme: theme)
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(sections) { section in
+                        VStack(alignment: .leading, spacing: 8) {
+                            sectionHeader(section)
+                            if section.group != .recent || recentExpanded {
+                                ForEach(section.sessions, id: \.id) { session in
+                                    sessionCard(session, theme: theme)
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -37,6 +47,45 @@ struct NotchExpandedView: View {
         .onReceive(durationTimer) { now in
             tick = now
         }
+    }
+
+    @ViewBuilder
+    private func sectionHeader(_ section: SessionListSection) -> some View {
+        if section.group == .recent {
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) {
+                    recentExpanded.toggle()
+                }
+            } label: {
+                sectionHeaderContent(section, collapsible: true)
+            }
+            .buttonStyle(.plain)
+        } else {
+            sectionHeaderContent(section, collapsible: false)
+        }
+    }
+
+    private func sectionHeaderContent(
+        _ section: SessionListSection,
+        collapsible: Bool
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text(section.group.title)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(section.group == .needsYou
+                    ? AppColors.attention.color
+                    : .white.opacity(0.55))
+            Text("\(section.sessions.count)")
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundColor(.white.opacity(0.35))
+            Spacer(minLength: 0)
+            if collapsible {
+                Image(systemName: recentExpanded ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+        }
+        .contentShape(Rectangle())
     }
 
     // MARK: - Empty state
@@ -97,11 +146,13 @@ struct NotchExpandedView: View {
             )
 
             VStack(alignment: .leading, spacing: 6) {
-                // Row 1: buddy name (left) ... agent badge + project pill + elapsed (right)
+                // Project identity leads; agent/risk/time remain scan metadata.
                 HStack(spacing: 6) {
-                    Text(buddy.name)
-                        .font(.system(size: 12, weight: .bold))
+                    Text(session.displayName)
+                        .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.white)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
 
                     Spacer(minLength: 4)
 
@@ -110,16 +161,6 @@ struct NotchExpandedView: View {
                     if let risk = session.permissionRisk {
                         PermissionBadge(risk: risk)
                     }
-
-                    Text(session.displayName)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.white.opacity(0.8))
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(4)
 
                     Text(elapsedString(since: session.lastActiveAt))
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
@@ -136,6 +177,12 @@ struct NotchExpandedView: View {
                 ))
                     .font(.system(size: 11, weight: .regular))
                     .foregroundColor(.white.opacity(0.6))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+
+                Text(buddy.name)
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(0.4))
                     .lineLimit(1)
                     .truncationMode(.tail)
 
@@ -157,7 +204,7 @@ struct NotchExpandedView: View {
                         HStack(alignment: .top, spacing: 4) {
                             Text(session.agent == .codex ? "Codex:" : "Claude:")
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.8))
+                                .foregroundColor(AppColors.activity.color.opacity(0.8))
                             Text(truncate(reply, length: 100))
                                 .font(.system(size: 10))
                                 .foregroundColor(.white.opacity(0.75))
@@ -183,7 +230,7 @@ struct NotchExpandedView: View {
                         Text(tool)
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                             .foregroundColor(session.isToolRunning
-                                ? Color(red: 0.31, green: 0.80, blue: 0.77)
+                                ? AppColors.activity.color
                                 : .white.opacity(0.55))
                         if let input = toolInputShortPreview(session.currentToolInput) {
                             Text(input)
@@ -286,9 +333,9 @@ struct NotchExpandedView: View {
 
     private func contextColor(for usedPct: Double) -> Color {
         switch usedPct {
-        case ..<60: return Color(red: 0.31, green: 0.80, blue: 0.77)  // teal
-        case ..<85: return Color(red: 0.96, green: 0.65, blue: 0.14)  // orange
-        default:    return Color(red: 0.95, green: 0.30, blue: 0.30)  // red
+        case ..<60: return AppColors.activity.color
+        case ..<85: return AppColors.attention.color
+        default:    return AppColors.critical.color
         }
     }
 
@@ -304,10 +351,10 @@ struct NotchExpandedView: View {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .font(.system(size: 11))
-                    .foregroundColor(.red)
+                    .foregroundColor(AppColors.critical.color)
                 Text(label)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.red)
+                    .foregroundColor(AppColors.critical.color)
                 Spacer(minLength: 0)
             }
             if let detail = detail, !detail.isEmpty {
@@ -322,10 +369,10 @@ struct NotchExpandedView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(Color.red.opacity(0.12))
+                .fill(AppColors.critical.color.opacity(0.12))
                 .overlay(
                     RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.red.opacity(0.4), lineWidth: 1)
+                        .stroke(AppColors.critical.color.opacity(0.4), lineWidth: 1)
                 )
         )
     }
@@ -392,16 +439,16 @@ struct NotchExpandedView: View {
         if task.isDone {
             Image(systemName: "checkmark.square.fill")
                 .font(.system(size: 10))
-                .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.6))
+                .foregroundColor(AppColors.activity.color.opacity(0.6))
         } else if task.isInProgress {
             // Animated pulsing dot for in-progress
             Circle()
-                .fill(Color(red: 0.31, green: 0.80, blue: 0.77))
+                .fill(AppColors.activity.color)
                 .frame(width: 8, height: 8)
-                .shadow(color: Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.6), radius: 3)
+                .shadow(color: AppColors.activity.color.opacity(0.6), radius: 3)
                 .overlay(
                     Circle()
-                        .stroke(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.4), lineWidth: 1)
+                        .stroke(AppColors.activity.color.opacity(0.4), lineWidth: 1)
                         .scaleEffect(pulseOpacity * 1.5 + 1.0)
                 )
         } else {
@@ -436,10 +483,10 @@ struct NotchExpandedView: View {
             HStack(spacing: 6) {
                 Image(systemName: "bubble.left.and.bubble.right.fill")
                     .font(.system(size: 11))
-                    .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                    .foregroundColor(AppColors.activity.color)
                 Text("Claude's Question")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                    .foregroundColor(AppColors.activity.color)
             }
 
             ForEach(Array(pending.questions.enumerated()), id: \.offset) { _, question in
@@ -447,7 +494,7 @@ struct NotchExpandedView: View {
                     if let header = question.header {
                         Text("[\(header)]")
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                            .foregroundColor(AppColors.activity.color)
                     }
                     Text(question.text)
                         .font(.system(size: 11))
@@ -478,7 +525,7 @@ struct NotchExpandedView: View {
                 .contentShape(Rectangle())
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.45))
+                        .fill(AppColors.activity.color.opacity(0.45))
                 )
             }
             .buttonStyle(.plain)
@@ -493,12 +540,12 @@ struct NotchExpandedView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("PERMISSION REQUEST")
                 .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
+                .foregroundColor(AppColors.attention.color)
                 .kerning(0.5)
 
             Text(pending.toolName)
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
+                .foregroundColor(AppColors.attention.color)
 
             if let preview = toolInputFullPreview(pending) {
                 Text(preview)
@@ -544,10 +591,10 @@ struct NotchExpandedView: View {
                 }
             }
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.red)
+                .foregroundColor(AppColors.critical.color)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-                .background(Color.red.opacity(0.15))
+                .background(AppColors.critical.color.opacity(0.15))
                 .cornerRadius(8)
         }
         .buttonStyle(.plain)
@@ -571,10 +618,10 @@ struct NotchExpandedView: View {
                 }
             }
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                .foregroundColor(AppColors.activity.color)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-                .background(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.15))
+                .background(AppColors.activity.color.opacity(0.15))
                 .cornerRadius(8)
         }
         .buttonStyle(.plain)
@@ -588,7 +635,7 @@ struct NotchExpandedView: View {
 
     @ViewBuilder
     private func allowAlwaysButton(sessionId: String, isPrimary: Bool) -> some View {
-        let teal = Color(red: 0.31, green: 0.80, blue: 0.77)
+        let activity = AppColors.activity.color
         let base = Button(action: { viewModel.approveAlways(sessionId: sessionId) }) {
             HStack(spacing: 4) {
                 // #87 — "Allow Always" (not "Allow All"): auto-allow is per-tool,
@@ -606,7 +653,7 @@ struct NotchExpandedView: View {
                 .foregroundColor(.black)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
-                .background(teal)
+                .background(activity)
                 .cornerRadius(8)
         }
         .buttonStyle(.plain)
@@ -640,7 +687,7 @@ struct NotchExpandedView: View {
             HStack(alignment: .top, spacing: 4) {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 10))
-                    .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.8))
+                    .foregroundColor(AppColors.activity.color.opacity(0.8))
                 Text(expanded ? reply : truncate(reply, length: 100))
                     .font(.system(size: 10))
                     .foregroundColor(.white.opacity(0.75))
@@ -687,11 +734,11 @@ struct NotchExpandedView: View {
 
     private func statusColor(for session: SessionInfo) -> Color {
         if session.pendingPermission != nil {
-            return Color(red: 0.96, green: 0.65, blue: 0.14)
+            return AppColors.attention.color
         }
         switch session.state {
-        case .working: return Color(red: 0.31, green: 0.80, blue: 0.77)
-        case .waiting: return Color(red: 0.96, green: 0.65, blue: 0.14)
+        case .working: return AppColors.activity.color
+        case .waiting: return AppColors.attention.color
         case .idle, .stopped: return .gray
         }
     }
@@ -749,4 +796,3 @@ struct NotchExpandedView: View {
         return text
     }
 }
-

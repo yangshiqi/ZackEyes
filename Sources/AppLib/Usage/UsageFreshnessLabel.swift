@@ -46,7 +46,7 @@ public struct UsageFreshnessLabel: View {
                 .font(.system(size: 9))
         }
         .foregroundColor(stale
-            ? Color(red: 0.96, green: 0.65, blue: 0.14)
+            ? AppColors.attention.color
             : .white.opacity(0.35))
     }
 }

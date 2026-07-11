@@ -98,10 +98,10 @@ private struct AboutCardView: View {
                 Button(action: onDismiss) {
                     Text("OK")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                        .foregroundColor(AppColors.activity.color)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 6)
-                        .background(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.15))
+                        .background(AppColors.activity.color.opacity(0.15))
                         .cornerRadius(6)
                 }
                 .buttonStyle(.plain)

@@ -16,8 +16,8 @@ public struct CapETABadge: View {
     public var body: some View {
         if let label = eta?.panelLabel {
             let tint = (eta?.isUrgent ?? false)
-                ? Color(red: 0.95, green: 0.30, blue: 0.30)   // red — imminent
-                : Color(red: 0.96, green: 0.65, blue: 0.14)   // amber — heads-up
+                ? AppColors.critical.color
+                : AppColors.attention.color
             HStack(spacing: 2) {
                 Image(systemName: "bolt.fill")
                     .font(.system(size: compact ? 7 : 8, weight: .bold))

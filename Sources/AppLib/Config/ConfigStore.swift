@@ -225,6 +225,83 @@ public final class ConfigStore: Sendable {
         try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
 
+    /// Load the elapsed-window presentation. Existing installs default to Off.
+    public func loadTimeProgressMode() -> TimeProgressMode {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data),
+              let raw = wrapper.timeProgressMode,
+              let mode = TimeProgressMode(rawValue: raw) else {
+            return .off
+        }
+        return mode
+    }
+
+    /// Save the elapsed-window presentation without touching other config keys.
+    public func saveTimeProgressMode(_ mode: TimeProgressMode) {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: directory) {
+            try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        }
+        var wrapper: ConfigWrapper
+        if fm.fileExists(atPath: configPath) {
+            guard let data = fm.contents(atPath: configPath),
+                  let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+                return
+            }
+            wrapper = existing
+        } else {
+            wrapper = ConfigWrapper(hotkey: .default)
+        }
+        wrapper.timeProgressMode = mode.rawValue
+        guard let data = try? JSONEncoder().encode(wrapper) else { return }
+        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+    }
+
+    /// Load whether quota bars show spent or remaining capacity.
+    public func loadProgressMode() -> ProgressMode {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data),
+              let raw = wrapper.progressMode,
+              let mode = ProgressMode(rawValue: raw) else {
+            return .spent
+        }
+        return mode
+    }
+
+    public func saveProgressMode(_ mode: ProgressMode) {
+        updateConfig { $0.progressMode = mode.rawValue }
+    }
+
+    /// Load the retained fill direction used by Left mode.
+    public func loadLeftProgressDirection() -> LeftProgressDirection {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data),
+              let raw = wrapper.leftProgressDirection,
+              let direction = LeftProgressDirection(rawValue: raw) else {
+            return .leftToRight
+        }
+        return direction
+    }
+
+    public func saveLeftProgressDirection(_ direction: LeftProgressDirection) {
+        updateConfig { $0.leftProgressDirection = direction.rawValue }
+    }
+
+    /// Load the time-overlay opacity as a normalized tenth-step value.
+    public func loadTimeOverlayOpacity() -> Double {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data),
+              let opacity = wrapper.timeOverlayOpacity else {
+            return TimeOverlayOpacity.defaultValue
+        }
+        return TimeOverlayOpacity.normalized(opacity)
+    }
+
+    public func saveTimeOverlayOpacity(_ opacity: Double) {
+        let normalized = TimeOverlayOpacity.normalized(opacity)
+        updateConfig { $0.timeOverlayOpacity = normalized }
+    }
+
     /// Load whether to chime/notify when an agent blocks waiting on the user
     /// (a permission prompt or an AskUserQuestion choice). Defaults to `true`. See #169.
     public func loadNotifyWaitingForInput() -> Bool {
@@ -276,6 +353,26 @@ public final class ConfigStore: Sendable {
         guard let data = try? JSONEncoder().encode(wrapper) else { return }
         try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
+
+    private func updateConfig(_ update: (inout ConfigWrapper) -> Void) {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: directory) {
+            try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        }
+        var wrapper: ConfigWrapper
+        if fm.fileExists(atPath: configPath) {
+            guard let data = fm.contents(atPath: configPath),
+                  let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+                return
+            }
+            wrapper = existing
+        } else {
+            wrapper = ConfigWrapper(hotkey: .default)
+        }
+        update(&wrapper)
+        guard let data = try? JSONEncoder().encode(wrapper) else { return }
+        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+    }
 }
 
 /// Top-level JSON wrapper for ~/.zackeyes/config.json.
@@ -288,5 +385,9 @@ private struct ConfigWrapper: Codable {
     var compactAgent: String?           // nil = .claude (default — agent shown in collapsed simulated notch)
     var notchOffsetX: Double?           // nil = 0 (centered — simulated notch horizontal offset from screen-center)
     var showTodayConsumption: Bool?     // nil = true (default — show the #84 Today row)
+    var timeProgressMode: String?       // nil = off (elapsed quota-window presentation)
+    var progressMode: String?           // nil = spent (quota presentation)
+    var leftProgressDirection: String?  // nil = leftToRight (Left-mode fill anchor)
+    var timeOverlayOpacity: Double?     // nil = 0.4 (elapsed overlay opacity)
     var notifyWaitingForInput: Bool?    // nil = true (default — chime/notify when an agent blocks waiting on the user, #169)
 }

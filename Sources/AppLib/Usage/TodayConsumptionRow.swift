@@ -12,7 +12,7 @@ struct TodayConsumptionRow: View {
     /// Which bar the header reflects: the hovered one, else today (last).
     @State private var hoveredIndex: Int? = nil
 
-    private static let accent = Color(red: 0.31, green: 0.80, blue: 0.77)
+    private static let accent = AppColors.activity.color
 
     private var shownIndex: Int {
         guard !days.isEmpty else { return 0 }

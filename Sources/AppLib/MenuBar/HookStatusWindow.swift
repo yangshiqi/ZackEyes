@@ -73,7 +73,7 @@ private struct HookStatusCardView: View {
 
     @State private var report: HookHealthReport?
 
-    private static let accent = Color(red: 0.31, green: 0.80, blue: 0.77)
+    private static let accent = AppColors.activity.color
 
     var body: some View {
         ZStack {
@@ -89,7 +89,9 @@ private struct HookStatusCardView: View {
                     Spacer()
                     if let report {
                         Circle()
-                            .fill(report.isHealthy ? Color.green : Color.orange)
+                            .fill(report.isHealthy
+                                ? AppColors.success.color
+                                : AppColors.attention.color)
                             .frame(width: 8, height: 8)
                     }
                 }
@@ -167,11 +169,11 @@ private struct HookStatusCardView: View {
             case .ok:
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 12))
-                    .foregroundColor(.green)
+                    .foregroundColor(AppColors.success.color)
             case .bad:
                 Image(systemName: "xmark.circle.fill")
                     .font(.system(size: 12))
-                    .foregroundColor(.orange)
+                    .foregroundColor(AppColors.attention.color)
             case .neutral:
                 Image(systemName: "minus.circle")
                     .font(.system(size: 12))

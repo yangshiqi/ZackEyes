@@ -144,6 +144,10 @@ public final class UsageTracker: ObservableObject {
     /// shown. Default true; seeded from `ConfigStore` by `AppDelegate`, toggled
     /// from the gear menu. Both expanded notch headers observe this.
     @Published public var showTodayConsumption: Bool = true
+    @Published public var timeProgressMode: TimeProgressMode = .off
+    @Published public var progressMode: ProgressMode = .spent
+    @Published public var leftProgressDirection: LeftProgressDirection = .leftToRight
+    @Published public var timeOverlayOpacity: Double = TimeOverlayOpacity.defaultValue
 
     /// Agent selected for single-agent quota surfaces, including the physical
     /// notch path. Stored by ConfigStore and updated live from either menu.

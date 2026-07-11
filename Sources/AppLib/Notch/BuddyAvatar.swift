@@ -8,6 +8,8 @@ import Shared
 /// stays in a calm "resting" pose instead of immediately dropping into Zzz.
 /// Avoids the jarring "task done → instant sleep" transition.
 struct BuddyAvatar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let seed: String
     let state: SessionState
     let isWaiting: Bool       // has pending permission
@@ -69,6 +71,7 @@ struct BuddyAvatar: View {
         .onChange(of: state) { _, _ in applyAnimation() }
         .onChange(of: isWaiting) { _, _ in applyAnimation() }
         .onChange(of: recentlyActive) { _, _ in applyAnimation() }
+        .onChange(of: reduceMotion) { _, _ in applyAnimation() }
     }
 
     @ViewBuilder
@@ -95,6 +98,13 @@ struct BuddyAvatar: View {
             z2Phase = 0
             z3Phase = 0
         }
+
+        guard BuddyAnimationPolicy.mode(
+            state: state,
+            isWaiting: isWaiting,
+            isSleeping: showSleeping,
+            reduceMotion: reduceMotion
+        ) != .none else { return }
 
         if isWaiting {
             // Panic shake
@@ -132,5 +142,28 @@ struct BuddyAvatar: View {
                 breathe = 1.03
             }
         }
+    }
+}
+
+enum BuddyAnimationPolicy {
+    enum Mode: Equatable {
+        case none
+        case waiting
+        case working
+        case sleeping
+        case resting
+    }
+
+    static func mode(
+        state: SessionState,
+        isWaiting: Bool,
+        isSleeping: Bool,
+        reduceMotion: Bool
+    ) -> Mode {
+        if reduceMotion { return .none }
+        if isWaiting { return .waiting }
+        if state == .working { return .working }
+        if isSleeping { return .sleeping }
+        return .resting
     }
 }

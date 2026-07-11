@@ -266,10 +266,7 @@ public final class SimulatedNotchController {
             startOutsideClickMonitoring()
         } else {
             stopOutsideClickMonitoring()
-            // Revert key status when collapsing (unless hotkey recorder is open)
-            if !modeStore.isHotkeyRecorderShown {
-                panel.allowsKeyStatus = false
-            }
+            panel.allowsKeyStatus = false
             // Once collapsed, remove the panel from screen if it shouldn't be
             // visible (.hidden, or .whenActive with no sessions).
             if !shouldBeVisible {
@@ -315,13 +312,6 @@ public final class SimulatedNotchController {
     /// receive key events regardless of who has focus.
     public func forceCompact() {
         setMode(.compact)
-    }
-
-    /// Tear down the About overlay if it's currently shown. Used by the
-    /// PermissionRequest path so a question can claim the panel even
-    /// when the user is reading the About card.
-    public func dismissAboutOverlay() {
-        modeStore.isAboutShown = false
     }
 
     // MARK: - Mouse hover intent (compact ↔ full)
@@ -436,11 +426,10 @@ public final class SimulatedNotchController {
         viewModel.sessionStore.sessions.values.contains { $0.pendingPermission != nil }
     }
 
-    /// True when ANY interactive UI is on the panel and the panel must
-    /// not auto-collapse: a pending permission, the gear menu being open,
-    /// or the About overlay being shown.
+    /// A pending permission keeps hover-driven collapse from hiding the
+    /// response surface. Explicit outside clicks still dismiss it.
     private var stickyOpen: Bool {
-        hasPendingPermission || modeStore.hasInteractiveOverlay
+        hasPendingPermission
     }
 
     // MARK: - Outside-click dismissal (full mode)
@@ -453,13 +442,6 @@ public final class SimulatedNotchController {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
-                // Only block outside-click dismissal while a true interactive
-                // overlay (gear NSMenu, About card, Hotkey recorder) is on the
-                // panel — those need explicit clicks to operate. A pending
-                // permission / AskUQ no longer keeps the panel stuck open: an
-                // explicit outside click is a clear "dismiss this" intent, and
-                // for AskUQ the user is heading to the terminal anyway.
-                if self.modeStore.hasInteractiveOverlay { return }
                 self.setMode(.compact)
             }
         }
@@ -474,7 +456,6 @@ public final class SimulatedNotchController {
             }
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
-                if self.modeStore.hasInteractiveOverlay { return }
                 self.setMode(.compact)
             }
             return event

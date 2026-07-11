@@ -29,10 +29,12 @@ struct UsageBarsView<Trailing: View>: View {
         let sevenReset = agent == .codex ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
         VStack(spacing: 8) {
             usageBar(label: "5h", usedPct: fivePct,
-                     resetsAt: fiveReset, eta: fiveETA) {
+                     resetsAt: fiveReset, windowDuration: TimeWindowProgress.fiveHours,
+                     eta: fiveETA) {
                 trailing
             }
-            usageBar(label: "7d", usedPct: sevenPct, resetsAt: sevenReset) {
+            usageBar(label: "7d", usedPct: sevenPct, resetsAt: sevenReset,
+                     windowDuration: TimeWindowProgress.sevenDays) {
                 EmptyView()
             }
             if usageTracker.showTodayConsumption, snap.hasConsumption {
@@ -56,11 +58,16 @@ struct UsageBarsView<Trailing: View>: View {
         label: String,
         usedPct: Double?,
         resetsAt: Date?,
+        windowDuration: TimeInterval,
         eta: CapETA? = nil,
         @ViewBuilder trailing: () -> T
     ) -> some View {
         let used = usedPct ?? 0
-        let remaining = max(0, 100 - used)
+        let presentation = ProgressPresentation(
+            spentFraction: used / 100,
+            mode: usageTracker.progressMode,
+            leftDirection: usageTracker.leftProgressDirection
+        )
         let color = barColor(for: used)
         let hasData = usedPct != nil
 
@@ -72,7 +79,7 @@ struct UsageBarsView<Trailing: View>: View {
                     .frame(width: 22, alignment: .leading)
 
                 if hasData {
-                    Text(String(format: "%.0f%% remaining", remaining))
+                    Text(presentation.explicitLabel)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(color)
                 } else {
@@ -96,19 +103,18 @@ struct UsageBarsView<Trailing: View>: View {
                 trailing()
             }
 
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(Color.white.opacity(0.10))
-                        .frame(height: 6)
-                    if hasData {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(color)
-                            .frame(width: geo.size.width * CGFloat(used / 100), height: 6)
-                    }
-                }
-            }
-            .frame(height: 6)
+            UsageProgressTrack(
+                fillFraction: presentation.fraction,
+                fillAnchor: presentation.anchor,
+                hasData: hasData,
+                usageColor: color,
+                timeMode: usageTracker.timeProgressMode,
+                progressMode: usageTracker.progressMode,
+                leftProgressDirection: usageTracker.leftProgressDirection,
+                timeOverlayOpacity: usageTracker.timeOverlayOpacity,
+                resetsAt: resetsAt,
+                windowDuration: windowDuration
+            )
         }
     }
 

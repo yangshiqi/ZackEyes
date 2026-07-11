@@ -56,21 +56,21 @@ struct MenuBarIconColorTests {
 
     // MARK: - tint
 
-    @Test func tintTealUnder50() {
+    @Test func tintUsesActivityUnder50() {
         let tint = MenuBarIconColor.tint(primaryAgent: .claude, snapshot: snapshot(claude: 49.9))
-        #expect(approxEqual(rgb(tint), (0.31, 0.80, 0.77)))
+        #expect(approxEqual(rgb(tint), (79.0 / 255, 203.0 / 255, 195.0 / 255)))
     }
 
-    @Test func tintOrangeBetween50And85() {
+    @Test func tintUsesAttentionBetween50And85() {
         let tint = MenuBarIconColor.tint(primaryAgent: .claude, snapshot: snapshot(claude: 70))
-        #expect(approxEqual(rgb(tint), (0.96, 0.65, 0.14)))
+        #expect(approxEqual(rgb(tint), (242.0 / 255, 181.0 / 255, 68.0 / 255)))
     }
 
-    @Test func tintRedAt85AndAbove() {
+    @Test func tintUsesCriticalAt85AndAbove() {
         let tint = MenuBarIconColor.tint(primaryAgent: .claude, snapshot: snapshot(claude: 85))
-        #expect(approxEqual(rgb(tint), (0.95, 0.30, 0.30)))
+        #expect(approxEqual(rgb(tint), (240.0 / 255, 90.0 / 255, 90.0 / 255)))
         let extreme = MenuBarIconColor.tint(primaryAgent: .claude, snapshot: snapshot(claude: 99))
-        #expect(approxEqual(rgb(extreme), (0.95, 0.30, 0.30)))
+        #expect(approxEqual(rgb(extreme), (240.0 / 255, 90.0 / 255, 90.0 / 255)))
     }
 
     @Test func tintWhiteWhenNoData() {
@@ -81,13 +81,13 @@ struct MenuBarIconColorTests {
     }
 
     @Test func tintFollowsActiveAgentWhenBothRunning() {
-        // Issue #27 acceptance criterion: claude at 30% (teal), codex at 90% (red).
-        // If codex is the active agent the star is red, not teal.
+        // Issue #27 acceptance criterion: Claude at 30% (Activity), Codex at
+        // 90% (Critical). The active agent determines which role is shown.
         let snap = snapshot(claude: 30, codex: 90)
         let codexTint = MenuBarIconColor.tint(primaryAgent: .codex, snapshot: snap)
-        #expect(approxEqual(rgb(codexTint), (0.95, 0.30, 0.30)))
+        #expect(approxEqual(rgb(codexTint), (240.0 / 255, 90.0 / 255, 90.0 / 255)))
 
         let claudeTint = MenuBarIconColor.tint(primaryAgent: .claude, snapshot: snap)
-        #expect(approxEqual(rgb(claudeTint), (0.31, 0.80, 0.77)))
+        #expect(approxEqual(rgb(claudeTint), (79.0 / 255, 203.0 / 255, 195.0 / 255)))
     }
 }

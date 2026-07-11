@@ -45,7 +45,7 @@ public final class NotchWindowController {
     /// Called when the gear is clicked in the expanded panel. Receives
     /// the gear's NSView for NSMenu anchoring. Optional so the controller
     /// still compiles if no caller wires a menu.
-    public var showMenu: ((NSView) -> Void)?
+    public var showSettings: (() -> Void)?
     private var panel: NotchPanel?
     private var mouseMonitor: Any?
     private var localMouseMonitor: Any?
@@ -177,8 +177,8 @@ public final class NotchWindowController {
             usageTracker: usageTracker,
             notchHeight: notchBarHeight(on: screen),
             notchWidth: notchWidth,
-            showMenu: { [weak self] view in
-                self?.showMenu?(view)
+            showSettings: { [weak self] in
+                self?.showSettings?()
             }
         )
         let hostingView = NSHostingView(rootView: rootView)
