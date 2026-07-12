@@ -2,7 +2,7 @@
 
 ## Goal
 
-Replace the two growing settings menus with one non-modal macOS settings window. The simulated-notch gear, physical-notch gear, and status-bar context menu all open the same window and expose the same preferences.
+Replace the two growing settings menus with one non-modal macOS settings window. The simulated-notch gear, physical-notch gear, and status-bar icon share one small application command menu; its Settings command opens the same window and preferences.
 
 ## Scope
 
@@ -42,9 +42,9 @@ This keeps the persisted JSON shape unchanged while removing setting actions fro
 
 ## Entry Points
 
-- Both notch gear buttons invoke `SettingsWindowController.show()` directly.
-- The status-bar context menu becomes: Settings..., About ZackEyes, separator, Quit ZackEyes.
-- Update availability remains visible inside the About page.
+- Both notch gear buttons pop the exact `StatusBarMenu` used by the status-bar icon's right click.
+- The shared menu is: Settings..., About ZackEyes, separator, Quit ZackEyes.
+- When an update is available, the shared menu prepends the same Update command and the gear retains its red badge.
 
 ## Safety
 

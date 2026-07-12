@@ -18,6 +18,8 @@ public final class SimulatedNotchController {
     private let updateChecker: UpdateChecker
     private let downloader: UpdateDownloader
     public var onTap: (() -> Void)?
+    /// Supplies the same application command menu used by the menu-bar icon.
+    public var menuBuilder: (() -> NSMenu)?
 
     public var anchorView: NSView? { hostingView }
 
@@ -58,6 +60,7 @@ public final class SimulatedNotchController {
     private var collapseWorkItem: DispatchWorkItem?
     private var hoverExpandWorkItem: DispatchWorkItem?
     private var hoverIntent = HoverIntentTracker()
+    private var isCommandMenuOpen = false
 
     private let hoverDwellDuration: TimeInterval = 0.25
     private let hoverMovementTolerance: CGFloat = 8
@@ -163,7 +166,8 @@ public final class SimulatedNotchController {
             fullWidth: fullWidth,
             notchHeight: notchHeight,
             fullHeight: fullHeight,
-            onTap: { [weak self] in self?.toggleFull() }
+            onTap: { [weak self] in self?.toggleFull() },
+            showMenu: { [weak self] view in self?.showCommandMenu(from: view) }
         )
         let hostingView = FlexibleHostingView(rootView: root)
         // CRITICAL: NSHostingView's default `sizingOptions` is `.standardBounds`,
@@ -429,7 +433,24 @@ public final class SimulatedNotchController {
     /// A pending permission keeps hover-driven collapse from hiding the
     /// response surface. Explicit outside clicks still dismiss it.
     private var stickyOpen: Bool {
-        hasPendingPermission
+        hasPendingPermission || isCommandMenuOpen
+    }
+
+    private func showCommandMenu(from view: NSView) {
+        guard let menu = menuBuilder?() else { return }
+
+        collapseWorkItem?.cancel()
+        isCommandMenuOpen = true
+        stopOutsideClickMonitoring()
+        defer {
+            isCommandMenuOpen = false
+            if mode == .full {
+                startOutsideClickMonitoring()
+            }
+        }
+
+        let anchor = NSPoint(x: view.bounds.minX, y: view.bounds.minY - 2)
+        menu.popUp(positioning: nil, at: anchor, in: view)
     }
 
     // MARK: - Outside-click dismissal (full mode)

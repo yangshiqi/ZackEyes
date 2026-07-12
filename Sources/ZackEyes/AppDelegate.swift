@@ -183,9 +183,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 usageTracker: usageTracker,
                 initialVisibility: initialVisibility
             )
-            wc.showSettings = {
-                NotificationCenter.default.post(name: .settingsWindowRequested, object: nil)
-            }
+            wc.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
             wc.setup()
             windowController = wc
             mb.onIconClick = { [weak wc] in wc?.forceExpand() }
@@ -198,6 +196,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 downloader: dl,
                 initialVisibility: initialVisibility
             )
+            sn.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
             sn.setup()
             simulatedNotch = sn
 

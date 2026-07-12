@@ -13,8 +13,10 @@ struct NotchRootView: View {
     /// hardware notch and flanks it with content (issue #64 — Dynamic Island
     /// layout, mirroring DynamicNotchKit / boring.notch).
     let notchWidth: CGFloat
-    /// Called when the gear is clicked to open the shared Settings window.
-    let showSettings: () -> Void
+    /// Called with the gear's backing view so AppKit can anchor the shared menu.
+    let showMenu: (NSView) -> Void
+
+    @State private var gearHost = HostViewBox()
 
     var body: some View {
         // Top-aligned ZStack inside the fixed-size 280pt host. In compact
@@ -77,7 +79,9 @@ struct NotchRootView: View {
     /// anchors the menu to the gear's real screen rect.
     private var gearButton: some View {
         Button {
-            showSettings()
+            if let view = gearHost.view {
+                showMenu(view)
+            }
         } label: {
             Image(systemName: "gearshape.fill")
                 .font(.system(size: 13, weight: .semibold))
@@ -86,6 +90,7 @@ struct NotchRootView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(HostViewProbe(box: gearHost))
     }
 }
 

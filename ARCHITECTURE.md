@@ -258,7 +258,7 @@ PricingStore.start()
 | `DiagnosticsReport` | `Sources/AppLib/Diagnostics/DiagnosticsReport.swift` | #47 隐私安全诊断报告（固定 schema）：版本/OS/arch + HookHealth 布尔值 + 用量新鲜度，复用 `HookHealth`。唯一自由文本字段（statusLine 第三方命令）经 `Redactor` 脱敏；绝不含 prompt/assistant/工具参数/完整配置内容。`generate` 纯函数（依赖注入），`current()` 为薄 `@MainActor` 聚合层。 |
 | `DiagnosticsWindow` | `Sources/AppLib/MenuBar/DiagnosticsWindow.swift` | #47 导出审阅窗口（`KeyablePanel` 仿 `HookStatusWindow`）：滚动展示脱敏报告 + Copy/Save…/Close，用户分享前可先审阅内容。两菜单"Export Diagnostics…"共用同一实例。 |
 
-> **统一设置入口**：物理刘海和模拟刘海的齿轮都直接发布 `.settingsWindowRequested`，由 `AppDelegate` 持有的单例 `SettingsWindowController` 打开同一窗口。`StatusBarMenu` 只保留 Settings / About / Update / Quit 等应用级命令，不再复制偏好设置。Move Notch 仅在没有物理刘海时显示。
+> **统一应用菜单**：物理刘海、模拟刘海的齿轮与状态栏图标右键都调用同一个 `StatusBarMenu.build()`。默认提供 Settings / About / Quit 三项，有可用更新时在顶部追加 Update；Settings 仍由 `AppDelegate` 持有的单例 `SettingsWindowController` 打开。菜单只保留应用级命令，不复制偏好设置。
 
 **全局功能**
 | 模块 | 文件 | 职责 |

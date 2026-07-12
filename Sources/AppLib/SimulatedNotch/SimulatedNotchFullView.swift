@@ -14,6 +14,9 @@ struct SimulatedNotchFullView: View {
     @ObservedObject var downloader: UpdateDownloader
     var cornerRadius: CGFloat = 22
     var isActive: Bool = true
+    let showMenu: (NSView) -> Void
+
+    @State private var gearHost = HostViewBox()
 
     var body: some View {
         if viewModel.welcomeVisible {
@@ -245,11 +248,12 @@ struct SimulatedNotchFullView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Opens the shared Settings window directly. The old NSMenu duplicated
-    /// the status-bar menu and had already drifted out of sync with it.
+    /// Opens the application command menu shared with the menu-bar icon.
     private var gearMenu: some View {
         Button {
-            NotificationCenter.default.post(name: .settingsWindowRequested, object: nil)
+            if let view = gearHost.view {
+                showMenu(view)
+            }
         } label: {
             Image(systemName: "gearshape.fill")
                 .font(.system(size: 13, weight: .semibold))
@@ -269,6 +273,7 @@ struct SimulatedNotchFullView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .background(HostViewProbe(box: gearHost))
     }
 
 

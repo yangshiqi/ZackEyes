@@ -66,6 +66,7 @@ struct SimulatedNotchRoot: View {
     let notchHeight: CGFloat
     let fullHeight: CGFloat
     let onTap: () -> Void
+    let showMenu: (NSView) -> Void
 
     var body: some View {
         let activity = SimulatedNotchContentActivity(mode: modeStore.mode)
@@ -94,7 +95,8 @@ struct SimulatedNotchRoot: View {
                 updateChecker: updateChecker,
                 downloader: downloader,
                 cornerRadius: 22,
-                isActive: activity.fullIsActive
+                isActive: activity.fullIsActive,
+                showMenu: showMenu
             )
             .frame(width: fullWidth, height: fullHeight)
             .opacity(activity == .full ? 1 : 0)
