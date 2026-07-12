@@ -19,7 +19,7 @@ Bridge, socket protocol, and session state behavior are out of scope.
 
 - One reusable `SettingsWindowController` instance owned by `AppDelegate`.
 - Create its `SettingsViewModel` lazily on first show so an unopened window does not read configuration or hook health at launch.
-- Standard titled, closable, resizable `KeyablePanel` at floating level. `LSUIElement` apps cannot reliably raise a normal window above the current app; the nonactivating panel remains keyable without changing the notch panel's behavior.
+- Standard titled, closable, resizable `KeyablePanel`. It uses floating level while key for reliable `LSUIElement` presentation, then drops to normal level after focus leaves so it does not cover the user's editor or terminal.
 - Non-modal: never call `runModal()`, so permission sockets continue to be serviced.
 - Default size 720x520, minimum size 660x460, centered on first open.
 - Repeated opens focus the existing window instead of stacking windows.

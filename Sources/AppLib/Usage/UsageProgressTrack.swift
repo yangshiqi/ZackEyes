@@ -92,7 +92,7 @@ struct UsageProgressTrack: View {
     @ViewBuilder
     private func overlapLayers(elapsed: Double, width: CGFloat) -> some View {
         let time = ProgressPresentation(
-            spentFraction: elapsed,
+            usedFraction: elapsed,
             mode: progressMode,
             leftDirection: leftProgressDirection
         )
@@ -143,7 +143,7 @@ struct UsageProgressTrack: View {
 
     private func clockMarker(elapsed: Double, width: CGFloat) -> some View {
         let presentation = ProgressPresentation(
-            spentFraction: elapsed,
+            usedFraction: elapsed,
             mode: progressMode,
             leftDirection: leftProgressDirection
         )

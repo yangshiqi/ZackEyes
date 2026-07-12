@@ -111,7 +111,29 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
         }
     }
 
+    nonisolated public func windowDidBecomeKey(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            self?.setWindowLevel(isActive: true)
+        }
+    }
+
+    nonisolated public func windowDidResignKey(_ notification: Notification) {
+        Task { @MainActor [weak self] in
+            self?.setWindowLevel(isActive: false)
+        }
+    }
+
+    private func setWindowLevel(isActive: Bool) {
+        window?.level = SettingsWindowLevelPolicy.level(isActive: isActive)
+    }
+
     @objc private func screenParametersChanged(_ notification: Notification) {
         viewModel?.refreshDisplayConfiguration()
+    }
+}
+
+enum SettingsWindowLevelPolicy {
+    static func level(isActive: Bool) -> NSWindow.Level {
+        isActive ? .floating : .normal
     }
 }

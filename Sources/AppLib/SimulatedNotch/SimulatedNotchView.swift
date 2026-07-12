@@ -91,6 +91,9 @@ struct SimulatedNotchView: View {
             Text(progressString(usedPct: usedPct))
                 .font(.system(size: 13, weight: .medium, design: .monospaced))
                 .foregroundColor(quotaColor(usedPct: usedPct))
+            Text(usageTracker.progressMode.displayName)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundColor(.white.opacity(0.28))
         }
     }
 
@@ -98,7 +101,7 @@ struct SimulatedNotchView: View {
     private func progressString(usedPct: Double?) -> String {
         if let used = usedPct {
             let presentation = ProgressPresentation(
-                spentFraction: used / 100,
+                usedFraction: used / 100,
                 mode: usageTracker.progressMode,
                 leftDirection: usageTracker.leftProgressDirection
             )

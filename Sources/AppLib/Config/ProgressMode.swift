@@ -2,12 +2,12 @@ import Foundation
 
 /// Whether quota windows show consumed capacity or remaining capacity.
 public enum ProgressMode: String, Codable, CaseIterable, Sendable {
-    case spent
+    case used
     case left
 
     public var displayName: String {
         switch self {
-        case .spent: return "Spent"
+        case .used: return "Used"
         case .left: return "Left"
         }
     }

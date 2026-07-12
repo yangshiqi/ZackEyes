@@ -3,28 +3,29 @@ import Testing
 
 struct ProgressPresentationTests {
     @Test
-    func spentUsesConsumedFractionFromLeadingEdge() {
+    func usedUsesConsumedFractionFromLeadingEdge() {
         let presentation = ProgressPresentation(
-            spentFraction: 0.46,
-            mode: .spent,
+            usedFraction: 0.46,
+            mode: .used,
             leftDirection: .rightToLeft
         )
 
         #expect(presentation.fraction == 0.46)
         #expect(presentation.percent == 46)
         #expect(presentation.anchor == .leading)
-        #expect(presentation.explicitLabel == "46% spent")
+        #expect(presentation.explicitLabel == "46% used")
+        #expect(presentation.mode.displayName == "Used")
     }
 
     @Test
     func leftUsesRemainingFractionFromSelectedEdge() {
         let leading = ProgressPresentation(
-            spentFraction: 0.46,
+            usedFraction: 0.46,
             mode: .left,
             leftDirection: .leftToRight
         )
         let trailing = ProgressPresentation(
-            spentFraction: 0.46,
+            usedFraction: 0.46,
             mode: .left,
             leftDirection: .rightToLeft
         )
@@ -34,6 +35,7 @@ struct ProgressPresentationTests {
         #expect(leading.anchor == .leading)
         #expect(leading.explicitLabel == "54% remaining")
         #expect(trailing.anchor == .trailing)
+        #expect(trailing.mode.displayName == "Left")
     }
 
     @Test

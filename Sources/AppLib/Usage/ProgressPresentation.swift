@@ -12,16 +12,16 @@ public struct ProgressPresentation: Equatable, Sendable {
     public let anchor: ProgressFillAnchor
     public let mode: ProgressMode
 
-    public init(spentFraction: Double, mode: ProgressMode, leftDirection: LeftProgressDirection) {
-        let spent = min(1, max(0, spentFraction))
+    public init(usedFraction: Double, mode: ProgressMode, leftDirection: LeftProgressDirection) {
+        let used = min(1, max(0, usedFraction))
         self.mode = mode
 
         switch mode {
-        case .spent:
-            fraction = spent
+        case .used:
+            fraction = used
             anchor = .leading
         case .left:
-            fraction = 1 - spent
+            fraction = 1 - used
             anchor = leftDirection == .leftToRight ? .leading : .trailing
         }
 
@@ -30,7 +30,7 @@ public struct ProgressPresentation: Equatable, Sendable {
 
     public var explicitLabel: String {
         switch mode {
-        case .spent: return "\(percent)% spent"
+        case .used: return "\(percent)% used"
         case .left: return "\(percent)% remaining"
         }
     }

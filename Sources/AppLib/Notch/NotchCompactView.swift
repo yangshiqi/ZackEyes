@@ -201,13 +201,16 @@ struct NotchCompactView: View {
             Text(progressString(usedPct))
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(quotaColor(usedPct))
+            Text(usageTracker.progressMode.displayName)
+                .font(.system(size: 8, weight: .medium))
+                .foregroundColor(.white.opacity(0.28))
         }
     }
 
     private func progressString(_ usedPct: Double?) -> String {
         guard let used = usedPct else { return "—" }
         let presentation = ProgressPresentation(
-            spentFraction: used / 100,
+            usedFraction: used / 100,
             mode: usageTracker.progressMode,
             leftDirection: usageTracker.leftProgressDirection
         )

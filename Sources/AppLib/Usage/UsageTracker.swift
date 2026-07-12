@@ -145,7 +145,7 @@ public final class UsageTracker: ObservableObject {
     /// from the gear menu. Both expanded notch headers observe this.
     @Published public var showTodayConsumption: Bool = true
     @Published public var timeProgressMode: TimeProgressMode = .off
-    @Published public var progressMode: ProgressMode = .spent
+    @Published public var progressMode: ProgressMode = .used
     @Published public var leftProgressDirection: LeftProgressDirection = .leftToRight
     @Published public var timeOverlayOpacity: Double = TimeOverlayOpacity.defaultValue
 

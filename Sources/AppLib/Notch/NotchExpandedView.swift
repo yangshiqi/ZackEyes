@@ -26,6 +26,7 @@ struct NotchExpandedView: View {
         let sections = SessionListPresentation.sections(
             from: viewModel.sessionStore.orderedSessions
         )
+        let shouldAutoExpandRecent = SessionListPresentation.shouldAutoExpandRecent(in: sections)
         let visibleSessions = sections.flatMap { section in
             section.group != .recent || recentExpanded ? section.sessions : []
         }
@@ -66,6 +67,15 @@ struct NotchExpandedView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onReceive(activeDurationTimer) { now in
             tick = now
+        }
+        .onAppear {
+            if shouldAutoExpandRecent { recentExpanded = true }
+        }
+        .onChange(of: shouldAutoExpandRecent) { _, shouldExpand in
+            guard shouldExpand else { return }
+            withAnimation(.easeOut(duration: 0.18)) {
+                recentExpanded = true
+            }
         }
     }
 

@@ -75,7 +75,7 @@ struct SimulatedNotchFullView: View {
                 // 7d does NOT inherit the account-level block flag — an
                 // out-of-credits / 5h-window block shouldn't paint the 7d row
                 // "limit" too. Its own percentage keeps following the selected
-                // Spent/Left presentation while the 5h row is the headline block.
+                // Used/Left presentation while the 5h row is the headline block.
                 splitUsageRow(
                     label: "7d",
                     windowDuration: TimeWindowProgress.sevenDays,
@@ -104,7 +104,7 @@ struct SimulatedNotchFullView: View {
                 // 7d shows its own usage — only the 5h row carries the
                 // account-level block flag (see the split path above). While
                 // codex is blocked, 7d still presents its own window according
-                // to the selected Spent/Left preference.
+                // to the selected Used/Left preference.
                 usageBar(
                     label: "7d",
                     windowDuration: TimeWindowProgress.sevenDays,
@@ -184,7 +184,7 @@ struct SimulatedNotchFullView: View {
         let cell = UsageCellState.make(usedPct: usedPct, limitReached: limitReached)
         let used = usedPct ?? 0
         let presentation = ProgressPresentation(
-            spentFraction: used / 100,
+            usedFraction: used / 100,
             mode: usageTracker.progressMode,
             leftDirection: usageTracker.leftProgressDirection
         )
@@ -292,7 +292,7 @@ struct SimulatedNotchFullView: View {
         let cell = UsageCellState.make(usedPct: usedPct, limitReached: limitReached)
         let used = usedPct ?? 0
         let presentation = ProgressPresentation(
-            spentFraction: used / 100,
+            usedFraction: used / 100,
             mode: usageTracker.progressMode,
             leftDirection: usageTracker.leftProgressDirection
         )

@@ -64,7 +64,7 @@ struct UsageBarsView<Trailing: View>: View {
     ) -> some View {
         let used = usedPct ?? 0
         let presentation = ProgressPresentation(
-            spentFraction: used / 100,
+            usedFraction: used / 100,
             mode: usageTracker.progressMode,
             leftDirection: usageTracker.leftProgressDirection
         )

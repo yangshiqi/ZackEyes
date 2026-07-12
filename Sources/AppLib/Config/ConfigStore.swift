@@ -231,15 +231,16 @@ public final class ConfigStore: Sendable {
         try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
     }
 
-    /// Load whether quota bars show spent or remaining capacity.
+    /// Load whether quota bars show used or remaining capacity.
     public func loadProgressMode() -> ProgressMode {
         guard let data = FileManager.default.contents(atPath: configPath),
               let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data),
-              let raw = wrapper.progressMode,
-              let mode = ProgressMode(rawValue: raw) else {
-            return .spent
+              let raw = wrapper.progressMode else {
+            return .used
         }
-        return mode
+        // Keep accepting the prerelease value while all new saves use `used`.
+        if raw == "spent" { return .used }
+        return ProgressMode(rawValue: raw) ?? .used
     }
 
     public func saveProgressMode(_ mode: ProgressMode) {
@@ -346,7 +347,7 @@ private struct ConfigWrapper: Codable {
     var notchOffsetX: Double?           // nil = 0 (centered — simulated notch horizontal offset from screen-center)
     var showTodayConsumption: Bool?     // nil = true (default — show the #84 Today row)
     var timeProgressMode: String?       // nil = off (elapsed quota-window presentation)
-    var progressMode: String?           // nil = spent (quota presentation)
+    var progressMode: String?           // nil = used (quota presentation)
     var leftProgressDirection: String?  // nil = leftToRight (Left-mode fill anchor)
     var timeOverlayOpacity: Double?     // nil = 0.4 (elapsed overlay opacity)
     var notifyWaitingForInput: Bool?    // nil = true (default — chime/notify when an agent blocks waiting on the user, #169)

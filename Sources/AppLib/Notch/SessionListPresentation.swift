@@ -37,6 +37,10 @@ enum SessionListPresentation {
         }
     }
 
+    static func shouldAutoExpandRecent(in sections: [SessionListSection]) -> Bool {
+        sections.count == 1 && sections[0].group == .recent
+    }
+
     static func duplicateDisplayNames(in sessions: [SessionInfo]) -> Set<String> {
         let counts = sessions.reduce(into: [String: Int]()) { result, session in
             result[session.displayName, default: 0] += 1

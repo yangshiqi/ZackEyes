@@ -306,9 +306,23 @@ final class ConfigStoreTests: XCTestCase {
 
     func testProgressPresentationDefaults() {
         let store = ConfigStore(directory: tmpDir.path)
-        XCTAssertEqual(store.loadProgressMode(), .spent)
+        XCTAssertEqual(store.loadProgressMode(), .used)
         XCTAssertEqual(store.loadLeftProgressDirection(), .leftToRight)
         XCTAssertEqual(store.loadTimeOverlayOpacity(), 0.4)
+    }
+
+    func testProgressPresentationMigratesLegacyModeToUsed() throws {
+        let configURL = tmpDir.appendingPathComponent("config.json")
+        try #"{"hotkey":{"keyCode":6,"modifiers":["command"]},"progressMode":"spent"}"#
+            .write(to: configURL, atomically: true, encoding: .utf8)
+        let store = ConfigStore(directory: tmpDir.path)
+
+        XCTAssertEqual(store.loadProgressMode(), .used)
+
+        store.saveProgressMode(.used)
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: configURL))
+            as? [String: Any]
+        XCTAssertEqual(object?["progressMode"] as? String, "used")
     }
 
     func testProgressPresentationRoundTripsAndPreservesOtherKeys() {

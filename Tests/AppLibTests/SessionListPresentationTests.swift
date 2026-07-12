@@ -32,6 +32,18 @@ struct SessionListPresentationTests {
             from: [session("done", state: .stopped, age: 0)]
         )
         #expect(sections.map(\.group) == [.recent])
+        #expect(SessionListPresentation.shouldAutoExpandRecent(in: sections))
+    }
+
+    @Test
+    func recentDoesNotAutoExpandAlongsideActiveWork() {
+        let sections = SessionListPresentation.sections(from: [
+            session("running", state: .working, age: 1),
+            session("done", state: .stopped, age: 0),
+        ])
+
+        #expect(sections.map(\.group) == [.running, .recent])
+        #expect(!SessionListPresentation.shouldAutoExpandRecent(in: sections))
     }
 
     @Test @MainActor
