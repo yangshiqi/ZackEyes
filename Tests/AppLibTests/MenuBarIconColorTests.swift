@@ -90,4 +90,25 @@ struct MenuBarIconColorTests {
         let claudeTint = MenuBarIconColor.tint(primaryAgent: .claude, snapshot: snap)
         #expect(approxEqual(rgb(claudeTint), (79.0 / 255, 203.0 / 255, 195.0 / 255)))
     }
+
+    @Test func presentationUsesShapeAsASecondPressureChannel() {
+        let healthy = MenuBarIconColor.presentation(
+            primaryAgent: .claude, snapshot: snapshot(claude: 20)
+        )
+        let elevated = MenuBarIconColor.presentation(
+            primaryAgent: .claude, snapshot: snapshot(claude: 60)
+        )
+        let critical = MenuBarIconColor.presentation(
+            primaryAgent: .claude, snapshot: snapshot(claude: 90)
+        )
+        let unavailable = MenuBarIconColor.presentation(
+            primaryAgent: .claude, snapshot: snapshot()
+        )
+
+        #expect(healthy.symbolName == "star.fill")
+        #expect(elevated.symbolName == "exclamationmark.circle.fill")
+        #expect(critical.symbolName == "exclamationmark.triangle.fill")
+        #expect(unavailable.symbolName == "star")
+        #expect(critical.accessibilityDescription.contains("critical"))
+    }
 }

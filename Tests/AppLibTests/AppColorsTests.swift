@@ -19,6 +19,9 @@ struct AppColorsTests {
         #expect(AppColors.critical.red == 240.0 / 255)
         #expect(AppColors.critical.green == 90.0 / 255)
         #expect(AppColors.critical.blue == 90.0 / 255)
+
+        #expect(AppColors.idle.red == 142.0 / 255)
+        #expect(AppColors.noData.red == 1)
     }
 
     @Test
@@ -27,5 +30,16 @@ struct AppColorsTests {
         #expect(abs(Double(color.redComponent) - AppColors.information.red) < 0.001)
         #expect(abs(Double(color.greenComponent) - AppColors.information.green) < 0.001)
         #expect(abs(Double(color.blueComponent) - AppColors.information.blue) < 0.001)
+    }
+
+    @Test
+    func quotaAndContextPressureUseNamedDomainThresholds() {
+        #expect(UsagePressure.level(for: 49.9) == .activity)
+        #expect(UsagePressure.level(for: 50) == .attention)
+        #expect(UsagePressure.level(for: 85) == .critical)
+
+        #expect(ContextPressure.level(for: 59.9) == .activity)
+        #expect(ContextPressure.level(for: 60) == .attention)
+        #expect(ContextPressure.level(for: 85) == .critical)
     }
 }

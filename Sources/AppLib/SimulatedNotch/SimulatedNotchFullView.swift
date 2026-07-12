@@ -13,6 +13,7 @@ struct SimulatedNotchFullView: View {
     @ObservedObject var updateChecker: UpdateChecker
     @ObservedObject var downloader: UpdateDownloader
     var cornerRadius: CGFloat = 22
+    var isActive: Bool = true
 
     var body: some View {
         if viewModel.welcomeVisible {
@@ -38,7 +39,7 @@ struct SimulatedNotchFullView: View {
                 .background(Color.white.opacity(0.08))
 
             ScrollView(.vertical, showsIndicators: false) {
-                NotchExpandedView(viewModel: viewModel)
+                NotchExpandedView(viewModel: viewModel, isActive: isActive)
                     .background(Color.clear)
             }
         }

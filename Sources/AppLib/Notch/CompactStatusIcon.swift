@@ -12,9 +12,7 @@ struct CompactAttention: Equatable {
     let count: Int
 
     static func make(from sessions: [SessionInfo]) -> Self {
-        let attentionSessions = sessions.filter {
-            $0.pendingPermission != nil || $0.errorMessage != nil || $0.state == .waiting
-        }
+        let attentionSessions = sessions.filter(\.needsAttention)
         let hasError = attentionSessions.contains { $0.errorMessage != nil }
         let kind: Kind = attentionSessions.isEmpty ? .none : (hasError ? .error : .pending)
         return Self(kind: kind, count: attentionSessions.count)
@@ -50,19 +48,16 @@ struct CompactStatusIcon: View {
                 .font(.system(size: 11))
                 .foregroundColor(statusColor)
         case .none:
-            switch aggregateState {
-            case .working:
+            if aggregateState == .working {
                 Circle()
                     .fill(workingColor)
                     .frame(width: 8, height: 8)
-            case .idle, .stopped:
+            } else {
+                // `.waiting` is impossible here: the same sessions that produce
+                // aggregate waiting also make `attention.kind` pending.
                 Image(systemName: "sparkles")
                     .font(.system(size: 11))
-                    .foregroundColor(.white.opacity(0.35))
-            case .waiting:
-                Image(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundColor(AppColors.attention.color)
+                    .foregroundColor(AppColors.idle.color.opacity(0.75))
             }
         }
     }

@@ -3,13 +3,15 @@ import Testing
 
 struct SimulatedNotchVisibleContentTests {
     @Test
-    func compactAndHoverWideMountOnlyCompactContent() {
-        #expect(SimulatedNotchVisibleContent(mode: .compact) == .compact)
-        #expect(SimulatedNotchVisibleContent(mode: .hoverWide) == .compact)
+    func compactAndHoverWideActivateOnlyCompactContent() {
+        #expect(SimulatedNotchContentActivity(mode: .compact) == .compact)
+        #expect(SimulatedNotchContentActivity(mode: .hoverWide) == .compact)
+        #expect(!SimulatedNotchContentActivity(mode: .compact).fullIsActive)
     }
 
     @Test
-    func fullMountsOnlyFullContent() {
-        #expect(SimulatedNotchVisibleContent(mode: .full) == .full)
+    func fullActivatesFullContent() {
+        #expect(SimulatedNotchContentActivity(mode: .full) == .full)
+        #expect(SimulatedNotchContentActivity(mode: .full).fullIsActive)
     }
 }

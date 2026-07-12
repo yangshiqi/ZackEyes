@@ -105,11 +105,8 @@ final class ConfigStoreTests: XCTestCase {
         XCTAssertEqual(store.loadNotchVisibility(), .always)
     }
 
-    /// If config.json exists but cannot be decoded, saveNotchVisibility
-    /// must abort rather than seed defaults — otherwise the save would
-    /// wipe theme / other fields the user can still recover from the
-    /// corrupt file manually. This differs from siblings (save, saveTheme, …)
-    /// which do still overwrite; harmonizing those is a follow-up.
+    /// If config.json exists but cannot be decoded, saves must abort rather
+    /// than seed defaults and wipe fields the user can still recover manually.
     func testSaveAbortsWhenFileCorrupt() {
         let store = ConfigStore(directory: tmpDir.path)
         let path = tmpDir.appendingPathComponent("config.json").path
@@ -121,6 +118,22 @@ final class ConfigStoreTests: XCTestCase {
         // File unchanged — abort preserved the corrupt bytes
         let after = try? String(contentsOfFile: path, encoding: .utf8)
         XCTAssertEqual(after, garbage)
+    }
+
+    func testLegacySavesAbortWhenFileCorrupt() throws {
+        let store = ConfigStore(directory: tmpDir.path)
+        let path = tmpDir.appendingPathComponent("config.json")
+        let garbage = "not json — preserve every existing field"
+        try garbage.write(to: path, atomically: true, encoding: .utf8)
+
+        store.saveTheme(.f1)
+        XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), garbage)
+
+        store.saveNotificationSound("none")
+        XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), garbage)
+
+        store.save(HotKeyConfig(keyCode: 40, modifiers: [.option, .command]))
+        XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), garbage)
     }
 
     // MARK: - Compact agent

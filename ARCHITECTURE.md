@@ -195,7 +195,7 @@ PricingStore.start()
 **设置窗口**
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| `SettingsWindowController` | `Sources/AppLib/Settings/SettingsWindowController.swift` | 单例、非模态的标准 macOS 设置窗口；重复打开聚焦既有窗口，不阻塞权限 socket |
+| `SettingsWindowController` | `Sources/AppLib/Settings/SettingsWindowController.swift` | 单例、非模态的标准 macOS 设置窗口；首次 `show()` 才创建 SettingsViewModel / 读取配置；重复打开聚焦既有窗口，不阻塞权限 socket |
 | `SettingsViewModel` | `Sources/AppLib/Settings/SettingsViewModel.swift` | 统一加载/保存 `ConfigStore` 偏好并发送既有运行时通知；聚合 Hook Health |
 | `SettingsRootView` | `Sources/AppLib/Settings/SettingsRootView.swift` | General / Appearance / Notifications / Integrations / About 五分区设置 UI；沿用 About 卡片的深色表面、activity 强调色和半透明描边；General 支持 Preferred quota source、Progress mode、Left 填充方向、Window elapsed、Overlap 透明度和 Today's consumption；首选 Agent 无配额数据时自动回退另一方 |
 
@@ -232,7 +232,7 @@ PricingStore.start()
 | `NotchWindowController` | `Sources/AppLib/Notch/NotchWindowController.swift` | 位置锚定、状态切换、鼠标追踪（固定窗口，不帧动画） |
 | `NotchViewModel` | `Sources/AppLib/Notch/NotchViewModel.swift` | 桥接 `SessionStore` → SwiftUI；转发嵌套 `objectWillChange` |
 | `NotchCompactView` | `Sources/AppLib/Notch/NotchCompactView.swift` | 折叠 / 紧凑状态视图；固定宽状态位按错误（红）→待用户（黄）→工作/空闲排序，多项注意事件显示数量 |
-| `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | 完整 popover：按 Needs You / Running / Recent 分组（Recent 默认折叠）；会话卡片以项目名为主身份、Buddy 为辅助，保留 tasks、permission、错误和 AskUserQuestion 内容 |
+| `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | 完整 popover：按 Needs You / Running / Recent 分组（Recent 默认折叠）；会话卡片以项目名为主身份、Buddy 为辅助，同名可见项目追加短 session id；保留 tasks、permission、错误和 AskUserQuestion 内容 |
 | `AgentBadge` | `Sources/AppLib/Notch/AgentBadge.swift` | 14×14 SwiftUI 角标：`[CLAUDE]` 紫色 / `[CODEX]` 绿色。也提供 `accentColor(for:)` 给其它视图染色（split usage bar / 通知标题映射）。 |
 | `BuddyAvatar` | `Sources/AppLib/Notch/BuddyAvatar.swift` | 动画化 buddy（headbang / 睡觉 / 惊慌）；自动尊重 macOS Reduce Motion，关闭无限动画但保留静态状态表达 |
 | `Buddy` | `Sources/AppLib/Notch/Buddy.swift` | 摇滚传奇命名池（66 个）+ 性格标语池 |
@@ -246,7 +246,7 @@ PricingStore.start()
 | `SimulatedNotchView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchView.swift` | Compact / hoverWide 内容（5h/7d 剩余 + NotchShape）。读 `NotchModeStore.compactAgent` 决定显示哪个 agent 的配额 |
 | `SimulatedNotchFullView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchFullView.swift` | Full 模式：5h/7d 进度条 header + 滚动 session 列表。当两 agent 都有数据时，header 自动左右切割（左 Claude / 右 Codex），用固定宽 gear 列保证 5h 与 7d 两行轨道对齐 |
 | `SimulatedNotchController` | `Sources/AppLib/SimulatedNotch/SimulatedNotchController.swift` | 三态形变控制器，hover intent 进入 full，外部点击退出，内容自适应高度。启动时从 `ConfigStore.loadCompactAgent()` 注水 `modeStore.compactAgent` 避免首帧闪烁；`#48` 起 `applyVisibility` 支持 `.whenActive` 自动显隐 |
-| `SimulatedNotchRoot` | `Sources/AppLib/SimulatedNotch/SimulatedNotchRoot.swift` | SwiftUI 根视图，compact/full 只挂载当前可见内容树，避免隐藏 Full 列表的 Timer/无限动画持续占用主线程；透明尺寸骨架保持转场锚点稳定。`NotchModeStore` 含 `@Published compactAgent: AgentKind` |
+| `SimulatedNotchRoot` | `Sources/AppLib/SimulatedNotch/SimulatedNotchRoot.swift` | SwiftUI 根视图，compact/full 保持稳定 identity 以保留 Recent/recap/滚动状态；隐藏 Full 时取消 1s Timer 订阅并停止 Buddy 无限动画；透明尺寸骨架保持转场锚点稳定。`NotchModeStore` 含 `@Published compactAgent: AgentKind` |
 
 **菜单栏 fallback**
 | 模块 | 文件 | 职责 |
@@ -263,7 +263,7 @@ PricingStore.start()
 **全局功能**
 | 模块 | 文件 | 职责 |
 |------|------|------|
-| `AppColors` | `Sources/AppLib/Design/AppColors.swift` | 全局功能语义色唯一来源，同时提供 SwiftUI `Color` 与 AppKit `NSColor`：Activity、Information、Time Overlay、Attention、Critical、Success 和 Claude/Codex Identity；Buddy/F1 装饰色不纳入状态语义 |
+| `AppColors` | `Sources/AppLib/Design/AppColors.swift` | 全局功能语义色唯一来源，同时提供 SwiftUI `Color` 与 AppKit `NSColor`：Activity、Information、Time Overlay、Attention、Critical、Success、Idle、No Data 和 Claude/Codex Identity；Buddy/F1 装饰色不纳入状态语义 |
 | `HotKeyManager` | `Sources/AppLib/HotKey/HotKeyManager.swift` | Carbon `RegisterEventHotKey` 注册全局快捷键（可配置，默认 `Cmd+Shift+Z`），支持运行时 `reregister` 热更新 |
 | `NotificationManager` | `Sources/AppLib/Notifications/NotificationManager.swift` | 时间敏感通知（session 完成 / API 错误 / 版本更新），点击跳转终端或打开 GitHub |
 | `UpdateChecker` | `Sources/AppLib/Update/UpdateChecker.swift` | 轮询公开发布仓库（6h）获取最新 DMG，语义版本比较，`@Published dmgURL` 驱动齿轮红点 + 系统通知；`checkNow()` 手动检查入口（`#48`） |

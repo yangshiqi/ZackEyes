@@ -210,7 +210,7 @@ struct NotchCompactView: View {
     }
 
     private func quotaColor(_ usedPct: Double?) -> Color {
-        guard let used = usedPct else { return .white.opacity(0.4) }
+        guard let used = usedPct else { return AppColors.noData.color.opacity(0.4) }
         return .usageLevelColor(usedPct: used)
     }
 }

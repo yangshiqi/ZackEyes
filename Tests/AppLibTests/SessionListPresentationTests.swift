@@ -34,6 +34,42 @@ struct SessionListPresentationTests {
         #expect(sections.map(\.group) == [.recent])
     }
 
+    @Test @MainActor
+    func sharedAttentionPolicySortsIdleErrorAheadOfWaiting() {
+        var error = session("error", state: .idle, age: 1)
+        error.errorMessage = "API error"
+        let waiting = session("waiting", state: .waiting, age: 2)
+        let running = session("running", state: .working, age: 3)
+
+        #expect(error.needsAttention)
+        #expect(waiting.needsAttention)
+        #expect(!running.needsAttention)
+
+        let store = SessionStore()
+        store.sessions = [error.id: error, waiting.id: waiting, running.id: running]
+        let sections = SessionListPresentation.sections(from: store.orderedSessions)
+
+        #expect(sections.map(\.group) == [.needsYou, .running])
+        #expect(sections[0].sessions.map(\.id) == ["error", "waiting"])
+    }
+
+    @Test
+    func duplicateProjectTitlesGainStableShortSessionIds() {
+        let first = SessionInfo(id: "abcd-1111", cwd: "/tmp/project")
+        let second = SessionInfo(id: "efgh-2222", cwd: "/work/project")
+        let unique = SessionInfo(id: "ijkl-3333", cwd: "/tmp/other")
+        let sessions = [first, second, unique]
+        let duplicates = SessionListPresentation.duplicateDisplayNames(in: sessions)
+
+        #expect(duplicates == ["project"])
+        #expect(SessionListPresentation.title(
+            for: first, duplicateDisplayNames: duplicates
+        ) == "project · abcd")
+        #expect(SessionListPresentation.title(
+            for: unique, duplicateDisplayNames: duplicates
+        ) == "other")
+    }
+
     private func session(_ id: String, state: SessionState, age: TimeInterval) -> SessionInfo {
         SessionInfo(
             id: id,

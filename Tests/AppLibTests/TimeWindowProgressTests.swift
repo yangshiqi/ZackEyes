@@ -66,4 +66,32 @@ struct TimeWindowProgressTests {
         )
     }
 
+    @Test
+    func endpointPositionTracksBothFillAnchorsAndClamps() {
+        let width: CGFloat = 200
+
+        #expect(TimeWindowProgress.endpointPosition(
+            fraction: 0, trackWidth: width, anchor: .leading
+        ) == 0)
+        #expect(TimeWindowProgress.endpointPosition(
+            fraction: 0.5, trackWidth: width, anchor: .leading
+        ) == 100)
+        #expect(TimeWindowProgress.endpointPosition(
+            fraction: 1, trackWidth: width, anchor: .leading
+        ) == 200)
+
+        #expect(TimeWindowProgress.endpointPosition(
+            fraction: 0, trackWidth: width, anchor: .trailing
+        ) == 200)
+        #expect(TimeWindowProgress.endpointPosition(
+            fraction: 0.5, trackWidth: width, anchor: .trailing
+        ) == 100)
+        #expect(TimeWindowProgress.endpointPosition(
+            fraction: 1, trackWidth: width, anchor: .trailing
+        ) == 0)
+        #expect(TimeWindowProgress.endpointPosition(
+            fraction: 2, trackWidth: width, anchor: .leading
+        ) == 200)
+    }
+
 }

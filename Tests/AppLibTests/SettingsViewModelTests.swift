@@ -5,6 +5,17 @@ import Testing
 
 @MainActor
 struct SettingsViewModelTests {
+    private final class NotificationRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private(set) var notifications: [Notification] = []
+
+        func record(_ notification: Notification) {
+            lock.lock()
+            notifications.append(notification)
+            lock.unlock()
+        }
+    }
+
     @Test
     func generalSettingsPersistAndUpdateLiveUsage() throws {
         let directory = FileManager.default.temporaryDirectory
@@ -67,6 +78,63 @@ struct SettingsViewModelTests {
 
         model.setNotificationSound("none")
         #expect(store.loadNotificationSound() == "none")
+    }
+
+    @Test
+    func runtimeNotificationsCarryUpdatedValues() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("zackeyes-settings-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let center = NotificationCenter()
+        let recorder = NotificationRecorder()
+        let names: [Notification.Name] = [
+            .notchVisibilityChanged,
+            .compactAgentChanged,
+            .settingsAppearanceChanged,
+        ]
+        let tokens = names.map { name in
+            center.addObserver(forName: name, object: nil, queue: nil) {
+                recorder.record($0)
+            }
+        }
+        defer { tokens.forEach(center.removeObserver) }
+
+        let model = SettingsViewModel(
+            configStore: ConfigStore(directory: directory.path),
+            usageTracker: UsageTracker(projectsDir: directory, codexSessionsDir: nil),
+            hasPhysicalNotch: false,
+            hookHealthProvider: healthyReport,
+            notificationCenter: center
+        )
+
+        model.setVisibility(.whenActive)
+        model.setCompactAgent(.codex)
+        model.setTheme(.f1)
+
+        #expect(recorder.notifications.map(\.name) == names)
+        #expect(recorder.notifications[0].userInfo?["visibility"] as? NotchVisibility == .whenActive)
+        #expect(recorder.notifications[1].userInfo?["agent"] as? AgentKind == .codex)
+        #expect(recorder.notifications[2].userInfo == nil)
+    }
+
+    @Test
+    func displayConfigurationCanRefreshAfterScreenChanges() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("zackeyes-settings-test-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let model = SettingsViewModel(
+            configStore: ConfigStore(directory: directory.path),
+            usageTracker: UsageTracker(projectsDir: directory, codexSessionsDir: nil),
+            hasPhysicalNotch: false,
+            hookHealthProvider: healthyReport
+        )
+
+        model.refreshDisplayConfiguration(hasPhysicalNotch: true)
+        #expect(model.hasPhysicalNotch)
     }
 
     private func healthyReport() -> HookHealthReport {

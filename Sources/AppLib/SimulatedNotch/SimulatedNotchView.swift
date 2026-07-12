@@ -113,7 +113,7 @@ struct SimulatedNotchView: View {
         if let used = usedPct {
             usedRatio = used / 100.0
         } else {
-            return .white.opacity(0.4)  // gray when no data
+            return AppColors.noData.color.opacity(0.4)
         }
         return .usageLevelColor(usedPct: usedRatio * 100)
     }

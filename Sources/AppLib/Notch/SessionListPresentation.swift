@@ -17,9 +17,7 @@ enum SessionListGroup: Int, CaseIterable, Identifiable {
     }
 
     static func group(for session: SessionInfo) -> Self {
-        if session.pendingPermission != nil || session.errorMessage != nil || session.state == .waiting {
-            return .needsYou
-        }
+        if session.needsAttention { return .needsYou }
         return session.state == .working ? .running : .recent
     }
 }
@@ -37,5 +35,19 @@ enum SessionListPresentation {
             let sessions = orderedSessions.filter { SessionListGroup.group(for: $0) == group }
             return sessions.isEmpty ? nil : SessionListSection(group: group, sessions: sessions)
         }
+    }
+
+    static func duplicateDisplayNames(in sessions: [SessionInfo]) -> Set<String> {
+        let counts = sessions.reduce(into: [String: Int]()) { result, session in
+            result[session.displayName, default: 0] += 1
+        }
+        return Set(counts.compactMap { name, count in count > 1 ? name : nil })
+    }
+
+    static func title(for session: SessionInfo, duplicateDisplayNames: Set<String>) -> String {
+        guard duplicateDisplayNames.contains(session.displayName) else {
+            return session.displayName
+        }
+        return "\(session.displayName) · \(session.id.prefix(4))"
     }
 }

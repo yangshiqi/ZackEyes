@@ -29,13 +29,15 @@ public final class NotchModeStore: ObservableObject {
 
 }
 
-enum SimulatedNotchVisibleContent: Equatable {
+enum SimulatedNotchContentActivity: Equatable {
     case compact
     case full
 
     init(mode: NotchMode) {
         self = mode == .full ? .full : .compact
     }
+
+    var fullIsActive: Bool { self == .full }
 }
 
 /// Persistent SwiftUI root for the simulated notch panel.
@@ -47,11 +49,12 @@ enum SimulatedNotchVisibleContent: Equatable {
 ///   `preferredContentSize` feedback loop — the controller is the single
 ///   source of truth for panel geometry, and SwiftUI just fills whatever
 ///   bounds it's handed.
-/// - A transparent 220×32 layout backbone keeps the full panel top-centered
-///   without mounting the compact and full content trees simultaneously.
-/// - Each view carries its own `NotchShape` background. Mode changes replace
-///   the visible tree with an opacity/scale transition driven in lock-step
-///   with the controller's panel resize.
+/// - A transparent 220×32 layout backbone keeps the full panel top-centered.
+/// - Compact and full content keep stable SwiftUI identity so transient list
+///   and scroll state survive a collapse. The hidden full tree receives an
+///   inactive flag that pauses its timer and repeat-forever animations.
+/// - Each view carries its own `NotchShape` background. Mode changes cross-fade
+///   the stable trees in lock-step with the controller's panel resize.
 struct SimulatedNotchRoot: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
@@ -65,37 +68,39 @@ struct SimulatedNotchRoot: View {
     let onTap: () -> Void
 
     var body: some View {
+        let activity = SimulatedNotchContentActivity(mode: modeStore.mode)
+
         // Keep a non-rendering compact-size backbone so the full panel can
         // extend from the same top-center anchor without affecting layout.
-        // Only mount the visible content: opacity(0) views keep timers and
-        // repeat-forever animations alive, which previously consumed the main
-        // thread while the full session list was hidden behind the compact pill.
         Color.clear
         .frame(width: compactWidth, height: notchHeight)
         .overlay(alignment: .top) {
-            switch SimulatedNotchVisibleContent(mode: modeStore.mode) {
-            case .full:
-                SimulatedNotchFullView(
-                    viewModel: viewModel,
-                    usageTracker: usageTracker,
-                    modeStore: modeStore,
-                    updateChecker: updateChecker,
-                    downloader: downloader,
-                    cornerRadius: 22
-                )
-                .frame(width: fullWidth, height: fullHeight)
-                .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .top)))
-            case .compact:
-                SimulatedNotchView(
-                    viewModel: viewModel,
-                    usageTracker: usageTracker,
-                    modeStore: modeStore,
-                    isExpanded: false,
-                    onTap: onTap
-                )
-                .frame(width: compactWidth, height: notchHeight)
-                .transition(.opacity)
-            }
+            SimulatedNotchView(
+                viewModel: viewModel,
+                usageTracker: usageTracker,
+                modeStore: modeStore,
+                isExpanded: false,
+                onTap: onTap
+            )
+            .frame(width: compactWidth, height: notchHeight)
+            .opacity(activity == .compact ? 1 : 0)
+            .allowsHitTesting(activity == .compact)
+        }
+        .overlay(alignment: .top) {
+            SimulatedNotchFullView(
+                viewModel: viewModel,
+                usageTracker: usageTracker,
+                modeStore: modeStore,
+                updateChecker: updateChecker,
+                downloader: downloader,
+                cornerRadius: 22,
+                isActive: activity.fullIsActive
+            )
+            .frame(width: fullWidth, height: fullHeight)
+            .opacity(activity == .full ? 1 : 0)
+            .scaleEffect(activity == .full ? 1 : 0.85, anchor: .top)
+            .allowsHitTesting(activity == .full)
+            .accessibilityHidden(activity != .full)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }

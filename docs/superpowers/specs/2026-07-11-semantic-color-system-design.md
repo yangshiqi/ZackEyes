@@ -14,6 +14,8 @@ Give every functional color one stable meaning, make Overlap time progress disti
 | Attention | `#F2B544` | waiting, stale data, and elevated quota pressure |
 | Critical | `#F05A5A` | errors, destructive actions, and exhausted quota |
 | Success | `#62C47A` | explicit successful completion or healthy integration |
+| Idle | `#8E8E93` | inactive or resting session state |
+| No data | `#FFFFFF` | unavailable quota signal, with component-owned opacity |
 | Claude identity | `#C78CF2` | Claude category identity only |
 | Codex identity | `#1AD98C` | Codex category identity only |
 

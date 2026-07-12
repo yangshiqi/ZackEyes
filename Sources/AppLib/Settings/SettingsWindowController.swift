@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 public final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
-    private let viewModel: SettingsViewModel
+    private var viewModel: SettingsViewModel?
     private let updateChecker: UpdateChecker
     private let downloader: UpdateDownloader
     private let usageTracker: UsageTracker
@@ -21,11 +21,20 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
         self.usageTracker = usageTracker
         self.updateChecker = updateChecker
         self.downloader = downloader
-        viewModel = SettingsViewModel(usageTracker: usageTracker)
         super.init()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(screenParametersChanged(_:)),
+            name: NSApplication.didChangeScreenParametersNotification,
+            object: nil
+        )
     }
 
     public func show() {
+        let viewModel = self.viewModel ?? SettingsViewModel(usageTracker: usageTracker)
+        self.viewModel = viewModel
+        viewModel.refreshDisplayConfiguration()
+
         if let window {
             NSApp.activate(ignoringOtherApps: true)
             window.makeKeyAndOrderFront(nil)
@@ -39,7 +48,8 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
             downloader: downloader,
             changeHotkey: { [weak self] in self?.showHotkeyRecorder() },
             exportDiagnostics: { [weak self] in self?.showDiagnostics() },
-            uninstallIntegrations: { [weak self] in self?.showUninstall() }
+            uninstallIntegrations: { [weak self] in self?.showUninstall() },
+            quitApplication: { NSApp.terminate(nil) }
         )
 
         let size = NSSize(width: 720, height: 520)
@@ -72,7 +82,7 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
     private func showHotkeyRecorder() {
         if hotkeyWindow == nil {
             hotkeyWindow = HotkeyRecorderWindow(onSaved: { [weak self] _ in
-                self?.viewModel.refreshHotkey()
+                self?.viewModel?.refreshHotkey()
             })
         }
         hotkeyWindow?.show()
@@ -99,5 +109,9 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
         Task { @MainActor [weak self] in
             self?.window = nil
         }
+    }
+
+    @objc private func screenParametersChanged(_ notification: Notification) {
+        viewModel?.refreshDisplayConfiguration()
     }
 }

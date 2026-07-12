@@ -30,6 +30,7 @@ struct SettingsRootView: View {
     let changeHotkey: () -> Void
     let exportDiagnostics: () -> Void
     let uninstallIntegrations: () -> Void
+    let quitApplication: () -> Void
 
     @State private var selection: SettingsSection = .general
 
@@ -103,6 +104,13 @@ struct SettingsRootView: View {
                 .buttonStyle(.plain)
             }
             Spacer()
+            Button(action: quitApplication) {
+                Label("Quit ZackEyes", systemImage: "power")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(AppColors.critical.color)
+            .help("Quit ZackEyes")
         }
         .padding(12)
         .frame(width: 176)

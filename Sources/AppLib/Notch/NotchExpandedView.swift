@@ -1,7 +1,9 @@
+import Combine
 import SwiftUI
 
 struct NotchExpandedView: View {
     @ObservedObject var viewModel: NotchViewModel
+    var isActive: Bool = true
     @State private var pulseOpacity: Double = 1.0
     @State private var tick: Date = Date()
     @State private var recentExpanded = false
@@ -9,6 +11,11 @@ struct NotchExpandedView: View {
     @State private var expandedRecaps: Set<String> = []
 
     private let durationTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
+
+    private var activeDurationTimer: AnyPublisher<Date, Never> {
+        guard isActive else { return Empty().eraseToAnyPublisher() }
+        return durationTimer.eraseToAnyPublisher()
+    }
 
     // Read theme once per body evaluation (1/second via durationTimer)
     // instead of per-session inside sessionCardContent.
@@ -18,6 +25,12 @@ struct NotchExpandedView: View {
         let theme = currentTheme
         let sections = SessionListPresentation.sections(
             from: viewModel.sessionStore.orderedSessions
+        )
+        let visibleSessions = sections.flatMap { section in
+            section.group != .recent || recentExpanded ? section.sessions : []
+        }
+        let duplicateDisplayNames = SessionListPresentation.duplicateDisplayNames(
+            in: visibleSessions
         )
         VStack(alignment: .leading, spacing: 12) {
             if viewModel.sessionStore.sessions.isEmpty {
@@ -29,7 +42,14 @@ struct NotchExpandedView: View {
                             sectionHeader(section)
                             if section.group != .recent || recentExpanded {
                                 ForEach(section.sessions, id: \.id) { session in
-                                    sessionCard(session, theme: theme)
+                                    sessionCard(
+                                        session,
+                                        theme: theme,
+                                        title: SessionListPresentation.title(
+                                            for: session,
+                                            duplicateDisplayNames: duplicateDisplayNames
+                                        )
+                                    )
                                 }
                             }
                         }
@@ -44,7 +64,7 @@ struct NotchExpandedView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black)
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .onReceive(durationTimer) { now in
+        .onReceive(activeDurationTimer) { now in
             tick = now
         }
     }
@@ -106,13 +126,17 @@ struct NotchExpandedView: View {
     // MARK: - Session card
 
     @ViewBuilder
-    private func sessionCard(_ session: SessionInfo, theme: BuddyTheme) -> some View {
+    private func sessionCard(
+        _ session: SessionInfo,
+        theme: BuddyTheme,
+        title: String
+    ) -> some View {
         // .onTapGesture on the content (not a wrapping Button) so the inner
         // Deny / Allow Once buttons inside sessionCardContent aren't nested
         // inside another Button — nested buttons make the outer action fire
         // when a child button is clicked, which would jump the terminal on
         // every Allow/Deny click.
-        sessionCardContent(session, theme: theme)
+        sessionCardContent(session, theme: theme, title: title)
             .contentShape(Rectangle())
             .onTapGesture {
                 viewModel.activateTerminal(for: session)
@@ -120,7 +144,11 @@ struct NotchExpandedView: View {
     }
 
     @ViewBuilder
-    private func sessionCardContent(_ session: SessionInfo, theme: BuddyTheme) -> some View {
+    private func sessionCardContent(
+        _ session: SessionInfo,
+        theme: BuddyTheme,
+        title: String
+    ) -> some View {
         let buddy = Buddy.from(sessionId: session.id, theme: theme)
 
         // Defer the sleeping animation for 30s after the last activity so a
@@ -142,13 +170,14 @@ struct NotchExpandedView: View {
                 recentlyActive: recentlyActive,
                 theme: currentTheme,
                 teamColor: teamColor,
+                animationsEnabled: isActive,
                 size: 32
             )
 
             VStack(alignment: .leading, spacing: 6) {
                 // Project identity leads; agent/risk/time remain scan metadata.
                 HStack(spacing: 6) {
-                    Text(session.displayName)
+                    Text(title)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundColor(.white)
                         .lineLimit(1)
@@ -332,10 +361,10 @@ struct NotchExpandedView: View {
     }
 
     private func contextColor(for usedPct: Double) -> Color {
-        switch usedPct {
-        case ..<60: return AppColors.activity.color
-        case ..<85: return AppColors.attention.color
-        default:    return AppColors.critical.color
+        switch ContextPressure.level(for: usedPct) {
+        case .activity: return AppColors.activity.color
+        case .attention: return AppColors.attention.color
+        case .critical: return AppColors.critical.color
         }
     }
 
@@ -739,7 +768,7 @@ struct NotchExpandedView: View {
         switch session.state {
         case .working: return AppColors.activity.color
         case .waiting: return AppColors.attention.color
-        case .idle, .stopped: return .gray
+        case .idle, .stopped: return AppColors.idle.color
         }
     }
 

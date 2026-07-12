@@ -19,23 +19,26 @@ final class SettingsViewModel: ObservableObject {
     @Published private(set) var notchOffsetX: CGFloat
     @Published private(set) var hookHealth: HookHealthReport
 
-    let hasPhysicalNotch: Bool
+    @Published private(set) var hasPhysicalNotch: Bool
 
     private let configStore: ConfigStore
     private let usageTracker: UsageTracker
     private let hookHealthProvider: () -> HookHealthReport
+    private let notificationCenter: NotificationCenter
     private var previewSound: NSSound?
 
     init(
         configStore: ConfigStore = ConfigStore(),
         usageTracker: UsageTracker,
         hasPhysicalNotch: Bool = NSScreen.hasAnyNotch,
-        hookHealthProvider: @escaping () -> HookHealthReport = { HookHealth().check() }
+        hookHealthProvider: @escaping () -> HookHealthReport = { HookHealth().check() },
+        notificationCenter: NotificationCenter = .default
     ) {
         self.configStore = configStore
         self.usageTracker = usageTracker
         self.hasPhysicalNotch = hasPhysicalNotch
         self.hookHealthProvider = hookHealthProvider
+        self.notificationCenter = notificationCenter
 
         let loadedTheme = configStore.loadTheme()
         visibility = configStore.loadNotchVisibility()
@@ -59,7 +62,7 @@ final class SettingsViewModel: ObservableObject {
         guard value != visibility else { return }
         configStore.saveNotchVisibility(value)
         visibility = value
-        NotificationCenter.default.post(
+        notificationCenter.post(
             name: .notchVisibilityChanged,
             object: nil,
             userInfo: ["visibility": value]
@@ -70,7 +73,7 @@ final class SettingsViewModel: ObservableObject {
         guard value != compactAgent else { return }
         configStore.saveCompactAgent(value)
         compactAgent = value
-        NotificationCenter.default.post(
+        notificationCenter.post(
             name: .compactAgentChanged,
             object: nil,
             userInfo: ["agent": value]
@@ -119,7 +122,7 @@ final class SettingsViewModel: ObservableObject {
         configStore.saveNotificationSound(nil)
         theme = value
         notificationSound = value.defaultSoundFile ?? "none"
-        NotificationCenter.default.post(name: .settingsAppearanceChanged, object: nil)
+        notificationCenter.post(name: .settingsAppearanceChanged, object: nil)
     }
 
     func setNotificationSound(_ value: String) {
@@ -139,14 +142,18 @@ final class SettingsViewModel: ObservableObject {
         hotkey = configStore.load()
     }
 
+    func refreshDisplayConfiguration(hasPhysicalNotch: Bool = NSScreen.hasAnyNotch) {
+        self.hasPhysicalNotch = hasPhysicalNotch
+    }
+
     func beginNotchRepositioning() {
-        NotificationCenter.default.post(name: .notchMoveModeRequested, object: nil)
+        notificationCenter.post(name: .notchMoveModeRequested, object: nil)
     }
 
     func resetNotchPosition() {
         configStore.saveNotchOffsetX(0)
         notchOffsetX = 0
-        NotificationCenter.default.post(name: .notchResetPositionRequested, object: nil)
+        notificationCenter.post(name: .notchResetPositionRequested, object: nil)
     }
 
     func refreshHookHealth() {

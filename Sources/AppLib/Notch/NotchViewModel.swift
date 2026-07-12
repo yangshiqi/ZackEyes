@@ -31,7 +31,7 @@ public final class NotchViewModel: ObservableObject {
 
     public var statusColor: Color {
         switch aggregateState {
-        case .idle, .stopped: return .gray
+        case .idle, .stopped: return AppColors.idle.color
         case .working: return AppColors.activity.color
         case .waiting: return AppColors.attention.color
         }

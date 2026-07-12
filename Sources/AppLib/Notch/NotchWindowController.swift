@@ -42,9 +42,7 @@ public final class NotchWindowController {
 
     private let viewModel: NotchViewModel
     private let usageTracker: UsageTracker
-    /// Called when the gear is clicked in the expanded panel. Receives
-    /// the gear's NSView for NSMenu anchoring. Optional so the controller
-    /// still compiles if no caller wires a menu.
+    /// Called when the expanded panel's gear requests the shared Settings window.
     public var showSettings: (() -> Void)?
     private var panel: NotchPanel?
     private var mouseMonitor: Any?

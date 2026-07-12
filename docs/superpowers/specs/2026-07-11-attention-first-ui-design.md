@@ -18,7 +18,7 @@ Each non-empty section shows its count. Needs You and Running stay expanded. Rec
 
 ### Session card hierarchy
 
-Promote `SessionInfo.displayName` (project directory) to the primary card title. Keep Agent, permission risk, and elapsed time in the title row. Show prompt/context as supporting text. Buddy name remains visible as quiet personality metadata beside the avatar rather than acting as the session identity.
+Promote `SessionInfo.displayName` (project directory) to the primary card title. Keep Agent, permission risk, and elapsed time in the title row. Show prompt/context as supporting text. Buddy name remains visible as quiet personality metadata beside the avatar rather than acting as the session identity. When multiple visible cards share the same project title, append a four-character session id to those titles only.
 
 ### Compact attention
 
