@@ -91,9 +91,6 @@ struct SimulatedNotchView: View {
             Text(progressString(usedPct: usedPct))
                 .font(.system(size: 13, weight: .medium, design: .monospaced))
                 .foregroundColor(quotaColor(usedPct: usedPct))
-            Text(usageTracker.progressMode.displayName)
-                .font(.system(size: 8, weight: .medium))
-                .foregroundColor(.white.opacity(0.28))
         }
     }
 

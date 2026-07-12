@@ -16,7 +16,6 @@ Close confirmed correctness, coverage, discoverability, and accessibility gaps f
 - Append a short session id only when visible project titles collide.
 - Auto-expand Recent when it is the only non-empty session section.
 - Keep Settings floating only while active, then demote it behind other applications.
-- Add subtle Used/Left suffixes to compact quota chips.
 
 ## Explicitly Retained
 

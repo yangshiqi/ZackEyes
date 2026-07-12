@@ -201,9 +201,6 @@ struct NotchCompactView: View {
             Text(progressString(usedPct))
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(quotaColor(usedPct))
-            Text(usageTracker.progressMode.displayName)
-                .font(.system(size: 8, weight: .medium))
-                .foregroundColor(.white.opacity(0.28))
         }
     }
 

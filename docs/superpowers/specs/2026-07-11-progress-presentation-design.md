@@ -37,7 +37,7 @@ The direction segments use SF Symbol arrows with accessibility labels and hover 
 | Left, LTR | `100 - usedPct` | `54% remaining` | `100 - usedPct` | leading (left) |
 | Left, RTL | `100 - usedPct` | `54% remaining` | `100 - usedPct` | trailing (right) |
 
-The compact pill keeps a dense `5h 54% Used` form with a small, low-emphasis Used/Left suffix. The number follows the selected mode. Expanded and split quota rows use the explicit `used` or `remaining` wording. A hard rate-limit state still says `limit`; it is never relabeled as remaining capacity.
+The compact pill keeps its dense `5h 54%` form without a mode suffix, but the number follows the selected mode. Expanded and split quota rows use the explicit `used` or `remaining` wording. A hard rate-limit state still says `limit`; it is never relabeled as remaining capacity.
 
 Usage color continues to express quota pressure from the original `usedPct`, not from the draw direction. Thus 90% remaining is a long Activity-colored Left bar, while 10% remaining is a short Critical-colored Left bar. Menu-bar risk color, ETA, usage ingestion, Today consumption, and per-session context bars are not part of this preference.
 
