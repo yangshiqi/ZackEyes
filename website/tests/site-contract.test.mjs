@@ -286,9 +286,9 @@ describe('Astro site contract', () => {
     assert.match(page, /iTerm2/);
     assert.match(page, /Terminal\.app/);
     assert.match(page, /Ghostty/);
-    assert.match(page, /Change Hotkey/);
-    assert.match(page, /Show Dynamic Island/);
-    assert.match(page, /Compact display/);
+    assert.match(page, /Settings window/);
+    assert.match(page, /global hotkey/);
+    assert.match(page, /Preferred quota source/);
     assert.match(page, /HowTo/);
     assert.match(page, /TechArticle/);
     assert.match(page, /from '\.\.\/lib\/release\.mjs'/);

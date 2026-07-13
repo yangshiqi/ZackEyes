@@ -24,15 +24,14 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - Display modes: support the physical MacBook notch, simulated Dynamic Island-style panels on Macs without a notch, menu bar workflows, and external display setups.
 - terminal tab jump: click a session card to activate matching sessions in iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, and Cursor when Accessibility permission is granted.
 - Context window usage: session cards can show context window usage, model and cost metadata, and per-agent usage pressure.
-- Controls: users can set a custom global hotkey, toggle Show Dynamic Island, choose Compact display for Claude or Codex, and use in-app DMG download for updates.
+- Daily token and cost tracking: a Today row totals token spend and USD cost across Claude and Codex with a 7-day sparkline; model pricing is bundled and computed locally, so no API key or cloud upload is required.
+- Controls: a unified Settings window (opened from the notch gear or the menu-bar icon) collects the custom global hotkey, Dynamic Island visibility, quota presentation, and a Preferred quota source that picks whether the compact pill favors Claude or Codex; in-app DMG download handles updates.
 - Native macOS behavior: a small notch panel designed for the top edge of the screen, with terminal workflows kept intact.
 - Quiet failure mode: hooks and bridge events should fail silently when the app is not open.
 
 ## Version and changelog
 - Current version: ${releaseName}.
-- Published: May 18, 2026.
-- Latest notes: Resumed Codex sessions (codex --resume) now appear in the notch even when the rollout file lives in an older date directory; click on a session card always activates a terminal even when AX matching fails.
-- Changelog page: https://zackeyes.app/changelog
+- Full release notes and dates live on the changelog, kept current every release: https://zackeyes.app/changelog
 - GitHub Releases: https://github.com/yangshiqi/ZackEyes-release/releases
 
 ## Install
