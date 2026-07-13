@@ -24,7 +24,7 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - Display modes: support the physical MacBook notch, simulated Dynamic Island-style panels on Macs without a notch, menu bar workflows, and external display setups.
 - terminal tab jump: click a session card to activate matching sessions in iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, and Cursor when Accessibility permission is granted.
 - Context window usage: session cards can show context window usage, model and cost metadata, and per-agent usage pressure.
-- Controls: users can set a custom global hotkey, toggle Show Dynamic Island, choose Compact display for Claude or Codex, and use in-app DMG download for updates.
+- Controls: a unified Settings window (opened from the notch gear or the menu-bar icon) collects the custom global hotkey, Dynamic Island visibility, quota presentation, and a Preferred quota source that picks whether the compact pill favors Claude or Codex; in-app DMG download handles updates.
 - Native macOS behavior: a small notch panel designed for the top edge of the screen, with terminal workflows kept intact.
 - Quiet failure mode: hooks and bridge events should fail silently when the app is not open.
 
