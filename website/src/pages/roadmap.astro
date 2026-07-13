@@ -2,7 +2,7 @@
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
-import { issuesUrl } from '../lib/release.mjs';
+import { appVersion, issuesUrl } from '../lib/release.mjs';
 
 const description = 'ZackEyes roadmap: deeper process and session insight, more agent support, and clearer local logs controls.';
 const roadmapItems = [
@@ -53,6 +53,9 @@ const roadmapStructuredData = {
           <h1 id="roadmap-title">Roadmap.</h1>
           <p class="policy-lede">
             ZackEyes is focused on reliable local agent awareness: sharper session and process insight, broader agent support, and clearer local logs controls — without breaking its near-zero-CPU, zero-dependency design.
+          </p>
+          <p class="policy-lede">
+            The current release is v{appVersion} — see the <a href="/changelog">changelog</a> for what has shipped; below is what is next.
           </p>
           <div class="hero-actions">
             <a class="button primary" href={issuesUrl}>Request a feature <span aria-hidden="true">↗</span></a>
