@@ -7,6 +7,19 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.9.0',
+    date: 'Published July 13, 2026',
+    summary: 'Added: A unified Settings window, opened from the notch gear or the menu-bar icon, consolidating visibility, quota presentation, appearance, notifications, integrations, and updates in one place (previously split across two divergent gear menus). Added: Configurable quota presentation — show Used or Remaining capacity, pick the fill direction, and optionally overlay how much of the 5h/7d window has elapsed (Off / Icon / Overlap) with adjustable opacity. Added: Attention-first session grouping — active sessions are split into Needs You, Running, and a collapsible Recent so whatever is waiting on you surfaces first. Added: Buddy animations now respect the macOS Reduce Motion setting. Added: The menu-bar star now signals quota pressure by shape as well as color (a circle when tight, a triangle when about to throttle) for clearer color-blind legibility. Fixed: One shared command menu across notched and non-notched Macs, with Quit always reachable from the menu bar, the gear, and Settings.',
+    highlights: [
+      {
+        label: 'Notes',
+        items: [
+          // TODO: fill in highlights before merging.
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.8.4',
     date: 'Published July 7, 2026',
     summary: 'Fixed: Codex 5h/7d quota no longer collapses to No Data after the session goes idle; the last reliable reading is retained until each window resets, instead of being cleared on the 15-minute rollout activity window (#162). Fixed: Codex usage-limit badge now shows a correct resets-in countdown that targets the binding window, survives the block and an app restart, and no longer lingers forever or vanishes on idle (#172).',
