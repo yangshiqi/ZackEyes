@@ -24,7 +24,7 @@ final class AboutWindow: NSObject, NSWindowDelegate {
             self?.dismiss()
         })
 
-        let size = NSSize(width: 280, height: 220)
+        let size = NSSize(width: 280, height: 256)
         let screenFrame = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
         let origin = NSPoint(
             x: screenFrame.midX - size.width / 2,
@@ -73,6 +73,8 @@ final class AboutWindow: NSObject, NSWindowDelegate {
 private struct AboutCardView: View {
     let onDismiss: () -> Void
 
+    private static let websiteURL = URL(string: "https://zackeyes.vercel.app/")!
+
     private var appVersion: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
     }
@@ -95,6 +97,15 @@ private struct AboutCardView: View {
                     .font(.system(size: 12))
                     .foregroundColor(.white.opacity(0.6))
 
+                Button {
+                    NSWorkspace.shared.open(Self.websiteURL)
+                } label: {
+                    Text("zackeyes.vercel.app")
+                        .font(.system(size: 12))
+                        .foregroundColor(AppColors.activity.color)
+                }
+                .buttonStyle(.plain)
+
                 Button(action: onDismiss) {
                     Text("OK")
                         .font(.system(size: 12, weight: .medium))
@@ -108,7 +119,7 @@ private struct AboutCardView: View {
                 .keyboardShortcut(.defaultAction)
             }
             .padding(20)
-            .frame(width: 240, height: 200)
+            .frame(width: 240, height: 236)
             .background(
                 RoundedRectangle(cornerRadius: 12)
                     .fill(Color(white: 0.12))

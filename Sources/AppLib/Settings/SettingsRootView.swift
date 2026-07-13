@@ -39,6 +39,7 @@ struct SettingsRootView: View {
     private let surfaceBackground = Color.white.opacity(0.035)
     private let transparentBorder = Color.white.opacity(0.12)
     private let secondaryForeground = Color.white.opacity(0.60)
+    private static let websiteURL = URL(string: "https://zackeyes.vercel.app/")!
 
     var body: some View {
         HStack(spacing: 0) {
@@ -380,6 +381,14 @@ struct SettingsRootView: View {
                         .font(.system(size: 20, weight: .semibold))
                     Text("Version \(appVersion)")
                         .foregroundStyle(.secondary)
+                    Button {
+                        NSWorkspace.shared.open(Self.websiteURL)
+                    } label: {
+                        Text("zackeyes.vercel.app")
+                            .font(.system(size: 12))
+                            .foregroundStyle(accent)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
