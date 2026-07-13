@@ -20,6 +20,7 @@ ZackEyes is a macOS notch command center for developers who run Claude Code, Cod
 - Theme choices include Rock Legends, F1 2026, and AI moguls, with matching custom notification sounds.
 - Supports terminal tab jump for iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, and Cursor when Accessibility permission is granted.
 - Shows context window usage, model and cost metadata when available from the agent stream.
+- Tracks daily token spend and USD cost across Claude and Codex in a Today row with a 7-day sparkline; model pricing is bundled and computed locally, so no API key or cloud upload is needed.
 - Uses native hooks and Unix socket bridge events so terminal workflows keep working when the app is closed.
 
 ## Compatibility
