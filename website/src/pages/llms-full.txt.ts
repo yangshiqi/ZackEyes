@@ -31,9 +31,7 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 
 ## Version and changelog
 - Current version: ${releaseName}.
-- Published: May 18, 2026.
-- Latest notes: Resumed Codex sessions (codex --resume) now appear in the notch even when the rollout file lives in an older date directory; click on a session card always activates a terminal even when AX matching fails.
-- Changelog page: https://zackeyes.app/changelog
+- Full release notes and dates live on the changelog, kept current every release: https://zackeyes.app/changelog
 - GitHub Releases: https://github.com/yangshiqi/ZackEyes-release/releases
 
 ## Install

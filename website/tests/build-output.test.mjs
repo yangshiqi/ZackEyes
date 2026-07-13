@@ -23,11 +23,12 @@ describe('production output budgets', { skip: !hasBuild }, () => {
     const htmlBytes = statSync(join(dist, 'index.html')).size;
     const cssBytes = cssFile ? statSync(join(astroDir, cssFile)).size : 0;
 
-    // 30 KB ceiling: the homepage now includes a real product screenshot
-    // section with accessible image metadata. Keep this tight enough to
-    // catch accidental React islands, generated JS bundles, or large inline
-    // blobs while allowing real static marketing content to ship.
-    assert.ok(htmlBytes < 30_000, `index.html is ${htmlBytes} bytes`);
+    // 31 KB ceiling: the homepage product-screenshot section now carries four
+    // real captures (dual-agent, terminal handoff, Settings, attention-first)
+    // with accessible image metadata. Keep this tight enough to catch
+    // accidental React islands, generated JS bundles, or large inline blobs
+    // while allowing real static marketing content to ship.
+    assert.ok(htmlBytes < 31_000, `index.html is ${htmlBytes} bytes`);
     assert.ok(cssFile, 'Expected a generated CSS asset in dist/_astro');
     assert.ok(cssBytes < 35_000, `homepage CSS is ${cssBytes} bytes`);
   });
