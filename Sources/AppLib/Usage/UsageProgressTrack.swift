@@ -125,12 +125,16 @@ struct UsageProgressTrack: View {
     @ViewBuilder
     private func timeLayer(presentation: ProgressPresentation, width: CGFloat) -> some View {
         let overlayOpacity = TimeOverlayOpacity.normalized(timeOverlayOpacity)
-        if overlayOpacity > 0 {
+        let fillWidth = width * CGFloat(presentation.fraction)
+        // A zero-width fill would still stroke a 1px vertical line at the anchor
+        // edge, so skip the layer entirely when there is no elapsed progress to
+        // show (e.g. used-mode right after a reset, or left-mode once elapsed).
+        if overlayOpacity > 0, fillWidth >= 1 {
             let boundaryOpacity = TimeOverlayOpacity.boundaryOpacity(for: overlayOpacity)
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: height / 2)
                     .fill(overlapColor.opacity(overlayOpacity))
-                    .frame(width: width * CGFloat(presentation.fraction), height: height)
+                    .frame(width: fillWidth, height: height)
                     .overlay {
                         RoundedRectangle(cornerRadius: height / 2)
                             .stroke(overlapColor.opacity(boundaryOpacity), lineWidth: 1)

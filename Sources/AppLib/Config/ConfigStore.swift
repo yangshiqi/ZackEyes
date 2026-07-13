@@ -212,23 +212,7 @@ public final class ConfigStore: Sendable {
 
     /// Save the elapsed-window presentation without touching other config keys.
     public func saveTimeProgressMode(_ mode: TimeProgressMode) {
-        let fm = FileManager.default
-        if !fm.fileExists(atPath: directory) {
-            try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
-        }
-        var wrapper: ConfigWrapper
-        if fm.fileExists(atPath: configPath) {
-            guard let data = fm.contents(atPath: configPath),
-                  let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
-                return
-            }
-            wrapper = existing
-        } else {
-            wrapper = ConfigWrapper(hotkey: .default)
-        }
-        wrapper.timeProgressMode = mode.rawValue
-        guard let data = try? JSONEncoder().encode(wrapper) else { return }
-        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+        updateConfig { $0.timeProgressMode = mode.rawValue }
     }
 
     /// Load whether quota bars show used or remaining capacity.
