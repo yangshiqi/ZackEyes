@@ -74,7 +74,7 @@ private struct UninstallCardView: View {
     @State private var cleanupComplete = true
     @State private var done = false
 
-    private static let danger = Color(red: 0.95, green: 0.45, blue: 0.40)
+    private static let danger = AppColors.critical.color
 
     var body: some View {
         ZStack {

@@ -189,6 +189,15 @@ PricingStore.start()
 |------|------|------|
 | `HotKeyConfig` | `Sources/AppLib/Config/HotKeyConfig.swift` | 快捷键配置模型 + `HotKeyModifiers` OptionSet（Carbon/NSEvent flag 互转、Codable 字符串数组、显示符号） |
 | `ConfigStore` | `Sources/AppLib/Config/ConfigStore.swift` | 读写 `~/.zackeyes/config.json`，原子写入，解析失败回退默认值 |
+| `TimeProgressMode` | `Sources/AppLib/Config/TimeProgressMode.swift` | 配额窗口时间进度展示模式：Off / Icon / Overlap，默认 Off |
+| `ProgressMode` | `Sources/AppLib/Config/ProgressMode.swift` | 配额展示偏好：Used / Left，Left 可选左到右或右到左；同文件定义 Overlap 内部不透明度默认40%、10%档位归一化，以及边框不透明度；读取兼容预发布版旧配置值 |
+
+**设置窗口**
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| `SettingsWindowController` | `Sources/AppLib/Settings/SettingsWindowController.swift` | 单例、非模态的标准 macOS 设置窗口；首次 `show()` 才创建 SettingsViewModel / 读取配置；重复打开聚焦既有窗口，不阻塞权限 socket；获得焦点时用 floating level 可靠置前，失焦后降到 normal 避免遮挡其它应用 |
+| `SettingsViewModel` | `Sources/AppLib/Settings/SettingsViewModel.swift` | 统一加载/保存 `ConfigStore` 偏好并发送既有运行时通知；聚合 Hook Health |
+| `SettingsRootView` | `Sources/AppLib/Settings/SettingsRootView.swift` | General / Appearance / Notifications / Integrations / About 五分区设置 UI；沿用 About 卡片的深色表面、activity 强调色和半透明描边；General 支持 Preferred quota source、Progress mode、Left 填充方向、Window elapsed、Overlap 透明度和 Today's consumption；首选 Agent 无配额数据时自动回退另一方 |
 
 **Hook 安装**
 | 模块 | 文件 | 职责 |
@@ -222,10 +231,10 @@ PricingStore.start()
 | `NotchPanel` | `Sources/AppLib/Notch/NotchPanel.swift` | NSPanel 子类，刘海区域覆盖层 |
 | `NotchWindowController` | `Sources/AppLib/Notch/NotchWindowController.swift` | 位置锚定、状态切换、鼠标追踪（固定窗口，不帧动画） |
 | `NotchViewModel` | `Sources/AppLib/Notch/NotchViewModel.swift` | 桥接 `SessionStore` → SwiftUI；转发嵌套 `objectWillChange` |
-| `NotchCompactView` | `Sources/AppLib/Notch/NotchCompactView.swift` | 折叠 / 紧凑状态视图 |
-| `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | 完整 popover：会话卡片、tasks、permission 审批、错误横幅、AskUserQuestion 选项卡。卡片右上角带 `AgentBadge`。 |
+| `NotchCompactView` | `Sources/AppLib/Notch/NotchCompactView.swift` | 折叠 / 紧凑状态视图；固定宽状态位按错误（红）→待用户（黄）→工作/空闲排序，多项注意事件显示数量；配额百分比保持无后缀的紧凑形式 |
+| `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | 完整 popover：按 Needs You / Running / Recent 分组（有其它分组时 Recent 默认折叠，仅剩 Recent 时自动展开）；会话卡片以项目名为主身份、Buddy 为辅助，同名可见项目追加短 session id；保留 tasks、permission、错误和 AskUserQuestion 内容 |
 | `AgentBadge` | `Sources/AppLib/Notch/AgentBadge.swift` | 14×14 SwiftUI 角标：`[CLAUDE]` 紫色 / `[CODEX]` 绿色。也提供 `accentColor(for:)` 给其它视图染色（split usage bar / 通知标题映射）。 |
-| `BuddyAvatar` | `Sources/AppLib/Notch/BuddyAvatar.swift` | 动画化 buddy（headbang / 睡觉 / 惊慌） |
+| `BuddyAvatar` | `Sources/AppLib/Notch/BuddyAvatar.swift` | 动画化 buddy（headbang / 睡觉 / 惊慌）；自动尊重 macOS Reduce Motion，关闭无限动画但保留静态状态表达 |
 | `Buddy` | `Sources/AppLib/Notch/Buddy.swift` | 摇滚传奇命名池（66 个）+ 性格标语池 |
 | `PixelAvatar` | `Sources/AppLib/Notch/PixelAvatar.swift` | 9 种 8×8 像素图案 + 8 色摇滚配色 |
 | `HotkeyRecorderView` | `Sources/AppLib/Notch/HotkeyRecorderView.swift` | SwiftUI 快捷键录入 overlay，NSEvent local monitor 捕获按键，验证 modifier |
@@ -234,12 +243,10 @@ PricingStore.start()
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `SimulatedNotchPanel` | `Sources/AppLib/SimulatedNotch/SimulatedNotchPanel.swift` | 顶部居中 NSPanel，`.screenSaver` 层级 |
-| `SimulatedNotchView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchView.swift` | Compact / hoverWide 内容（5h/7d 剩余 + NotchShape）。读 `NotchModeStore.compactAgent` 决定显示哪个 agent 的配额 |
+| `SimulatedNotchView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchView.swift` | Compact / hoverWide 内容（无文字后缀的 5h/7d 配额 + NotchShape）。读 `NotchModeStore.compactAgent` 决定显示哪个 agent 的配额 |
 | `SimulatedNotchFullView` | `Sources/AppLib/SimulatedNotch/SimulatedNotchFullView.swift` | Full 模式：5h/7d 进度条 header + 滚动 session 列表。当两 agent 都有数据时，header 自动左右切割（左 Claude / 右 Codex），用固定宽 gear 列保证 5h 与 7d 两行轨道对齐 |
 | `SimulatedNotchController` | `Sources/AppLib/SimulatedNotch/SimulatedNotchController.swift` | 三态形变控制器，hover intent 进入 full，外部点击退出，内容自适应高度。启动时从 `ConfigStore.loadCompactAgent()` 注水 `modeStore.compactAgent` 避免首帧闪烁；`#48` 起 `applyVisibility` 支持 `.whenActive` 自动显隐 |
-| `SimulatedNotchRoot` | `Sources/AppLib/SimulatedNotch/SimulatedNotchRoot.swift` | SwiftUI 根视图，compact/full 切换 + overlay 层叠。`NotchModeStore` 含 `@Published compactAgent: AgentKind` |
-| `GearMenuTarget` | `Sources/AppLib/SimulatedNotch/GearMenuTarget.swift` | NSMenu 动作目标（About / Change Hotkey / Theme / Compact display / Update） |
-| `HostViewProbe` | `Sources/AppLib/SimulatedNotch/HostViewProbe.swift` | SwiftUI → NSView 桥接，用于齿轮菜单锚点定位 |
+| `SimulatedNotchRoot` | `Sources/AppLib/SimulatedNotch/SimulatedNotchRoot.swift` | SwiftUI 根视图，compact/full 保持稳定 identity 以保留 Recent/recap/滚动状态；隐藏 Full 时取消 1s Timer 订阅并停止 Buddy 无限动画；透明尺寸骨架保持转场锚点稳定。`NotchModeStore` 含 `@Published compactAgent: AgentKind` |
 
 **菜单栏 fallback**
 | 模块 | 文件 | 职责 |
@@ -251,17 +258,19 @@ PricingStore.start()
 | `DiagnosticsReport` | `Sources/AppLib/Diagnostics/DiagnosticsReport.swift` | #47 隐私安全诊断报告（固定 schema）：版本/OS/arch + HookHealth 布尔值 + 用量新鲜度，复用 `HookHealth`。唯一自由文本字段（statusLine 第三方命令）经 `Redactor` 脱敏；绝不含 prompt/assistant/工具参数/完整配置内容。`generate` 纯函数（依赖注入），`current()` 为薄 `@MainActor` 聚合层。 |
 | `DiagnosticsWindow` | `Sources/AppLib/MenuBar/DiagnosticsWindow.swift` | #47 导出审阅窗口（`KeyablePanel` 仿 `HookStatusWindow`）：滚动展示脱敏报告 + Copy/Save…/Close，用户分享前可先审阅内容。两菜单"Export Diagnostics…"共用同一实例。 |
 
-> **两套齿轮菜单（易分叉，见 #164）**：物理刘海（`NotchWindowController`）的齿轮复用 `StatusBarMenu.buildMenu()`（`AppDelegate` 把 `wc.showMenu` 接到它），模拟刘海用自己的 `SimulatedNotchFullView.popGearMenu()`。两者由不同代码构建，需手动保持同步。`#160` 起 `StatusBarMenu` 补上 **Compact display**；但 **Show today's consumption** 开关目前仍只在模拟刘海菜单里（物理刘海缺，#164 跟踪）。**Move Notch** 物理刘海故意不提供（硬件位置固定）。
+> **统一应用菜单**：物理刘海、模拟刘海的齿轮与状态栏图标右键都调用同一个 `StatusBarMenu.build()`。默认提供 Settings / About / Quit 三项，有可用更新时在顶部追加 Update；Settings 仍由 `AppDelegate` 持有的单例 `SettingsWindowController` 打开。菜单只保留应用级命令，不复制偏好设置。
 
 **全局功能**
 | 模块 | 文件 | 职责 |
 |------|------|------|
+| `AppColors` | `Sources/AppLib/Design/AppColors.swift` | 全局功能语义色唯一来源，同时提供 SwiftUI `Color` 与 AppKit `NSColor`：Activity、Information、Time Overlay、Attention、Critical、Success、Idle、No Data 和 Claude/Codex Identity；Buddy/F1 装饰色不纳入状态语义 |
 | `HotKeyManager` | `Sources/AppLib/HotKey/HotKeyManager.swift` | Carbon `RegisterEventHotKey` 注册全局快捷键（可配置，默认 `Cmd+Shift+Z`），支持运行时 `reregister` 热更新 |
 | `NotificationManager` | `Sources/AppLib/Notifications/NotificationManager.swift` | 时间敏感通知（session 完成 / API 错误 / 版本更新），点击跳转终端或打开 GitHub |
 | `UpdateChecker` | `Sources/AppLib/Update/UpdateChecker.swift` | 轮询公开发布仓库（6h）获取最新 DMG，语义版本比较，`@Published dmgURL` 驱动齿轮红点 + 系统通知；`checkNow()` 手动检查入口（`#48`） |
 | `UpdateDownloader` | `Sources/AppLib/Update/UpdateDownloader.swift` | URLSession 下载 DMG 到 `$TMPDIR`，通过 NSWorkspace 打开使 Finder 挂载；状态栏菜单 + 齿轮菜单 + 通知点击均通过此下载器 |
 | `TerminalLocator` | `Sources/AppLib/Terminal/TerminalLocator.swift` | 进程树遍历 + iTerm2/Terminal AppleScript + Ghostty/Warp/Kitty Accessibility |
 | `UsageTracker` | `Sources/AppLib/Usage/UsageTracker.swift` | 双 agent 配额。Claude 数据来自 statusLine hook 的 `rate_limits.{five_hour,seven_day}`；Codex 数据来自周期扫描 `~/.codex/sessions/` rollout 的 `event_msg.token_count.rate_limits.{primary,secondary}`。**采集活跃度与额度有效期解耦**：15 min rollout mtime 窗口只用于发现新读数；Codex 空闲、没有新 rollout 时保留最后可信读数，并按 5h/7d 各自 `resets_at` 独立失效。`codexLastUpdated` 记录实际供应读数的 rollout mtime，重复扫描不会伪装成刚更新，UI 超过 15 min 后通过 freshness 警告标记陈旧。**跨并发 rollout 合并**：`firstActiveCodexReadings` 把 15 min 内所有活跃 rollout 的 scope 按 `limit_name` 合并，同名 scope 取 per-axis 非过期最大值——防止某个高频写 0% 的 per-model session（如 gpt-5.5 的 `GPT-5.3-Codex-Spark`）盖住另一个安静 session 写的真实账号用量。**账号级安全网**：5h/7d 百分比只在存在账号级 scope（空 `limit_name`，或缓存种子）时才可信；若当前只有 per-model scope（gpt-5.5 的账号 scope 在 rollout 里恒为 null），百分比留 nil（显示「—」/隐藏），**绝不把 per-model 0% 渲染成「100% 剩余」**。账号真实 5h/7d 仅存在于 codex 收到的响应头（`x-codex-*-used-percent`，落在 `~/.codex/logs_2.sqlite` DEBUG 日志或 app-server `account/rateLimits/read`），codex 不写进 rollout——刻意不接这两个重源（log DB 抓取 / 进程 spawn）以保持 widget 轻量，缺账号数据时诚实显示未知。`codexLimitReached`（out-of-credits `balance:"0"` / `rate_limit_reached_type` / 窗口 100%）独立于百分比，单独驱动「limit reached」徽标。Snapshot 含 claude + codex 平行字段，UI 按需呈现单条或左右切。 |
+| `UsageProgressTrack` | `Sources/AppLib/Usage/UsageProgressTrack.swift` | 共享 5h/7d 配额轨道：Used / Left 与 Left 方向统一驱动额度和时间填充；Icon/Overlap 每30s更新；Overlap 使用可设的浅灰时间层（默认不透明度40%）及同色1px边框（比填充层低15个百分点），时间长于用量时在下层，否则在上层（含相等），不用于 session context bar |
 | `PricingStore` / `PricingTable` | `Sources/AppLib/Usage/PricingStore.swift`、`PricingTable.swift` | 模型→单价查询（`price(for:)`）。`PricingTable` 纯解析+查找（exact→去日期后缀→alias→nil，仅接受原始 model id）；`PricingStore` 按 `version` 在 bundled 快照 / 磁盘缓存 / 24h 远端拉取间择新，失败静默。无 UI。 |
 | `TodayConsumptionRow` | `Sources/AppLib/Usage/TodayConsumptionRow.swift` | #84 消费轴（与 5h/7d 配额轴分开）：full-view header 的 "Today" 行——今日 token + $ + 近 7 日 token sparkline + 每 agent 副行。纯静态格式化助手（humanize / cost / sparkline，`nonisolated`）+ 只读视图。数据来自 `UsageTracker.Snapshot.dailyUsage`（7 个本地日桶；Claude 侧 `computeSnapshot` 递归全 projects 树扫 transcript——含 `<session>/subagents/` 与 Workflow 工具的 `<session>/wf_*/` agent 文件，#116——并按 `(mtime,size)` per-file 缓存解析；Codex 侧缓存式 `scanCodexDailyTokens`；cost 在主 actor 用 `PricingStore` 折算）。嵌入 `UsageBarsView`（真刘海）与 `SimulatedNotchFullView.usageHeader`（模拟），`hasConsumption` 为空时隐藏；由齿轮菜单「Show today's consumption」开关控制（默认开，flag 在 `UsageTracker.showTodayConsumption`，持久化 `ConfigStore`，两个面板响应式）。**收起的 compact pill 始终只显示 5h/7d 配额，不显示消费**（产品决策）。 |
 
@@ -351,6 +360,7 @@ ccisland/
 │   │   ├── Notch/              # NotchPanel, Buddy, PixelAvatar, HotkeyRecorderView
 │   │   ├── SimulatedNotch/     # 无刘海机型的灵动岛
 │   │   ├── MenuBar/            # MenuBarFallback
+│   │   ├── Settings/           # 统一非模态设置窗口
 │   │   ├── HotKey/             # HotKeyManager（可配置快捷键）
 │   │   ├── Notifications/      # NotificationManager
 │   │   ├── Terminal/           # TerminalLocator (tab 跳转)

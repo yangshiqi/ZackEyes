@@ -42,7 +42,7 @@ struct HotkeyRecorderView: View {
                 if let error = errorMessage {
                     Text(error)
                         .font(.system(size: 11))
-                        .foregroundColor(Color(red: 0.95, green: 0.30, blue: 0.30))
+                        .foregroundColor(AppColors.critical.color)
                         .frame(height: 14)
                 } else {
                     Spacer().frame(height: 14)
@@ -64,10 +64,10 @@ struct HotkeyRecorderView: View {
                     Button(action: { save() }) {
                         Text("Save")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
+                            .foregroundColor(AppColors.activity.color)
                             .padding(.horizontal, 20)
                             .padding(.vertical, 6)
-                            .background(Color(red: 0.31, green: 0.80, blue: 0.77).opacity(0.15))
+                            .background(AppColors.activity.color.opacity(0.15))
                             .cornerRadius(6)
                     }
                     .buttonStyle(.plain)

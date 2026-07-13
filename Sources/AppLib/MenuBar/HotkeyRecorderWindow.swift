@@ -11,6 +11,12 @@ import SwiftUI
 @MainActor
 final class HotkeyRecorderWindow: NSObject, NSWindowDelegate {
     private var panel: KeyablePanel?
+    private let onSaved: ((HotKeyConfig) -> Void)?
+
+    init(onSaved: ((HotKeyConfig) -> Void)? = nil) {
+        self.onSaved = onSaved
+        super.init()
+    }
 
     func show() {
         // Reuse an already-open recorder instead of stacking a second
@@ -32,6 +38,7 @@ final class HotkeyRecorderWindow: NSObject, NSWindowDelegate {
                     object: nil,
                     userInfo: ["config": newConfig]
                 )
+                self?.onSaved?(newConfig)
                 self?.dismiss()
             },
             onCancel: { [weak self] in

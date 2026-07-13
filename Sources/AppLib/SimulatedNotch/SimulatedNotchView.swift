@@ -13,8 +13,6 @@ struct SimulatedNotchView: View {
     let isExpanded: Bool
     var onTap: (() -> Void)? = nil
 
-    @State private var workingPulse: Double = 1.0
-
     var body: some View {
         HStack(spacing: 10) {
             statusIcon
@@ -33,7 +31,7 @@ struct SimulatedNotchView: View {
             // currently draggable (entered via gear menu → "Move Notch").
             if modeStore.isMovingNotch {
                 NotchShape(cornerRadius: 14)
-                    .stroke(Color(red: 0.31, green: 0.80, blue: 0.77), lineWidth: 2)
+                    .stroke(AppColors.activity.color, lineWidth: 2)
             }
         }
         .contentShape(NotchShape(cornerRadius: 14))
@@ -45,29 +43,13 @@ struct SimulatedNotchView: View {
     // MARK: - Status icon (animated sparkles / dot)
 
     private var statusIcon: some View {
-        Group {
-            switch viewModel.aggregateState {
-            case .waiting:
-                Image(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
-            case .working:
-                Image(systemName: "sparkles")
-                    .font(.system(size: 11))
-                    .foregroundColor(Color(red: 0.31, green: 0.80, blue: 0.77))
-                    .scaleEffect(workingPulse)
-                    .onAppear {
-                        withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
-                            workingPulse = 1.2
-                        }
-                    }
-            case .idle, .stopped:
-                Image(systemName: "sparkles")
-                    .font(.system(size: 11))
-                    .foregroundColor(.white.opacity(0.35))
-            }
-        }
-        .frame(width: 14, height: 14)
+        CompactStatusIcon(
+            attention: CompactAttention.make(
+                from: Array(viewModel.sessionStore.sessions.values)
+            ),
+            aggregateState: viewModel.aggregateState,
+            workingColor: AppColors.activity.color
+        )
     }
 
     // MARK: - Compact content (shown when not hovered)
@@ -83,12 +65,12 @@ struct SimulatedNotchView: View {
         if let urgent = eta?.pillUrgentLabel {
             urgentETAChip(urgent)
         } else {
-            percentageChip(label: "5h", usedPct: fivePct, fallbackTokens: snap.tokens5h, scale: .fiveHour)
+            percentageChip(label: "5h", usedPct: fivePct)
         }
         Text("·")
             .font(.system(size: 12))
             .foregroundColor(.white.opacity(0.3))
-        percentageChip(label: "7d", usedPct: sevenPct, fallbackTokens: snap.tokens7d, scale: .sevenDay)
+        percentageChip(label: "7d", usedPct: sevenPct)
     }
 
     @ViewBuilder
@@ -97,43 +79,43 @@ struct SimulatedNotchView: View {
             Image(systemName: "bolt.fill").font(.system(size: 10, weight: .bold))
             Text(label).font(.system(size: 13, weight: .semibold, design: .monospaced))
         }
-        .foregroundColor(Color(red: 0.95, green: 0.30, blue: 0.30))
+        .foregroundColor(AppColors.critical.color)
     }
 
     @ViewBuilder
-    private func percentageChip(label: String, usedPct: Double?, fallbackTokens: Int, scale: TokenScale) -> some View {
+    private func percentageChip(label: String, usedPct: Double?) -> some View {
         HStack(spacing: 3) {
             Text(label)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.white.opacity(0.55))
-            Text(remainingString(usedPct: usedPct, fallbackTokens: fallbackTokens, scale: scale))
+            Text(progressString(usedPct: usedPct))
                 .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundColor(remainingColor(usedPct: usedPct, fallbackTokens: fallbackTokens, scale: scale))
+                .foregroundColor(quotaColor(usedPct: usedPct))
         }
     }
 
     /// "82%" if real data exists, otherwise "—" or estimated value.
-    private func remainingString(usedPct: Double?, fallbackTokens: Int, scale: TokenScale) -> String {
+    private func progressString(usedPct: Double?) -> String {
         if let used = usedPct {
-            let remaining = max(0, 100.0 - used)
-            return String(format: "%.0f%%", remaining)
+            let presentation = ProgressPresentation(
+                usedFraction: used / 100,
+                mode: usageTracker.progressMode,
+                leftDirection: usageTracker.leftProgressDirection
+            )
+            return "\(presentation.percent)%"
         }
         // No real data — show em-dash to make it clear we're guessing
         return "—"
     }
 
-    private func remainingColor(usedPct: Double?, fallbackTokens: Int, scale: TokenScale) -> Color {
+    private func quotaColor(usedPct: Double?) -> Color {
         let usedRatio: Double
         if let used = usedPct {
             usedRatio = used / 100.0
         } else {
-            return .white.opacity(0.4)  // gray when no data
+            return AppColors.noData.color.opacity(0.4)
         }
-        switch usedRatio {
-        case ..<0.5: return Color(red: 0.31, green: 0.80, blue: 0.77)  // teal
-        case ..<0.85: return Color(red: 0.96, green: 0.65, blue: 0.14) // orange
-        default: return Color(red: 0.95, green: 0.30, blue: 0.30)      // red
-        }
+        return .usageLevelColor(usedPct: usedRatio * 100)
     }
 
 
@@ -152,7 +134,6 @@ struct SimulatedNotchView: View {
             label: "5h",
             usedPct: fivePct,
             resetsAt: fiveResets,
-            scale: .fiveHour,
             eta: (agent == .codex) ? snap.codexFiveHourETA : snap.fiveHourETA
         )
 
@@ -163,8 +144,7 @@ struct SimulatedNotchView: View {
         usageStat(
             label: "7d",
             usedPct: sevenPct,
-            resetsAt: sevenResets,
-            scale: .sevenDay
+            resetsAt: sevenResets
         )
 
         Spacer(minLength: 4)
@@ -181,14 +161,14 @@ struct SimulatedNotchView: View {
 
     @ViewBuilder
     private func usageStat(label: String, usedPct: Double?, resetsAt: Date?,
-                           scale: TokenScale, eta: CapETA? = nil) -> some View {
+                           eta: CapETA? = nil) -> some View {
         HStack(spacing: 4) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundColor(.white.opacity(0.55))
-            Text(remainingString(usedPct: usedPct, fallbackTokens: 0, scale: scale))
+            Text(progressString(usedPct: usedPct))
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                .foregroundColor(remainingColor(usedPct: usedPct, fallbackTokens: 0, scale: scale))
+                .foregroundColor(quotaColor(usedPct: usedPct))
             // #86/#108 — show the ETA badge AND the reset countdown; they don't
             // compete (ETA = when you run dry, reset = when budget returns), and
             // an urgent ETA like ⚡~10min is exactly when you want both. CapETABadge
@@ -202,11 +182,6 @@ struct SimulatedNotchView: View {
         }
     }
 
-    // MARK: - Types
-
-    private enum TokenScale {
-        case fiveHour, sevenDay
-    }
 }
 
 // `NotchShape` now lives in Sources/AppLib/Notch/NotchShape.swift (shared by

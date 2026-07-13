@@ -13,8 +13,7 @@ struct NotchRootView: View {
     /// hardware notch and flanks it with content (issue #64 — Dynamic Island
     /// layout, mirroring DynamicNotchKit / boring.notch).
     let notchWidth: CGFloat
-    /// Called when the gear is clicked. Receives the gear's backing NSView
-    /// so AppDelegate can anchor an NSMenu against it.
+    /// Called with the gear's backing view so AppKit can anchor the shared menu.
     let showMenu: (NSView) -> Void
 
     @State private var gearHost = HostViewBox()
@@ -140,21 +139,13 @@ struct NotchCompactView: View {
 
     @ViewBuilder
     private var statusIcon: some View {
-        switch viewModel.aggregateState {
-        case .waiting:
-            Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 11))
-                .foregroundColor(Color(red: 0.96, green: 0.65, blue: 0.14))
-        case .working:
-            Circle()
-                .fill(viewModel.statusColor)
-                .frame(width: 8, height: 8)
-                .shadow(color: viewModel.statusColor, radius: 3)
-        case .idle, .stopped:
-            Image(systemName: "sparkles")
-                .font(.system(size: 11))
-                .foregroundColor(.white.opacity(0.45))
-        }
+        CompactStatusIcon(
+            attention: CompactAttention.make(
+                from: Array(viewModel.sessionStore.sessions.values)
+            ),
+            aggregateState: viewModel.aggregateState,
+            workingColor: viewModel.statusColor
+        )
     }
 
     // MARK: - Left content (visible, left of notch)
@@ -185,7 +176,7 @@ struct NotchCompactView: View {
             Text(label)
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
         }
-        .foregroundColor(Color(red: 0.95, green: 0.30, blue: 0.30))
+        .foregroundColor(AppColors.critical.color)
     }
 
     // MARK: - Right content (visible, right of notch)
@@ -207,19 +198,24 @@ struct NotchCompactView: View {
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(.white.opacity(0.55))
-            Text(remainingString(usedPct))
+            Text(progressString(usedPct))
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundColor(remainingColor(usedPct))
+                .foregroundColor(quotaColor(usedPct))
         }
     }
 
-    private func remainingString(_ usedPct: Double?) -> String {
+    private func progressString(_ usedPct: Double?) -> String {
         guard let used = usedPct else { return "—" }
-        return String(format: "%.0f%%", max(0, 100 - used))
+        let presentation = ProgressPresentation(
+            usedFraction: used / 100,
+            mode: usageTracker.progressMode,
+            leftDirection: usageTracker.leftProgressDirection
+        )
+        return "\(presentation.percent)%"
     }
 
-    private func remainingColor(_ usedPct: Double?) -> Color {
-        guard let used = usedPct else { return .white.opacity(0.4) }
+    private func quotaColor(_ usedPct: Double?) -> Color {
+        guard let used = usedPct else { return AppColors.noData.color.opacity(0.4) }
         return .usageLevelColor(usedPct: used)
     }
 }

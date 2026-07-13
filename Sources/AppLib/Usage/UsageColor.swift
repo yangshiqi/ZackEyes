@@ -1,21 +1,53 @@
 import SwiftUI
 
+enum PressureLevel: Equatable {
+    case activity
+    case attention
+    case critical
+}
+
+enum UsagePressure {
+    static let attentionThreshold = 50.0
+    static let criticalThreshold = 85.0
+
+    static func level(for usedPct: Double) -> PressureLevel {
+        switch usedPct {
+        case ..<attentionThreshold: return .activity
+        case ..<criticalThreshold: return .attention
+        default: return .critical
+        }
+    }
+}
+
+enum ContextPressure {
+    static let attentionThreshold = 60.0
+    static let criticalThreshold = 85.0
+
+    static func level(for usedPct: Double) -> PressureLevel {
+        switch usedPct {
+        case ..<attentionThreshold: return .activity
+        case ..<criticalThreshold: return .attention
+        default: return .critical
+        }
+    }
+}
+
 extension Color {
     /// Shared traffic-light color scale used by every usage indicator
     /// (5h/7d progress bars in the expanded panel, remaining-% chips in
     /// the compact pill, matching simulated-notch). Thresholds match
-    /// Anthropic's rate-limit warning levels: green well below quota,
-    /// orange as it gets tight, red when nearly out.
+    /// Anthropic's rate-limit warning levels: Activity well below quota,
+    /// Attention as it gets tight, and Critical when nearly out.
     static func usageLevelColor(usedPct: Double) -> Color {
-        switch usedPct {
-        case ..<50: return Color(red: 0.31, green: 0.80, blue: 0.77)  // teal
-        case ..<85: return Color(red: 0.96, green: 0.65, blue: 0.14)  // orange
-        default:    return Color(red: 0.95, green: 0.30, blue: 0.30)  // red
+        switch UsagePressure.level(for: usedPct) {
+        case .activity: return AppColors.activity.color
+        case .attention: return AppColors.attention.color
+        case .critical: return AppColors.critical.color
         }
     }
 
-    /// Red used for an exhausted / "limit reached" usage cell. Matches the
-    /// top of the traffic-light scale (and the session error banner) so a
+    /// Critical color used for an exhausted / "limit reached" usage cell.
+    /// Matches the top of the pressure scale and the session error banner so a
     /// blocked agent reads consistently across the app.
-    static let usageLimitRed = Color(red: 0.95, green: 0.30, blue: 0.30)
+    static let usageLimitRed = AppColors.critical.color
 }

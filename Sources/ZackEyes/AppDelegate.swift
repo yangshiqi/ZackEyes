@@ -21,6 +21,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var updateDownloader: UpdateDownloader?
     private var pricingStore: PricingStore?
     private var statusBarMenu: StatusBarMenu?
+    private var settingsWindowController: SettingsWindowController?
     private var livenessSweepTimer: Timer?
     private var codexTailer: CodexJsonlTailer?
     private var cancellables = Set<AnyCancellable>()
@@ -108,6 +109,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // ModelPrice) without coupling it to PricingStore/Bundle.
         sessionStore.codexPriceLookup = { [weak ps] model in ps?.price(for: model) }
         usageTracker.showTodayConsumption = ConfigStore().loadShowTodayConsumption()
+        usageTracker.timeProgressMode = ConfigStore().loadTimeProgressMode()
+        usageTracker.progressMode = ConfigStore().loadProgressMode()
+        usageTracker.leftProgressDirection = ConfigStore().loadLeftProgressDirection()
+        usageTracker.timeOverlayOpacity = ConfigStore().loadTimeOverlayOpacity()
         // Real-notch path doesn't go through SimulatedNotchController, so the
         // tracker would never start its 30s refresh loop and the menu-bar
         // star would stay white forever. Start it here unconditionally —
@@ -124,19 +129,44 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let dl = UpdateDownloader()
         updateDownloader = dl
 
-        // Menu bar icon is ALWAYS shown: on notched Macs it's the only
-        // non-CLI surface for Quit / About / Change Hotkey / Theme
-        // (real-notch path has no gear menu).
+        // Menu bar icon is ALWAYS shown so Settings, About and Quit remain
+        // reachable even when the notch visibility preference is Hidden.
         let mb = MenuBarFallback(viewModel: viewModel, usageTracker: usageTracker)
         mb.setup()
         menuBarFallback = mb
 
-        // Shared right-click context menu (About / Update / Hotkey / Theme /
-        // Quit). Both paths get the same menu; on simulated-notch it is
-        // redundant with the gear button but harmless.
-        let statusMenu = StatusBarMenu(updateChecker: uc, downloader: dl, usageTracker: usageTracker)
+        let settingsWindow = SettingsWindowController(
+            usageTracker: usageTracker,
+            updateChecker: uc,
+            downloader: dl
+        )
+        settingsWindowController = settingsWindow
+
+        // The context menu now contains only app-level commands. All
+        // preferences are hosted by the shared Settings window.
+        let statusMenu = StatusBarMenu(updateChecker: uc, downloader: dl)
         mb.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
         self.statusBarMenu = statusMenu
+
+        NotificationCenter.default.addObserver(
+            forName: .settingsWindowRequested,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.settingsWindowController?.show()
+                self.forceUiCompact()
+            }
+        }
+
+        NotificationCenter.default.addObserver(
+            forName: .settingsAppearanceChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.viewModel.objectWillChange.send() }
+        }
 
         // Load persisted visibility up front — passing it into the controller
         // init avoids a first-frame flash where the panel would orderFront then
@@ -153,22 +183,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 usageTracker: usageTracker,
                 initialVisibility: initialVisibility
             )
-            // Gear in the expanded panel pops the same StatusBarMenu as
-            // the status-bar right-click — single source of truth for
-            // About / Hotkey / Theme / Quit across both surfaces.
-            wc.showMenu = { [weak statusMenu, weak wc] view in
-                guard let menu = statusMenu?.build() else { return }
-                // Anchor at the bottom edge of the gear (AppKit non-flipped:
-                // y=minY is bottom). Matches SimulatedNotchFullView.popGearMenu.
-                let anchor = NSPoint(x: view.bounds.minX, y: view.bounds.minY - 2)
-                // Pause the outside-click monitor: NSMenu.popUp runs a modal
-                // event loop that still pumps our local @MainActor tasks, so
-                // a click on a menu item would otherwise be racing the panel-
-                // collapse handler and snap the notch closed on every gear use.
-                wc?.stopOutsideClickMonitoring()
-                menu.popUp(positioning: nil, at: anchor, in: view)
-                wc?.startOutsideClickMonitoring()
-            }
+            wc.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
             wc.setup()
             windowController = wc
             mb.onIconClick = { [weak wc] in wc?.forceExpand() }
@@ -181,10 +196,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 downloader: dl,
                 initialVisibility: initialVisibility
             )
+            sn.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
             sn.setup()
             simulatedNotch = sn
 
             mb.onIconClick = { [weak sn] in sn?.toggleFull() }
+        }
+
+        // Local design-review entry point: launching the executable with
+        // `--settings` opens the same singleton window as either gear button.
+        if CommandLine.arguments.contains("--settings") {
+            DispatchQueue.main.async {
+                settingsWindow.show()
+            }
         }
 
         // 4.5 Global hotkey — toggles the simulated notch on notchless Macs,
@@ -595,7 +619,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             sessionStore.handlePermissionRequest(
                 sessionId: sid, permission: pending, agent: event.agent
             )
-            simulatedNotch?.dismissAboutOverlay()
             forceUiExpand()
             maybeNotifyWaiting(event: event, sessionId: sid, kind: .permission)
 
@@ -626,7 +649,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             sessionStore.handlePermissionRequest(
                 sessionId: sid, permission: pending, agent: event.agent
             )
-            simulatedNotch?.dismissAboutOverlay()
             forceUiExpand()
             maybeNotifyWaiting(event: event, sessionId: sid, kind: .question)
 

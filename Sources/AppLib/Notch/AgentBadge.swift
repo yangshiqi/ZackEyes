@@ -17,9 +17,9 @@ struct AgentBadge: View {
     static func accentColor(for agent: AgentKind) -> Color {
         switch agent {
         case .claude:
-            return Color(red: 0.78, green: 0.55, blue: 0.95)  // Anthropic-ish purple
+            return AppColors.claudeIdentity.color
         case .codex:
-            return Color(red: 0.10, green: 0.85, blue: 0.55)  // OpenAI-ish green
+            return AppColors.codexIdentity.color
         }
     }
 

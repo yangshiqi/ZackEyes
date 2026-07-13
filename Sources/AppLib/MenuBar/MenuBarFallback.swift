@@ -69,15 +69,17 @@ public class MenuBarFallback: NSObject {
         //
         // Color encodes the 5h subscriber-window quota of whichever agent
         // is "currently working" (see MenuBarIconColor for the priority).
-        // Liveness state isn't reflected here — the notch panel + its
-        // animations carry that signal; the menu bar only has color to
-        // spend, so we spend it on the more durable rate-limit warning.
-        let tint = MenuBarIconColor.tint(
+        // Liveness state isn't reflected here; the icon spends its compact
+        // shape-and-color vocabulary on the more durable rate-limit warning.
+        let presentation = MenuBarIconColor.presentation(
             primaryAgent: viewModel.sessionStore.primarySession?.agent,
             snapshot: usageTracker.snapshot
         )
-        let config = NSImage.SymbolConfiguration(paletteColors: [tint])
-        guard let image = NSImage(systemSymbolName: "star.fill", accessibilityDescription: "ZackEyes")?
+        let config = NSImage.SymbolConfiguration(paletteColors: [presentation.tint])
+        guard let image = NSImage(
+            systemSymbolName: presentation.symbolName,
+            accessibilityDescription: presentation.accessibilityDescription
+        )?
             .withSymbolConfiguration(config) else {
             return
         }

@@ -68,6 +68,27 @@ final class BuddyThemeTests: XCTestCase {
         XCTAssertEqual(files.count, Set(files).count, "duplicate sound filenames")
     }
 
+    func testOriginalSoundFilesRemainMappedToTheirThemes() {
+        XCTAssertEqual(
+            BuddyTheme.rock.availableSounds.map(\.file),
+            ["ba-dum", "guitar-riff", "skull-guitar", "guitar-notif", "guitar-quick", "none"]
+        )
+        XCTAssertEqual(
+            BuddyTheme.f1.availableSounds.map(\.file),
+            [
+                "box-box", "get-in-there", "for-what", "simply-lovely",
+                "super-max", "team-radio", "f1-radio", "none",
+            ]
+        )
+        XCTAssertEqual(
+            BuddyTheme.silicon.availableSounds.map(\.file),
+            [
+                "agi-altman", "more-compute-jensen", "so-back", "tokens-karpathy",
+                "race-to-the-top-dario", "move-fast-zuck", "none",
+            ]
+        )
+    }
+
     func testSiliconCodableRoundTrip() throws {
         let encoded = try JSONEncoder().encode(BuddyTheme.silicon)
         let decoded = try JSONDecoder().decode(BuddyTheme.self, from: encoded)

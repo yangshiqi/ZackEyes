@@ -76,7 +76,7 @@ private struct DiagnosticsCardView: View {
     @State private var report: String = ""
     @State private var copied: Bool = false
 
-    private static let accent = Color(red: 0.31, green: 0.80, blue: 0.77)
+    private static let accent = AppColors.activity.color
 
     var body: some View {
         ZStack {

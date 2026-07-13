@@ -60,6 +60,24 @@ public struct SessionInfo: Identifiable {
         return String(id.prefix(8))
     }
 
+    /// One attention policy shared by list grouping, compact status, and sorting.
+    var needsAttention: Bool {
+        errorMessage != nil || pendingPermission != nil || state == .waiting
+    }
+
+    /// Lower values render first. Errors lead because the compact surface also
+    /// promotes any surfaced error to its red headline state.
+    var urgencyRank: Int {
+        if errorMessage != nil { return 0 }
+        if pendingPermission != nil { return 1 }
+        switch state {
+        case .waiting: return 2
+        case .working: return 3
+        case .idle: return 4
+        case .stopped: return 5
+        }
+    }
+
     public init(
         id: String,
         cwd: String?,
@@ -187,27 +205,18 @@ public final class SessionStore: ObservableObject {
     /// update would briefly leapfrog a working one between its tool calls).
     ///
     /// Tiers, top to bottom:
-    ///   0. pendingPermission != nil  — user action needed (most urgent)
-    ///   1. state == .working          — actively running
+    ///   0. errorMessage != nil        — surfaced failure
+    ///   1. pendingPermission != nil   — user action needed
     ///   2. state == .waiting          — waiting on something
-    ///   3. state == .idle             — at rest
-    ///   4. state == .stopped          — finished
+    ///   3. state == .working          — actively running
+    ///   4. state == .idle             — at rest
+    ///   5. state == .stopped          — finished
     public var orderedSessions: [SessionInfo] {
         sessions.values.sorted { lhs, rhs in
-            let lp = sortPriority(lhs)
-            let rp = sortPriority(rhs)
+            let lp = lhs.urgencyRank
+            let rp = rhs.urgencyRank
             if lp != rp { return lp < rp }
             return lhs.lastActiveAt > rhs.lastActiveAt
-        }
-    }
-
-    private func sortPriority(_ session: SessionInfo) -> Int {
-        if session.pendingPermission != nil { return 0 }
-        switch session.state {
-        case .working: return 1
-        case .waiting: return 2
-        case .idle:    return 3
-        case .stopped: return 4
         }
     }
 

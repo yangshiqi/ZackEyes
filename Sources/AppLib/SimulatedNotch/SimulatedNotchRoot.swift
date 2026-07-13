@@ -15,16 +15,6 @@ public enum NotchMode: Sendable {
 public final class NotchModeStore: ObservableObject {
     @Published public var mode: NotchMode = .compact
 
-    /// True while the gear-menu dropdown is currently visible. Set via
-    /// `markMenuOpen()` which also schedules the safety-net close timer.
-    @Published public var isMenuOpen: Bool = false
-
-    /// True while the About overlay is shown over the session list.
-    @Published public var isAboutShown: Bool = false
-
-    /// True while the hotkey recorder overlay is shown.
-    @Published public var isHotkeyRecorderShown: Bool = false
-
     /// True while the user is repositioning the notch (entered via the gear
     /// menu's "Move Notch" item). While set, the pill is draggable, hover
     /// auto-expand is suppressed, and a visual move-cue border is shown.
@@ -37,32 +27,17 @@ public final class NotchModeStore: ObservableObject {
     /// by `SimulatedNotchController` at app launch.
     @Published public var compactAgent: AgentKind = .claude
 
-    /// Convenience: any interactive overlay that should keep the panel
-    /// open. Used by `SimulatedNotchController` to suppress the
-    /// auto-collapse on mouse-out and outside-click handlers.
-    public var hasInteractiveOverlay: Bool {
-        isMenuOpen || isAboutShown || isHotkeyRecorderShown
+}
+
+enum SimulatedNotchContentActivity: Equatable {
+    case compact
+    case full
+
+    init(mode: NotchMode) {
+        self = mode == .full ? .full : .compact
     }
 
-    /// Tracks the pending "auto-close the gear menu flag" task so that
-    /// rapid taps on the gear icon don't stack up multiple timers (an
-    /// earlier timer firing could clear `isMenuOpen` while a later
-    /// interaction is still active, prematurely collapsing the panel).
-    private var menuCloseTask: Task<Void, Never>?
-
-    /// Mark the gear menu as open and schedule a single 4-second safety
-    /// timer that will clear `isMenuOpen` if the user dismisses the menu
-    /// without picking an item. Any prior pending close task is cancelled,
-    /// so back-to-back taps always keep only the latest timer alive.
-    public func markMenuOpen() {
-        isMenuOpen = true
-        menuCloseTask?.cancel()
-        menuCloseTask = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(4))
-            guard let self, !Task.isCancelled else { return }
-            self.isMenuOpen = false
-        }
-    }
+    var fullIsActive: Bool { self == .full }
 }
 
 /// Persistent SwiftUI root for the simulated notch panel.
@@ -74,15 +49,12 @@ public final class NotchModeStore: ObservableObject {
 ///   `preferredContentSize` feedback loop — the controller is the single
 ///   source of truth for panel geometry, and SwiftUI just fills whatever
 ///   bounds it's handed.
-/// - The compact pill is the layout backbone (the parent measures it at
-///   220×32). The full panel is layered ON TOP via `.overlay()` so it
-///   does NOT contribute to the parent's layout — without this, the
-///   ZStack would size itself to its largest child (520×fullHeight) and
-///   push the compact pill off the visible viewport.
-/// - Each view carries its own `NotchShape` background; we do NOT use a
-///   shared morphing shape. The cross-fade is opacity + a small
-///   scale-from-top on the full panel, driven by the controller's
-///   `withAnimation` block in lock-step with the panel resize.
+/// - A transparent 220×32 layout backbone keeps the full panel top-centered.
+/// - Compact and full content keep stable SwiftUI identity so transient list
+///   and scroll state survive a collapse. The hidden full tree receives an
+///   inactive flag that pauses its timer and repeat-forever animations.
+/// - Each view carries its own `NotchShape` background. Mode changes cross-fade
+///   the stable trees in lock-step with the controller's panel resize.
 struct SimulatedNotchRoot: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
@@ -94,28 +66,27 @@ struct SimulatedNotchRoot: View {
     let notchHeight: CGFloat
     let fullHeight: CGFloat
     let onTap: () -> Void
-
-    private var isFull: Bool { modeStore.mode == .full }
-    private var cornerRadius: CGFloat { isFull ? 22 : 14 }
+    let showMenu: (NSView) -> Void
 
     var body: some View {
-        // The compact pill is the layout backbone — its 220×32 size is what
-        // the ZStack measures. The full panel is layered ON TOP via
-        // `.overlay()`, which deliberately does NOT contribute to the
-        // parent's layout. So the parent stays sized to the compact pill,
-        // and the full panel is free to extend beyond it without dragging
-        // the ZStack's coordinate space out to 520×480 (which would push
-        // the compact pill off-center).
-        SimulatedNotchView(
-            viewModel: viewModel,
-            usageTracker: usageTracker,
-            modeStore: modeStore,
-            isExpanded: false,
-            onTap: onTap
-        )
+        let activity = SimulatedNotchContentActivity(mode: modeStore.mode)
+
+        // Keep a non-rendering compact-size backbone so the full panel can
+        // extend from the same top-center anchor without affecting layout.
+        Color.clear
         .frame(width: compactWidth, height: notchHeight)
-        .opacity(isFull ? 0 : 1)
-        .allowsHitTesting(!isFull)
+        .overlay(alignment: .top) {
+            SimulatedNotchView(
+                viewModel: viewModel,
+                usageTracker: usageTracker,
+                modeStore: modeStore,
+                isExpanded: false,
+                onTap: onTap
+            )
+            .frame(width: compactWidth, height: notchHeight)
+            .opacity(activity == .compact ? 1 : 0)
+            .allowsHitTesting(activity == .compact)
+        }
         .overlay(alignment: .top) {
             SimulatedNotchFullView(
                 viewModel: viewModel,
@@ -123,12 +94,15 @@ struct SimulatedNotchRoot: View {
                 modeStore: modeStore,
                 updateChecker: updateChecker,
                 downloader: downloader,
-                cornerRadius: 22
+                cornerRadius: 22,
+                isActive: activity.fullIsActive,
+                showMenu: showMenu
             )
             .frame(width: fullWidth, height: fullHeight)
-            .opacity(isFull ? 1 : 0)
-            .scaleEffect(isFull ? 1 : 0.85, anchor: .top)
-            .allowsHitTesting(isFull)
+            .opacity(activity == .full ? 1 : 0)
+            .scaleEffect(activity == .full ? 1 : 0.85, anchor: .top)
+            .allowsHitTesting(activity == .full)
+            .accessibilityHidden(activity != .full)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }

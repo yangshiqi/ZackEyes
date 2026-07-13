@@ -105,11 +105,8 @@ final class ConfigStoreTests: XCTestCase {
         XCTAssertEqual(store.loadNotchVisibility(), .always)
     }
 
-    /// If config.json exists but cannot be decoded, saveNotchVisibility
-    /// must abort rather than seed defaults — otherwise the save would
-    /// wipe theme / other fields the user can still recover from the
-    /// corrupt file manually. This differs from siblings (save, saveTheme, …)
-    /// which do still overwrite; harmonizing those is a follow-up.
+    /// If config.json exists but cannot be decoded, saves must abort rather
+    /// than seed defaults and wipe fields the user can still recover manually.
     func testSaveAbortsWhenFileCorrupt() {
         let store = ConfigStore(directory: tmpDir.path)
         let path = tmpDir.appendingPathComponent("config.json").path
@@ -121,6 +118,22 @@ final class ConfigStoreTests: XCTestCase {
         // File unchanged — abort preserved the corrupt bytes
         let after = try? String(contentsOfFile: path, encoding: .utf8)
         XCTAssertEqual(after, garbage)
+    }
+
+    func testLegacySavesAbortWhenFileCorrupt() throws {
+        let store = ConfigStore(directory: tmpDir.path)
+        let path = tmpDir.appendingPathComponent("config.json")
+        let garbage = "not json — preserve every existing field"
+        try garbage.write(to: path, atomically: true, encoding: .utf8)
+
+        store.saveTheme(.f1)
+        XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), garbage)
+
+        store.saveNotificationSound("none")
+        XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), garbage)
+
+        store.save(HotKeyConfig(keyCode: 40, modifiers: [.option, .command]))
+        XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), garbage)
     }
 
     // MARK: - Compact agent
@@ -249,6 +262,104 @@ final class ConfigStoreTests: XCTestCase {
         store.saveShowTodayConsumption(false)
         XCTAssertEqual(store.loadCompactAgent(), .codex)
         XCTAssertFalse(store.loadShowTodayConsumption())
+    }
+
+    // MARK: - Time progress mode
+
+    func testTimeProgressModeDefaultsOff() {
+        let store = ConfigStore(directory: tmpDir.path)
+        XCTAssertEqual(store.loadTimeProgressMode(), .off)
+    }
+
+    func testTimeProgressModeRoundTrips() {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveTimeProgressMode(.icon)
+        XCTAssertEqual(store.loadTimeProgressMode(), .icon)
+        store.saveTimeProgressMode(.overlap)
+        XCTAssertEqual(store.loadTimeProgressMode(), .overlap)
+        store.saveTimeProgressMode(.off)
+        XCTAssertEqual(store.loadTimeProgressMode(), .off)
+    }
+
+    func testTimeProgressModePreservesOtherKeys() {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveCompactAgent(.codex)
+        store.saveShowTodayConsumption(false)
+        store.saveTimeProgressMode(.overlap)
+        XCTAssertEqual(store.loadCompactAgent(), .codex)
+        XCTAssertFalse(store.loadShowTodayConsumption())
+        XCTAssertEqual(store.loadTimeProgressMode(), .overlap)
+    }
+
+    func testTimeProgressModeSaveAbortsWhenFileCorrupt() throws {
+        let store = ConfigStore(directory: tmpDir.path)
+        let path = tmpDir.appendingPathComponent("config.json")
+        let garbage = "not json — preserve me"
+        try garbage.write(to: path, atomically: true, encoding: .utf8)
+
+        store.saveTimeProgressMode(.icon)
+
+        XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), garbage)
+    }
+
+    // MARK: - Progress presentation
+
+    func testProgressPresentationDefaults() {
+        let store = ConfigStore(directory: tmpDir.path)
+        XCTAssertEqual(store.loadProgressMode(), .used)
+        XCTAssertEqual(store.loadLeftProgressDirection(), .leftToRight)
+        XCTAssertEqual(store.loadTimeOverlayOpacity(), 0.4)
+    }
+
+    func testProgressPresentationMigratesLegacyModeToUsed() throws {
+        let configURL = tmpDir.appendingPathComponent("config.json")
+        try #"{"hotkey":{"keyCode":6,"modifiers":["command"]},"progressMode":"spent"}"#
+            .write(to: configURL, atomically: true, encoding: .utf8)
+        let store = ConfigStore(directory: tmpDir.path)
+
+        XCTAssertEqual(store.loadProgressMode(), .used)
+
+        store.saveProgressMode(.used)
+        let object = try JSONSerialization.jsonObject(with: Data(contentsOf: configURL))
+            as? [String: Any]
+        XCTAssertEqual(object?["progressMode"] as? String, "used")
+    }
+
+    func testProgressPresentationRoundTripsAndPreservesOtherKeys() {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveCompactAgent(.codex)
+        store.saveProgressMode(.left)
+        store.saveLeftProgressDirection(.rightToLeft)
+        store.saveTimeOverlayOpacity(0.56)
+
+        XCTAssertEqual(store.loadCompactAgent(), .codex)
+        XCTAssertEqual(store.loadProgressMode(), .left)
+        XCTAssertEqual(store.loadLeftProgressDirection(), .rightToLeft)
+        XCTAssertEqual(store.loadTimeOverlayOpacity(), 0.6)
+    }
+
+    func testProgressOpacityNormalizesEditedValues() throws {
+        let configURL = tmpDir.appendingPathComponent("config.json")
+        try #"{"hotkey":{"keyCode":6,"modifiers":["command"]},"timeOverlayOpacity":-2}"#
+            .write(to: configURL, atomically: true, encoding: .utf8)
+        XCTAssertEqual(ConfigStore(directory: tmpDir.path).loadTimeOverlayOpacity(), 0)
+
+        try #"{"hotkey":{"keyCode":6,"modifiers":["command"]},"timeOverlayOpacity":0.46}"#
+            .write(to: configURL, atomically: true, encoding: .utf8)
+        XCTAssertEqual(ConfigStore(directory: tmpDir.path).loadTimeOverlayOpacity(), 0.5)
+    }
+
+    func testProgressPresentationSavesAbortWhenFileCorrupt() throws {
+        let store = ConfigStore(directory: tmpDir.path)
+        let path = tmpDir.appendingPathComponent("config.json")
+        let garbage = "not json — preserve me"
+        try garbage.write(to: path, atomically: true, encoding: .utf8)
+
+        store.saveProgressMode(.left)
+        store.saveLeftProgressDirection(.rightToLeft)
+        store.saveTimeOverlayOpacity(0.7)
+
+        XCTAssertEqual(try String(contentsOf: path, encoding: .utf8), garbage)
     }
 
     // MARK: - #169 Notify waiting for input

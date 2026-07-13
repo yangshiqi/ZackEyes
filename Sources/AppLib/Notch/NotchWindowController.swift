@@ -42,10 +42,8 @@ public final class NotchWindowController {
 
     private let viewModel: NotchViewModel
     private let usageTracker: UsageTracker
-    /// Called when the gear is clicked in the expanded panel. Receives
-    /// the gear's NSView for NSMenu anchoring. Optional so the controller
-    /// still compiles if no caller wires a menu.
-    public var showMenu: ((NSView) -> Void)?
+    /// Supplies the same application command menu used by the menu-bar icon.
+    public var menuBuilder: (() -> NSMenu)?
     private var panel: NotchPanel?
     private var mouseMonitor: Any?
     private var localMouseMonitor: Any?
@@ -55,6 +53,7 @@ public final class NotchWindowController {
     private var collapseWorkItem: DispatchWorkItem?
     private var hoverExpandWorkItem: DispatchWorkItem?
     private var hoverIntent = HoverIntentTracker()
+    private var isCommandMenuOpen = false
     private var visibility: NotchVisibility
 
     private let hoverDwellDuration: TimeInterval = 0.25
@@ -178,7 +177,7 @@ public final class NotchWindowController {
             notchHeight: notchBarHeight(on: screen),
             notchWidth: notchWidth,
             showMenu: { [weak self] view in
-                self?.showMenu?(view)
+                self?.showCommandMenu(from: view)
             }
         )
         let hostingView = NSHostingView(rootView: rootView)
@@ -329,7 +328,25 @@ public final class NotchWindowController {
     }
 
     private var stickyOpen: Bool {
-        viewModel.sessionStore.sessions.values.contains { $0.pendingPermission != nil }
+        isCommandMenuOpen
+            || viewModel.sessionStore.sessions.values.contains { $0.pendingPermission != nil }
+    }
+
+    private func showCommandMenu(from view: NSView) {
+        guard let menu = menuBuilder?() else { return }
+
+        cancelCollapseWorkItem()
+        isCommandMenuOpen = true
+        stopOutsideClickMonitoring()
+        defer {
+            isCommandMenuOpen = false
+            if currentState == .expanded {
+                startOutsideClickMonitoring()
+            }
+        }
+
+        let anchor = NSPoint(x: view.bounds.minX, y: view.bounds.minY - 2)
+        menu.popUp(positioning: nil, at: anchor, in: view)
     }
 
     private func scheduleHoverExpansion(from mouse: CGPoint, in activationArea: CGRect) {
@@ -390,9 +407,8 @@ public final class NotchWindowController {
     // MARK: - Outside-click dismissal
 
     /// Click-anywhere-outside dismissal for the expanded panel. Only active
-    /// while `currentState == .expanded`. AppDelegate brackets the gear
-    /// NSMenu's `popUp` with stop/start so a click on a menu item doesn't
-    /// race the modal pump and collapse the panel immediately after.
+    /// while `currentState == .expanded`. Native menu presentation brackets
+    /// this monitor so menu-item clicks cannot race panel dismissal.
     public func startOutsideClickMonitoring() {
         guard currentState == .expanded else { return }
         stopOutsideClickMonitoring()

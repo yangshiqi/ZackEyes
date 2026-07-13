@@ -8,12 +8,15 @@ import Shared
 /// stays in a calm "resting" pose instead of immediately dropping into Zzz.
 /// Avoids the jarring "task done → instant sleep" transition.
 struct BuddyAvatar: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let seed: String
     let state: SessionState
     let isWaiting: Bool       // has pending permission
     let recentlyActive: Bool  // idle but within parent's grace window
     let theme: BuddyTheme
     let teamColor: Color?     // F1: per-team livery color
+    let animationsEnabled: Bool
     var size: CGFloat = 32
 
     @State private var bounce: CGFloat = 0
@@ -36,6 +39,7 @@ struct BuddyAvatar: View {
         recentlyActive: Bool = false,
         theme: BuddyTheme = .rock,
         teamColor: Color? = nil,
+        animationsEnabled: Bool = true,
         size: CGFloat = 32
     ) {
         self.seed = seed
@@ -44,6 +48,7 @@ struct BuddyAvatar: View {
         self.recentlyActive = recentlyActive
         self.theme = theme
         self.teamColor = teamColor
+        self.animationsEnabled = animationsEnabled
         self.size = size
         let isAtRest = (state == .idle || state == .stopped) && !isWaiting
         self.showSleeping = isAtRest && !recentlyActive
@@ -63,12 +68,29 @@ struct BuddyAvatar: View {
                 zFloat(phase: z2Phase, size: size * 0.34, xOffset: 0.50, delay: 0.4)
                 zFloat(phase: z3Phase, size: size * 0.42, xOffset: 0.62, delay: 0.8)
             }
+
+            if let cue = BuddyAnimationPolicy.staticCue(
+                state: state,
+                isWaiting: isWaiting,
+                isSleeping: showSleeping,
+                reduceMotion: reduceMotion
+            ) {
+                Image(systemName: cue.symbolName)
+                    .font(.system(size: max(8, size * 0.28), weight: .bold))
+                    .foregroundColor(staticCueColor(cue))
+                    .padding(3)
+                    .background(Circle().fill(Color.black.opacity(0.85)))
+                    .offset(x: size * 0.48, y: size * 0.42)
+                    .accessibilityHidden(true)
+            }
         }
         .frame(width: size * 1.8, height: size * 1.8)
         .onAppear { applyAnimation() }
         .onChange(of: state) { _, _ in applyAnimation() }
         .onChange(of: isWaiting) { _, _ in applyAnimation() }
         .onChange(of: recentlyActive) { _, _ in applyAnimation() }
+        .onChange(of: reduceMotion) { _, _ in applyAnimation() }
+        .onChange(of: animationsEnabled) { _, _ in applyAnimation() }
     }
 
     @ViewBuilder
@@ -95,6 +117,14 @@ struct BuddyAvatar: View {
             z2Phase = 0
             z3Phase = 0
         }
+
+        guard BuddyAnimationPolicy.mode(
+            state: state,
+            isWaiting: isWaiting,
+            isSleeping: showSleeping,
+            reduceMotion: reduceMotion,
+            animationsEnabled: animationsEnabled
+        ) != .none else { return }
 
         if isWaiting {
             // Panic shake
@@ -132,5 +162,66 @@ struct BuddyAvatar: View {
                 breathe = 1.03
             }
         }
+    }
+
+    private func staticCueColor(_ cue: BuddyAnimationPolicy.StaticCue) -> Color {
+        switch cue {
+        case .waiting: return AppColors.attention.color
+        case .working: return AppColors.activity.color
+        case .sleeping, .resting: return AppColors.idle.color
+        }
+    }
+}
+
+enum BuddyAnimationPolicy {
+    enum Mode: Equatable {
+        case none
+        case waiting
+        case working
+        case sleeping
+        case resting
+    }
+
+    enum StaticCue: Equatable {
+        case waiting
+        case working
+        case sleeping
+        case resting
+
+        var symbolName: String {
+            switch self {
+            case .waiting: return "exclamationmark.circle.fill"
+            case .working: return "bolt.fill"
+            case .sleeping: return "moon.zzz.fill"
+            case .resting: return "pause.circle.fill"
+            }
+        }
+    }
+
+    static func mode(
+        state: SessionState,
+        isWaiting: Bool,
+        isSleeping: Bool,
+        reduceMotion: Bool,
+        animationsEnabled: Bool = true
+    ) -> Mode {
+        if reduceMotion || !animationsEnabled { return .none }
+        if isWaiting { return .waiting }
+        if state == .working { return .working }
+        if isSleeping { return .sleeping }
+        return .resting
+    }
+
+    static func staticCue(
+        state: SessionState,
+        isWaiting: Bool,
+        isSleeping: Bool,
+        reduceMotion: Bool
+    ) -> StaticCue? {
+        guard reduceMotion else { return nil }
+        if isWaiting { return .waiting }
+        if state == .working { return .working }
+        if isSleeping { return .sleeping }
+        return .resting
     }
 }
