@@ -76,6 +76,112 @@ struct UsageTrackerCodexTests {
         #expect(obs.limitReached == false)
     }
 
+    // MARK: - #182 — classify windows by window_minutes, not position
+
+    @Test func decodeCodexObservation_promoted7dPrimary_landsInSevenDaySlot() {
+        // Real on-machine shape since 2026-07-13 (5h limit temporarily lifted):
+        // codex promotes the 7d window into `primary` and nulls `secondary`.
+        let rl: [String: Any] = [
+            "limit_id": "codex",
+            "primary": [
+                "used_percent": 48.0,
+                "window_minutes": 10080,
+                "resets_at": 1_784_780_174,
+            ],
+            "secondary": NSNull(),
+        ]
+        let obs = UsageTracker.decodeCodexObservation(from: rl)
+        #expect(obs.fiveHourUsedPct == nil)
+        #expect(obs.fiveHourResetsAt == nil)
+        #expect(obs.sevenDayUsedPct == 48.0)
+        #expect(obs.sevenDayResetsAt?.timeIntervalSince1970 == 1_784_780_174)
+    }
+
+    @Test func decodeCodexObservation_fiveHourOnlyReading_keepsSevenDayNil() {
+        let rl: [String: Any] = [
+            "primary": [
+                "used_percent": 12.0,
+                "window_minutes": 300,
+                "resets_at": 1_777_726_371,
+            ],
+        ]
+        let obs = UsageTracker.decodeCodexObservation(from: rl)
+        #expect(obs.fiveHourUsedPct == 12.0)
+        #expect(obs.sevenDayUsedPct == nil)
+    }
+
+    @Test func decodeCodexObservation_missingWindowMinutes_fallsBackPositional() {
+        // Older codex builds omit window_minutes — position stays authoritative.
+        let rl: [String: Any] = [
+            "primary": ["used_percent": 25.0, "resets_at": 1_777_700_000],
+            "secondary": ["used_percent": 60.0, "resets_at": 1_777_800_000],
+        ]
+        let obs = UsageTracker.decodeCodexObservation(from: rl)
+        #expect(obs.fiveHourUsedPct == 25.0)
+        #expect(obs.sevenDayUsedPct == 60.0)
+    }
+
+    @Test func updateFromCodexRateLimits_clearsFiveHour_whenFreshReadingHasOnly7d() {
+        // Pre-shift reading fills both axes; the post-shift reading carries
+        // window data (7d) but no 5h-class window → the provider is saying the
+        // 5h window doesn't exist right now, so the stale 5h pair must clear
+        // instead of pinning until its resets_at.
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: nil
+        )
+        tracker.updateFromCodexRateLimits([
+            "primary": ["used_percent": 13.0, "window_minutes": 300, "resets_at": 1_783_665_546],
+            "secondary": ["used_percent": 2.0, "window_minutes": 10080, "resets_at": 1_784_000_000],
+        ])
+        tracker.updateFromCodexRateLimits([
+            "primary": ["used_percent": 48.0, "window_minutes": 10080, "resets_at": 1_784_780_174],
+            "secondary": NSNull(),
+        ])
+
+        let snap = tracker.snapshot
+        #expect(snap.codexFiveHourUsedPct == nil)
+        #expect(snap.codexFiveHourResetsAt == nil)
+        #expect(snap.codexSevenDayUsedPct == 48.0)
+        #expect(snap.codexSevenDayResetsAt?.timeIntervalSince1970 == 1_784_780_174)
+    }
+
+    @Test func fiveHourResetImplausible_flagsResetBeyondWindowLength() {
+        let now = Date(timeIntervalSince1970: 1_784_700_000)
+        // 4 days out — impossible for a real 5h window. This is the shape the
+        // pre-#182 positional decoder persisted after misclassifying the
+        // promoted 7d window; the cache seed must not resurrect it.
+        #expect(UsageTracker.codexFiveHourResetImplausible(
+            resetsAt: now.addingTimeInterval(4 * 86_400), now: now))
+        // Within the window (+slack) — plausible, keep.
+        #expect(!UsageTracker.codexFiveHourResetImplausible(
+            resetsAt: now.addingTimeInterval(4 * 3600), now: now))
+        // Absent reset — nothing to judge.
+        #expect(!UsageTracker.codexFiveHourResetImplausible(resetsAt: nil, now: now))
+    }
+
+    @Test func updateFromCodexRateLimits_retainsWindows_onWindowlessBlockReading() {
+        // A credits-only block reading nulls BOTH windows — that's "no window
+        // data in this reading", not "windows don't exist" — so the last-known
+        // pairs are retained (#166 semantics unchanged).
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: nil
+        )
+        tracker.updateFromCodexRateLimits([
+            "primary": ["used_percent": 13.0, "window_minutes": 300, "resets_at": 1_783_665_546],
+            "secondary": ["used_percent": 2.0, "window_minutes": 10080, "resets_at": 1_784_000_000],
+        ])
+        tracker.updateFromCodexRateLimits([
+            "credits": ["has_credits": false, "unlimited": false, "balance": "0"],
+        ])
+
+        let snap = tracker.snapshot
+        #expect(snap.codexFiveHourUsedPct == 13.0)
+        #expect(snap.codexSevenDayUsedPct == 2.0)
+        #expect(snap.codexLimitReached)
+    }
+
     // MARK: - codexLimitReached / out-of-credits detection
 
     @Test func limitReached_whenRateLimitReachedTypeSet() {
