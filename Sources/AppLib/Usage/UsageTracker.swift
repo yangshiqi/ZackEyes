@@ -189,9 +189,8 @@ public final class UsageTracker: ObservableObject {
 
     /// Path where we persist the last received rate_limits snapshot so the UI
     /// can show meaningful data immediately on next launch instead of "no data".
-    private let cacheURL: URL = {
-        URL(fileURLWithPath: NSHomeDirectory() + "/.zackeyes/usage-cache.json")
-    }()
+    /// Injectable for tests (the default is the real user cache).
+    private let cacheURL: URL
 
     /// Update real subscriber rate limit data from a hook event.
     /// Call whenever a `BridgeEvent` arrives with non-nil `rateLimits`.
@@ -283,10 +282,12 @@ public final class UsageTracker: ObservableObject {
 
     public init(
         projectsDir: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/projects"),
-        codexSessionsDir: URL? = URL(fileURLWithPath: NSHomeDirectory() + "/.codex/sessions")
+        codexSessionsDir: URL? = URL(fileURLWithPath: NSHomeDirectory() + "/.codex/sessions"),
+        cacheURL: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.zackeyes/usage-cache.json")
     ) {
         self.projectsDir = projectsDir
         self.codexSessionsDir = codexSessionsDir
+        self.cacheURL = cacheURL
     }
 
     /// Start periodic refresh every N seconds.
@@ -303,8 +304,9 @@ public final class UsageTracker: ObservableObject {
         }
     }
 
-    /// Load the last persisted rate_limits snapshot.
-    private func loadFromCache() {
+    /// Load the last persisted rate_limits snapshot. Internal (not private)
+    /// so tests can exercise the restore path against an injected cacheURL.
+    func loadFromCache() {
         guard let data = try? Data(contentsOf: cacheURL),
               let cached = try? JSONDecoder().decode(Snapshot.self, from: data) else {
             return
@@ -323,6 +325,15 @@ public final class UsageTracker: ObservableObject {
         // for any future reader and avoids a one-frame stale "resets now".
         if let reset = restored.codexLimitResetsAt, reset <= Date() {
             restored.codexLimitResetsAt = nil
+        }
+        // #182 — drop a 5h pair whose reset is impossibly far out (pre-fix
+        // positional decode persisted the promoted 7d window on the 5h axis).
+        // Must run before the scope seeding below or the "\0cached" seed
+        // resurrects the bad pair via mostConstrainedCodexReading.
+        if Self.codexFiveHourResetImplausible(
+            resetsAt: restored.codexFiveHourResetsAt, now: Date()) {
+            restored.codexFiveHourUsedPct = nil
+            restored.codexFiveHourResetsAt = nil
         }
         snapshot = restored
         // #148 — seed the per-scope map from the cached codex reading so the
@@ -368,6 +379,12 @@ public final class UsageTracker: ObservableObject {
         /// while the account is out of credits — so the bars alone never reflect
         /// the block. See `decodeCodexObservation`.
         public var limitReached: Bool = false
+        /// #182 — the reading carried at least one window dict. Distinguishes
+        /// "codex reported window state" (authoritative for BOTH axes — a
+        /// missing axis means that window doesn't exist right now, e.g. the 5h
+        /// limit temporarily lifted) from a windowless credits-only block
+        /// reading (retain last-known pairs, #166 semantics).
+        public var hasWindowData: Bool = false
     }
 
     /// Rescan all recent JSONL files and update the snapshot.
@@ -458,6 +475,17 @@ public final class UsageTracker: ObservableObject {
             // reading is invalid. Retain each window until its own reset.
             expireCodexWindows(now: Date())
         }
+    }
+
+    /// #182 — a 5h-window reset can never sit further out than its own window
+    /// length (+1h slack for clock skew). A persisted pair violating that was
+    /// written by the pre-#182 positional decoder misclassifying the promoted
+    /// 7d window; restoring it would pin the wrong 5h value for days.
+    nonisolated static func codexFiveHourResetImplausible(
+        resetsAt: Date?, now: Date, cap: TimeInterval = 6 * 3600
+    ) -> Bool {
+        guard let resetsAt else { return false }
+        return resetsAt.timeIntervalSince(now) > cap
     }
 
     /// #166 findings A/C — once the last real Codex reading is older than the
@@ -552,13 +580,20 @@ public final class UsageTracker: ObservableObject {
         // own `codexLastUpdated`; the codex path must not touch it, so a codex read
         // can't make a stale Claude reading read as freshly updated.
         s.codexLastUpdated = now
-        if let v = obs.fiveHourUsedPct {
-            s.codexFiveHourUsedPct = v
-            codexEstimator.record(now, pct: v)   // #86 — same estimator, codex axis
+        // #182 — a reading that carries window data is authoritative for BOTH
+        // axes: an axis it omits (no 5h-class window while the 5h limit is
+        // lifted) no longer exists and must clear, not pin until its resets_at.
+        // A windowless reading (credits-only block) leaves the last-known
+        // pairs retained (#166 semantics).
+        if obs.hasWindowData {
+            s.codexFiveHourUsedPct = obs.fiveHourUsedPct
+            s.codexFiveHourResetsAt = obs.fiveHourResetsAt
+            s.codexSevenDayUsedPct = obs.sevenDayUsedPct
+            s.codexSevenDayResetsAt = obs.sevenDayResetsAt
+            if let v = obs.fiveHourUsedPct {
+                codexEstimator.record(now, pct: v)   // #86 — same estimator, codex axis
+            }
         }
-        if let v = obs.fiveHourResetsAt { s.codexFiveHourResetsAt = v }
-        if let v = obs.sevenDayUsedPct { s.codexSevenDayUsedPct = v }
-        if let v = obs.sevenDayResetsAt { s.codexSevenDayResetsAt = v }
         s.codexFiveHourETA = codexEstimator.estimate(
             now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
         s.codexLimitReached = obs.limitReached
@@ -600,6 +635,16 @@ public final class UsageTracker: ObservableObject {
     ) {
         let now = Date()
         for (k, v) in scanned { codexScopeReadings[k] = v }
+        // #182 (review) — the "\0cached" seed only bridges restart → first
+        // live account reading. Once a live account-scope reading with window
+        // data lands, the seed is superseded; keeping it would let
+        // mostConstrainedCodexReading resurrect an axis the fresh reading
+        // authoritatively omitted (e.g. the temporarily lifted 5h window).
+        // A windowless account reading (credits-only block) keeps the seed —
+        // it is still the only source of the retained countdown.
+        if let account = scanned[""], account.hasWindowData {
+            codexScopeReadings.removeValue(forKey: "\u{0}cached")
+        }
         codexScopeReadings = codexScopeReadings.filter { _, obs in
             let pAlive = obs.fiveHourResetsAt.map { $0 > now } ?? (obs.fiveHourUsedPct != nil)
             let sAlive = obs.sevenDayResetsAt.map { $0 > now } ?? (obs.sevenDayUsedPct != nil)
@@ -930,41 +975,72 @@ public final class UsageTracker: ObservableObject {
     }
 
     /// Decode codex rate_limits dict into the Sendable observation struct.
-    /// Codex schema (verified 2026-05-03):
+    /// Base schema (verified 2026-05-03):
     ///   primary:   {used_percent, window_minutes=300,   resets_at}  → 5h
     ///   secondary: {used_percent, window_minutes=10080, resets_at}  → 7d
     /// `resets_at` is unix seconds (integer or double).
+    ///
+    /// #182 — position is NOT stable: with the 5h limit lifted (2026-07)
+    /// codex promotes the 7d window into `primary` and nulls `secondary`.
+    /// Classify each window by its own `window_minutes` (≤600 → 5h axis,
+    /// ≥1440 → 7d axis); a window without `window_minutes` keeps its
+    /// positional meaning (older codex builds omit the field).
     nonisolated static func decodeCodexObservation(from rl: [String: Any]) -> CodexRateLimitObservation {
         var obs = CodexRateLimitObservation()
 
-        if let primary = rl["primary"] as? [String: Any] {
-            if let used = primary["used_percent"] as? Double {
-                obs.fiveHourUsedPct = used
-            } else if let used = primary["used_percent"] as? Int {
-                obs.fiveHourUsedPct = Double(used)
+        for (dict, positionalIsFiveHour) in [(rl["primary"], true), (rl["secondary"], false)] {
+            guard let window = dict as? [String: Any] else { continue }
+            obs.hasWindowData = true
+            let w = Self.parseCodexWindow(window)
+            let isFiveHour: Bool
+            switch w.minutes {
+            case .some(let m) where m <= 600:  isFiveHour = true
+            case .some(let m) where m >= 1440: isFiveHour = false
+            case .some:
+                // Present but unrecognized length (say a 12h window): neither
+                // axis — showing it under either label would mislead. Skip it;
+                // hasWindowData stays true (the reading did speak about
+                // windows, we just can't classify this one).
+                continue
+            case .none:                        isFiveHour = positionalIsFiveHour
             }
-            if let resets = primary["resets_at"] as? Double {
-                obs.fiveHourResetsAt = Date(timeIntervalSince1970: resets > 1e12 ? resets / 1000 : resets)
-            } else if let resets = primary["resets_at"] as? Int {
-                let secs = resets > 1_000_000_000_000 ? Double(resets) / 1000 : Double(resets)
-                obs.fiveHourResetsAt = Date(timeIntervalSince1970: secs)
-            }
-        }
-        if let secondary = rl["secondary"] as? [String: Any] {
-            if let used = secondary["used_percent"] as? Double {
-                obs.sevenDayUsedPct = used
-            } else if let used = secondary["used_percent"] as? Int {
-                obs.sevenDayUsedPct = Double(used)
-            }
-            if let resets = secondary["resets_at"] as? Double {
-                obs.sevenDayResetsAt = Date(timeIntervalSince1970: resets > 1e12 ? resets / 1000 : resets)
-            } else if let resets = secondary["resets_at"] as? Int {
-                let secs = resets > 1_000_000_000_000 ? Double(resets) / 1000 : Double(resets)
-                obs.sevenDayResetsAt = Date(timeIntervalSince1970: secs)
+            if isFiveHour {
+                obs.fiveHourUsedPct = w.used
+                obs.fiveHourResetsAt = w.resets
+            } else {
+                obs.sevenDayUsedPct = w.used
+                obs.sevenDayResetsAt = w.resets
             }
         }
         obs.limitReached = codexLimitReached(from: rl, obs: obs)
         return obs
+    }
+
+    /// Pull one window's fields out of its codex dict, tolerating Int/Double
+    /// and second/millisecond `resets_at` encodings.
+    nonisolated private static func parseCodexWindow(
+        _ w: [String: Any]
+    ) -> (used: Double?, resets: Date?, minutes: Int?) {
+        var used: Double?
+        if let u = w["used_percent"] as? Double {
+            used = u
+        } else if let u = w["used_percent"] as? Int {
+            used = Double(u)
+        }
+        var resets: Date?
+        if let r = w["resets_at"] as? Double {
+            resets = Date(timeIntervalSince1970: r > 1e12 ? r / 1000 : r)
+        } else if let r = w["resets_at"] as? Int {
+            let secs = r > 1_000_000_000_000 ? Double(r) / 1000 : Double(r)
+            resets = Date(timeIntervalSince1970: secs)
+        }
+        var minutes: Int?
+        if let m = w["window_minutes"] as? Int {
+            minutes = m
+        } else if let m = w["window_minutes"] as? Double {
+            minutes = Int(m)
+        }
+        return (used, resets, minutes)
     }
 
     /// Decide whether Codex is currently blocked from this `rate_limits` reading.
