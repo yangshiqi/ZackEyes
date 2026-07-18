@@ -113,6 +113,9 @@ public struct BridgeEvent: Codable, Sendable {
     public let transcriptPath: String?
     public let userPrompt: String?
     public let source: String?
+    /// PreCompact/PostCompact only: "manual" (user typed /compact) or "auto"
+    /// (context-limit compaction mid-turn). Nil on every other event. (#181)
+    public let trigger: String?
     public let bridgePpid: Int?
     public let lastAssistantMessage: String?
     public let rateLimits: [String: AnyCodable]?
@@ -135,6 +138,7 @@ public struct BridgeEvent: Codable, Sendable {
         transcriptPath: String? = nil,
         userPrompt: String? = nil,
         source: String? = nil,
+        trigger: String? = nil,
         bridgePpid: Int? = nil,
         lastAssistantMessage: String? = nil,
         rateLimits: [String: AnyCodable]? = nil,
@@ -154,6 +158,7 @@ public struct BridgeEvent: Codable, Sendable {
         self.transcriptPath = transcriptPath
         self.userPrompt = userPrompt
         self.source = source
+        self.trigger = trigger
         self.bridgePpid = bridgePpid
         self.lastAssistantMessage = lastAssistantMessage
         self.rateLimits = rateLimits
@@ -175,6 +180,7 @@ public struct BridgeEvent: Codable, Sendable {
         case transcriptPath       = "transcript_path"
         case userPrompt           = "prompt"
         case source
+        case trigger
         case bridgePpid           = "_bridge_ppid"
         case lastAssistantMessage = "last_assistant_message"
         case rateLimits           = "rate_limits"
@@ -199,6 +205,10 @@ public struct BridgeEvent: Codable, Sendable {
         self.transcriptPath = try c.decodeIfPresent(String.self, forKey: .transcriptPath)
         self.userPrompt = try c.decodeIfPresent(String.self, forKey: .userPrompt)
         self.source = try c.decodeIfPresent(String.self, forKey: .source)
+        // Defensive like the agent decode: `trigger` is a generic key another
+        // agent could emit with any JSON type — degrade to nil rather than
+        // failing the whole event.
+        self.trigger = (try? c.decodeIfPresent(String.self, forKey: .trigger)) ?? nil
         self.bridgePpid = try c.decodeIfPresent(Int.self, forKey: .bridgePpid)
         self.lastAssistantMessage = try c.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
         self.rateLimits = try c.decodeIfPresent([String: AnyCodable].self, forKey: .rateLimits)

@@ -670,6 +670,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let priorPendingIsAskUQ: Bool = event.sessionId.flatMap {
                 sessionStore.sessions[$0]?.pendingPermission?.isAskUserQuestion
             } ?? false
+            // #181 — PostCompact clears the stored trigger inside handleEvent,
+            // so capture it first for the finish-notification gate below.
+            let priorCompactTrigger: String? = event.sessionId.flatMap {
+                sessionStore.sessions[$0]?.compactTrigger
+            }
 
             sessionStore.handleEvent(event)
 
@@ -745,6 +750,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         lastPrompt: session.lastUserPrompt
                     )
                 }
+            }
+
+            // #181 — manual /compact finishes with PostCompact, not Stop, so
+            // the block above never fires for it. Auto-compact stays silent
+            // (its turn's Stop notifies later; see CompactFinishGate).
+            if !event.isReplayed,
+               event.bridgeEvent == "PostCompact",
+               CompactFinishGate.shouldNotify(
+                   eventTrigger: event.trigger,
+                   storedTrigger: priorCompactTrigger) {
+                NotificationManager.shared.notifyCompactFinished(
+                    sessionId: sid,
+                    agent: session.agent,
+                    projectName: session.displayName
+                )
             }
         }
     }
