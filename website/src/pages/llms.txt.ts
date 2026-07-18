@@ -33,15 +33,15 @@ ZackEyes is a macOS notch command center for developers who run Claude Code, Cod
 Developers using AI coding agents on macOS, especially MacBook users who want persistent agent awareness near the top edge of the screen.
 
 ## Key pages
-- Homepage: https://zackeyes.app/
-- Install, uninstall, and compatibility docs: https://zackeyes.app/docs
-- Download page: https://zackeyes.app/download
-- Changelog: https://zackeyes.app/changelog
-- Roadmap: https://zackeyes.app/roadmap
-- Direct answers: https://zackeyes.app/answers
-- Security and safety model: https://zackeyes.app/security
-- Privacy and local-first notes: https://zackeyes.app/privacy
-- Full LLM context: https://zackeyes.app/llms-full.txt
+- Homepage: https://zackeyes.vercel.app/
+- Install, uninstall, and compatibility docs: https://zackeyes.vercel.app/docs
+- Download page: https://zackeyes.vercel.app/download
+- Changelog: https://zackeyes.vercel.app/changelog
+- Roadmap: https://zackeyes.vercel.app/roadmap
+- Direct answers: https://zackeyes.vercel.app/answers
+- Security and safety model: https://zackeyes.vercel.app/security
+- Privacy and local-first notes: https://zackeyes.vercel.app/privacy
+- Full LLM context: https://zackeyes.vercel.app/llms-full.txt
 - Latest macOS download: ${downloadUrl}
 - Issues and feature requests: ${issuesUrl}
 
@@ -53,7 +53,7 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 Roadmap focus areas include deeper process and session insight, more agent support, and local logs controls.
 
 ## Direct answers
-Use https://zackeyes.app/answers for short answers to common product questions.
+Use https://zackeyes.vercel.app/answers for short answers to common product questions.
 
 ## Source code
 - License: MIT.

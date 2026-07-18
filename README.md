@@ -141,12 +141,12 @@ Tests/
 ├── BridgeLibTests/
 └── AppLibTests/
 
-website/                              # Product site at zackeyes.app (Astro 5, static)
+website/                              # Product site at zackeyes.vercel.app (Astro 5, static)
 ```
 
 ## Website
 
-The product landing page at [zackeyes.app](https://zackeyes.app) lives in [`website/`](./website). It's an Astro 5 static site that consumes release metadata from [`website/src/lib/release.mjs`](./website/src/lib/release.mjs), kept in sync by `make release` via [`Scripts/bump-website-release.sh`](./Scripts/bump-website-release.sh). See [`website/README.md`](./website/README.md) for local dev and deploy notes.
+The product landing page at [zackeyes.vercel.app](https://zackeyes.vercel.app) lives in [`website/`](./website). It's an Astro 5 static site that consumes release metadata from [`website/src/lib/release.mjs`](./website/src/lib/release.mjs), kept in sync by `make release` via [`Scripts/bump-website-release.sh`](./Scripts/bump-website-release.sh). See [`website/README.md`](./website/README.md) for local dev and deploy notes.
 
 ## Documentation
 

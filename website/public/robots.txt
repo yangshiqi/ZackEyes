@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://zackeyes.app/sitemap-index.xml
-Host: https://zackeyes.app
+Sitemap: https://zackeyes.vercel.app/sitemap-index.xml
+Host: https://zackeyes.vercel.app

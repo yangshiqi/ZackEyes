@@ -45,7 +45,7 @@ const answers = [
 ];
 const answersStructuredData = {
   '@type': 'FAQPage',
-  '@id': 'https://zackeyes.app/answers#faq',
+  '@id': 'https://zackeyes.vercel.app/answers#faq',
   mainEntity: answers.map((item) => ({
     '@type': 'Question',
     name: item.question,
@@ -60,7 +60,7 @@ const answersStructuredData = {
 <SiteLayout
   title="Direct Answers - ZackEyes"
   description={description}
-  canonical="https://zackeyes.app/answers"
+  canonical="https://zackeyes.vercel.app/answers"
   structuredData={[answersStructuredData]}
 >
   <div class="grain" aria-hidden="true"></div>

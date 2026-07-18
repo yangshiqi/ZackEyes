@@ -18,7 +18,7 @@ const {
   structuredData: pageStructuredData = []
 } = Astro.props;
 
-const site = Astro.site?.toString().replace(/\/$/, '') ?? 'https://zackeyes.app';
+const site = Astro.site?.toString().replace(/\/$/, '') ?? 'https://zackeyes.vercel.app';
 const canonicalUrl = canonical ?? new URL(Astro.url.pathname, site).href;
 const imageUrl = new URL(image, site).href;
 

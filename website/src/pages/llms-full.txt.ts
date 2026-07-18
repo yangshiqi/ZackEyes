@@ -31,7 +31,7 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 
 ## Version and changelog
 - Current version: ${releaseName}.
-- Full release notes and dates live on the changelog, kept current every release: https://zackeyes.app/changelog
+- Full release notes and dates live on the changelog, kept current every release: https://zackeyes.vercel.app/changelog
 - GitHub Releases: https://github.com/yangshiqi/ZackEyes-release/releases
 
 ## Install
@@ -41,7 +41,7 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 4. If macOS blocks first launch, approve ZackEyes in System Settings and reopen it.
 
 ## Download verification
-- Download page: https://zackeyes.app/download
+- Download page: https://zackeyes.vercel.app/download
 - DMG size: ${downloadSize}.
 - SHA256: ${downloadSha256}.
 
@@ -67,7 +67,7 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - Process and session insight.
 - More agent support.
 - Local logs controls.
-- Roadmap page: https://zackeyes.app/roadmap
+- Roadmap page: https://zackeyes.vercel.app/roadmap
 
 ## Direct answers
 - What is ZackEyes? A macOS notch command center for Claude Code and Codex CLI.
@@ -76,13 +76,13 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - Does ZackEyes support multiple themes? Yes, including display modes for real notches, simulated islands, menu bar workflows, and external displays.
 - How do I install ZackEyes? Download the DMG, drag the app into Applications, and launch it.
 - Where do I report issues? Use GitHub Issues on the public release repository.
-- Direct answers page: https://zackeyes.app/answers
+- Direct answers page: https://zackeyes.vercel.app/answers
 
 ## Technical model
 Agent hook events enter a bridge process. The bridge sends normalized events over a Unix socket. The macOS app updates its session store and notch UI. If the app is closed, the hook path exits without breaking the terminal session.
 
 ## Security and safety model
-- Security and safety model: https://zackeyes.app/security
+- Security and safety model: https://zackeyes.vercel.app/security
 - Hook writes are local and identifiable with the string zackeyes.
 - ZackEyes backs up ~/.claude/settings.json and ~/.codex/hooks.json before writing managed entries.
 - ZackEyes should never read or write ~/.codex/config.toml.
@@ -107,8 +107,8 @@ Agent hook events enter a bridge process. The bridge sends normalized events ove
 - Local files and settings: ZackEyes may use local configuration and agent hook files such as ~/.zackeyes, ~/.claude/settings.json, and ~/.codex/hooks.json.
 - Analytics: the current website does not add a third-party analytics script.
 - Public feedback: bugs, install issues, compatibility reports, and feature requests go through GitHub Issues.
-- Privacy page: https://zackeyes.app/privacy
-- Docs page: https://zackeyes.app/docs
+- Privacy page: https://zackeyes.vercel.app/privacy
+- Docs page: https://zackeyes.vercel.app/docs
 
 ## Keywords
 ZackEyes, macOS notch app, AI agent command center, Claude Code, Codex CLI, coding agent dashboard, permission approvals, rate limits, Unix socket bridge, MacBook notch utility, local-first macOS app, AI coding agent FAQ, install ZackEyes, uninstall ZackEyes, ZackEyes changelog.

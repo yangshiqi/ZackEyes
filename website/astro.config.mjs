@@ -5,7 +5,7 @@ import sitemap from '@astrojs/sitemap';
 import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
-  site: 'https://zackeyes.app',
+  site: 'https://zackeyes.vercel.app',
   trailingSlash: 'never',
   build: {
     // 'directory' emits /foo/index.html which Vercel serves at /foo with no
