@@ -7,6 +7,18 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.9.2',
+    date: 'Published July 18, 2026',
+    highlights: [
+      {
+        label: 'Fixed',
+        items: [
+          'Interactive /compact finish chime: Claude Code TUI never fires the PostCompact hook (upstream anthropics/claude-code#78760), so the v0.9.1 chime only worked in print mode — completion is now inferred from the context collapse in the first post-compaction StatusLine reading, with a shared cooldown so a future upstream fix cannot double-chime'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.9.1',
     date: 'Published July 18, 2026',
     highlights: [
