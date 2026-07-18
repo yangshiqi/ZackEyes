@@ -755,11 +755,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // #181 — manual /compact finishes with PostCompact, not Stop, so
             // the block above never fires for it. Auto-compact stays silent
             // (its turn's Stop notifies later; see CompactFinishGate).
-            if event.bridgeEvent == "PostCompact",
+            if !event.isReplayed,
+               event.bridgeEvent == "PostCompact",
                CompactFinishGate.shouldNotify(
                    eventTrigger: event.trigger,
-                   storedTrigger: priorCompactTrigger,
-                   isReplayed: event.isReplayed) {
+                   storedTrigger: priorCompactTrigger) {
                 NotificationManager.shared.notifyCompactFinished(
                     sessionId: sid,
                     agent: session.agent,

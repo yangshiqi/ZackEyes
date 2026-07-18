@@ -938,6 +938,101 @@ struct SessionStoreTests {
         #expect(store.sessions["s9"]?.compactTrigger == "auto")
     }
 
+    @Test func postCompactOnUnknownSessionMintsIdle() {
+        // App restarted while a manual /compact was running: PreCompact died
+        // with the old instance, PostCompact arrives for an unknown session
+        // with no trigger. Minting the default .working would stick forever
+        // (no Stop follows a manual compaction).
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "PostCompact", sessionId: "s9", cwd: "/tmp"))
+        #expect(store.sessions["s9"]?.state == .idle)
+    }
+
+    @Test func postCompactWithUnknownTrigger_stillEndsTheTurn() {
+        // Neither payload carried a trigger (older CC / lost PreCompact).
+        // Wrongly idling a mid-turn auto compaction self-corrects on the next
+        // PreToolUse; NOT idling a finished manual compaction sticks forever —
+        // so unknown ends the turn. Only a provably-auto reading leaves the
+        // state alone.
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "UserPromptSubmit", sessionId: "s1", userPrompt: "/compact"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "PostCompact", sessionId: "s1"))
+        #expect(store.sessions["s1"]?.state == .idle)
+    }
+
+    @Test func postCompactManual_mirrorsStopTurnEndReset() {
+        // PostCompact is the turn terminator for manual /compact, so it must
+        // restore Stop's other turn-end guarantees too: isToolRunning off and
+        // the stale-AskUQ backstop clear.
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "PreToolUse", sessionId: "s1", toolName: "Bash"))
+        let askUQ = PendingPermission(
+            toolName: "AskUserQuestion", toolInput: [:], cwd: "/tmp", responder: { _ in })
+        store.handlePermissionRequest(sessionId: "s1", permission: askUQ)
+        #expect(store.sessions["s1"]?.state == .waiting)
+
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "PostCompact", sessionId: "s1"))
+
+        #expect(store.sessions["s1"]?.state == .idle)
+        #expect(store.sessions["s1"]?.isToolRunning == false)
+        #expect(store.sessions["s1"]?.pendingPermission == nil)
+    }
+
+    @Test func sessionStartFromCompact_preservesTriggerAndState() {
+        // CC fires SessionStart(source:"compact") around the compaction
+        // boundary; order vs PostCompact is not guaranteed. The administrative
+        // restart must not wipe the in-flight marker (before PostCompact) nor
+        // resurrect .working on an already-idled card (after PostCompact).
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp", source: "compact"))
+        #expect(store.sessions["s1"]?.compactTrigger == "manual")
+
+        store.handleEvent(BridgeEvent(bridgeEvent: "PostCompact", sessionId: "s1"))
+        #expect(store.sessions["s1"]?.state == .idle)
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp", source: "compact"))
+        #expect(store.sessions["s1"]?.state == .idle)
+    }
+
+    @Test func sessionStartFresh_doesNotInheritCompactTrigger() {
+        // A genuinely new conversation (/clear, startup) must not inherit a
+        // stale marker from the session id's previous life.
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp", source: "clear"))
+        #expect(store.sessions["s1"]?.compactTrigger == nil)
+    }
+
+    @Test func stopAndUserPromptSubmit_clearStaleCompactTrigger() {
+        // A compaction marker cannot outlive the turn context that created it:
+        // if PostCompact was lost, the next turn boundary must drop it so a
+        // later trigger-less compaction is never promoted to "manual".
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "Stop", sessionId: "s1"))
+        #expect(store.sessions["s1"]?.compactTrigger == nil)
+
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "UserPromptSubmit", sessionId: "s1", userPrompt: "next turn"))
+        #expect(store.sessions["s1"]?.compactTrigger == nil)
+    }
+
     // MARK: - importDetectedSessions (#83 unchanged-skip guard)
 
     // #83-1. Re-importing the same DetectedSession (same lastModified) must

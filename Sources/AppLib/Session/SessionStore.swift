@@ -244,6 +244,18 @@ public final class SessionStore: ObservableObject {
         case "SessionStart":
             var newSession = SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             newSession.claudePid = event.bridgePpid
+            // #181 — SessionStart(source:"compact") is a mid-session
+            // administrative restart, not a new conversation, and its order
+            // vs PostCompact is not guaranteed. Preserve the in-flight
+            // compaction marker (it arrives before PostCompact needs it) and
+            // the activity state (a default .working after PostCompact
+            // already idled the card would stick — no Stop follows a manual
+            // compaction). Every other source (startup/resume/clear) keeps
+            // the full reset.
+            if event.source == "compact", let prior = sessions[sid] {
+                newSession.compactTrigger = prior.compactTrigger
+                newSession.state = prior.state
+            }
             sessions[sid] = newSession
 
         case "SessionEnd":
@@ -269,6 +281,7 @@ public final class SessionStore: ObservableObject {
             }
             session.errorMessage = nil       // user is retrying
             session.errorAt = nil
+            session.compactTrigger = nil     // #181 — marker can't outlive its turn
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
             // Reject-by-new-prompt path: user ESC'd an open AskUQ and typed a
@@ -341,6 +354,10 @@ public final class SessionStore: ObservableObject {
             if session.pendingPermission?.isAskUserQuestion == true {
                 session.pendingPermission = nil
             }
+            // #181 — a compaction marker whose PostCompact was lost must not
+            // survive the turn boundary and promote a later trigger-less
+            // compaction to "manual".
+            session.compactTrigger = nil
             sessions[sid] = session
 
         case "PreCompact":
@@ -355,13 +372,26 @@ public final class SessionStore: ObservableObject {
             sessions[sid] = session
 
         case "PostCompact":
-            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
-            // Manual /compact ends here — no Stop follows, so nothing else
-            // would flip a .working card (from /compact's UserPromptSubmit)
-            // back. Auto-compact is mid-turn: leave the state alone.
-            if (event.trigger ?? session.compactTrigger) == "manual",
-               session.state == .working {
+            // Unknown session (app restarted mid-compaction): mint .idle, not
+            // the default .working — with no trigger resolvable and no Stop
+            // following a manual compaction, .working would stick forever. A
+            // mid-turn auto compaction self-corrects on its next PreToolUse.
+            var session = sessions[sid]
+                ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent, state: .idle)
+            // Manual /compact ends its turn HERE — no Stop follows — so mirror
+            // Stop's turn-end reset (state, isToolRunning, stale-AskUQ clear).
+            // An unresolvable trigger takes this path too: wrongly idling a
+            // mid-turn auto compaction is transient (next PreToolUse flips it
+            // back), while NOT idling a finished manual compaction sticks
+            // forever. Only a provably-auto reading leaves the turn running.
+            let trigger = CompactFinishGate.resolvedTrigger(
+                eventTrigger: event.trigger, storedTrigger: session.compactTrigger)
+            if trigger != "auto" {
                 session.state = .idle
+                session.isToolRunning = false
+                if session.pendingPermission?.isAskUserQuestion == true {
+                    session.pendingPermission = nil
+                }
             }
             session.compactTrigger = nil
             session.lastActiveAt = Date()

@@ -30,6 +30,18 @@ import Foundation
     #expect(event.trigger == nil)
 }
 
+@Test func decodeBridgeEvent_nonStringTriggerDoesNotFailEvent() throws {
+    // `trigger` is a generic key another agent could emit with any type; a
+    // non-string value must degrade to nil, not throw away the whole event
+    // (same defensive posture as the _bridge_agent decode).
+    let json = """
+    {"_bridge_event":"Stop","session_id":"abc","trigger":123}
+    """.data(using: .utf8)!
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: json)
+    #expect(event.bridgeEvent == "Stop")
+    #expect(event.trigger == nil)
+}
+
 @Test func requiresBlockingResponse_regularPermissionRequestBlocks() {
     let event = BridgeEvent(
         bridgeEvent: "PermissionRequest",

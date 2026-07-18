@@ -205,7 +205,10 @@ public struct BridgeEvent: Codable, Sendable {
         self.transcriptPath = try c.decodeIfPresent(String.self, forKey: .transcriptPath)
         self.userPrompt = try c.decodeIfPresent(String.self, forKey: .userPrompt)
         self.source = try c.decodeIfPresent(String.self, forKey: .source)
-        self.trigger = try c.decodeIfPresent(String.self, forKey: .trigger)
+        // Defensive like the agent decode: `trigger` is a generic key another
+        // agent could emit with any JSON type — degrade to nil rather than
+        // failing the whole event.
+        self.trigger = (try? c.decodeIfPresent(String.self, forKey: .trigger)) ?? nil
         self.bridgePpid = try c.decodeIfPresent(Int.self, forKey: .bridgePpid)
         self.lastAssistantMessage = try c.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
         self.rateLimits = try c.decodeIfPresent([String: AnyCodable].self, forKey: .rateLimits)
