@@ -189,9 +189,8 @@ public final class UsageTracker: ObservableObject {
 
     /// Path where we persist the last received rate_limits snapshot so the UI
     /// can show meaningful data immediately on next launch instead of "no data".
-    private let cacheURL: URL = {
-        URL(fileURLWithPath: NSHomeDirectory() + "/.zackeyes/usage-cache.json")
-    }()
+    /// Injectable for tests (the default is the real user cache).
+    private let cacheURL: URL
 
     /// Update real subscriber rate limit data from a hook event.
     /// Call whenever a `BridgeEvent` arrives with non-nil `rateLimits`.
@@ -283,10 +282,12 @@ public final class UsageTracker: ObservableObject {
 
     public init(
         projectsDir: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/projects"),
-        codexSessionsDir: URL? = URL(fileURLWithPath: NSHomeDirectory() + "/.codex/sessions")
+        codexSessionsDir: URL? = URL(fileURLWithPath: NSHomeDirectory() + "/.codex/sessions"),
+        cacheURL: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.zackeyes/usage-cache.json")
     ) {
         self.projectsDir = projectsDir
         self.codexSessionsDir = codexSessionsDir
+        self.cacheURL = cacheURL
     }
 
     /// Start periodic refresh every N seconds.
@@ -303,8 +304,9 @@ public final class UsageTracker: ObservableObject {
         }
     }
 
-    /// Load the last persisted rate_limits snapshot.
-    private func loadFromCache() {
+    /// Load the last persisted rate_limits snapshot. Internal (not private)
+    /// so tests can exercise the restore path against an injected cacheURL.
+    func loadFromCache() {
         guard let data = try? Data(contentsOf: cacheURL),
               let cached = try? JSONDecoder().decode(Snapshot.self, from: data) else {
             return
@@ -633,6 +635,16 @@ public final class UsageTracker: ObservableObject {
     ) {
         let now = Date()
         for (k, v) in scanned { codexScopeReadings[k] = v }
+        // #182 (review) — the "\0cached" seed only bridges restart → first
+        // live account reading. Once a live account-scope reading with window
+        // data lands, the seed is superseded; keeping it would let
+        // mostConstrainedCodexReading resurrect an axis the fresh reading
+        // authoritatively omitted (e.g. the temporarily lifted 5h window).
+        // A windowless account reading (credits-only block) keeps the seed —
+        // it is still the only source of the retained countdown.
+        if let account = scanned[""], account.hasWindowData {
+            codexScopeReadings.removeValue(forKey: "\u{0}cached")
+        }
         codexScopeReadings = codexScopeReadings.filter { _, obs in
             let pAlive = obs.fiveHourResetsAt.map { $0 > now } ?? (obs.fiveHourUsedPct != nil)
             let sAlive = obs.sevenDayResetsAt.map { $0 > now } ?? (obs.sevenDayUsedPct != nil)
@@ -984,7 +996,13 @@ public final class UsageTracker: ObservableObject {
             switch w.minutes {
             case .some(let m) where m <= 600:  isFiveHour = true
             case .some(let m) where m >= 1440: isFiveHour = false
-            default:                           isFiveHour = positionalIsFiveHour
+            case .some:
+                // Present but unrecognized length (say a 12h window): neither
+                // axis — showing it under either label would mislead. Skip it;
+                // hasWindowData stays true (the reading did speak about
+                // windows, we just can't classify this one).
+                continue
+            case .none:                        isFiveHour = positionalIsFiveHour
             }
             if isFiveHour {
                 obs.fiveHourUsedPct = w.used

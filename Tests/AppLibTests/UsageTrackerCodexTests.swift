@@ -146,6 +146,66 @@ struct UsageTrackerCodexTests {
         #expect(snap.codexSevenDayResetsAt?.timeIntervalSince1970 == 1_784_780_174)
     }
 
+    @Test func decodeCodexObservation_unsupportedWindowMinutes_isSkipped() {
+        // A present-but-unrecognized window length (e.g. a hypothetical 12h
+        // window) is neither the 5h nor the 7d axis — showing it under either
+        // label would mislead. Positional fallback is reserved for readings
+        // that omit window_minutes entirely (older codex builds).
+        let rl: [String: Any] = [
+            "primary": ["used_percent": 33.0, "window_minutes": 720, "resets_at": 4_000_000_000],
+        ]
+        let obs = UsageTracker.decodeCodexObservation(from: rl)
+        #expect(obs.fiveHourUsedPct == nil)
+        #expect(obs.sevenDayUsedPct == nil)
+        // Still counts as window data: the reading spoke authoritatively
+        // about windows, we just couldn't classify this one.
+        #expect(obs.hasWindowData)
+    }
+
+    @Test @MainActor func refresh_liveAccountReadingSupersedesCachedFiveHour() async throws {
+        // Restart during the 5h-lift transition: the persisted cache still
+        // holds a PLAUSIBLE 5h pair (reset < 6h out, so the implausibility
+        // guard keeps it), but the first live account reading is 7d-only.
+        // The "\0cached" seed must die with that reading — otherwise
+        // mostConstrainedCodexReading resurrects the lifted 5h axis until
+        // its resets_at (Gemini/CodeRabbit review on #183).
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let sessionsDir = tmpDir.appendingPathComponent("sessions")
+        let day = currentCodexDayDir(under: sessionsDir)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        let id = "019dec85-cace-cace-cace-cacecacecace"
+        let file = day.appendingPathComponent(currentCodexRolloutName(id: id, hour: 14))
+        try """
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"limit_id":"codex","primary":{"used_percent":48.0,"window_minutes":10080,"resets_at":4000000000},"secondary":null}}}
+            """.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date().addingTimeInterval(-120)], ofItemAtPath: file.path)
+
+        var cached = UsageTracker.Snapshot.empty
+        cached.codexFiveHourUsedPct = 70.0
+        cached.codexFiveHourResetsAt = Date().addingTimeInterval(2 * 3600)
+        cached.codexSevenDayUsedPct = 10.0
+        cached.codexSevenDayResetsAt = Date().addingTimeInterval(3 * 86_400)
+        cached.codexLastUpdated = Date()
+        let cacheFile = tmpDir.appendingPathComponent("usage-cache.json")
+        try JSONEncoder().encode(cached).write(to: cacheFile)
+
+        let tracker = UsageTracker(
+            projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
+            codexSessionsDir: sessionsDir,
+            cacheURL: cacheFile
+        )
+        tracker.loadFromCache()
+        #expect(tracker.snapshot.codexFiveHourUsedPct == 70.0)  // seed restored
+
+        await tracker.refresh()
+
+        #expect(tracker.snapshot.codexFiveHourUsedPct == nil)
+        #expect(tracker.snapshot.codexFiveHourResetsAt == nil)
+        #expect(tracker.snapshot.codexSevenDayUsedPct == 48.0)
+    }
+
     @Test func fiveHourResetImplausible_flagsResetBeyondWindowLength() {
         let now = Date(timeIntervalSince1970: 1_784_700_000)
         // 4 days out — impossible for a real 5h window. This is the shape the
