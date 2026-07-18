@@ -52,6 +52,11 @@ public struct SessionInfo: Identifiable {
     /// from Codex `turn_context` policy fields.
     public var permissionRisk: PermissionRiskLevel?
 
+    /// #181 — "manual" | "auto" from the last PreCompact, cleared on
+    /// PostCompact. Lets the finish notification fire even when the
+    /// PostCompact payload itself omits `trigger`.
+    public var compactTrigger: String?
+
     /// Display name — last path component of cwd, or first 8 chars of id
     public var displayName: String {
         if let cwd = cwd, !cwd.isEmpty {
@@ -336,6 +341,30 @@ public final class SessionStore: ObservableObject {
             if session.pendingPermission?.isAskUserQuestion == true {
                 session.pendingPermission = nil
             }
+            sessions[sid] = session
+
+        case "PreCompact":
+            // #181 — remember which kind of compaction is running so the
+            // PostCompact finish notification can gate on manual-vs-auto even
+            // when the PostCompact payload omits `trigger`. Create-on-first-
+            // event like PreToolUse: /compact can fire before ZackEyes saw
+            // the session.
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
+            session.compactTrigger = event.trigger
+            session.lastActiveAt = Date()
+            sessions[sid] = session
+
+        case "PostCompact":
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
+            // Manual /compact ends here — no Stop follows, so nothing else
+            // would flip a .working card (from /compact's UserPromptSubmit)
+            // back. Auto-compact is mid-turn: leave the state alone.
+            if (event.trigger ?? session.compactTrigger) == "manual",
+               session.state == .working {
+                session.state = .idle
+            }
+            session.compactTrigger = nil
+            session.lastActiveAt = Date()
             sessions[sid] = session
 
         case "Notification":

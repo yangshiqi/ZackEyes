@@ -13,6 +13,23 @@ import Foundation
     #expect(event.toolName == nil)
 }
 
+@Test func decodeBridgeEvent_compactTrigger() throws {
+    // #181 — PreCompact/PostCompact carry trigger: "manual" | "auto".
+    let json = """
+    {"_bridge_event":"PostCompact","session_id":"abc","hook_event_name":"PostCompact","trigger":"manual"}
+    """.data(using: .utf8)!
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: json)
+    #expect(event.trigger == "manual")
+}
+
+@Test func decodeBridgeEvent_triggerAbsentIsNil() throws {
+    let json = """
+    {"_bridge_event":"Stop","session_id":"abc"}
+    """.data(using: .utf8)!
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: json)
+    #expect(event.trigger == nil)
+}
+
 @Test func requiresBlockingResponse_regularPermissionRequestBlocks() {
     let event = BridgeEvent(
         bridgeEvent: "PermissionRequest",

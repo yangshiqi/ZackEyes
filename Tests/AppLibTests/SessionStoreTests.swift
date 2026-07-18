@@ -883,6 +883,61 @@ struct SessionStoreTests {
         #expect(session?.cwd == "/proj")
     }
 
+    // MARK: - #181 PreCompact/PostCompact trigger tracking
+
+    @Test func preCompactStoresTriggerOnSession() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+        #expect(store.sessions["s1"]?.compactTrigger == "manual")
+    }
+
+    @Test func postCompactClearsStoredTrigger() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "PostCompact", sessionId: "s1"))
+        #expect(store.sessions["s1"]?.compactTrigger == nil)
+    }
+
+    @Test func postCompactAfterManualCompact_returnsWorkingSessionToIdle() {
+        // /compact submits through UserPromptSubmit on some CC versions,
+        // flipping the session to .working; nothing after PostCompact would
+        // ever flip it back (no Stop follows a manual compaction).
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "UserPromptSubmit", sessionId: "s1", userPrompt: "/compact"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "PostCompact", sessionId: "s1"))
+        #expect(store.sessions["s1"]?.state == .idle)
+    }
+
+    @Test func postCompactAfterAutoCompact_leavesWorkingStateAlone() {
+        // Auto-compact happens MID-TURN — the agent keeps working after it,
+        // so PostCompact must not flip the state (Stop will, at turn end).
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "UserPromptSubmit", sessionId: "s1", userPrompt: "do stuff"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "auto"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "PostCompact", sessionId: "s1"))
+        #expect(store.sessions["s1"]?.state == .working)
+    }
+
+    @Test func preCompactOnUnknownSessionCreatesIt() {
+        // /compact can fire before ZackEyes ever saw the session (app started
+        // mid-conversation) — same create-on-first-event contract as PreToolUse.
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s9", cwd: "/tmp", trigger: "auto"))
+        #expect(store.sessions["s9"]?.compactTrigger == "auto")
+    }
+
     // MARK: - importDetectedSessions (#83 unchanged-skip guard)
 
     // #83-1. Re-importing the same DetectedSession (same lastModified) must

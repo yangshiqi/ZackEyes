@@ -207,6 +207,37 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         }
     }
 
+    /// Post a notification when a manual /compact finishes (#181). Compact
+    /// completion emits PostCompact, not Stop, so the "done" path never fires;
+    /// large-context compactions run for minutes and end silently without this.
+    public func notifyCompactFinished(
+        sessionId: String,
+        agent: AgentKind,
+        projectName: String
+    ) {
+        let content = UNMutableNotificationContent()
+        content.title = "\(Self.agentTag(agent)) \(Self.displaySafe(projectName)) — compact finished"
+        let agentName = (agent == .claude) ? "Claude Code" : "Codex"
+        content.body = "\(agentName) finished compacting the context. Click to jump to the terminal."
+        if playThemeSound() {
+            content.sound = nil
+        } else {
+            content.sound = .default
+        }
+        content.userInfo = ["sessionId": sessionId]
+
+        let request = UNNotificationRequest(
+            identifier: "session-compact-\(sessionId)-\(Int(Date().timeIntervalSince1970))",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request) { @Sendable error in
+            if let error = error {
+                NSLog("ZackEyes: compact notification post failed: %@", error.localizedDescription)
+            }
+        }
+    }
+
     /// Post a notification for a new app version. Only sends once per version
     /// (tracked via UserDefaults).
     public func notifyUpdateAvailable(version: String, releaseURL: URL) {
@@ -294,6 +325,21 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
                 self?.onSessionTap?(sessionId)
             }
         }
+    }
+}
+
+/// #181 — decide whether a PostCompact event fires the "compact finished"
+/// notification. Manual /compact only: auto-compact happens mid-turn, so the
+/// turn's own Stop notification follows anyway and a second chime is noise.
+/// The event's own `trigger` is authoritative; the session's stored PreCompact
+/// trigger is the fallback for PostCompact payloads that omit the field.
+/// Pure + nonisolated so it's unit-testable without notification side effects.
+public enum CompactFinishGate {
+    public static func shouldNotify(
+        eventTrigger: String?, storedTrigger: String?, isReplayed: Bool
+    ) -> Bool {
+        if isReplayed { return false }
+        return (eventTrigger ?? storedTrigger) == "manual"
     }
 }
 
