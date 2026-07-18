@@ -24,7 +24,7 @@ const roadmapItems = [
 ];
 const roadmapStructuredData = {
   '@type': 'ItemList',
-  '@id': 'https://zackeyes.app/roadmap#items',
+  '@id': 'https://zackeyes.vercel.app/roadmap#items',
   name: 'ZackEyes roadmap',
   itemListElement: roadmapItems.map((item, index) => ({
     '@type': 'ListItem',
@@ -38,7 +38,7 @@ const roadmapStructuredData = {
 <SiteLayout
   title="Roadmap - ZackEyes"
   description={description}
-  canonical="https://zackeyes.app/roadmap"
+  canonical="https://zackeyes.vercel.app/roadmap"
   structuredData={[roadmapStructuredData]}
 >
   <div class="grain" aria-hidden="true"></div>

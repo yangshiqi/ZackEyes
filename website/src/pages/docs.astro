@@ -8,14 +8,14 @@ const description = 'Install, uninstall, update, and compatibility notes for Zac
 const docsStructuredData = [
   {
     '@type': 'TechArticle',
-    '@id': 'https://zackeyes.app/docs#compatibility',
+    '@id': 'https://zackeyes.vercel.app/docs#compatibility',
     headline: 'ZackEyes compatibility requirements',
     description,
     about: ['macOS 14', 'Apple Silicon', 'Intel Mac', 'Claude Code', 'Codex CLI']
   },
   {
     '@type': 'HowTo',
-    '@id': 'https://zackeyes.app/docs#install',
+    '@id': 'https://zackeyes.vercel.app/docs#install',
     name: 'Install ZackEyes',
     step: [
       { '@type': 'HowToStep', name: 'Download the DMG', text: 'Download the latest ZackEyes DMG from GitHub Releases.' },
@@ -29,7 +29,7 @@ const docsStructuredData = [
 <SiteLayout
   title="Docs - ZackEyes"
   description={description}
-  canonical="https://zackeyes.app/docs"
+  canonical="https://zackeyes.vercel.app/docs"
   structuredData={docsStructuredData}
 >
   <div class="grain" aria-hidden="true"></div>

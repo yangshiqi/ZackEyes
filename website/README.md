@@ -31,7 +31,7 @@ The homepage currently uses no React island and no generated client JavaScript b
 - Node.js 20 or newer is recommended.
 - pnpm 10.28.2 is the pinned package manager, declared in `package.json`.
 - The production target must support static file hosting.
-- The canonical production origin is currently `https://zackeyes.app`; update `astro.config.mjs`, `public/robots.txt`, and LLM text endpoints if the final domain changes.
+- The canonical production origin is `https://zackeyes.vercel.app` — the live Vercel deployment. The originally planned custom apex domain was never registered (see issue #192). If a custom domain is purchased later, update `astro.config.mjs`, `public/robots.txt`, the LLM text endpoints, and the origin pinned in `tests/site-contract.test.mjs`.
 - Latest public release: `https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.9.3/ZackEyes-0.9.3.dmg`.
 - DMG size: 4.0 MB.
 - SHA256: `9e54ec0391b1265cdb9409732ffdd8042bd400910c996a33d9948be4af0cedaa`.

@@ -17,6 +17,16 @@ describe('production output budgets', { skip: !hasBuild }, () => {
     assert.deepEqual(emittedAssets.filter((file) => file.endsWith('.js')), []);
   });
 
+  it('emits canonical and sitemap URLs on the live origin', () => {
+    const html = readFileSync(join(dist, 'index.html'), 'utf8');
+    assert.match(html, /rel="canonical" href="https:\/\/zackeyes\.vercel\.app\//);
+    assert.doesNotMatch(html, /zackeyes\.app/);
+
+    const sitemap = readFileSync(join(dist, 'sitemap-0.xml'), 'utf8');
+    assert.match(sitemap, /https:\/\/zackeyes\.vercel\.app\//);
+    assert.doesNotMatch(sitemap, /https:\/\/zackeyes\.app\//);
+  });
+
   it('keeps HTML and CSS inside static landing page budgets', () => {
     const astroDir = join(dist, '_astro');
     const cssFile = existsSync(astroDir) ? readdirSync(astroDir).find((file) => file.endsWith('.css')) : null;

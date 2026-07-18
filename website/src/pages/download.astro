@@ -18,7 +18,7 @@ const description = `Download ${releaseName} for macOS, verify the DMG checksum,
 const downloadStructuredData = [
   {
     '@type': 'SoftwareApplication',
-    '@id': 'https://zackeyes.app/download#software',
+    '@id': 'https://zackeyes.vercel.app/download#software',
     name: 'ZackEyes',
     operatingSystem: 'macOS 14+',
     applicationCategory: 'DeveloperApplication',
@@ -38,7 +38,7 @@ const downloadStructuredData = [
   },
   {
     '@type': 'HowTo',
-    '@id': 'https://zackeyes.app/download#install',
+    '@id': 'https://zackeyes.vercel.app/download#install',
     name: 'Download and install ZackEyes',
     step: [
       { '@type': 'HowToStep', name: 'Download the DMG', text: `Download ${releaseName} from the public GitHub release asset.` },
@@ -52,7 +52,7 @@ const downloadStructuredData = [
 <SiteLayout
   title="Download ZackEyes - macOS DMG"
   description={description}
-  canonical="https://zackeyes.app/download"
+  canonical="https://zackeyes.vercel.app/download"
   structuredData={downloadStructuredData}
 >
   <div class="grain" aria-hidden="true"></div>

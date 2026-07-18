@@ -461,7 +461,7 @@ const releases = [
 ];
 const changelogStructuredData = {
   '@type': 'ItemList',
-  '@id': 'https://zackeyes.app/changelog#releases',
+  '@id': 'https://zackeyes.vercel.app/changelog#releases',
   name: 'ZackEyes release notes',
   itemListElement: releases.map((release, index) => ({
     '@type': 'ListItem',
@@ -475,7 +475,7 @@ const changelogStructuredData = {
 <SiteLayout
   title="Changelog - ZackEyes"
   description={description}
-  canonical="https://zackeyes.app/changelog"
+  canonical="https://zackeyes.vercel.app/changelog"
   structuredData={[changelogStructuredData]}
 >
   <div class="grain" aria-hidden="true"></div>

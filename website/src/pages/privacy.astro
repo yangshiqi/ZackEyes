@@ -7,9 +7,9 @@ import { issuesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes is local-first by default: no account is required, source code and agent prompts are not uploaded by the website, and feedback is handled through GitHub Issues.';
 const privacyStructuredData = {
   '@type': 'PrivacyPolicy',
-  '@id': 'https://zackeyes.app/privacy#policy',
+  '@id': 'https://zackeyes.vercel.app/privacy#policy',
   name: 'ZackEyes Privacy Notes',
-  url: 'https://zackeyes.app/privacy',
+  url: 'https://zackeyes.vercel.app/privacy',
   description
 };
 ---
@@ -17,7 +17,7 @@ const privacyStructuredData = {
 <SiteLayout
   title="Privacy - ZackEyes"
   description={description}
-  canonical="https://zackeyes.app/privacy"
+  canonical="https://zackeyes.vercel.app/privacy"
   structuredData={[privacyStructuredData]}
 >
   <canvas class="cosmos" id="cosmos" aria-hidden="true"></canvas>

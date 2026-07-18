@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import {
@@ -73,6 +73,24 @@ describe('Astro site contract', () => {
     assert.match(llms, /ZackEyes/);
     assert.match(llms, /Claude Code/);
     assert.match(llms, /Codex CLI/);
+  });
+
+  it('pins the canonical production origin to the live deployment', () => {
+    // zackeyes.app was never registered (issue #192); the live origin is the
+    // Vercel deployment. Buying a custom domain later means updating this
+    // origin deliberately — in astro.config.mjs, robots.txt, and here.
+    assert.match(read('astro.config.mjs'), /site:\s*'https:\/\/zackeyes\.vercel\.app'/);
+
+    const robots = read('public/robots.txt');
+    assert.match(robots, /Sitemap: https:\/\/zackeyes\.vercel\.app\/sitemap-index\.xml/);
+    assert.match(robots, /Host: https:\/\/zackeyes\.vercel\.app/);
+
+    const sourceFiles = readdirSync(join(root, 'src'), { recursive: true })
+      .map((path) => join(root, 'src', path.toString()))
+      .filter((path) => statSync(path).isFile());
+    for (const file of [...sourceFiles, join(root, 'public/robots.txt'), join(root, 'astro.config.mjs'), join(root, 'README.md')]) {
+      assert.doesNotMatch(readFileSync(file, 'utf8'), /zackeyes\.app/, `${file} references the unregistered zackeyes.app domain`);
+    }
   });
 
   it('uses one shared top navigation across all public pages', () => {
