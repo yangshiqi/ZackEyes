@@ -4,7 +4,7 @@
 // ships on yangshiqi/ZackEyes-release; nothing else under src/ should
 // hard-code the version, hash, or size.
 
-export const appVersion = '0.9.2';
+export const appVersion = '0.9.3';
 export const releaseName = `ZackEyes ${appVersion}`;
 
 // DMG metadata — pulled from `shasum -a 256` and `stat -f%z` against the
@@ -12,11 +12,11 @@ export const releaseName = `ZackEyes ${appVersion}`;
 // `downloadSize` is in decimal MB (10^6 bytes), matching macOS Finder's
 // file-size display since 10.6; `downloadSizeLabel` and the bytes label
 // derive from it so the bump script only has to rewrite the primitives.
-export const downloadBytes = 4038136;
+export const downloadBytes = 4038004;
 export const downloadSize = '4.0 MB';
 export const downloadSizeLabel = `${downloadSize} DMG`;
 export const downloadBytesLabel = `${downloadBytes.toLocaleString('en-US')} bytes`;
-export const downloadSha256 = '299059a78cc903f451e0d8a86eb74856eb71661101c3365525367495d4a9069b';
+export const downloadSha256 = '9e54ec0391b1265cdb9409732ffdd8042bd400910c996a33d9948be4af0cedaa';
 
 // URLs.
 //
