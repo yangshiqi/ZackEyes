@@ -1058,7 +1058,13 @@ public final class UsageTracker: ObservableObject {
         if let reached = rl["rate_limit_reached_type"] as? String, !reached.isEmpty {
             return true
         }
-        if let credits = rl["credits"] as? [String: Any] {
+        // #189 — the credits heuristic only applies to the real block shape,
+        // where codex nulls BOTH windows (the #172 retention work exists
+        // precisely because blocks drop the windows). A healthy prolite
+        // account chronically reports balance:"0" (= no add-on credits) while
+        // its live windows govern the quota — window data with headroom is
+        // proof the account is not credit-gated, so skip the heuristic.
+        if !obs.hasWindowData, let credits = rl["credits"] as? [String: Any] {
             let hasCredits = credits["has_credits"] as? Bool ?? true
             let unlimited = credits["unlimited"] as? Bool ?? false
             let balanceZero: Bool

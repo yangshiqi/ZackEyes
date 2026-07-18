@@ -253,10 +253,12 @@ struct UsageTrackerCodexTests {
     }
 
     @Test func limitReached_whenOutOfCredits() {
-        // The user's real shape: prolite plan, window used% near 0, but the
-        // account is out of credits — the only signal of the block.
+        // The real block shape (#172's premise, corrected in #189): codex
+        // nulls BOTH windows when the account is credit-gated — the block
+        // lives solely in the credits field.
         let rl: [String: Any] = [
-            "primary": ["used_percent": 0.0, "resets_at": 1_782_746_077],
+            "primary": NSNull(),
+            "secondary": NSNull(),
             "credits": ["has_credits": false, "unlimited": false, "balance": "0"],
             "plan_type": "prolite",
         ]
@@ -270,6 +272,23 @@ struct UsageTrackerCodexTests {
         #expect(UsageTracker.decodeCodexObservation(from: [
             "secondary": ["used_percent": 100.0],
         ]).limitReached)
+    }
+
+    @Test func limitReached_falseForHealthyProliteWithZeroBalance() {
+        // #189 — prolite chronically reports balance:"0" (= no add-on credits
+        // purchased) while its WINDOWS govern the quota. A reading that carries
+        // live window data with real headroom is proof the account is not
+        // credit-gated; the credits heuristic must only fire on the real block
+        // shape, where codex nulls the windows (#172's premise).
+        let rl: [String: Any] = [
+            "limit_id": "codex",
+            "primary": ["used_percent": 4.0, "window_minutes": 10080, "resets_at": 4_000_000_000],
+            "secondary": NSNull(),
+            "credits": ["has_credits": false, "unlimited": false, "balance": "0"],
+            "plan_type": "prolite",
+            "rate_limit_reached_type": NSNull(),
+        ]
+        #expect(UsageTracker.decodeCodexObservation(from: rl).limitReached == false)
     }
 
     @Test func limitReached_falseForHealthyAccount() {
@@ -288,20 +307,31 @@ struct UsageTrackerCodexTests {
     }
 
     @Test func updateFromCodexRateLimits_setsLimitReached_outOfCredits() {
+        // #189-corrected sequence: a healthy reading supplies the windows,
+        // then the real block shape arrives (windows nulled, credits 0). The
+        // badge fires and the countdown falls back to the remembered binding
+        // window reset (#172 retention).
         let tracker = UsageTracker(
             projectsDir: URL(fileURLWithPath: "/tmp/nonexistent-claude"),
             codexSessionsDir: nil
         )
         tracker.updateFromCodexRateLimits([
-            "primary": ["used_percent": 0.0, "resets_at": 1_782_746_077],
+            "primary": ["used_percent": 60.0, "resets_at": 4_000_000_000],
+            "secondary": ["used_percent": 20.0, "resets_at": 4_100_000_000],
+            "credits": ["has_credits": true, "balance": "100"],
+        ])
+        tracker.updateFromCodexRateLimits([
+            "primary": NSNull(),
+            "secondary": NSNull(),
             "credits": ["has_credits": false, "unlimited": false, "balance": "0"],
         ])
 
         let snap = tracker.snapshot
         #expect(snap.codexLimitReached)
-        #expect(snap.codexLimitResetsAt?.timeIntervalSince1970 == 1_782_746_077)
-        // hasCodexData is true even though used% is 0 — so the bar (and the
-        // "limit reached" badge) renders instead of disappearing.
+        // Binding window = higher used% (5h at 60%) → its reset is the countdown.
+        #expect(snap.codexLimitResetsAt?.timeIntervalSince1970 == 4_000_000_000)
+        // hasCodexData stays true — the bar (and the "limit reached" badge)
+        // renders instead of disappearing.
         #expect(snap.hasCodexData)
     }
 
@@ -811,17 +841,22 @@ struct UsageTrackerCodexTests {
 
         let id = "019dec85-aaaa-bbbb-cccc-ddddeeeeffff"
         let file = day.appendingPathComponent(currentCodexRolloutName(id: id, hour: 14))
-        // Earlier reading healthy; the LATEST reading is out of credits.
+        // Earlier reading healthy; the LATEST reading is the real out-of-credits
+        // block shape — windows nulled (#189), block lives in the credits field.
         try """
             {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":5.0,"resets_at":1782746077},"credits":{"has_credits":true,"balance":"100"}}}}
-            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":0.0,"resets_at":1782746077},"credits":{"has_credits":false,"unlimited":false,"balance":"0"},"plan_type":"prolite"}}}
+            {"type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":null,"secondary":null,"credits":{"has_credits":false,"unlimited":false,"balance":"0"},"plan_type":"prolite"}}}
             """.write(to: file, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes(
             [.modificationDate: Date().addingTimeInterval(-60)], ofItemAtPath: file.path)
 
         let state = try #require(UsageTracker.scanLatestCodexState(rootDir: tmpDir))
         #expect(state.limitReached)
-        #expect(state.limitResetsAt?.timeIntervalSince1970 == 1782746077)
+        // The windowless block reading carries no reset of its own — the scan
+        // reports nil and the APPLY layer supplies the countdown from the
+        // remembered binding window (#172 retention; covered by
+        // refresh_blockWithoutWindow_retainsPriorResetAsLimitReset).
+        #expect(state.limitResetsAt == nil)
     }
 
     @Test func scanLatestCodexState_recoveryClearsStaleBlock() throws {
