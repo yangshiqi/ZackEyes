@@ -25,6 +25,10 @@ describe('production output budgets', { skip: !hasBuild }, () => {
     const sitemap = readFileSync(join(dist, 'sitemap-0.xml'), 'utf8');
     assert.match(sitemap, /https:\/\/zackeyes\.vercel\.app\//);
     assert.doesNotMatch(sitemap, /https:\/\/zackeyes\.app\//);
+
+    const sitemapIndex = readFileSync(join(dist, 'sitemap-index.xml'), 'utf8');
+    assert.match(sitemapIndex, /https:\/\/zackeyes\.vercel\.app\/sitemap-0\.xml/);
+    assert.doesNotMatch(sitemapIndex, /https:\/\/zackeyes\.app\//);
   });
 
   it('keeps HTML and CSS inside static landing page budgets', () => {

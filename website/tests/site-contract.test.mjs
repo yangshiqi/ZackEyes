@@ -88,7 +88,7 @@ describe('Astro site contract', () => {
     const sourceFiles = readdirSync(join(root, 'src'), { recursive: true })
       .map((path) => join(root, 'src', path.toString()))
       .filter((path) => statSync(path).isFile());
-    for (const file of [...sourceFiles, join(root, 'public/robots.txt'), join(root, 'astro.config.mjs'), join(root, 'README.md')]) {
+    for (const file of [...sourceFiles, join(root, 'public/robots.txt'), join(root, 'public/site.webmanifest'), join(root, 'astro.config.mjs'), join(root, 'README.md'), join(root, '..', 'README.md')]) {
       assert.doesNotMatch(readFileSync(file, 'utf8'), /zackeyes\.app/, `${file} references the unregistered zackeyes.app domain`);
     }
   });
