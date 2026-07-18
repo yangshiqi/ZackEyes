@@ -49,6 +49,43 @@ struct CompactFinishGateTests {
             eventTrigger: nil, storedTrigger: "auto"))
     }
 
+    // MARK: - #186 inference (interactive CC never fires PostCompact —
+    // upstream anthropics/claude-code#78760; infer completion from the first
+    // post-PreCompact context reading collapsing vs the baseline)
+
+    @Test func inferredFinish_manualWithBigDrop() {
+        #expect(CompactFinishGate.inferredFinish(
+            trigger: "manual", baselinePct: 82, currentPct: 18))
+    }
+
+    @Test func inferredFinish_exactThresholdCounts() {
+        // drop == threshold (20pt) → finished; just under → not.
+        #expect(CompactFinishGate.inferredFinish(
+            trigger: "manual", baselinePct: 82, currentPct: 62))
+        #expect(!CompactFinishGate.inferredFinish(
+            trigger: "manual", baselinePct: 82, currentPct: 62.1))
+    }
+
+    @Test func inferredFinish_smallDropIsNotFinish() {
+        // ESC'd compaction / ordinary statusLine churn: context barely moved.
+        #expect(!CompactFinishGate.inferredFinish(
+            trigger: "manual", baselinePct: 82, currentPct: 75))
+    }
+
+    @Test func inferredFinish_requiresManualTrigger() {
+        #expect(!CompactFinishGate.inferredFinish(
+            trigger: "auto", baselinePct: 82, currentPct: 18))
+        #expect(!CompactFinishGate.inferredFinish(
+            trigger: nil, baselinePct: 82, currentPct: 18))
+    }
+
+    @Test func inferredFinish_requiresBothReadings() {
+        #expect(!CompactFinishGate.inferredFinish(
+            trigger: "manual", baselinePct: nil, currentPct: 18))
+        #expect(!CompactFinishGate.inferredFinish(
+            trigger: "manual", baselinePct: 82, currentPct: nil))
+    }
+
     @Test func unknownTriggerStaysSilent() {
         // No trigger anywhere → can't prove it was manual → no chime.
         // (The SessionStore state flip is deliberately laxer — see
