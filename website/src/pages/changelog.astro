@@ -7,6 +7,24 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.9.1',
+    date: 'Published July 18, 2026',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Chime and notification when a manual /compact finishes (Claude Code PostCompact hook; auto-compact stays silent by design)'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'Codex quota bars showed the weekly quota in the 5h slot after the 5h limit was temporarily lifted — windows are now classified by window_minutes instead of position, and stale cached 5h readings are dropped'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.9.0',
     date: 'Published July 13, 2026',
     summary: 'A unified Settings window, configurable quota presentation, and attention-first session grouping.',
