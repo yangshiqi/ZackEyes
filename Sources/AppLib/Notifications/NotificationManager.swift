@@ -358,6 +358,25 @@ public enum CompactFinishGate {
     ) -> Bool {
         resolvedTrigger(eventTrigger: eventTrigger, storedTrigger: storedTrigger) == "manual"
     }
+
+    /// #186 — interactive CC fires PreCompact but never PostCompact
+    /// (upstream anthropics/claude-code#78760), so completion is inferred:
+    /// compaction runs statusLine-silent and the first reading after it
+    /// lands within ~1s carrying the collapsed context. A drop of at least
+    /// `dropThreshold` percentage points vs the PreCompact baseline is the
+    /// finish signal; an ESC'd compaction never drops, so it stays silent.
+    /// Manual-only, like `shouldNotify`.
+    public static func inferredFinish(
+        trigger: String?,
+        baselinePct: Double?,
+        currentPct: Double?,
+        dropThreshold: Double = 20
+    ) -> Bool {
+        guard trigger == "manual",
+              let baseline = baselinePct,
+              let current = currentPct else { return false }
+        return baseline - current >= dropThreshold
+    }
 }
 
 /// Per-session throttle for blocked-waiting alerts (#169). Fires at most once

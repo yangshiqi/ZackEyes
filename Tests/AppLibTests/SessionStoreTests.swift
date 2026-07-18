@@ -929,6 +929,68 @@ struct SessionStoreTests {
         #expect(store.sessions["s1"]?.state == .working)
     }
 
+    @Test func preCompactSnapshotsContextBaseline() {
+        // #186 — the baseline for the compact-finish inference: contextUsedPct
+        // at the moment compaction starts.
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "StatusLine", sessionId: "s1",
+            contextWindow: ["used_percentage": AnyCodable(82.0)]))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+        #expect(store.sessions["s1"]?.compactStartContextPct == 82.0)
+    }
+
+    @Test func turnBoundariesClearCompactBaseline() {
+        // Same lifecycle as compactTrigger: PostCompact / Stop /
+        // UserPromptSubmit all drop the baseline so a stale one can never
+        // feed a later inference.
+        let store = SessionStore()
+        for boundary in ["PostCompact", "Stop", "UserPromptSubmit"] {
+            store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+            store.handleEvent(BridgeEvent(
+                bridgeEvent: "StatusLine", sessionId: "s1",
+                contextWindow: ["used_percentage": AnyCodable(70.0)]))
+            store.handleEvent(BridgeEvent(
+                bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+            #expect(store.sessions["s1"]?.compactStartContextPct != nil)
+            store.handleEvent(BridgeEvent(
+                bridgeEvent: boundary, sessionId: "s1", userPrompt: "x"))
+            #expect(store.sessions["s1"]?.compactStartContextPct == nil,
+                    "\(boundary) must clear the baseline")
+        }
+    }
+
+    @Test func sessionStartFromCompactPreservesBaseline() {
+        // The mid-compaction administrative restart must not wipe the baseline
+        // (same reasoning as compactTrigger preservation).
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "StatusLine", sessionId: "s1",
+            contextWindow: ["used_percentage": AnyCodable(82.0)]))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp", source: "compact"))
+        #expect(store.sessions["s1"]?.compactStartContextPct == 82.0)
+    }
+
+    @Test func clearCompactMarkerDropsTriggerAndBaseline() {
+        // Used by AppDelegate when the inference path fires the notification.
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "StatusLine", sessionId: "s1",
+            contextWindow: ["used_percentage": AnyCodable(82.0)]))
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PreCompact", sessionId: "s1", trigger: "manual"))
+        store.clearCompactMarker(sessionId: "s1")
+        #expect(store.sessions["s1"]?.compactTrigger == nil)
+        #expect(store.sessions["s1"]?.compactStartContextPct == nil)
+    }
+
     @Test func preCompactOnUnknownSessionCreatesIt() {
         // /compact can fire before ZackEyes ever saw the session (app started
         // mid-conversation) — same create-on-first-event contract as PreToolUse.

@@ -57,6 +57,12 @@ public struct SessionInfo: Identifiable {
     /// PostCompact payload itself omits `trigger`.
     public var compactTrigger: String?
 
+    /// #186 — contextUsedPct snapshot taken at PreCompact. Interactive CC
+    /// never fires PostCompact (upstream anthropics/claude-code#78760), so
+    /// compact completion is inferred from the first StatusLine whose usage
+    /// collapsed vs this baseline. Same lifecycle as `compactTrigger`.
+    public var compactStartContextPct: Double?
+
     /// Display name — last path component of cwd, or first 8 chars of id
     public var displayName: String {
         if let cwd = cwd, !cwd.isEmpty {
@@ -254,6 +260,7 @@ public final class SessionStore: ObservableObject {
             // the full reset.
             if event.source == "compact", let prior = sessions[sid] {
                 newSession.compactTrigger = prior.compactTrigger
+                newSession.compactStartContextPct = prior.compactStartContextPct
                 newSession.state = prior.state
             }
             sessions[sid] = newSession
@@ -280,8 +287,9 @@ public final class SessionStore: ObservableObject {
                 session.lastAssistantMessage = nil  // clear stale reply on new prompt
             }
             session.errorMessage = nil       // user is retrying
-            session.errorAt = nil
             session.compactTrigger = nil     // #181 — marker can't outlive its turn
+            session.compactStartContextPct = nil
+            session.errorAt = nil
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
             // Reject-by-new-prompt path: user ESC'd an open AskUQ and typed a
@@ -358,6 +366,7 @@ public final class SessionStore: ObservableObject {
             // survive the turn boundary and promote a later trigger-less
             // compaction to "manual".
             session.compactTrigger = nil
+            session.compactStartContextPct = nil
             sessions[sid] = session
 
         case "PreCompact":
@@ -368,6 +377,8 @@ public final class SessionStore: ObservableObject {
             // the session.
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             session.compactTrigger = event.trigger
+            // #186 — baseline for the finish inference: usage at compact start.
+            session.compactStartContextPct = session.contextUsedPct
             session.lastActiveAt = Date()
             sessions[sid] = session
 
@@ -394,6 +405,7 @@ public final class SessionStore: ObservableObject {
                 }
             }
             session.compactTrigger = nil
+            session.compactStartContextPct = nil
             session.lastActiveAt = Date()
             sessions[sid] = session
 
@@ -880,6 +892,16 @@ public final class SessionStore: ObservableObject {
 
     /// Apply per-session statusLine fields (context window, model, cost) to the
     /// session if present in the event. Creates the session if it doesn't exist.
+    /// #186 — drop the compaction marker + baseline after the inference path
+    /// fired its notification, so the same collapsed reading (or a repeat)
+    /// can't fire twice.
+    public func clearCompactMarker(sessionId: String) {
+        guard var session = sessions[sessionId] else { return }
+        session.compactTrigger = nil
+        session.compactStartContextPct = nil
+        sessions[sessionId] = session
+    }
+
     private func applyStatusLineFields(event: BridgeEvent, sid: String) {
         let hasAny = event.contextWindow != nil || event.model != nil || event.cost != nil
         guard hasAny else { return }

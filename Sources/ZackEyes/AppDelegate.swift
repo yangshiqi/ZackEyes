@@ -16,6 +16,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Last blocked-waiting alert time per session, for the #169 per-session
     /// cooldown (see `maybeNotifyWaiting`).
     private var lastWaitingAlertAt: [String: Date] = [:]
+    /// #186 — per-session cooldown shared by BOTH compact-finished paths
+    /// (real PostCompact + StatusLine inference), so if upstream ever starts
+    /// firing PostCompact interactively the two can't double-chime.
+    private var lastCompactAlertAt: [String: Date] = [:]
     private var hotKeyManager: HotKeyManager?
     private var updateChecker: UpdateChecker?
     private var updateDownloader: UpdateDownloader?
@@ -675,6 +679,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let priorCompactTrigger: String? = event.sessionId.flatMap {
                 sessionStore.sessions[$0]?.compactTrigger
             }
+            // #186 — baseline for the compact-finish inference, captured for
+            // the same reason (turn-boundary events clear it in handleEvent).
+            let priorCompactBaseline: Double? = event.sessionId.flatMap {
+                sessionStore.sessions[$0]?.compactStartContextPct
+            }
 
             sessionStore.handleEvent(event)
 
@@ -759,7 +768,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                event.bridgeEvent == "PostCompact",
                CompactFinishGate.shouldNotify(
                    eventTrigger: event.trigger,
-                   storedTrigger: priorCompactTrigger) {
+                   storedTrigger: priorCompactTrigger),
+               compactAlertGatePasses(sessionId: sid) {
+                NSLog("ZackEyes: compact finished (PostCompact) sid=%@", String(sid.prefix(8)))
+                NotificationManager.shared.notifyCompactFinished(
+                    sessionId: sid,
+                    agent: session.agent,
+                    projectName: session.displayName
+                )
+            }
+
+            // #186 — interactive CC fires PreCompact but never PostCompact
+            // (upstream anthropics/claude-code#78760), so the block above is
+            // dead in real TUI usage. Infer completion instead: compaction
+            // runs statusLine-silent, and the first StatusLine after it lands
+            // <1s post-finish carrying the collapsed context. Restricted to
+            // StatusLine so turn-boundary events (which legitimately clear
+            // the marker in handleEvent) can never race a chime.
+            if !event.isReplayed,
+               event.bridgeEvent == "StatusLine",
+               CompactFinishGate.inferredFinish(
+                   trigger: priorCompactTrigger,
+                   baselinePct: priorCompactBaseline,
+                   currentPct: session.contextUsedPct),
+               compactAlertGatePasses(sessionId: sid) {
+                NSLog("ZackEyes: compact finished (inferred %.0f%%→%.0f%%) sid=%@",
+                      priorCompactBaseline ?? -1, session.contextUsedPct ?? -1,
+                      String(sid.prefix(8)))
+                sessionStore.clearCompactMarker(sessionId: sid)
                 NotificationManager.shared.notifyCompactFinished(
                     sessionId: sid,
                     agent: session.agent,
@@ -767,6 +803,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 )
             }
         }
+    }
+
+    /// #186 — shared per-session cooldown for the two compact-finished paths.
+    /// Passing CONSUMES the slot (stamps the timestamp), so callers must gate
+    /// on it last. 60s covers any PostCompact-vs-StatusLine arrival skew while
+    /// staying far below realistic back-to-back manual compactions.
+    private func compactAlertGatePasses(sessionId: String) -> Bool {
+        let activeSessionIds = Set(sessionStore.sessions.keys)
+        lastCompactAlertAt = lastCompactAlertAt.filter { activeSessionIds.contains($0.key) }
+        let now = Date()
+        guard WaitingAlertGate.shouldAlert(
+            lastAlertedAt: lastCompactAlertAt[sessionId], now: now, cooldown: 60
+        ) else { return false }
+        lastCompactAlertAt[sessionId] = now
+        return true
     }
 
     /// First-launch onboarding: expand the notch panel, render the welcome
