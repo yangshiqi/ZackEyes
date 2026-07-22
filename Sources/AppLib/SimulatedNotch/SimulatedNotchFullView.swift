@@ -4,7 +4,7 @@ import Shared
 
 /// Full-content view shown when the simulated notch is morphed into the
 /// expanded panel. Layout:
-///   - Top: 5h + 7d usage progress bars
+///   - Top: usage progress bars for the windows each agent currently exposes
 ///   - Below: scrollable session list
 struct SimulatedNotchFullView: View {
     @ObservedObject var viewModel: NotchViewModel
@@ -56,62 +56,56 @@ struct SimulatedNotchFullView: View {
         let snap = usageTracker.snapshot
         let codexOnly = snap.hasCodexData && !snap.hasClaudeData
         let bothActive = snap.hasClaudeData && snap.hasCodexData
+        let claudePresentation = snap.quotaWindowPresentation(for: .claude)
+        let codexPresentation = snap.quotaWindowPresentation(for: .codex)
+        let singleAgent: AgentKind = codexOnly ? .codex : .claude
+        let visiblePresentation = bothActive
+            ? QuotaWindowPresentation.union(claudePresentation, codexPresentation)
+            : snap.quotaWindowPresentation(for: singleAgent)
 
         return VStack(spacing: 4) {
-            if bothActive {
-                splitUsageRow(
-                    label: "5h",
-                    windowDuration: TimeWindowProgress.fiveHours,
-                    leftPct: snap.fiveHourUsedPct,
-                    leftResetsAt: snap.fiveHourResetsAt,
-                    rightPct: snap.codexFiveHourUsedPct,
-                    rightResetsAt: snap.codexFiveHourResetsAt,
-                    leftETA: snap.fiveHourETA,
-                    rightETA: snap.codexFiveHourETA,
-                    rightLimitReached: snap.codexLimitReached,
-                    rightLimitResetsAt: snap.codexLimitResetsAt,
-                    trailing: { gearMenu }
-                )
-                // 7d does NOT inherit the account-level block flag — an
-                // out-of-credits / 5h-window block shouldn't paint the 7d row
-                // "limit" too. Its own percentage keeps following the selected
-                // Used/Left presentation while the 5h row is the headline block.
-                splitUsageRow(
-                    label: "7d",
-                    windowDuration: TimeWindowProgress.sevenDays,
-                    leftPct: snap.sevenDayUsedPct,
-                    leftResetsAt: snap.sevenDayResetsAt,
-                    rightPct: snap.codexSevenDayUsedPct,
-                    rightResetsAt: snap.codexSevenDayResetsAt
-                )
+            if visiblePresentation.windows.isEmpty {
+                quotaEmptyState(snapshot: snap, agent: singleAgent) { gearMenu }
+            } else if bothActive {
+                ForEach(visiblePresentation.windows, id: \.self) { window in
+                    splitUsageRow(
+                        label: window.label,
+                        windowDuration: window.duration,
+                        leftPct: snap.usedPct(for: window, agent: .claude),
+                        leftResetsAt: snap.resetsAt(for: window, agent: .claude),
+                        rightPct: snap.usedPct(for: window, agent: .codex),
+                        rightResetsAt: snap.resetsAt(for: window, agent: .codex),
+                        leftETA: snap.eta(for: window, agent: .claude),
+                        rightETA: snap.eta(for: window, agent: .codex),
+                        // A credits-only block has no trustworthy window axis.
+                        // Keep the alert on the first visible row rather than
+                        // hard-coding it to a 5h row that may not exist.
+                        rightLimitReached: window == visiblePresentation.primary
+                            && snap.codexLimitReached,
+                        rightLimitResetsAt: snap.codexLimitResetsAt
+                    ) {
+                        if window == visiblePresentation.primary { gearMenu }
+                    }
+                }
             } else {
-                // Single-agent path. Claude shows when only Claude (or
-                // neither) reports data — preserves existing behavior for
-                // Claude-only users and the empty / first-launch state.
-                let useCodex = codexOnly
-                let codexLimit = useCodex && snap.codexLimitReached
-                usageBar(
-                    label: "5h",
-                    windowDuration: TimeWindowProgress.fiveHours,
-                    agent: useCodex ? .codex : .claude,
-                    usedPct: useCodex ? snap.codexFiveHourUsedPct : snap.fiveHourUsedPct,
-                    resetsAt: useCodex ? snap.codexFiveHourResetsAt : snap.fiveHourResetsAt,
-                    eta: useCodex ? snap.codexFiveHourETA : snap.fiveHourETA,
-                    limitReached: codexLimit,
-                    limitResetsAt: useCodex ? snap.codexLimitResetsAt : nil,
-                    trailing: { gearMenu }
-                )
-                // 7d shows its own usage — only the 5h row carries the
-                // account-level block flag (see the split path above). While
-                // codex is blocked, 7d still presents its own window according
-                // to the selected Used/Left preference.
-                usageBar(
-                    label: "7d",
-                    windowDuration: TimeWindowProgress.sevenDays,
-                    agent: useCodex ? .codex : .claude,
-                    usedPct: useCodex ? snap.codexSevenDayUsedPct : snap.sevenDayUsedPct,
-                    resetsAt: useCodex ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
-                )
+                ForEach(visiblePresentation.windows, id: \.self) { window in
+                    usageBar(
+                        label: window.label,
+                        windowDuration: window.duration,
+                        agent: singleAgent,
+                        usedPct: snap.usedPct(for: window, agent: singleAgent),
+                        resetsAt: snap.resetsAt(for: window, agent: singleAgent),
+                        eta: snap.eta(for: window, agent: singleAgent),
+                        limitReached: singleAgent == .codex
+                            && window == visiblePresentation.primary
+                            && snap.codexLimitReached,
+                        limitResetsAt: singleAgent == .codex
+                            ? snap.codexLimitResetsAt
+                            : nil
+                    ) {
+                        if window == visiblePresentation.primary { gearMenu }
+                    }
+                }
             }
             if usageTracker.showTodayConsumption, snap.hasConsumption {
                 Rectangle()
@@ -135,8 +129,43 @@ struct SimulatedNotchFullView: View {
         }
     }
 
-    /// Side-by-side bar: left half = Claude, right half = Codex. Both 5h
-    /// and 7d rows share the same outer column layout
+    @ViewBuilder
+    private func quotaEmptyState<T: View>(
+        snapshot: UsageTracker.Snapshot,
+        agent: AgentKind,
+        @ViewBuilder trailing: () -> T
+    ) -> some View {
+        HStack(spacing: 6) {
+            Text(agent == .claude ? "Claude" : "Codex")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(AgentBadge.accentColor(for: agent))
+
+            if agent == .codex && snapshot.codexLimitReached {
+                Text("limit reached")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Color.usageLimitRed)
+            } else {
+                Text(snapshot.hasAuthoritativeQuotaReading(for: agent)
+                     ? "no active quota windows"
+                     : "no quota data")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+
+            Spacer(minLength: 0)
+            if agent == .codex,
+               snapshot.codexLimitReached,
+               let reset = snapshot.codexLimitResetsAt?.usageResetDisplay {
+                Text("resets in \(reset)")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.45))
+            }
+            trailing()
+        }
+    }
+
+    /// Side-by-side bar: left half = Claude, right half = Codex. Every visible
+    /// quota-window row shares the same outer column layout
     /// (label / left-half / right-half / gear-or-placeholder) so the two
     /// progress tracks line up horizontally regardless of which row
     /// carries the gear menu.
@@ -164,8 +193,8 @@ struct SimulatedNotchFullView: View {
                           limitReached: rightLimitReached, limitResetsAt: rightLimitResetsAt)
             }
 
-            // Trailing column: always reserves the same width so both
-            // 5h and 7d rows have identical bar tracks underneath.
+            // Trailing column always reserves the same width so every visible
+            // quota row has an identical bar track underneath.
             ZStack { trailing() }
                 .frame(width: gearColumnWidth, height: gearColumnWidth, alignment: .center)
         }

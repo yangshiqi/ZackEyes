@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Shared
 
 struct NotchRootView: View {
     @ObservedObject var viewModel: NotchViewModel
@@ -95,38 +96,42 @@ struct NotchRootView: View {
 }
 
 /// Always-visible compact pill, laid out Dynamic-Island style around the
-/// physical notch (issue #64): a center `Spacer` exactly as wide as the
-/// hardware notch keeps that region empty (so nothing lands under the cutout),
-/// with the always-on 5h/7d usage chips + status flanking it on the left/right
-/// menu-bar strips. `fixedSize` shrinks the black `NotchShape` to wrap tightly
-/// around content+notch (instead of a fixed 420pt bar), so the pill hugs the
-/// real notch — mirroring DynamicNotchKit / boring.notch's compact layout. The
-/// island is therefore a bit wider than the bare notch: that extra width is the
-/// always-on info the user asked to keep visible.
+/// physical notch (issue #64). `CenteredNotchLayout` gives the two sides equal
+/// extents based on the wider measured side, keeping the exclusion region fixed
+/// on the screen center even when status/percentage widths differ (#180).
 struct NotchCompactView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
     let notchWidth: CGFloat
 
-    /// Extra clearance added to the center gap so minor left/right content
-    /// asymmetry can't push a glyph under the (centered) physical notch.
+    /// Extra clearance split evenly around the runtime hardware-notch width.
     private let notchClearance: CGFloat = 16
+    private let outerPadding: CGFloat = 14
 
     var body: some View {
-        HStack(spacing: 6) {
-            statusIcon
-            leftContent
-            // Reserve the hardware-notch footprint: an explicit fixed-width gap
-            // (NOT a Spacer — under `.fixedSize` a Spacer collapses toward zero,
-            // which would pull both chips into the center, behind the physical
-            // notch cutout, making them invisible — issue #64).
-            Color.clear.frame(width: notchWidth + notchClearance)
-            rightContent
+        let snapshot = usageTracker.snapshot
+        let agent = snapshot.displayAgent(preferred: usageTracker.compactAgent)
+        let presentation = snapshot.quotaWindowPresentation(for: agent)
+
+        CenteredNotchLayout(
+            exclusionWidth: notchWidth + notchClearance,
+            outerPadding: outerPadding
+        ) {
+            HStack(spacing: 6) {
+                statusIcon
+                primaryContent(
+                    presentation.primary,
+                    snapshot: snapshot,
+                    agent: agent
+                )
+            }
+            HStack(spacing: 0) {
+                if let secondary = presentation.secondary {
+                    quotaContent(secondary, snapshot: snapshot, agent: agent)
+                }
+            }
         }
-        .padding(.horizontal, 14)
         .frame(maxHeight: .infinity)
-        // Shrink to content width so the black shape hugs the notch instead of
-        // spanning the whole 420pt host.
         .fixedSize(horizontal: true, vertical: false)
         .background(Color.black)
         // Flat top flush to the bezel, top-outer corners flaring into it, and
@@ -148,46 +153,49 @@ struct NotchCompactView: View {
         )
     }
 
-    // MARK: - Left content (visible, left of notch)
-
     @ViewBuilder
-    private var leftContent: some View {
-        let snapshot = usageTracker.snapshot
-        let agent = snapshot.displayAgent(preferred: usageTracker.compactAgent)
-        let eta = agent == .codex ? snapshot.codexFiveHourETA : snapshot.fiveHourETA
-        // #86 — when the 5h cap is imminent (≤30 min), the urgent ETA takes the
-        // left slot over the normal quota chip: the pill stays quota-only until
-        // it matters, then surfaces the countdown.
-        if let urgent = eta?.pillUrgentLabel {
-            urgentETAChip(urgent)
-        } else {
-            // Always-on 5h chip (issue #64) — the working/waiting state is shown
-            // by the status icon, and the detailed status text lives in the
-            // hover-expanded panel, so the quota chip stays visible at all times.
-            usageChip(label: "5h", usedPct: snapshot.fiveHourUsedPct(for: agent))
-        }
-    }
-
-    @ViewBuilder
-    private func urgentETAChip(_ label: String) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: "bolt.fill")
-                .font(.system(size: 9, weight: .bold))
-            Text(label)
+    private func primaryContent(
+        _ window: UsageQuotaWindow?,
+        snapshot: UsageTracker.Snapshot,
+        agent: AgentKind
+    ) -> some View {
+        if let window {
+            quotaContent(window, snapshot: snapshot, agent: agent)
+        } else if agent == .codex && snapshot.codexLimitReached {
+            Text("limit")
                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundColor(Color.usageLimitRed)
+        } else if snapshot.hasAuthoritativeQuotaReading(for: agent) {
+            Text("no active cap")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(AppColors.noData.color.opacity(0.65))
+        } else {
+            Text("quota —")
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(AppColors.noData.color.opacity(0.45))
         }
-        .foregroundColor(AppColors.critical.color)
     }
 
-    // MARK: - Right content (visible, right of notch)
-
     @ViewBuilder
-    private var rightContent: some View {
-        let snapshot = usageTracker.snapshot
-        let agent = snapshot.displayAgent(preferred: usageTracker.compactAgent)
-        // Always-on 7d chip (issue #64) — kept visible in every state so the
-        // island persistently shows both quota windows.
-        usageChip(label: "7d", usedPct: snapshot.sevenDayUsedPct(for: agent))
+    private func quotaContent(
+        _ window: UsageQuotaWindow,
+        snapshot: UsageTracker.Snapshot,
+        agent: AgentKind
+    ) -> some View {
+        if window == .fiveHour, let urgent = snapshot.eta(for: window, agent: agent)?.pillUrgentLabel {
+            HStack(spacing: 3) {
+                Image(systemName: "bolt.fill")
+                    .font(.system(size: 9, weight: .bold))
+                Text(urgent)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            }
+            .foregroundColor(AppColors.critical.color)
+        } else {
+            usageChip(
+                label: window.label,
+                usedPct: snapshot.usedPct(for: window, agent: agent)
+            )
+        }
     }
 
     // MARK: - Usage chip
