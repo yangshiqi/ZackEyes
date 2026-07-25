@@ -478,6 +478,7 @@ struct SettingsRootView: View {
         case .rock: colors = [.red, .black]
         case .f1: colors = [.blue, .yellow]
         case .silicon: colors = [.green, .purple]
+        case .shinchan: colors = [.red, .yellow]
         }
         return HStack(spacing: 0) {
             colors[0]

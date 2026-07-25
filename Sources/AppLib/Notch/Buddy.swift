@@ -5,12 +5,14 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
     case rock
     case f1
     case silicon
+    case shinchan
 
     public var displayName: String {
         switch self {
-        case .rock:    return "Rock Legends"
-        case .f1:      return "F1 2026"
-        case .silicon: return "AI 大佬"
+        case .rock:     return "Rock Legends"
+        case .f1:       return "F1 2026"
+        case .silicon:  return "AI Moguls"
+        case .shinchan: return "Crayon Shin-chan"
         }
     }
 
@@ -36,6 +38,9 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
             ("Super Max 🎵",         "super-max"),
             ("Team Radio 📡",        "team-radio"),
             ("F1 Radio 🏎️",          "f1-radio"),
+            ("Lights Out 🚦",        "lights-out"),
+            ("GP2 Engine 😤",        "gp2-engine"),
+            ("It's Valtteri 🧊",     "james-its-valtteri"),
             ("None 🔇",              "none"),
         ]
         case .silicon: return [
@@ -45,6 +50,16 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
             ("Just Tokens 🎯",    "tokens-karpathy"),
             ("Race to the Top 🏁", "race-to-the-top-dario"),
             ("Move Fast ⚡",      "move-fast-zuck"),
+            ("None 🔇",           "none"),
+        ]
+        case .shinchan: return [
+            ("Awesome! 🎉",        "xin-yay"),
+            ("Eh-heh 😏",          "xin-eheh"),
+            ("I'm Home 🏠",        "xin-im-home"),
+            ("Are You Crazy?! 😳", "xin-are-you-crazy"),
+            ("Cute Butt 🍑",       "xin-cute-butt"),
+            ("Justice Wins ⚖️",    "xin-justice"),
+            ("Action Kamen 🦸",    "kamen-laugh"),
             ("None 🔇",           "none"),
         ]
         }
@@ -57,17 +72,19 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
 
     var names: [String] {
         switch self {
-        case .rock:    return Self.rockNames
-        case .f1:      return Self.f1Names
-        case .silicon: return Self.siliconNames
+        case .rock:     return Self.rockNames
+        case .f1:       return Self.f1Names
+        case .silicon:  return Self.siliconNames
+        case .shinchan: return Self.shinchanNames
         }
     }
 
     var taglines: [String] {
         switch self {
-        case .rock:    return Self.rockTaglines
-        case .f1:      return Self.f1Taglines
-        case .silicon: return Self.siliconTaglines
+        case .rock:     return Self.rockTaglines
+        case .f1:       return Self.f1Taglines
+        case .silicon:  return Self.siliconTaglines
+        case .shinchan: return Self.shinchanTaglines
         }
     }
 
@@ -328,6 +345,56 @@ public enum BuddyTheme: String, Codable, CaseIterable, Sendable {
         "卷死他们",
         "幻觉是特性不是 bug",
         "百模大战",
+    ]
+
+    // MARK: - 蜡笔小新 theme
+
+    /// 春日部众生相（16 人）。格式："{名字} from {组织}"。
+    private static let shinchanNames: [String] = [
+        // 野原家
+        "新之助 from 野原家",
+        "美冴 from 野原家",
+        "广志 from 野原家",
+        "小葵 from 野原家",
+        "小白 from 野原家",
+        // 双叶幼稚园向日葵班
+        "风间 from 向日葵班",
+        "妮妮 from 向日葵班",
+        "正男 from 向日葵班",
+        "阿呆 from 向日葵班",
+        // 双叶幼稚园教职员
+        "园长 from 双叶幼稚园",
+        "吉永老师 from 双叶幼稚园",
+        "松坂老师 from 双叶幼稚园",
+        "上尾老师 from 双叶幼稚园",
+        // 春日部其他
+        "娜娜子 from 春日部",
+        "动感超人 from 春日部",
+        "肥嘟嘟左卫门 from 春日部",
+    ]
+
+    /// 台配国语经典台词（20 条）。
+    private static let shinchanTaglines: [String] = [
+        "我是野原新之助，今年 5 岁",
+        "动感光波～",
+        "大象～大象～",
+        "美女姐姐，你好呀",
+        "妈妈，我肚子饿了",
+        "小白，握手",
+        "我要看动感超人",
+        "巧克力饼干最好吃了",
+        "爸爸的脚好臭",
+        "正男，你太逊了",
+        "无聊无聊真无聊",
+        "这样好吗？",
+        "我回来了～",
+        "让我看看嘛",
+        "妈妈的脸好可怕",
+        "风间，你在紧张什么",
+        "买那个给我嘛",
+        "反正跟我没关系",
+        "我的屁股会说话",
+        "晚饭吃什么呢",
     ]
 }
 
