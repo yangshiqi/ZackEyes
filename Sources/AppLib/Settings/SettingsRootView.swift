@@ -282,7 +282,7 @@ struct SettingsRootView: View {
                             viewModel.setTheme(theme)
                         } label: {
                             HStack(spacing: 12) {
-                                themeSwatch(theme)
+                                themeIcon(theme)
                                 Text(theme.displayName)
                                     .foregroundStyle(.primary)
                                 Spacer()
@@ -472,21 +472,19 @@ struct SettingsRootView: View {
         }
     }
 
-    private func themeSwatch(_ theme: BuddyTheme) -> some View {
-        let colors: [Color]
+    private func themeIcon(_ theme: BuddyTheme) -> some View {
+        let symbol: String
+        let tint: Color
         switch theme {
-        case .rock: colors = [.red, .black]
-        case .f1: colors = [.blue, .yellow]
-        case .silicon: colors = [.green, .purple]
-        case .shinchan: colors = [.red, .yellow]
+        case .rock:     symbol = "guitars.fill";   tint = .red
+        case .f1:       symbol = "flag.checkered"; tint = .blue
+        case .silicon:  symbol = "cpu";            tint = .purple
+        case .shinchan: symbol = "pencil.tip.crop.circle.fill"; tint = .orange
         }
-        return HStack(spacing: 0) {
-            colors[0]
-            colors[1]
-        }
-        .frame(width: 28, height: 20)
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(Color.primary.opacity(0.12)))
+        return Image(systemName: symbol)
+            .font(.system(size: 15))
+            .foregroundStyle(tint)
+            .frame(width: 28, height: 20)
     }
 
     private var appVersion: String {
