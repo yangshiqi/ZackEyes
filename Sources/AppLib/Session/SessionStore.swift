@@ -21,7 +21,54 @@ public struct SessionInfo: Identifiable {
     public var isToolRunning: Bool = false
     public var lastUserPrompt: String?
     public var lastAssistantMessage: String?
-    public var pendingPermission: PendingPermission?
+    /// Permission requests still waiting on the user, oldest first.
+    ///
+    /// A session can have several in flight at once: Claude Code issues
+    /// parallel tool calls, and every bridge connection is served by its own
+    /// Task, each owning a separate responder and fd. Keying a single slot by
+    /// sessionId made the newest request evict the previous one's responder,
+    /// stranding that bridge and letting a click land on a request the user
+    /// wasn't looking at (#199). Each request now carries its own id, and the
+    /// queue keeps every one of them answerable.
+    public var pendingPermissions: [PendingPermission] = []
+
+    /// The request the UI is showing — the head of the queue.
+    public var pendingPermission: PendingPermission? { pendingPermissions.first }
+
+    /// Drop the oldest AskUserQuestion notice — one completion clears one
+    /// question. Used by `PostToolUse(AskUserQuestion)`, which proves exactly
+    /// one question finished; clearing the whole set there would dismiss a
+    /// sibling question the user still has open in the terminal.
+    ///
+    /// We have no `tool_use_id` in the event protocol to correlate precisely,
+    /// so oldest-first is the approximation. It is safe because these entries
+    /// carry a no-op responder — they are UI notices, not blocking requests, so
+    /// picking the wrong one costs a prompt card, never a stranded bridge.
+    mutating func dropOldestStaleAskUserQuestion() {
+        guard let idx = pendingPermissions.firstIndex(where: { $0.isAskUserQuestion }) else { return }
+        pendingPermissions.remove(at: idx)
+        rederiveWaitingState()
+    }
+
+    /// Drop every AskUserQuestion notice — at a turn boundary they are all dead
+    /// by definition. Used by UserPromptSubmit / Stop / PostCompact.
+    ///
+    /// Position matters in both helpers: an AskUQ can be queued *behind* a
+    /// blocking request, so a head-only check would miss it, and once its
+    /// clearing event has passed nothing else would ever remove it — it would
+    /// surface later as a zombie head, blocking the real requests behind it.
+    /// Blocking PermissionRequests are never stripped: they own a real socket
+    /// responder that must be answered.
+    mutating func dropAllStaleAskUserQuestions() {
+        pendingPermissions.removeAll { $0.isAskUserQuestion }
+        rederiveWaitingState()
+    }
+
+    /// Anything left in the queue still needs the user, whatever the caller set.
+    private mutating func rederiveWaitingState() {
+        if !pendingPermissions.isEmpty { state = .waiting }
+    }
+
     /// Tool names approved via "Allow Always" for the rest of this session.
     /// Session-scoped only — disappears with the SessionInfo when the session
     /// is removed (liveness sweep / SessionEnd). Never persisted to disk.
@@ -103,7 +150,7 @@ public struct SessionInfo: Identifiable {
         self.currentToolName = nil
         self.currentToolInput = nil
         self.lastUserPrompt = nil
-        self.pendingPermission = nil
+        self.pendingPermissions = []
         self.startedAt = startedAt
         self.lastActiveAt = startedAt
         self.toolCallCount = 0
@@ -304,8 +351,8 @@ public final class SessionStore: ObservableObject {
             // at .waiting, and without this the session would stay flagged
             // as waiting (wrongly prioritized in the UI ranking) even though
             // there's nothing waiting on the user anymore.
-            if session.pendingPermission?.isAskUserQuestion == true {
-                session.pendingPermission = nil
+            session.dropAllStaleAskUserQuestions()
+            if session.pendingPermissions.isEmpty && session.state == .waiting {
                 session.state = .working
             }
             sessions[sid] = session
@@ -331,11 +378,11 @@ public final class SessionStore: ObservableObject {
             // AskUserQuestion. Clear any AskUQ popup still open for this
             // session so it doesn't sit there pointing at a question that's
             // already been resolved.
-            if event.toolName == "AskUserQuestion",
-               let pending = session.pendingPermission,
-               pending.isAskUserQuestion {
-                session.pendingPermission = nil
-                session.state = .working
+            if event.toolName == "AskUserQuestion" {
+                session.dropOldestStaleAskUserQuestion()
+                if session.pendingPermissions.isEmpty && session.state == .waiting {
+                    session.state = .working
+                }
             }
 
             sessions[sid] = session
@@ -359,9 +406,7 @@ public final class SessionStore: ObservableObject {
             // Backstop for the UserPromptSubmit branch above: if a turn ends
             // with a stale AskUQ still pending (no rejection prompt, no
             // PostToolUse fired), it can never be resolved. Same gate.
-            if session.pendingPermission?.isAskUserQuestion == true {
-                session.pendingPermission = nil
-            }
+            session.dropAllStaleAskUserQuestions()
             // #181 — a compaction marker whose PostCompact was lost must not
             // survive the turn boundary and promote a later trigger-less
             // compaction to "manual".
@@ -400,9 +445,7 @@ public final class SessionStore: ObservableObject {
             if trigger != "auto" {
                 session.state = .idle
                 session.isToolRunning = false
-                if session.pendingPermission?.isAskUserQuestion == true {
-                    session.pendingPermission = nil
-                }
+                session.dropAllStaleAskUserQuestions()
             }
             session.compactTrigger = nil
             session.compactStartContextPct = nil
@@ -464,27 +507,39 @@ public final class SessionStore: ObservableObject {
         var session = sessions[sessionId]
             ?? SessionInfo(id: sessionId, cwd: permission.cwd, agent: agent)
         session.state = .waiting
-        session.pendingPermission = permission
+        // Append, never replace: an in-flight request's responder is the only
+        // way to answer its bridge (#199).
+        session.pendingPermissions.append(permission)
         session.lastActiveAt = Date()
         sessions[sessionId] = session
     }
 
-    public func resolvePermission(sessionId: String, allow: Bool) {
-        guard var session = sessions[sessionId], let pending = session.pendingPermission else { return }
+    /// Answer one specific request and promote the next, if any.
+    ///
+    /// `requestId` names the request the UI was showing when the user clicked.
+    /// Without it a click resolves whatever happens to be at the head — and the
+    /// head can change between render and click (the shown request's bridge
+    /// disconnects, promoting the next one), which is the very mix-up #199 is
+    /// about. An unknown id means that request is already gone: no-op.
+    public func resolvePermission(sessionId: String, requestId: UUID, allow: Bool) {
+        guard var session = sessions[sessionId],
+              let idx = session.pendingPermissions.firstIndex(where: { $0.id == requestId })
+        else { return }
+        let pending = session.pendingPermissions.remove(at: idx)
         let response: PermissionResponse = allow
             ? .allow(message: "User approved via ZackEyes")
             : .deny(message: "User denied via ZackEyes")
         pending.responder(.permission(response))
-        session.pendingPermission = nil
-        session.state = .working
+        // Still waiting if another request is queued behind this one.
+        session.state = session.pendingPermissions.isEmpty ? .working : .waiting
         session.lastActiveAt = Date()
         sessions[sessionId] = session
     }
 
     /// Resolve the primary pending permission (convenience for single-session UI).
     public func resolvePrimaryPermission(allow: Bool) {
-        guard let primary = primarySession, primary.pendingPermission != nil else { return }
-        resolvePermission(sessionId: primary.id, allow: allow)
+        guard let primary = primarySession, let shown = primary.pendingPermission else { return }
+        resolvePermission(sessionId: primary.id, requestId: shown.id, allow: allow)
     }
 
     /// Tools whose blanket "Allow Always" is too dangerous to honor — a single
@@ -503,14 +558,16 @@ public final class SessionStore: ObservableObject {
     /// auto-allowed (see `isToolAutoAllowed` + the short-circuit in
     /// `AppDelegate.handleEvent`). Session-scoped, never persisted. A high-risk
     /// tool is approved once but NOT remembered (#128).
-    public func allowAlways(sessionId: String) {
-        guard var session = sessions[sessionId], let pending = session.pendingPermission else { return }
+    public func allowAlways(sessionId: String, requestId: UUID) {
+        guard var session = sessions[sessionId],
+              let pending = session.pendingPermissions.first(where: { $0.id == requestId })
+        else { return }
         if !Self.isHighRisk(pending.toolName) {
             session.autoAllowedTools.insert(pending.toolName)
             sessions[sessionId] = session
         }
-        // Send the .allow for the current request + clear pending + go working.
-        resolvePermission(sessionId: sessionId, allow: true)
+        // Send the .allow for that same request + drop it from the queue.
+        resolvePermission(sessionId: sessionId, requestId: requestId, allow: true)
     }
 
     /// True when the given tool was approved via "Allow Always" for this session
@@ -523,10 +580,18 @@ public final class SessionStore: ObservableObject {
 
     /// Called when the bridge disconnects without the user responding via ZackEyes
     /// (e.g., user answered in terminal, or bridge timed out). Clear the pending state.
-    public func abandonPermission(sessionId: String) {
-        guard var session = sessions[sessionId], session.pendingPermission != nil else { return }
-        session.pendingPermission = nil
-        session.state = .working  // back to normal
+    /// Drop the one request whose bridge went away. Other requests on the same
+    /// session are still waiting on the user and must survive (#199) — keying
+    /// this by sessionId alone used to wipe a live prompt belonging to a
+    /// different request.
+    public func abandonPermission(sessionId: String, requestId: UUID) {
+        guard var session = sessions[sessionId],
+              let idx = session.pendingPermissions.firstIndex(where: { $0.id == requestId })
+        else { return }
+        session.pendingPermissions.remove(at: idx)
+        if session.pendingPermissions.isEmpty {
+            session.state = .working  // back to normal
+        }
         session.lastActiveAt = Date()
         sessions[sessionId] = session
     }
@@ -1033,17 +1098,23 @@ public final class SessionStore: ObservableObject {
 }
 
 public struct PendingPermission {
+    /// Identifies this specific request. One session can have several in
+    /// flight, each owning its own bridge connection and responder, so
+    /// resolving or abandoning must name which one (#199).
+    public let id: UUID
     public let toolName: String
     public let toolInput: [String: Any]
     public let cwd: String?
     public let responder: @Sendable (BridgeResponse) -> Void
 
     public init(
+        id: UUID = UUID(),
         toolName: String,
         toolInput: [String: Any],
         cwd: String?,
         responder: @escaping @Sendable (BridgeResponse) -> Void
     ) {
+        self.id = id
         self.toolName = toolName
         self.toolInput = toolInput
         self.cwd = cwd

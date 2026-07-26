@@ -71,6 +71,158 @@ struct SessionStoreTests {
         #expect(store.sessions["s1"]?.pendingPermission == nil)
     }
 
+    // --- #199: concurrent PermissionRequests on ONE session ---
+    //
+    // The unit of work is a per-connection request (each owns its own responder
+    // and fd), but the pending slot and both its mutators were keyed by
+    // sessionId alone. Claude Code issues parallel tool calls, and
+    // SocketServer.acceptLoop handles every connection in its own Task, so two
+    // requests for one session are reachable.
+
+    // 5x. A second request must not strand the first: both responders must
+    //     eventually be answered, and neither may be silently dropped.
+    @Test func concurrentPermissionsBothGetAnswered() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        let firstAnswered = Box<Bool>()
+        let secondAnswered = Box<Bool>()
+
+        store.handlePermissionRequest(sessionId: "s1", permission: PendingPermission(
+            toolName: "Bash", toolInput: [:], cwd: "/tmp",
+            responder: { _ in firstAnswered.value = true }))
+        store.handlePermissionRequest(sessionId: "s1", permission: PendingPermission(
+            toolName: "Write", toolInput: [:], cwd: "/tmp",
+            responder: { _ in secondAnswered.value = true }))
+
+        // Answering twice must reach two distinct responders.
+        store.resolvePrimaryPermission(allow: true)
+        store.resolvePrimaryPermission(allow: true)
+
+        #expect(firstAnswered.value == true, "first request's responder was dropped")
+        #expect(secondAnswered.value == true, "second request's responder was dropped")
+        #expect(store.sessions["s1"]?.pendingPermission == nil)
+    }
+
+    // 5y. The click must answer the request the UI is showing. With a single
+    //     slot the second request replaces the first, so a click lands on
+    //     whichever happens to be stored — the user approves something they
+    //     were not looking at.
+    @Test func resolveAnswersTheRequestBeingShown() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        let answeredTool = Box<String>()
+
+        store.handlePermissionRequest(sessionId: "s1", permission: PendingPermission(
+            toolName: "Bash", toolInput: [:], cwd: "/tmp",
+            responder: { _ in answeredTool.value = "Bash" }))
+        store.handlePermissionRequest(sessionId: "s1", permission: PendingPermission(
+            toolName: "Write", toolInput: [:], cwd: "/tmp",
+            responder: { _ in answeredTool.value = "Write" }))
+
+        let shown = store.sessions["s1"]?.pendingPermission?.toolName
+        store.resolvePrimaryPermission(allow: true)
+
+        #expect(answeredTool.value == shown,
+                "clicked while showing \(shown ?? "nil") but answered \(answeredTool.value ?? "nil")")
+    }
+
+    // 5z. When one request's bridge dies, only THAT request may be cleared.
+    //     abandonPermission keyed by sessionId alone wipes a live prompt that
+    //     belongs to a different, still-waiting request.
+    @Test func abandonClearsOnlyTheDeadRequest() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+
+        let first = PendingPermission(
+            toolName: "Bash", toolInput: [:], cwd: "/tmp", responder: { _ in })
+        let second = PendingPermission(
+            toolName: "Write", toolInput: [:], cwd: "/tmp", responder: { _ in })
+        store.handlePermissionRequest(sessionId: "s1", permission: first)
+        store.handlePermissionRequest(sessionId: "s1", permission: second)
+
+        // The first request's bridge disconnects.
+        store.abandonPermission(sessionId: "s1", requestId: first.id)
+
+        // The second is still waiting on the user and must survive.
+        #expect(store.sessions["s1"]?.pendingPermission != nil,
+                "abandoning one request wiped another request's live prompt")
+        #expect(store.sessions["s1"]?.pendingPermission?.toolName == "Write")
+    }
+
+    // 5w. The click must answer the request that was ON SCREEN, even if the
+    //     head moved between render and click (shown request's bridge died and
+    //     the next was promoted). Found by codex review of the first fix.
+    @Test func resolveByIdIgnoresHeadPromotedAfterRender() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        let answered = Box<String>()
+
+        let shown = PendingPermission(
+            toolName: "Bash", toolInput: [:], cwd: "/tmp",
+            responder: { _ in answered.value = "Bash" })
+        let queued = PendingPermission(
+            toolName: "Write", toolInput: [:], cwd: "/tmp",
+            responder: { _ in answered.value = "Write" })
+        store.handlePermissionRequest(sessionId: "s1", permission: shown)
+        store.handlePermissionRequest(sessionId: "s1", permission: queued)
+
+        // UI rendered `shown`; its bridge dies, promoting `queued` to head.
+        store.abandonPermission(sessionId: "s1", requestId: shown.id)
+        // The click carries the id it was built with — it must resolve nothing.
+        store.resolvePermission(sessionId: "s1", requestId: shown.id, allow: true)
+
+        #expect(answered.value == nil, "a stale click answered a different request")
+        #expect(store.sessions["s1"]?.pendingPermission?.toolName == "Write",
+                "the queued request must still be waiting")
+    }
+
+    // 5v. A stale AskUserQuestion queued BEHIND a blocking request must still be
+    //     removed by its clearing event, or it resurfaces later as a zombie head
+    //     that blocks the real requests behind it. Found by codex review.
+    @Test func staleAskUserQuestionBehindBlockingRequestIsDropped() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+
+        let blocking = PendingPermission(
+            toolName: "Bash", toolInput: [:], cwd: "/tmp", responder: { _ in })
+        let question = PendingPermission(
+            toolName: "AskUserQuestion", toolInput: [:], cwd: "/tmp", responder: { _ in })
+        store.handlePermissionRequest(sessionId: "s1", permission: blocking)
+        store.handlePermissionRequest(sessionId: "s1", permission: question)
+
+        // The question is answered in the terminal — its clearing event fires
+        // while the blocking request is still at the head.
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PostToolUse", sessionId: "s1", cwd: "/tmp", toolName: "AskUserQuestion"))
+
+        let tools = store.sessions["s1"]?.pendingPermissions.map(\.toolName) ?? []
+        #expect(tools == ["Bash"], "stale AskUserQuestion survived behind a blocking request")
+        // A blocking request still needs the user.
+        #expect(store.sessions["s1"]?.state == .waiting)
+    }
+
+    // 5u. One PostToolUse(AskUserQuestion) proves ONE question finished, so it
+    //     must not dismiss a sibling question the user still has open. Found by
+    //     the second codex pass.
+    @Test func oneAskUserQuestionCompletionClearsOnlyOne() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+
+        for _ in 0..<2 {
+            store.handlePermissionRequest(sessionId: "s1", permission: PendingPermission(
+                toolName: "AskUserQuestion", toolInput: [:], cwd: "/tmp", responder: { _ in }))
+        }
+        store.handleEvent(BridgeEvent(
+            bridgeEvent: "PostToolUse", sessionId: "s1", cwd: "/tmp", toolName: "AskUserQuestion"))
+
+        #expect(store.sessions["s1"]?.pendingPermissions.count == 1,
+                "one completion dismissed both questions")
+
+        // The turn boundary clears whatever is left.
+        store.handleEvent(BridgeEvent(bridgeEvent: "Stop", sessionId: "s1", cwd: "/tmp"))
+        #expect(store.sessions["s1"]?.pendingPermissions.isEmpty == true)
+    }
+
     // 5a. "Allow Always" sends an allow for the current request, clears pending,
     //     and remembers the tool so future requests for it are auto-allowed.
     @Test func allowAlwaysApprovesAndRemembersTool() {
@@ -84,7 +236,7 @@ struct SessionStoreTests {
         store.handlePermissionRequest(sessionId: "s1", permission: permission)
 
         #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Read") == false)
-        store.allowAlways(sessionId: "s1")
+        store.allowAlways(sessionId: "s1", requestId: store.sessions["s1"]!.pendingPermission!.id)
 
         // Current request allowed + pending cleared + back to working
         if case .permission(let r) = box.value {
@@ -111,7 +263,7 @@ struct SessionStoreTests {
             responder: { box.value = $0 }
         )
         store.handlePermissionRequest(sessionId: "s1", permission: permission)
-        store.allowAlways(sessionId: "s1")
+        store.allowAlways(sessionId: "s1", requestId: store.sessions["s1"]!.pendingPermission!.id)
 
         // The current request is still approved...
         if case .permission(let r) = box.value {
@@ -137,7 +289,7 @@ struct SessionStoreTests {
             toolName: "Read", toolInput: [:], cwd: "/a", responder: { _ in }
         )
         store.handlePermissionRequest(sessionId: "s1", permission: permission)
-        store.allowAlways(sessionId: "s1")
+        store.allowAlways(sessionId: "s1", requestId: store.sessions["s1"]!.pendingPermission!.id)
 
         #expect(store.isToolAutoAllowed(sessionId: "s1", toolName: "Read"))
         #expect(store.isToolAutoAllowed(sessionId: "s2", toolName: "Read") == false)
@@ -172,7 +324,7 @@ struct SessionStoreTests {
         store.handlePermissionRequest(sessionId: "s1", permission: s1Permission)
         store.handlePermissionRequest(sessionId: "s2", permission: s2Permission)
 
-        store.resolvePermission(sessionId: "s2", allow: false)
+        store.resolvePermission(sessionId: "s2", requestId: s2Permission.id, allow: false)
 
         // s2 cleared and denied
         #expect(store.sessions["s2"]?.pendingPermission == nil)

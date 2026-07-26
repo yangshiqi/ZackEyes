@@ -21,8 +21,12 @@ public final class SocketServer {
     private let path: String
     private var serverFd: Int32 = -1
     private var isRunning = false
-    private var onEvent: ((BridgeEvent, (@Sendable (BridgeResponse) -> Void)?) -> Void)?
-    private var onPermissionAbandoned: ((String) -> Void)?
+    /// The `UUID` is the blocking request's identity — minted here, alongside
+    /// the responder that answers it, and echoed back by
+    /// `onPermissionAbandoned` so the app can tell WHICH request died (#199).
+    /// `nil` for non-blocking events, which have no responder either.
+    private var onEvent: ((BridgeEvent, (@Sendable (BridgeResponse) -> Void)?, UUID?) -> Void)?
+    private var onPermissionAbandoned: ((String, UUID) -> Void)?
 
     // MARK: - Init
 
@@ -43,14 +47,16 @@ public final class SocketServer {
     // MARK: - Public API
 
     public func setEventHandler(
-        _ handler: @escaping @MainActor (BridgeEvent, (@Sendable (BridgeResponse) -> Void)?) -> Void
+        _ handler: @escaping @MainActor (BridgeEvent, (@Sendable (BridgeResponse) -> Void)?, UUID?) -> Void
     ) {
         self.onEvent = handler
     }
 
-    /// Called when the bridge disconnects without a response (user answered in terminal, bridge timed out, etc.).
+    /// Called when the bridge disconnects without a response (user answered in
+    /// terminal, bridge timed out, etc.). Carries the request's id so only that
+    /// request is dropped — a session may have others still waiting (#199).
     public func setPermissionAbandonedHandler(
-        _ handler: @escaping @MainActor (String) -> Void
+        _ handler: @escaping @MainActor (String, UUID) -> Void
     ) {
         self.onPermissionAbandoned = handler
     }
@@ -183,6 +189,9 @@ public final class SocketServer {
         if event.requiresBlockingResponse {
             // DO NOT close fd — the responder closure owns it
             let capturedFd = fd
+            // This connection IS the request. Its id travels with the responder
+            // so the app can answer or discard exactly this one (#199).
+            let requestId = UUID()
 
             final class ResponseTracker: @unchecked Sendable {
                 var completed = false
@@ -203,7 +212,7 @@ public final class SocketServer {
                 close(capturedFd)  // Close AFTER writing response
             }
             await MainActor.run { [weak self] in
-                self?.onEvent?(event, responder)
+                self?.onEvent?(event, responder, requestId)
             }
             // Wait forever for either:
             //   1. User responded via ZackEyes (tracker.completed == true)
@@ -232,13 +241,13 @@ public final class SocketServer {
             if !tracker.completed, let sid = event.sessionId {
                 _ = bridgeDisconnected
                 await MainActor.run { [weak self] in
-                    self?.onPermissionAbandoned?(sid)
+                    self?.onPermissionAbandoned?(sid, requestId)
                 }
             }
         } else {
             // Fire-and-forget: dispatch event, close immediately
             await MainActor.run { [weak self] in
-                self?.onEvent?(event, nil)
+                self?.onEvent?(event, nil, nil)
             }
             close(fd)
         }

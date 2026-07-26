@@ -68,12 +68,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 3. Socket Server
         socketServer = SocketServer()
-        socketServer.setEventHandler { [weak self] event, responder in
-            self?.handleEvent(event, responder: responder)
+        socketServer.setEventHandler { [weak self] event, responder, permissionId in
+            self?.handleEvent(event, responder: responder, permissionId: permissionId)
         }
-        socketServer.setPermissionAbandonedHandler { [weak self] sid in
+        socketServer.setPermissionAbandonedHandler { [weak self] sid, requestId in
             NSLog("ZackEyes: permission abandoned for session %@", sid)
-            self?.sessionStore.abandonPermission(sessionId: sid)
+            self?.sessionStore.abandonPermission(sessionId: sid, requestId: requestId)
             // The popup was force-expanded when the request arrived; the
             // user just answered in the agent terminal instead, so collapse
             // it back to compact. The mouse-out / outside-click paths only
@@ -575,7 +575,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handleEvent(
         _ event: BridgeEvent,
-        responder: (@Sendable (BridgeResponse) -> Void)?
+        responder: (@Sendable (BridgeResponse) -> Void)?,
+        permissionId: UUID? = nil
     ) {
         // Capture real subscriber rate limits if Claude Code provided them
         if let rl = event.rateLimits {
@@ -613,6 +614,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let toolInput = event.toolInput?.mapValues { $0.value } ?? [:]
             let pending = PendingPermission(
+                id: permissionId ?? UUID(),
                 toolName: toolName,
                 toolInput: toolInput,
                 cwd: event.cwd,
