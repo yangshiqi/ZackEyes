@@ -64,9 +64,18 @@ public struct SessionInfo: Identifiable {
         rederiveWaitingState()
     }
 
-    /// Anything left in the queue still needs the user, whatever the caller set.
+    /// Re-derive the waiting flag from the queue, both directions.
+    ///
+    /// Anything left still needs the user, whatever the caller set. Draining the
+    /// queue releases a `.waiting` the requests themselves put there — but only
+    /// that one: `.idle` set by a turn-boundary caller (Stop / PostCompact) is
+    /// left alone, so a finished turn stays finished.
     private mutating func rederiveWaitingState() {
-        if !pendingPermissions.isEmpty { state = .waiting }
+        if pendingPermissions.isEmpty {
+            if state == .waiting { state = .working }
+        } else {
+            state = .waiting
+        }
     }
 
     /// Tool names approved via "Allow Always" for the rest of this session.
@@ -352,9 +361,6 @@ public final class SessionStore: ObservableObject {
             // as waiting (wrongly prioritized in the UI ranking) even though
             // there's nothing waiting on the user anymore.
             session.dropAllStaleAskUserQuestions()
-            if session.pendingPermissions.isEmpty && session.state == .waiting {
-                session.state = .working
-            }
             sessions[sid] = session
 
         case "PostToolUse":
@@ -380,9 +386,6 @@ public final class SessionStore: ObservableObject {
             // already been resolved.
             if event.toolName == "AskUserQuestion" {
                 session.dropOldestStaleAskUserQuestion()
-                if session.pendingPermissions.isEmpty && session.state == .waiting {
-                    session.state = .working
-                }
             }
 
             sessions[sid] = session
