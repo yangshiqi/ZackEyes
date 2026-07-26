@@ -20,7 +20,7 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - Session state at a glance: active Claude Code and Codex CLI sessions, current tasks, completion state, and waiting state.
 - Permission prompts without context switching: approve or deny sensitive tool calls from a compact panel.
 - Rate-limit awareness: expose 5-hour and 7-day usage pressure before a turn fails.
-- Multiple themes: adapt the notch panel to different desktop styles while keeping agent state readable. Theme choices include Rock Legends, F1 2026, and AI moguls, each with custom notification sounds.
+- Multiple themes: adapt the notch panel to different desktop styles while keeping agent state readable. Theme choices include Rock Legends, F1 2026, AI Moguls, and Crayon Shin-chan, each with custom notification sounds.
 - Display modes: support the physical MacBook notch, simulated Dynamic Island-style panels on Macs without a notch, menu bar workflows, and external display setups.
 - terminal tab jump: click a session card to activate matching sessions in iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, and Cursor when Accessibility permission is granted.
 - Context window usage: session cards can show context window usage, model and cost metadata, and per-agent usage pressure.

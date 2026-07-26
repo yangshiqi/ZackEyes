@@ -23,7 +23,8 @@ const publicPagePaths = [
   'src/pages/answers.astro',
   'src/pages/security.astro',
   'src/pages/download.astro',
-  'src/pages/privacy.astro'
+  'src/pages/privacy.astro',
+  'src/pages/vs-vibe-island.astro'
 ];
 
 function read(path) {
@@ -165,7 +166,8 @@ describe('Astro site contract', () => {
     assert.match(page, /Display modes for real notches, simulated islands, menu bar use, and external displays/);
     assert.match(page, /Rock Legends/);
     assert.match(page, /F1 2026/);
-    assert.match(page, /AI moguls/);
+    assert.match(page, /AI Moguls/);
+    assert.match(page, /Crayon Shin-chan/);
     assert.match(page, /Jump to the right terminal tab/);
     assert.match(page, /iTerm2/);
     assert.match(page, /Ghostty/);
@@ -323,7 +325,8 @@ describe('Astro site contract', () => {
     assert.match(page, /Multiple themes/);
     assert.match(page, /Rock Legends/);
     assert.match(page, /F1 2026/);
-    assert.match(page, /AI moguls/);
+    assert.match(page, /AI Moguls/);
+    assert.match(page, /Crayon Shin-chan/);
     assert.match(page, /custom notification sounds/);
     assert.match(page, /terminal tab jump/);
     assert.match(page, /custom global hotkey/);
@@ -442,7 +445,8 @@ describe('Astro site contract', () => {
     assert.match(llms, /terminal tab jump/);
     assert.match(llms, /Rock Legends/);
     assert.match(llms, /F1 2026/);
-    assert.match(llms, /AI moguls/);
+    assert.match(llms, /AI Moguls/);
+    assert.match(llms, /Crayon Shin-chan/);
     assert.match(llms, /Roadmap/);
     assert.match(llms, /Direct answers/);
     assert.match(llmsFull, /from '\.\.\/lib\/release\.mjs'/);

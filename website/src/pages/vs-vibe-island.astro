@@ -1,0 +1,232 @@
+---
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { releaseName, downloadUrl, sourceUrl } from '../lib/release.mjs';
+
+const description =
+  'ZackEyes vs Vibe Island: a factual comparison of two macOS notch panels for AI coding agents. Price, licence, agent coverage, terminal jump, Mac architecture, and which one fits which workflow.';
+
+// Competitor facts below were read from vibeisland.app on 2026-07-26 and are
+// stated as-of that date. Keep the date honest when refreshing this page — a
+// stale claim about a competitor is worse than no comparison page at all.
+const competitorCheckedOn = '2026-07-26';
+
+const rows = [
+  {
+    label: 'Price',
+    zack: 'Free',
+    rival: '$19.99 one-time, 1 Mac, includes 1 year of updates'
+  },
+  {
+    label: 'Licence',
+    zack: 'MIT open source — the whole app is public',
+    rival: 'Closed source'
+  },
+  {
+    label: 'Agents',
+    zack: 'Claude Code, Codex CLI',
+    rival: '26 agents, including Claude Code, Codex, Cursor, Gemini CLI, Copilot, Kimi, DeepSeek'
+  },
+  {
+    label: 'Terminal jump',
+    zack: '9 terminals and editors',
+    rival: '20+ terminals and editors'
+  },
+  {
+    label: 'Mac architecture',
+    zack: 'Universal — Apple Silicon and Intel',
+    rival: 'Described by the vendor as built for Apple Silicon'
+  },
+  {
+    label: 'Cost and token tracking',
+    zack: 'Per-session tokens and USD, plus a daily total with a 7-day sparkline; pricing table is bundled, so no API key',
+    rival: 'Usage quota tracking for Claude, Codex, Kimi, GLM, DeepSeek'
+  },
+  {
+    label: 'Remote sessions',
+    zack: 'Not supported',
+    rival: 'SSH remote execution and monitoring'
+  },
+  {
+    label: 'Telemetry',
+    zack: 'None — and you can verify that by reading the source',
+    rival: 'None, per the vendor'
+  },
+  {
+    label: 'Minimum macOS',
+    zack: 'macOS 14',
+    rival: 'Not published'
+  }
+];
+
+const faqs = [
+  {
+    question: 'Is there a free alternative to Vibe Island?',
+    answer:
+      'Yes. ZackEyes is a free, MIT-licensed macOS notch panel for AI coding agents. It shows Claude Code and Codex CLI sessions, permission prompts, token cost, and rate-limit pressure in the notch. Vibe Island is a paid app at $19.99 one-time and covers many more agents.'
+  },
+  {
+    question: 'What is the difference between ZackEyes and Vibe Island?',
+    answer:
+      'Both put AI coding agent status in the MacBook notch. Vibe Island covers 26 agents, 20+ terminals, and SSH remote sessions for $19.99. ZackEyes is free and open source, runs on Intel as well as Apple Silicon, and goes deep on two agents: Claude Code and Codex CLI.'
+  },
+  {
+    question: 'Which one should I use?',
+    answer:
+      'Use Vibe Island if you run agents beyond Claude Code and Codex, need SSH monitoring, or want the widest terminal coverage. Use ZackEyes if those two agents are your workflow, you want to audit the source, you have an Intel Mac, or you would rather not pay.'
+  },
+  {
+    question: 'Does ZackEyes support Cursor or Gemini CLI?',
+    answer:
+      'ZackEyes tracks sessions for Claude Code and Codex CLI only. It can jump to a terminal tab inside Cursor and VS Code, but it does not read Cursor or Gemini CLI agent state. Vibe Island supports both as tracked agents.'
+  },
+  {
+    question: 'Is ZackEyes really free, or is there a paid tier?',
+    answer:
+      'ZackEyes is entirely free with no paid tier, no accounts, and no upsell. The source is MIT licensed on GitHub, and releases ship as a signed DMG.'
+  }
+];
+
+const faqStructuredData = {
+  '@type': 'FAQPage',
+  '@id': 'https://zackeyes.vercel.app/vs-vibe-island#faq',
+  mainEntity: faqs.map((item) => ({
+    '@type': 'Question',
+    name: item.question,
+    acceptedAnswer: {
+      '@type': 'Answer',
+      text: item.answer
+    }
+  }))
+};
+---
+
+<SiteLayout
+  title="ZackEyes vs Vibe Island - Notch Panels for AI Coding Agents"
+  description={description}
+  canonical="https://zackeyes.vercel.app/vs-vibe-island"
+  structuredData={[faqStructuredData]}
+>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <SiteHeader />
+
+    <main id="top">
+      <section class="policy-hero compact-page-hero" aria-labelledby="vs-title">
+        <div class="policy-shell">
+          <div class="section-eyebrow">Comparison</div>
+          <h1 id="vs-title">ZackEyes vs Vibe Island.</h1>
+          <p class="policy-lede">
+            ZackEyes and Vibe Island both turn the MacBook notch into a control panel for AI coding
+            agents. Vibe Island is a paid app covering 26 agents, 20+ terminals, and SSH sessions.
+            ZackEyes is free and open source, runs on Intel and Apple Silicon, and covers two agents
+            in depth: Claude Code and Codex CLI.
+          </p>
+          <p class="policy-lede muted-note">
+            Vibe Island details were checked on {competitorCheckedOn} against
+            <a href="https://vibeisland.app/" rel="noopener nofollow">vibeisland.app</a>. ZackEyes
+            details describe {releaseName}. If something here is out of date, please
+            <a href={sourceUrl} rel="noopener">open an issue</a> — an inaccurate comparison helps
+            nobody.
+          </p>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="vs-table-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="vs-table-title">Side by side.</h2>
+          <div class="compare-scroll">
+            <table class="compare-table">
+              <caption class="visually-hidden">
+                Feature comparison between ZackEyes and Vibe Island
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">&nbsp;</th>
+                  <th scope="col">ZackEyes</th>
+                  <th scope="col">Vibe Island</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr>
+                    <th scope="row">{row.label}</th>
+                    <td>{row.zack}</td>
+                    <td>{row.rival}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="vs-pick-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="vs-pick-title">Which one fits.</h2>
+          <div class="spec-grid">
+            <article>
+              <span>Pick Vibe Island</span>
+              <strong>You run more than two agents</strong>
+              <p>
+                Vibe Island tracks 26 agents including Cursor, Gemini CLI, Copilot, Kimi and
+                DeepSeek, jumps to 20+ terminals, and monitors sessions over SSH. ZackEyes does none
+                of that. If your day spans several agents or a remote box, the $19.99 buys coverage
+                ZackEyes does not have.
+              </p>
+            </article>
+            <article>
+              <span>Pick ZackEyes</span>
+              <strong>Claude Code and Codex are your workflow</strong>
+              <p>
+                ZackEyes is built around those two CLIs: session cards, permission approval from the
+                notch, context-window pressure, per-session cost, and a daily token total with a
+                7-day sparkline computed locally from a bundled pricing table.
+              </p>
+            </article>
+            <article>
+              <span>Pick ZackEyes</span>
+              <strong>You want to read the code</strong>
+              <p>
+                Both apps say they send nothing to a server. ZackEyes is MIT licensed, so that claim
+                is checkable rather than promised — you can read the socket bridge and the hook
+                installer yourself before granting Accessibility permission.
+              </p>
+            </article>
+            <article>
+              <span>Pick ZackEyes</span>
+              <strong>You are on an Intel Mac</strong>
+              <p>
+                ZackEyes release builds compile for `arm64` and `x86_64` into one universal bundle.
+                Vibe Island describes itself as built for Apple Silicon and does not publish Intel
+                support either way.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="vs-faq-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="vs-faq-title">Questions.</h2>
+          <div class="faq-list" id="faq">
+            {faqs.map((item) => (
+              <details class="faq-item" open>
+                <summary>{item.question}</summary>
+                <p>{item.answer}</p>
+              </details>
+            ))}
+          </div>
+          <div class="final-actions align-left">
+            <a class="button primary" href={downloadUrl}>Download ZackEyes <span aria-hidden="true">↓</span></a>
+            <a class="button" href="/docs">Read the docs <span aria-hidden="true">→</span></a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <SiteFooter />
+  </div>
+</SiteLayout>

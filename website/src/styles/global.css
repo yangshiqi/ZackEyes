@@ -1469,3 +1469,76 @@ h1 {
     will-change: auto;
   }
 }
+
+/* Comparison table — used by the competitor comparison pages. Wrapped in
+   .compare-scroll so a wide table scrolls itself instead of the page body. */
+.compare-scroll {
+  margin-top: 42px;
+  overflow-x: auto;
+  border: 1px solid rgba(245, 241, 232, 0.14);
+  border-radius: 8px;
+  background: rgba(245, 241, 232, 0.055);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.compare-table {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: collapse;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.compare-table thead th {
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(245, 241, 232, 0.14);
+  color: var(--cyan);
+  font-size: 12px;
+  font-weight: 820;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: left;
+}
+
+.compare-table tbody th {
+  width: 22%;
+  color: var(--ink);
+  font-weight: 700;
+  text-align: left;
+}
+
+.compare-table th,
+.compare-table td {
+  padding: 16px 20px;
+  vertical-align: top;
+}
+
+.compare-table tbody tr + tr th,
+.compare-table tbody tr + tr td {
+  border-top: 1px solid rgba(245, 241, 232, 0.1);
+}
+
+.compare-table td {
+  color: #c9c9be;
+}
+
+.compare-table tbody td:first-of-type {
+  color: var(--ink);
+}
+
+.muted-note {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

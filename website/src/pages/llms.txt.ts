@@ -17,7 +17,7 @@ ZackEyes is a macOS notch command center for developers who run Claude Code, Cod
 - Shows active Claude Code and Codex CLI sessions in the MacBook notch.
 - Surfaces task status, permission approvals, and rate-limit pressure without pulling focus from the editor.
 - Supports Multiple themes and display modes for real notches, simulated Dynamic Island-style panels, menu bar workflows, and external displays.
-- Theme choices include Rock Legends, F1 2026, and AI moguls, with matching custom notification sounds.
+- Theme choices include Rock Legends, F1 2026, AI Moguls, and Crayon Shin-chan, with matching custom notification sounds.
 - Supports terminal tab jump for iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, and Cursor when Accessibility permission is granted.
 - Shows context window usage, model and cost metadata when available from the agent stream.
 - Tracks daily token spend and USD cost across Claude and Codex in a Today row with a 7-day sparkline; model pricing is bundled and computed locally, so no API key or cloud upload is needed.
@@ -39,6 +39,7 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 - Changelog: https://zackeyes.vercel.app/changelog
 - Roadmap: https://zackeyes.vercel.app/roadmap
 - Direct answers: https://zackeyes.vercel.app/answers
+- ZackEyes vs Vibe Island comparison: https://zackeyes.vercel.app/vs-vibe-island
 - Security and safety model: https://zackeyes.vercel.app/security
 - Privacy and local-first notes: https://zackeyes.vercel.app/privacy
 - Full LLM context: https://zackeyes.vercel.app/llms-full.txt
