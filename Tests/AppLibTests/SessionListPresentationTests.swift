@@ -7,9 +7,9 @@ struct SessionListPresentationTests {
     @Test
     func groupsAttentionRunningAndRecentWithoutChangingOrder() {
         var pending = session("pending", state: .working, age: 4)
-        pending.pendingPermission = PendingPermission(
+        pending.pendingPermissions = [PendingPermission(
             toolName: "Read", toolInput: [:], cwd: "/tmp", responder: { _ in }
-        )
+        )]
         var error = session("error", state: .working, age: 3)
         error.errorMessage = "API error"
         let waiting = session("waiting", state: .waiting, age: 2)

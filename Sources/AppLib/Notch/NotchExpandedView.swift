@@ -304,6 +304,7 @@ struct NotchExpandedView: View {
                         permissionDetailBlock(pending)
                         permissionApprovalButtons(
                             sessionId: session.id,
+                            requestId: pending.id,
                             isPrimary: viewModel.primarySession?.id == session.id
                         )
                         .padding(.top, 4)
@@ -604,23 +605,23 @@ struct NotchExpandedView: View {
     // MARK: - Approval buttons (rendered inside the owning session's card)
 
     @ViewBuilder
-    private func permissionApprovalButtons(sessionId: String, isPrimary: Bool) -> some View {
+    private func permissionApprovalButtons(sessionId: String, requestId: UUID, isPrimary: Bool) -> some View {
         let toolName = viewModel.sessionStore.sessions[sessionId]?.pendingPermission?.toolName
         let highRisk = toolName.map(SessionStore.isHighRisk) ?? false
         HStack(spacing: 8) {
-            denyButton(sessionId: sessionId, isPrimary: isPrimary)
-            allowButton(sessionId: sessionId, isPrimary: isPrimary)
+            denyButton(sessionId: sessionId, requestId: requestId, isPrimary: isPrimary)
+            allowButton(sessionId: sessionId, requestId: requestId, isPrimary: isPrimary)
             // High-risk tools (e.g. Bash) don't offer "Allow Always" — a single
             // approval would auto-run every future invocation this session (#128).
             if !highRisk {
-                allowAlwaysButton(sessionId: sessionId, isPrimary: isPrimary)
+                allowAlwaysButton(sessionId: sessionId, requestId: requestId, isPrimary: isPrimary)
             }
         }
     }
 
     @ViewBuilder
-    private func denyButton(sessionId: String, isPrimary: Bool) -> some View {
-        let base = Button(action: { viewModel.deny(sessionId: sessionId) }) {
+    private func denyButton(sessionId: String, requestId: UUID, isPrimary: Bool) -> some View {
+        let base = Button(action: { viewModel.deny(sessionId: sessionId, requestId: requestId) }) {
             HStack(spacing: 4) {
                 Text("Deny")
                 if isPrimary {
@@ -646,8 +647,8 @@ struct NotchExpandedView: View {
     }
 
     @ViewBuilder
-    private func allowButton(sessionId: String, isPrimary: Bool) -> some View {
-        let base = Button(action: { viewModel.approve(sessionId: sessionId) }) {
+    private func allowButton(sessionId: String, requestId: UUID, isPrimary: Bool) -> some View {
+        let base = Button(action: { viewModel.approve(sessionId: sessionId, requestId: requestId) }) {
             HStack(spacing: 4) {
                 Text("Allow Once")
                 if isPrimary {
@@ -673,9 +674,9 @@ struct NotchExpandedView: View {
     }
 
     @ViewBuilder
-    private func allowAlwaysButton(sessionId: String, isPrimary: Bool) -> some View {
+    private func allowAlwaysButton(sessionId: String, requestId: UUID, isPrimary: Bool) -> some View {
         let activity = AppColors.activity.color
-        let base = Button(action: { viewModel.approveAlways(sessionId: sessionId) }) {
+        let base = Button(action: { viewModel.approveAlways(sessionId: sessionId, requestId: requestId) }) {
             HStack(spacing: 4) {
                 // #87 — "Allow Always" (not "Allow All"): auto-allow is per-tool,
                 // not all-tools. Pairs with "Allow Once" as the temporal contrast.

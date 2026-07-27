@@ -51,18 +51,23 @@ public final class NotchViewModel: ObservableObject {
         }
     }
 
-    public func approve(sessionId: String) {
-        sessionStore.resolvePermission(sessionId: sessionId, allow: true)
+    /// Each action names the request that was on screen when the button was
+    /// built. The head of the queue can change between render and click (the
+    /// shown request's bridge disconnects and the next is promoted), so
+    /// resolving "whatever is current" would answer the wrong one (#199).
+    /// A stale id resolves nothing.
+    public func approve(sessionId: String, requestId: UUID) {
+        sessionStore.resolvePermission(sessionId: sessionId, requestId: requestId, allow: true)
     }
 
-    public func deny(sessionId: String) {
-        sessionStore.resolvePermission(sessionId: sessionId, allow: false)
+    public func deny(sessionId: String, requestId: UUID) {
+        sessionStore.resolvePermission(sessionId: sessionId, requestId: requestId, allow: false)
     }
 
     /// "Allow Always": approve now and auto-allow this tool for the rest of the
     /// session (see `SessionStore.allowAlways`).
-    public func approveAlways(sessionId: String) {
-        sessionStore.allowAlways(sessionId: sessionId)
+    public func approveAlways(sessionId: String, requestId: UUID) {
+        sessionStore.allowAlways(sessionId: sessionId, requestId: requestId)
     }
 
     /// Click handler: jump to the terminal tab for this session.
