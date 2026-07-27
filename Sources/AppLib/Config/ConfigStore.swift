@@ -95,8 +95,8 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         wrapper.notchVisibility = visibility.rawValue
-        guard let data = try? JSONEncoder().encode(wrapper) else { return }
-        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        persist(data)
     }
 
     /// Load which agent's quota the collapsed simulated notch should
@@ -130,8 +130,8 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         wrapper.compactAgent = agent.rawValue
-        guard let data = try? JSONEncoder().encode(wrapper) else { return }
-        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        persist(data)
     }
 
     /// Load the simulated-notch horizontal offset from screen-center, in
@@ -165,8 +165,8 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         wrapper.notchOffsetX = Double(offset)
-        guard let data = try? JSONEncoder().encode(wrapper) else { return }
-        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        persist(data)
     }
 
     /// Load whether the expanded Today consumption row is shown. Defaults to `true`.
@@ -195,8 +195,8 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         wrapper.showTodayConsumption = enabled
-        guard let data = try? JSONEncoder().encode(wrapper) else { return }
-        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        persist(data)
     }
 
     /// Load the elapsed-window presentation. Existing installs default to Off.
@@ -289,14 +289,45 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         wrapper.notifyWaitingForInput = enabled
-        guard let data = try? JSONEncoder().encode(wrapper) else { return }
-        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        persist(data)
     }
 
     /// Save the hotkey config atomically. Preserves other keys.
     /// Creates directory if needed.
     public func save(_ config: HotKeyConfig) {
         updateConfig { $0.hotkey = config }
+    }
+
+    /// Single exit for every config write.
+    ///
+    /// Six call sites each did their own `write(options: .atomic)`, which gets
+    /// the rename right but leaves the bytes in the page cache, and config.json
+    /// had no backup at all — settings.json has had timestamped ones for a while
+    /// (#205). Keeping one backup here rather than a series: config.json is small
+    /// and rewritten often, so a per-change history would be noise, but having
+    /// *something* to fall back on costs one file.
+    /// Stable key order. Without it every save re-encodes to different bytes,
+    /// so the unchanged-content check never fires: config.json is rewritten on
+    /// each launch and the one backup we keep gets rotated to a copy of the
+    /// current value — losing the previous one, which is the whole point of
+    /// keeping it.
+    private static let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.outputFormatting = [.sortedKeys]
+        return e
+    }()
+
+    private func persist(_ data: Data) {
+        let backupPath = configPath + ".backup"
+        if let current = FileManager.default.contents(atPath: configPath), current != data {
+            // If we cannot keep a copy, do not take the original away. Mirrors
+            // HookInstaller, which has aborted on backup failure since
+            // #129/F-014 — losing the save is recoverable, losing the config is
+            // not.
+            guard (try? AtomicFileWriter.write(current, to: backupPath)) != nil else { return }
+        }
+        _ = try? AtomicFileWriter.write(data, to: configPath)
     }
 
     private func updateConfig(_ update: (inout ConfigWrapper) -> Void) {
@@ -315,8 +346,8 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         update(&wrapper)
-        guard let data = try? JSONEncoder().encode(wrapper) else { return }
-        try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)
+        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        persist(data)
     }
 }
 

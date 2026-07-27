@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 /// Installs ZackEyes hook entries into `~/.codex/hooks.json` so that the
 /// OpenAI Codex CLI fires our bridge alongside Claude Code.
@@ -185,6 +186,6 @@ public struct CodexHookInstaller {
             withJSONObject: doc,
             options: [.prettyPrinted, .sortedKeys]
         )
-        try data.write(to: url, options: .atomic)
+        try AtomicFileWriter.write(data, to: url.path)
     }
 }
