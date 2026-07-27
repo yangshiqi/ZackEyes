@@ -104,6 +104,10 @@ struct SocketServerPayloadTests {
             #expect(sent)
 
             try await waitUntil { received.value != nil }
+            // Assert the id survived first: isProbe(nil) is also false, so
+            // without this the test would pass even if decoding dropped
+            // session_id entirely (found in review).
+            #expect(received.value?.sessionId == "9f2c-real")
             #expect(HookSelfTest.isProbe(sessionId: received.value?.sessionId) == false)
         }
     }

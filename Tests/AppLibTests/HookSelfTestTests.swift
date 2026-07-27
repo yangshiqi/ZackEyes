@@ -74,7 +74,7 @@ struct HookSelfTestTests {
     /// A launcher that ignores SIGTERM must still be stopped, or the drain never
     /// reaches EOF and the button stays at "Testing..." (found in review).
     @Test func killsALauncherThatIgnoresTermination() async throws {
-        let launcher = try makeLauncher("trap '' TERM\ncat > /dev/null\nsleep 120\n")
+        let launcher = try makeLauncher("trap '' TERM\ncat > /dev/null\nsleep 5\n")
         let clock = ContinuousClock()
         let started = clock.now
 
@@ -89,7 +89,7 @@ struct HookSelfTestTests {
     /// A launcher stuck on a dead socket is one of the failures this test is
     /// meant to diagnose — it must not hang the window instead.
     @Test func reportsLauncherWhenItNeverReturns() async throws {
-        let launcher = try makeLauncher("cat > /dev/null\nsleep 120\n")
+        let launcher = try makeLauncher("cat > /dev/null\nsleep 5\n")
         let clock = ContinuousClock()
         let started = clock.now
 
@@ -130,7 +130,7 @@ struct HookSelfTestTests {
     /// cleanly, but the descendant holds the pipe write ends, so EOF never
     /// arrives (found in review).
     @Test func doesNotHangWhenADescendantHoldsThePipesOpen() async throws {
-        let launcher = try makeLauncher("cat > /dev/null\nsleep 120 &\nexit 0\n")
+        let launcher = try makeLauncher("cat > /dev/null\nsleep 5 &\nexit 0\n")
         let clock = ContinuousClock()
         let started = clock.now
 
