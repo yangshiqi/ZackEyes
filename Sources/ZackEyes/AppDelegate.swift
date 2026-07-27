@@ -94,6 +94,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if replayedCount > 0 {
                 NSLog("ZackEyes: replayed %d pending hook events", replayedCount)
             }
+        } catch SocketError.alreadyRunning {
+            // Another copy already owns the socket. Carrying on would leave a
+            // second menu bar icon and a second notch panel that can never
+            // receive an event — silently useless (#205). Hand the user back to
+            // the instance that works.
+            NSLog("ZackEyes: another instance already owns the socket; exiting")
+            presentAlreadyRunningAlert()
+            NSApp.terminate(nil)
+            return
         } catch {
             NSLog("ZackEyes: Failed to start socket server: \(error)")
         }
@@ -866,6 +875,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// callers (welcome) must replicate the gate or they'd collapse the
     /// panel out from under a permission request that happened to arrive
     /// during the welcome window.
+    /// Say why we are quitting. Without this the second launch looks like
+    /// nothing happened at all — the app has no Dock icon to bounce.
+    private func presentAlreadyRunningAlert() {
+        let alert = NSAlert()
+        alert.messageText = "ZackEyes is already running"
+        alert.informativeText = "Look for the icon in the menu bar. "
+            + "Only one copy can watch your agents at a time."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     private func forceUiCompact() {
         let hasPending = sessionStore.sessions.values.contains { $0.pendingPermission != nil }
         if hasPending { return }

@@ -11,6 +11,9 @@ public enum SocketError: Error {
     case createFailed
     case bindFailed
     case listenFailed
+    /// Another ZackEyes already owns the socket. Starting anyway would take the
+    /// endpoint from it (#205).
+    case alreadyRunning
 }
 
 // MARK: - SocketServer
@@ -34,7 +37,43 @@ public final class SocketServer {
         self.path = path
     }
 
-    /// Reject any peer whose effective uid differs from ours (scan findings
+    /// Take the instance lock, or report that someone else holds it.
+    ///
+    /// `flock` rather than probing the socket with `connect`: a probe is a
+    /// heuristic, and its wrong answers are destructive. Between another
+    /// instance's `bind` and its `listen` the probe is refused, and a busy
+    /// server whose backlog is full refuses too — in both cases we would have
+    /// concluded "stale" and deleted a live endpoint. The kernel arbitrates a
+    /// lock exactly once and drops it when the holder dies, so crash debris
+    /// needs no separate story (#205).
+    ///
+    /// The descriptor is deliberately never closed: the lock lives as long as
+    /// the process.
+    private func acquireInstanceLock() -> Bool {
+        let path = self.path
+        let lockPath = path + ".lock"
+        let fd = open(lockPath, O_CREAT | O_RDWR, 0o600)
+        guard fd >= 0 else {
+            // Cannot create the lock — treat as "not ours to take" rather than
+            // proceeding to unlink someone else's socket.
+            return false
+        }
+        while flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            if errno == EINTR { continue }
+            close(fd)
+            return false
+        }
+        instanceLockFd = fd
+        return true
+    }
+
+    /// Held for as long as this server owns the endpoint. Per instance, not per
+    /// process: a static would mean "this process locked something once", which
+    /// short-circuits the guard for every later server — including the one that
+    /// should have been refused.
+    private var instanceLockFd: Int32 = -1
+
+    /// Reject any peer whose effective uid differs from ours    /// Reject any peer whose effective uid differs from ours (scan findings
     /// F-001/F-002). On macOS, AF_UNIX socket file permissions are NOT enforced
     /// on connect, so a kernel-verified peer-credential check (`getpeereid`) is
     /// the reliable boundary that stops other local users from speaking the
@@ -72,7 +111,13 @@ public final class SocketServer {
             attributes: [.posixPermissions: 0o700])
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir)
 
-        // Unlink stale socket file if present
+        // `unlink` used to be unconditional, so a second ZackEyes silently took
+        // the endpoint: hooks reached whichever process won, and the loser sat
+        // in an accept loop on a node no one could dial — invisible to the user
+        // and to the health check (#205). Only the lock holder may reclaim it.
+        guard acquireInstanceLock() else {
+            throw SocketError.alreadyRunning
+        }
         unlink(path)
 
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -94,8 +139,12 @@ public final class SocketServer {
             }
         }
         guard bindResult == 0 else {
+            let code = errno
             close(fd)
-            throw SocketError.bindFailed
+            // We hold the lock, so this should not happen — but if the address
+            // is taken anyway, another server is on it and "already running" is
+            // the truthful answer, not a generic failure the caller shrugs off.
+            throw code == EADDRINUSE ? SocketError.alreadyRunning : SocketError.bindFailed
         }
 
         // F-002 defense in depth: restrict the socket node to the owner. BSD
@@ -120,6 +169,10 @@ public final class SocketServer {
     /// Stop the server: close server fd and unlink the socket path.
     public func stop() {
         isRunning = false
+        if instanceLockFd >= 0 {
+            close(instanceLockFd)   // releases the flock
+            instanceLockFd = -1
+        }
         if serverFd >= 0 {
             close(serverFd)
             serverFd = -1
