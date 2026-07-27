@@ -47,6 +47,13 @@ public enum AtomicFileWriter {
     /// - Returns: `true` if bytes were written, `false` if they already matched —
     ///   no rewrite, no mtime bump, and no backup churn for callers that back up
     ///   before writing.
+    /// - Throws: `WriteError`. Note the asymmetry: everything up to and including
+    ///   the rename either succeeds or leaves the old file untouched, but a
+    ///   `syncFailed` naming the *directory* is thrown after the rename has
+    ///   already committed. The new contents are visible and only their
+    ///   durability across a power loss is in doubt, so treat that case as
+    ///   "written, maybe not flushed" — do not undo or re-run anything
+    ///   destructive on the strength of it.
     @discardableResult
     public static func write(
         _ data: Data,

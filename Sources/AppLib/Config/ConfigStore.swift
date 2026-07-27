@@ -95,7 +95,7 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         wrapper.notchVisibility = visibility.rawValue
-        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        guard let data = try? Self.makeEncoder().encode(wrapper) else { return }
         persist(data)
     }
 
@@ -130,7 +130,7 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         wrapper.compactAgent = agent.rawValue
-        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        guard let data = try? Self.makeEncoder().encode(wrapper) else { return }
         persist(data)
     }
 
@@ -165,7 +165,7 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         wrapper.notchOffsetX = Double(offset)
-        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        guard let data = try? Self.makeEncoder().encode(wrapper) else { return }
         persist(data)
     }
 
@@ -195,7 +195,7 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         wrapper.showTodayConsumption = enabled
-        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        guard let data = try? Self.makeEncoder().encode(wrapper) else { return }
         persist(data)
     }
 
@@ -289,7 +289,7 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         wrapper.notifyWaitingForInput = enabled
-        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        guard let data = try? Self.makeEncoder().encode(wrapper) else { return }
         persist(data)
     }
 
@@ -297,6 +297,21 @@ public final class ConfigStore: Sendable {
     /// Creates directory if needed.
     public func save(_ config: HotKeyConfig) {
         updateConfig { $0.hotkey = config }
+    }
+
+    /// Stable key order. Without it every save re-encodes to different bytes,
+    /// so the unchanged-content check never fires: config.json is rewritten on
+    /// each launch and the one backup we keep gets rotated to a copy of the
+    /// current value — losing the previous one, which is the whole point of
+    /// keeping it.
+    ///
+    /// Built per call rather than shared: `ConfigStore` is `Sendable` and
+    /// `JSONEncoder` is a mutable class, so one instance across concurrent saves
+    /// is a data race for no gain — these writes are rare and tiny.
+    private static func makeEncoder() -> JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return encoder
     }
 
     /// Single exit for every config write.
@@ -307,17 +322,6 @@ public final class ConfigStore: Sendable {
     /// (#205). Keeping one backup here rather than a series: config.json is small
     /// and rewritten often, so a per-change history would be noise, but having
     /// *something* to fall back on costs one file.
-    /// Stable key order. Without it every save re-encodes to different bytes,
-    /// so the unchanged-content check never fires: config.json is rewritten on
-    /// each launch and the one backup we keep gets rotated to a copy of the
-    /// current value — losing the previous one, which is the whole point of
-    /// keeping it.
-    private static let encoder: JSONEncoder = {
-        let e = JSONEncoder()
-        e.outputFormatting = [.sortedKeys]
-        return e
-    }()
-
     private func persist(_ data: Data) {
         let backupPath = configPath + ".backup"
         if let current = FileManager.default.contents(atPath: configPath), current != data {
@@ -327,7 +331,16 @@ public final class ConfigStore: Sendable {
             // not.
             guard (try? AtomicFileWriter.write(current, to: backupPath)) != nil else { return }
         }
-        _ = try? AtomicFileWriter.write(data, to: configPath)
+        do {
+            _ = try AtomicFileWriter.write(data, to: configPath)
+        } catch {
+            // Callers are fire-and-forget setters with nowhere to show an error,
+            // but a full disk or a permission problem should not be completely
+            // invisible — without this the save simply appears not to have
+            // happened. The app is running: NSLog here is fine (unlike in the
+            // bridge, where it would reach the agent's terminal).
+            NSLog("ZackEyes: could not save config.json — %@", "\(error)")
+        }
     }
 
     private func updateConfig(_ update: (inout ConfigWrapper) -> Void) {
@@ -346,7 +359,7 @@ public final class ConfigStore: Sendable {
             wrapper = ConfigWrapper(hotkey: .default)
         }
         update(&wrapper)
-        guard let data = try? Self.encoder.encode(wrapper) else { return }
+        guard let data = try? Self.makeEncoder().encode(wrapper) else { return }
         persist(data)
     }
 }
