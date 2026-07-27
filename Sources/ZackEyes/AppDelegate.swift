@@ -578,6 +578,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         responder: (@Sendable (BridgeResponse) -> Void)?,
         permissionId: UUID? = nil
     ) {
+        // A self-test probe proves the pipeline works and must not leave a
+        // session card behind for a run that never happened (#205).
+        if HookSelfTest.isProbe(sessionId: event.sessionId) {
+            NotificationCenter.default.post(
+                name: .hookSelfTestProbeReceived, object: event.sessionId)
+            return
+        }
+
         // Capture real subscriber rate limits if Claude Code provided them
         if let rl = event.rateLimits {
             usageTracker.updateFromHook(rateLimits: rl)
