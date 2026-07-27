@@ -37,7 +37,11 @@ struct BridgeExitContractTests {
                 break
             }
         }
-        let arch = ProcessInfo.processInfo.machineHardwareName ?? "x86_64"
+        // Fail closed. Guessing an architecture here would re-create the exact
+        // "Bad CPU type in executable" this fix is about — and `expectSilentSuccess`
+        // records an issue on nil, so a genuinely unlocatable binary is loud
+        // rather than a silent skip.
+        guard let arch = ProcessInfo.processInfo.machineHardwareName else { return nil }
         let candidate = root
             .appendingPathComponent(".build/\(arch)-apple-macosx/debug/bridge")
         return FileManager.default.isExecutableFile(atPath: candidate.path) ? candidate : nil
