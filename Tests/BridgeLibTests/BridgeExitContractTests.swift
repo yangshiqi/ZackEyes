@@ -11,10 +11,25 @@ import Foundation
 /// unhandled SIGPIPE killed the process with 141 (#200 / #201).
 struct BridgeExitContractTests {
 
-    /// The built `bridge`, found by walking up from this source file to the
-    /// package root and then into `.build`. `Bundle.main` points at the test
-    /// runner under swift-testing, not at the products directory.
+    /// The `bridge` built alongside the running test bundle.
+    ///
+    /// Deliberately NOT a search of `.build`: after `make app` that tree also
+    /// holds per-architecture release objects, and picking one of those on a
+    /// machine of the other architecture fails with "Bad CPU type in
+    /// executable" — which is what happened on master when two green branches
+    /// merged. The products directory next to the .xctest bundle is the only
+    /// one guaranteed to match this process.
     private static var bridgeURL: URL? {
+        let products = Bundle.allBundles
+            .map(\.bundleURL)
+            .first { $0.pathExtension == "xctest" }?
+            .deletingLastPathComponent()
+        if let products {
+            let candidate = products.appendingPathComponent("bridge")
+            if FileManager.default.isExecutableFile(atPath: candidate.path) { return candidate }
+        }
+        // swift-testing may run without an .xctest bundle; fall back to the
+        // debug products directory for this machine's triple.
         var root = URL(fileURLWithPath: #filePath)
         while root.pathComponents.count > 1 {
             root = root.deletingLastPathComponent()
@@ -22,18 +37,14 @@ struct BridgeExitContractTests {
                 break
             }
         }
-        let build = root.appendingPathComponent(".build")
-        guard let walker = FileManager.default.enumerator(
-            at: build, includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else { return nil }
-        for case let url as URL in walker where url.lastPathComponent == "bridge" {
-            if FileManager.default.isExecutableFile(atPath: url.path),
-               (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory != true {
-                return url
-            }
-        }
-        return nil
+        // Fail closed. Guessing an architecture here would re-create the exact
+        // "Bad CPU type in executable" this fix is about — and `expectSilentSuccess`
+        // records an issue on nil, so a genuinely unlocatable binary is loud
+        // rather than a silent skip.
+        guard let arch = ProcessInfo.processInfo.machineHardwareName else { return nil }
+        let candidate = root
+            .appendingPathComponent(".build/\(arch)-apple-macosx/debug/bridge")
+        return FileManager.default.isExecutableFile(atPath: candidate.path) ? candidate : nil
     }
 
     private struct Run { let code: Int32; let out: Data; let err: Data }
@@ -110,5 +121,17 @@ struct BridgeExitContractTests {
     @Test func oversizedPayloadExitsSilently() throws {
         let json = #"{"hook_event_name":"SessionStart","session_id":"contract","cwd":"/tmp","tool_response":"\#(String(repeating: "x", count: 300_000))"}"#
         expectSilentSuccess(try runBridge(stdin: Data(json.utf8)), "300 KB payload")
+    }
+}
+
+private extension ProcessInfo {
+    /// `uname -m` — the running process's architecture, so we pick the matching
+    /// build products directory.
+    var machineHardwareName: String? {
+        var info = utsname()
+        guard uname(&info) == 0 else { return nil }
+        return withUnsafeBytes(of: &info.machine) { raw in
+            raw.prefix(while: { $0 != 0 }).map { Character(UnicodeScalar($0)) }
+        }.map(String.init).joined()
     }
 }
