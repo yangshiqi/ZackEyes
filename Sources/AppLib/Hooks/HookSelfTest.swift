@@ -207,19 +207,25 @@ public struct HookSelfTest: Sendable {
     /// the drains above can reach EOF and this cannot hang the caller.
     private func waitForExit(_ task: Process, within timeout: Duration) async -> Bool {
         let done = ResumeOnce()
-        // Killing the child fires terminationHandler, which would otherwise
-        // resume `true` and make our own timeout look like a clean exit —
-        // reported to the user as "exited with code 15" instead of "did not
-        // finish". Record the deadline separately from the exit signal.
+        // Killing the child cannot be told apart from a clean exit, so the
+        // deadline is recorded separately — otherwise a hang gets reported as
+        // "exited with code 15".
         let timedOut = Flag()
-        task.terminationHandler = { _ in done.resume(!timedOut.isSet) }
-        // The handler is installed after run(), so a launcher that already
-        // finished would never call it — the wait would then burn the whole
-        // deadline and report a hang that did not happen.
-        if !task.isRunning { done.resume(true) }
+
+        // `waitUntilExit` on a background thread, NOT `terminationHandler`: the
+        // handler is installed after `run()`, and a child that already exited by
+        // then may never trigger it while `isRunning` has not caught up either.
+        // Both paths miss and the wait burns the entire deadline — which is how
+        // a trivial `exit 0` script took 10s and made the suite intermittently
+        // red under parallel load.
+        DispatchQueue.global(qos: .userInitiated).async {
+            task.waitUntilExit()
+            done.resume(!timedOut.isSet)
+        }
+
         Task {
             try? await Task.sleep(for: timeout)
-            guard task.isRunning else { done.resume(false); return }
+            guard task.isRunning else { return }   // the waiter above has it
             timedOut.set()
             // terminate() is only a request. A launcher that traps TERM — or a
             // descendant holding the pipes — would keep the drain alive and
