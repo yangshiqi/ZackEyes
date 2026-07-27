@@ -5,7 +5,7 @@ import SiteLayout from '../layouts/SiteLayout.astro';
 import { releaseName, downloadUrl, sourceUrl } from '../lib/release.mjs';
 
 const description =
-  'ZackEyes vs Vibe Island: a factual comparison of two macOS notch panels for AI coding agents. Price, licence, agent coverage, terminal jump, Mac architecture, and which one fits which workflow.';
+  'ZackEyes vs Vibe Island: a factual comparison of macOS notch panels for AI coding agents. Price, licence, agent coverage, terminal jump, Mac architecture, the other open-source option, and which one fits which workflow.';
 
 // Competitor facts below were read from vibeisland.app on 2026-07-26 and are
 // stated as-of that date. Keep the date honest when refreshing this page — a
@@ -80,6 +80,11 @@ const faqs = [
     question: 'Does ZackEyes support Cursor or Gemini CLI?',
     answer:
       'ZackEyes tracks sessions for Claude Code and Codex CLI only. It can jump to a terminal tab inside Cursor and VS Code, but it does not read Cursor or Gemini CLI agent state. Vibe Island supports both as tracked agents.'
+  },
+  {
+    question: 'Are there other open-source alternatives to Vibe Island?',
+    answer:
+      'Yes — cc-island is also free and MIT licensed, and supports GitHub Copilot, which ZackEyes does not. It runs on macOS 13 where ZackEyes needs 14. ZackEyes adds token and cost tracking, terminal tab jump across 9 apps, rate-limit display and notification sounds, which cc-island does not have.'
   },
   {
     question: 'Is ZackEyes really free, or is there a paid tier?',
@@ -205,6 +210,25 @@ const faqStructuredData = {
               </p>
             </article>
           </div>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="vs-others-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="vs-others-title">Not the only two.</h2>
+          <p class="policy-lede">
+            <a href="https://github.com/bistin/cc-island" rel="noopener nofollow">cc-island</a> is a
+            third option and also free and MIT licensed, so "open source" is not something that
+            separates ZackEyes from the whole field — only from Vibe Island. It tracks Claude Code,
+            Copilot and Codex, which is one more agent than ZackEyes (we do not support Copilot), and
+            it runs on macOS 13 where ZackEyes needs 14. What it does not have, as of
+            {competitorCheckedOn}: token and cost tracking, terminal tab jump, notification sounds,
+            or rate-limit display.
+          </p>
+          <p class="policy-lede muted-note">
+            If a page comparing tools only mentions the one it wins against, it is advertising. This
+            is the shape of the actual field.
+          </p>
         </div>
       </section>
 
