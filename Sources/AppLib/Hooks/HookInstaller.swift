@@ -440,12 +440,11 @@ public struct HookInstaller {
     }
 
     private func isZackEyesCommand(_ command: String) -> Bool {
-        // #129/F-018 — match our own commands by the ~/.zackeyes/ path component
-        // (or the configured bridgePath, for test paths outside ~/.zackeyes), not
-        // a bare "zackeyes" substring an unrelated third-party command could also
-        // contain.
-        command.lowercased().contains("/.zackeyes/")
-            || command.contains(bridgePath)
+        // #129/F-018 — match by the ~/.zackeyes/ path component (or the
+        // configured bridgePath, for test paths outside ~/.zackeyes), never a
+        // bare "zackeyes" substring. Shared with the Codex installer so the two
+        // cannot drift apart again (#203).
+        HookOwnership.isOurs(command: command, bridgePath: bridgePath)
             || command.contains(quotedShellPath(bridgePath))
     }
 

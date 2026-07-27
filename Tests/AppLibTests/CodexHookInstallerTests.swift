@@ -181,6 +181,44 @@ struct CodexHookInstallerTests {
         #expect(firstCommand == "other-tool --check")
     }
 
+    // MARK: - #203: ownership must not be decided by a bare substring
+
+    /// The Claude installer matches on the `/.zackeyes/` path COMPONENT for
+    /// exactly this reason (#129/F-018); the Codex side never got that fix and
+    /// still used `contains("zackeyes")`, so an unrelated tool living under a
+    /// directory with our name in it was treated as ours — and deleted.
+    @Test func uninstallKeepsThirdPartyHookWhoseCommandMerelyMentionsZackEyes() throws {
+        let tmpDir = try makeTmpDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+        let codexDir = tmpDir.appendingPathComponent(".codex")
+        try FileManager.default.createDirectory(at: codexDir, withIntermediateDirectories: true)
+
+        let hooksURL = codexDir.appendingPathComponent("hooks.json")
+        // Not ours: a user script that happens to sit in a directory named
+        // after this app (a plugin, a fork, a notes folder — all plausible).
+        let theirCommand = "/Users/me/tools/zackeyes-helper/notify.sh --codex"
+        let initial = """
+            {"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"\(theirCommand)"}]}]}}
+            """
+        try initial.write(to: hooksURL, atomically: true, encoding: .utf8)
+
+        let installer = CodexHookInstaller(
+            hooksPath: hooksURL.path,
+            bridgePath: "/Users/me/.zackeyes/bin/bridge"
+        )
+        try installer.installHooks()
+        try installer.uninstallHooks()
+
+        let data = try Data(contentsOf: hooksURL)
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let entries = (json["hooks"] as? [String: Any])?["PreToolUse"] as? [[String: Any]]
+        let commands = (entries ?? []).compactMap {
+            (($0["hooks"] as? [[String: Any]])?.first?["command"] as? String)
+        }
+        #expect(commands == [theirCommand],
+                "uninstall deleted a third-party hook it does not own: \(commands)")
+    }
+
     // MARK: - Test 7: empty doc gets removed entirely after uninstall
 
     @Test func uninstallDeletesFileWhenWeOwnedAllOfIt() throws {
