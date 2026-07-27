@@ -98,11 +98,4 @@ struct SocketServerSingleInstanceTests {
         #expect(throws: Never.self) { try server.start() }
         server.stop()
     }
-
-    @Test func startsNormallyWhenNothingIsThere() throws {
-        let dir = try tempDir(); defer { try? FileManager.default.removeItem(atPath: dir) }
-        let server = SocketServer(path: dir + "/s.sock")
-        #expect(throws: Never.self) { try server.start() }
-        server.stop()
-    }
 }

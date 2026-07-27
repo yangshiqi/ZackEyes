@@ -185,15 +185,18 @@ public final class SocketServer {
     /// Stop the server: close server fd and unlink the socket path.
     public func stop() {
         isRunning = false
-        if instanceLockFd >= 0 {
-            close(instanceLockFd)   // releases the flock
-            instanceLockFd = -1
-        }
         if serverFd >= 0 {
             close(serverFd)
             serverFd = -1
         }
         unlink(path)
+        // Release the lock LAST. The other order reopens the exact hole this
+        // lock exists to close: the successor takes the lock and binds its own
+        // node at `path`, and then our unlink deletes it out from under them.
+        if instanceLockFd >= 0 {
+            close(instanceLockFd)   // releases the flock
+            instanceLockFd = -1
+        }
     }
 
     // MARK: - Private
