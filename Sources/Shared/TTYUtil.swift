@@ -5,7 +5,8 @@ import Foundation
 /// so the parsing rules can be unit-tested without running a subprocess.
 public enum TTYUtil {
 
-    /// Pure: transform the raw `ps -o tty=` output into a `/dev/ttys…` path.
+    /// Pure: transform the raw `ps -o tty=` output into a canonical `/dev/`
+    /// pty path (`/dev/ttysN` or `/dev/pts/N`).
     /// Returns nil unless the output names a real pty slave.
     ///
     /// A process with no controlling terminal prints `??` on macOS — measured,
