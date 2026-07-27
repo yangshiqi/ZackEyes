@@ -135,6 +135,15 @@ public final class SocketServer {
             guard sfd >= 0 else { break }
 
             let clientFd = Darwin.accept(sfd, nil, nil)
+            // Same hazard as the bridge side, but the blast radius is the whole
+            // app: writing a permission response to a bridge that already died
+            // would raise SIGPIPE and take the process down. POLLHUP narrows the
+            // window but cannot close it — the peer can vanish between the poll
+            // and the write. EPIPE is handled; a signal is not (#200).
+            if clientFd >= 0 {
+                var on: Int32 = 1
+                setsockopt(clientFd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+            }
             guard clientFd >= 0 else {
                 // accept failed — server may have been stopped
                 continue
@@ -165,15 +174,29 @@ public final class SocketServer {
         var rcvTimeout = timeval(tv_sec: 5, tv_usec: 0)
         _ = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &rcvTimeout,
                        socklen_t(MemoryLayout<timeval>.size))
+        // 64 KiB used to cut a PostToolUse carrying a large `tool_response` mid
+        // object; the fragment was then handed to the decoder, which failed and
+        // closed the fd while the bridge was still writing — that close is what
+        // raised SIGPIPE on the other end (#200). The hook reference puts no
+        // ceiling on `tool_response`, so this is a memory sanity bound, NOT a
+        // protocol limit and NOT a security boundary (a same-uid peer is already
+        // out of the threat model — see peerIsAuthorized). Keep it far above any
+        // plausible payload, and when it IS hit, drop without decoding a
+        // fragment: half an object is never worth guessing at.
+        let maxPayloadBytes = 16 << 20
         var accumulated = Data()
-        var buffer = [UInt8](repeating: 0, count: 4096)
-        while accumulated.count < 65536 {
+        var buffer = [UInt8](repeating: 0, count: 64 * 1024)
+        var sawNewline = false
+        while accumulated.count < maxPayloadBytes {
             let bytesRead = read(fd, &buffer, buffer.count)
             if bytesRead <= 0 { break }
-            accumulated.append(contentsOf: buffer[0..<bytesRead])
-            if accumulated.contains(UInt8(ascii: "\n")) { break }
+            // Scan only what just arrived. Re-scanning `accumulated` each pass
+            // is quadratic, which a multi-megabyte payload feels.
+            let chunk = buffer[0..<bytesRead]
+            accumulated.append(contentsOf: chunk)
+            if chunk.contains(UInt8(ascii: "\n")) { sawNewline = true; break }
         }
-        guard !accumulated.isEmpty else {
+        guard !accumulated.isEmpty, sawNewline else {
             close(fd)
             return
         }
