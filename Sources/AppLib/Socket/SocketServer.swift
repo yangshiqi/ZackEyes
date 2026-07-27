@@ -47,19 +47,35 @@ public final class SocketServer {
     /// lock exactly once and drops it when the holder dies, so crash debris
     /// needs no separate story (#205).
     ///
-    /// The descriptor is deliberately never closed: the lock lives as long as
-    /// the process.
+    /// Known limits, none of which the alternatives avoid: the owner can delete
+    /// the lock file while it is held, which frees the name for a second
+    /// process; and advisory locking is not guaranteed on every volume, so a
+    /// network-mounted home could both fail to serialize and wrongly serialize
+    /// across machines. `flock` is also per open file description, so two
+    /// `SocketServer`s inside ONE process would not block each other — there is
+    /// a single construction path today, and this is the reason to keep it that
+    /// way.
     private func acquireInstanceLock() -> Bool {
         let path = self.path
         let lockPath = path + ".lock"
-        let fd = open(lockPath, O_CREAT | O_RDWR, 0o600)
+        // O_EXLOCK takes the lock in the same call that opens the file, so there
+        // is no window between the two. O_CLOEXEC matters more than it looks:
+        // this process spawns the hook launcher during a self-test, and an
+        // inherited descriptor would keep the lock alive in a child after we
+        // exit. O_NOFOLLOW refuses a symlinked lock path.
+        let fd = open(lockPath, O_CREAT | O_RDWR | O_EXLOCK | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW, 0o600)
         guard fd >= 0 else {
-            // Cannot create the lock — treat as "not ours to take" rather than
-            // proceeding to unlink someone else's socket.
+            // EWOULDBLOCK is the answer we are looking for: someone holds it.
+            // Anything else (a squatted path, a filesystem without advisory
+            // locking) is also a reason not to proceed — unlinking a socket we
+            // cannot prove is ours is the outcome worth avoiding.
             return false
         }
-        while flock(fd, LOCK_EX | LOCK_NB) != 0 {
-            if errno == EINTR { continue }
+        // The fallback socket path lives in shared /tmp, where another uid could
+        // have pre-created this name. A lock file we do not own tells us nothing
+        // about whether a ZackEyes is running.
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_uid == geteuid() else {
             close(fd)
             return false
         }
