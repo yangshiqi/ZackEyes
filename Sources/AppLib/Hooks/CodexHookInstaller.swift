@@ -169,14 +169,14 @@ public struct CodexHookInstaller {
 
     // MARK: - Helpers
 
-    /// True when any hook command in this entry contains "zackeyes" or matches
-    /// the configured bridgePath (so test fixtures using paths without the
-    /// "zackeyes" substring still match).
+    /// True when any hook command in this entry is one of ours. Shares the rule
+    /// with the Claude installer via `HookOwnership` — keeping a second copy
+    /// here is what let #129/F-018 get fixed on one side only (#203).
     func isZackEyesEntry(_ entry: [String: Any]) -> Bool {
         guard let hooks = entry["hooks"] as? [[String: Any]] else { return false }
         return hooks.contains { hook in
             guard let command = hook["command"] as? String else { return false }
-            return command.lowercased().contains("zackeyes") || command.contains(bridgePath)
+            return HookOwnership.isOurs(command: command, bridgePath: bridgePath)
         }
     }
 
