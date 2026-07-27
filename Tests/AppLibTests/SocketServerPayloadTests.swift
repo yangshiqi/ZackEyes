@@ -68,6 +68,46 @@ struct SocketServerPayloadTests {
         }
     }
 
+    /// #205 — the self-test probe has to survive the same trip a real hook
+    /// event takes. This covers everything except AppDelegate's one-line
+    /// absorb-and-return, which needs the running app.
+    @Test func selfTestProbeSurvivesTheRoundTripAndIsRecognisable() async throws {
+        try await withServer { server, path in
+            let received = Box<BridgeEvent>()
+            server.setEventHandler { event, _, _ in received.value = event }
+
+            let sessionId = HookSelfTest.probeSessionPrefix + UUID().uuidString
+            var payload = Data("""
+            {"_bridge_event":"SessionStart","_bridge_agent":"claude","session_id":"\(sessionId)"}
+            """.utf8)
+            payload.append(UInt8(ascii: "\n"))
+            let sent = await Task.detached { BridgeSocketClient(path: path).sendFireAndForget(data: payload) }.value
+            #expect(sent)
+
+            try await waitUntil { received.value != nil }
+            #expect(received.value?.sessionId == sessionId)
+            #expect(HookSelfTest.isProbe(sessionId: received.value?.sessionId) == true,
+                    "the probe arrived but would not be absorbed — it would show as a fake session")
+        }
+    }
+
+    /// The mirror: an ordinary session must NOT be mistaken for a probe and
+    /// swallowed.
+    @Test func anOrdinarySessionIsNotMistakenForAProbe() async throws {
+        try await withServer { server, path in
+            let received = Box<BridgeEvent>()
+            server.setEventHandler { event, _, _ in received.value = event }
+
+            var payload = Data(#"{"_bridge_event":"SessionStart","_bridge_agent":"claude","session_id":"9f2c-real"}"#.utf8)
+            payload.append(UInt8(ascii: "\n"))
+            let sent = await Task.detached { BridgeSocketClient(path: path).sendFireAndForget(data: payload) }.value
+            #expect(sent)
+
+            try await waitUntil { received.value != nil }
+            #expect(HookSelfTest.isProbe(sessionId: received.value?.sessionId) == false)
+        }
+    }
+
     private func waitUntil(
         timeout: Duration = .seconds(5),
         _ condition: @MainActor () -> Bool

@@ -18,6 +18,9 @@ final class SettingsViewModel: ObservableObject {
     @Published private(set) var notifyWaitingForInput: Bool
     @Published private(set) var notchOffsetX: CGFloat
     @Published private(set) var hookHealth: HookHealthReport
+    /// nil until the user runs the pipeline test; `.some(nil)` while it runs.
+    @Published private(set) var selfTestResult: HookSelfTest.Result?
+    @Published private(set) var selfTestRunning = false
 
     @Published private(set) var hasPhysicalNotch: Bool
 
@@ -163,6 +166,23 @@ final class SettingsViewModel: ObservableObject {
     func repairHooks() {
         HookRepair.run(appPath: Bundle.main.bundlePath)
         refreshHookHealth()
+    }
+
+    /// Push one synthetic event through the deployed launcher and see whether it
+    /// comes back. The row-by-row health check reads files and cannot tell a
+    /// working pipeline from a wedged one (#205).
+    func runSelfTest() {
+        guard !selfTestRunning else { return }
+        selfTestRunning = true
+        selfTestResult = nil
+        let launcher = (NSHomeDirectory() as NSString).appendingPathComponent(".zackeyes/bin/bridge")
+        Task { @MainActor in
+            let result = await HookSelfTest(launcherPath: launcher)
+                .run(watcher: NotificationCenterProbeWatcher())
+            selfTestResult = result
+            selfTestRunning = false
+            refreshHookHealth()
+        }
     }
 
     func previewNotificationSound() {

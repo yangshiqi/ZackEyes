@@ -350,9 +350,34 @@ struct SettingsRootView: View {
                 HStack {
                     Button("Refresh") { viewModel.refreshHookHealth() }
                     Button("Repair Hooks") { viewModel.repairHooks() }
+                    Button(viewModel.selfTestRunning ? "Testing..." : "Test Pipeline") {
+                        viewModel.runSelfTest()
+                    }
+                    .disabled(viewModel.selfTestRunning)
                     Spacer()
                 }
                 .padding(.top, 8)
+
+                // The rows above say what is installed; this says whether it
+                // works. Only shown once the user has asked.
+                if let result = viewModel.selfTestResult {
+                    if result.passed {
+                        Text("Pipeline OK — the hook ran and ZackEyes received the event.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                    } else {
+                        VStack(alignment: .leading, spacing: 4) {
+                            ForEach(result.failures, id: \.step) { failure in
+                                Text(failure.detail)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(AppColors.critical.color)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                }
             }
 
             settingsGroup("Support") {
