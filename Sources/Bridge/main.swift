@@ -17,9 +17,27 @@ import Shared
 // missing response as "no hook preference" and falls back to its own
 // default permission prompt.
 
+// A dead pipe must never become a signal: every write we do (socket, stdout,
+// tty) can find its peer gone, and the default SIGPIPE disposition would kill
+// us with exit 141 — which Claude Code renders as a hook error, the exact
+// footprint the contract above forbids. Ignored here so those writes fail with
+// EPIPE and fall into the ordinary silent-exit-0 paths (#200).
+signal(SIGPIPE, SIG_IGN)
+
 // MARK: - Step 1: Read stdin
 
-let inputData = FileHandle.standardInput.availableData
+// Read to EOF, not `availableData`. Claude Code pipes the payload, and a pipe
+// hands over only what is already buffered — measured at 4 KiB here, so any
+// PostToolUse carrying a moderate `tool_response` arrived as half a JSON object,
+// failed to parse, and was dropped without a trace (#200). The write end closing
+// is what ends this read, so the exit-0-on-anything contract above still holds.
+// `readToEnd()` throws; the older `readDataToEndOfFile()` / `availableData`
+// raise an ObjC NSFileHandleOperationException that Swift cannot catch — with a
+// closed stdin that aborts the process with exit 134 and dumps a stack trace to
+// stderr, the loudest possible violation of the contract above (measured).
+guard let inputData = try? FileHandle.standardInput.readToEnd() else {
+    exit(0)
+}
 guard !inputData.isEmpty else {
     exit(0)
 }
@@ -128,7 +146,25 @@ case "PermissionRequest":
     guard (try? JSONDecoder().decode(PermissionResponse.self, from: responseData)) != nil else {
         exit(0)
     }
-    FileHandle.standardOutput.write(responseData)
+    // Raw write(2), not FileHandle.write(_:): if Claude Code closed its end of
+    // our stdout while the user was deciding, the legacy FileHandle API raises
+    // an ObjC exception Swift cannot catch, and an un-ignored SIGPIPE would kill
+    // us with 141 — either way a hook error instead of a clean fall-back (#200).
+    // With SIGPIPE ignored (top of file) this just returns -1/EPIPE and we exit 0.
+    responseData.withUnsafeBytes { raw in
+        var off = 0
+        while off < raw.count {
+            let n = write(STDOUT_FILENO, raw.baseAddress!.advanced(by: off), raw.count - off)
+            if n > 0 { off += n; continue }
+            // A signal can interrupt write(2) after a partial write; giving up
+            // there would leave truncated JSON on stdout, which is worse than
+            // writing nothing — Claude Code would try to parse it. Retry on
+            // EINTR, bail on anything else (EPIPE → exit 0 with a short write,
+            // which CC treats as "no hook preference").
+            if errno == EINTR { continue }
+            break
+        }
+    }
     exit(0)
 
 case "StatusLine":

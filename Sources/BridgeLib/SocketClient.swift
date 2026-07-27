@@ -20,6 +20,15 @@ public struct BridgeSocketClient: Sendable {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return -1 }
 
+        // A fire-and-forget event is dispatched and its fd closed by the app as
+        // soon as it is read, so a payload big enough to need several write()
+        // calls can find the peer already gone mid-send. Without this the second
+        // write raises SIGPIPE and kills the bridge — measured exit 141, which
+        // Claude Code renders as a hook error. With it, write() returns EPIPE
+        // and the normal silent-failure path exits 0 (#200).
+        var on: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
+
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
 

@@ -101,18 +101,13 @@ public enum TerminalTitleWriter {
         let osc   = oscEscape(title: title)
         guard let data = osc.data(using: .utf8) else { return }
 
-        // Open tty, write, close. Every error path is silent.
-        guard let fh = FileHandle(forWritingAtPath: tty) else {
-            NSLog("ZackEyes: TitleWriter open-fail tty=%{public}@ sid=%{public}@", tty, sid)
-            return
-        }
-        do {
-            try fh.write(contentsOf: data)
-            try fh.close()
-            NSLog("ZackEyes: TitleWriter tty=%{public}@ sid=%{public}@ bytes=%d ok=1", tty, sid, data.count)
-        } catch {
-            NSLog("ZackEyes: TitleWriter write-fail tty=%{public}@ sid=%{public}@ err=%{public}@", tty, sid, "\(error)")
-        }
+        // Open tty, write, close. Every path here is silent, including the happy
+        // one: this runs inside the bridge, and NSLog goes to stderr, which
+        // Claude Code surfaces as hook noise (#201). The contract is stated at
+        // the top of Bridge/main.swift — no stdout, no stderr, ever.
+        guard let fh = FileHandle(forWritingAtPath: tty) else { return }
+        try? fh.write(contentsOf: data)
+        try? fh.close()
     }
 }
 

@@ -6,11 +6,19 @@ import Foundation
 public enum TTYUtil {
 
     /// Pure: transform the raw `ps -o tty=` output into a `/dev/ttys…` path.
-    /// Returns nil for empty, whitespace-only, or `?` (no controlling tty).
+    /// Returns nil unless the output names a real pty slave.
+    ///
+    /// A process with no controlling terminal prints `??` on macOS — measured,
+    /// not assumed — which the previous `!= "?"` guard let through and turned
+    /// into `/dev/??` (#204). Rather than chase each sentinel, accept only the
+    /// two shapes a pty slave actually has. That also keeps the value safe for
+    /// the AppleScript interpolation in `TerminalLocator`, which embeds it into
+    /// source text.
     public static func parseTTYOutput(_ raw: String) -> String? {
-        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, trimmed != "?" else { return nil }
-        if trimmed.hasPrefix("/dev/") { return trimmed }
+        var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasPrefix("/dev/") { trimmed.removeFirst("/dev/".count) }
+        let isPtySlave = trimmed.range(of: #"^(ttys[0-9]+|pts/[0-9]+)$"#, options: .regularExpression) != nil
+        guard isPtySlave else { return nil }
         return "/dev/\(trimmed)"
     }
 
