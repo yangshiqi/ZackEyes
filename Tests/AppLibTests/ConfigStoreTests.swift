@@ -387,4 +387,44 @@ final class ConfigStoreTests: XCTestCase {
         XCTAssertFalse(store.loadNotifyWaitingForInput())
     }
 
+    // MARK: - #205: config.json durability
+
+    /// settings.json has had timestamped backups for a while; config.json had
+    /// none at all, so a bad write left nothing to fall back on.
+    func test_saveKeepsABackupOfThePreviousContents() throws {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveTheme(.rock)
+        store.saveTheme(.f1)
+
+        let backup = tmpDir.appendingPathComponent("config.json.backup")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.path),
+                      "no backup written before overwriting config.json")
+        let restored = String(decoding: try Data(contentsOf: backup), as: UTF8.self)
+        XCTAssertTrue(restored.contains("rock"), "backup does not hold the PREVIOUS value: \(restored)")
+        XCTAssertEqual(ConfigStore(directory: tmpDir.path).loadTheme(), .f1)
+    }
+
+    /// Saving the same value twice must not churn the backup — otherwise the
+    /// one copy we keep gets overwritten with an identical one and the real
+    /// previous value is lost.
+    func test_savingAnUnchangedValueLeavesTheBackupAlone() throws {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveTheme(.rock)
+        store.saveTheme(.f1)
+        let backup = tmpDir.appendingPathComponent("config.json.backup")
+        let afterFirst = try Data(contentsOf: backup)
+
+        store.saveTheme(.f1)   // no-op
+
+        XCTAssertEqual(try Data(contentsOf: backup), afterFirst,
+                       "a no-op save rewrote the backup")
+    }
+
+    func test_configFileIsOwnerOnly() throws {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveTheme(.f1)
+        let mode = try FileManager.default
+            .attributesOfItem(atPath: tmpDir.appendingPathComponent("config.json").path)[.posixPermissions] as? Int
+        XCTAssertEqual(mode, 0o600)
+    }
 }

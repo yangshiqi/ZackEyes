@@ -1,4 +1,5 @@
 import Foundation
+import Shared
 
 public struct HookInstaller {
 
@@ -484,10 +485,9 @@ public struct HookInstaller {
             withJSONObject: settings,
             options: [.prettyPrinted, .sortedKeys]
         )
-        // #129/F-021 — if settings.json is a symlink (some users link ~/.claude
-        // into a dotfiles repo), write to its TARGET so the atomic rename
-        // replaces the real file, not the link itself with a regular file.
-        let target = url.resolvingSymlinksInPath()
-        try data.write(to: target, options: .atomic)
+        // Symlink handling (#129/F-021 — some users link ~/.claude into a
+        // dotfiles repo) and the fsync now live in AtomicFileWriter, shared with
+        // ConfigStore and the Codex installer (#205).
+        try AtomicFileWriter.write(data, to: url.path)
     }
 }
