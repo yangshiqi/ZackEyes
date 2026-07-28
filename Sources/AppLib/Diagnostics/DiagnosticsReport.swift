@@ -54,7 +54,11 @@ public enum DiagnosticsReport {
         _ events: [EventTraceEntry], redactor: Redactor
     ) -> [String] {
         guard !events.isEmpty else { return ["No events recorded yet."] }
-        var out = ["(oldest first, times UTC; `replayed` = arrived while ZackEyes was closed)"]
+        var out = [
+            "(oldest first, times UTC; `replayed` = arrived while ZackEyes was closed.",
+            " Routine `applied` events are pruned first, so time gaps are expected —",
+            " decisions are kept far longer than the routine traffic around them.)"
+        ]
         for e in events {
             var parts = [
                 clockTime(e.at),

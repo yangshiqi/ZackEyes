@@ -29,6 +29,35 @@ struct EventTraceTests {
         #expect(t.entries.last?.session == "sess\(EventTrace.capacity + 4)")
     }
 
+    /// The property the whole feature depends on: a live export showed ~149
+    /// routine events for every one that carried a decision, so a plain FIFO
+    /// discards the incident long before the user gets around to exporting.
+    @Test func routineTrafficIsPrunedBeforeDecisionBearingEvents() {
+        let t = EventTrace()
+        t.record(
+            agent: "claude", event: "PermissionRequest", tool: "Bash",
+            session: "decision", replayed: false,
+            at: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        t.note(.dropped("no responder"))
+
+        // Flood well past the total capacity, so a plain FIFO would certainly
+        // have evicted the decision above.
+        for i in 1...(EventTrace.capacity + 50) {
+            t.record(
+                agent: "claude", event: "PostToolUse", tool: "Bash",
+                session: "noise\(i)", replayed: false,
+                at: Date(timeIntervalSince1970: 1_700_000_000 + Double(i))
+            )
+            t.note(.applied)
+        }
+
+        #expect(t.entries.contains { $0.session == "decision" })
+        #expect(t.entries.first?.disposition == .dropped("no responder"))
+        // And the noise it survived stays bounded.
+        #expect(t.entries.filter { $0.disposition == .applied }.count <= EventTrace.routineCapacity)
+    }
+
     @Test func arrivingEventsStartUnclassified() {
         let t = trace(1)
         #expect(t.entries.first?.disposition == .received)

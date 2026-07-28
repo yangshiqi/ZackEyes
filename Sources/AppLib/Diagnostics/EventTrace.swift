@@ -66,18 +66,28 @@ public final class EventTrace {
     /// be more plumbing than the feature is worth.
     public static let shared = EventTrace()
 
-    /// cc-island keeps 20 and 30 looked generous next to it — until a live
-    /// run showed two concurrent sessions filling all 30 slots in about 50
-    /// seconds. Every tool call is two events (Pre + PostToolUse) plus
-    /// StatusLine, multiplied by however many sessions are open, so our event
-    /// rate is an order of magnitude above theirs. The user exports the report
-    /// *after* noticing a missing notification, so a buffer that only spans a
-    /// minute has already discarded the incident by the time anyone looks.
+    /// Total entries retained.
     ///
-    /// 150 entries is roughly five minutes of two busy sessions and costs a
-    /// few tens of KB. Raise it again if real reports keep arriving with the
-    /// evidence already evicted.
+    /// Sizing this was measured, not guessed. cc-island keeps 20; 30 looked
+    /// generous next to it until a live export showed two concurrent sessions
+    /// filling all 30 slots in about 50 seconds — every tool call is two
+    /// events (Pre + PostToolUse) plus StatusLine, times however many sessions
+    /// are open. Raising it to 150 bought five minutes, and that export showed
+    /// the real problem: 149 of the 150 lines were routine `.applied`, and
+    /// exactly one carried a decision. Simply growing the buffer would need
+    /// ~900 entries to hold half an hour and would produce a report nobody
+    /// reads.
     public static let capacity = 150
+
+    /// Of that total, the most routine `.applied` entries kept.
+    ///
+    /// `.applied` means "state moved, nothing user-visible" — worth a little
+    /// context, worthless in bulk. Capping it separately is what lets the
+    /// decision-bearing entries (prompted / dropped / suppressed / notified),
+    /// which arrive orders of magnitude more rarely, survive long enough to
+    /// still be there when the user exports the report *after* noticing that
+    /// a notification never came.
+    public static let routineCapacity = 30
 
     public private(set) var entries: [EventTraceEntry] = []
 
@@ -128,5 +138,12 @@ public final class EventTrace {
     public func note(_ disposition: EventDisposition) {
         guard !entries.isEmpty else { return }
         entries[entries.count - 1].disposition = disposition
+        // Prune here rather than on arrival: routine-ness is only known once
+        // the verdict is in, so trimming after classification keeps the bound
+        // exact instead of overshooting by the entry currently being routed.
+        while entries.lazy.filter({ $0.disposition == .applied }).count > Self.routineCapacity,
+              let oldestRoutine = entries.firstIndex(where: { $0.disposition == .applied }) {
+            entries.remove(at: oldestRoutine)
+        }
     }
 }
