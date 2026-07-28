@@ -50,7 +50,10 @@ make clean
 4. **Socket 连接不复用** — 每次 hook 调用创建新连接，用完即关。防止连接泄漏和状态混淆。
 5. **Hook 配置可识别** — 注入到 `settings.json` / `hooks.json` 的 hook entries，command 路径必须包含 `zackeyes` 字符串 + 显式 `--agent claude|codex` flag，用于安全移除时精确匹配。Bridge 缺 `--agent` 时默认 `claude`，保证老 hook entry 升级时不掉链。
 6. **零第三方依赖** — MVP 阶段只使用 Foundation + AppKit + SwiftUI。不引入 Sentry、Sparkle、CocoaPods、SPM 外部包。
-7. **Codex 路径不进 LivenessFilter cwd 检测** — `LivenessFilter.filterLiveDetected` 和 `runLivenessSweep` 的 cwd→进程 map 是 claude-only（`runningClaudeCwds`），喂 codex session 进去会全部判死。Codex 有自己的 idle-time 剪枝路径（15 min 无 `lastActiveAt` 更新即剪）。任何动 LivenessFilter 的改动必须保持 codex 旁路或显式给 codex 加进程检测。
+7. **存活判定必须按 agent 取各自的信号** — `runLivenessSweep` 和 `LivenessFilter.filterLiveDetected` 对两个 agent 分别取快照（`runningClaudeCwds` / `runningClaudePidSet` ↔ `runningCodexCwds` / `runningCodexPidSet`）。把一个 agent 的 session 喂进另一个 agent 的 map/PID set 会**全部判死**。另有三条不能破：
+   - **codex `cwd == nil` 的 session 保留 15 min idle 兜底剪枝** —— 它进不了 ps 路径，删掉这条兜底，codex TUI 退出后卡片永不消失。
+   - **只有来自 hook `_bridge_ppid` 的 PID 有判活权**（`claudePidFromHook`）。`activateDetectedSessions` 会按 cwd 猜一个同目录的 agent 进程填进 `claudePid`，那个猜测值只能用于终端跳转；拿它判活会让「猜错的兄弟进程退出」剪掉活会话（#217）。
+   - **任一快照返回 `nil`（ps/lsof 失败）时一律保守留人** —— 尤其不能把有 PID 的 session 改判到 cwd 启发式上，那等于把 #217 放回来。下一个 tick 重试即可。
 
 ## Design Principles
 

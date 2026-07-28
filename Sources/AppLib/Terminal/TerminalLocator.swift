@@ -117,6 +117,24 @@ public enum TerminalLocator {
         return counts
     }
 
+    /// The set of PIDs that are agent processes right now (#217).
+    ///
+    /// This is the exact liveness signal the cwd maps above only approximate:
+    /// a session records the PID of the agent that ran its hooks, so
+    /// membership here answers "is that session's agent still running?"
+    /// outright. Because the set contains only processes that *are* agents,
+    /// a PID recycled by some unrelated program reads as dead, correctly.
+    ///
+    /// Same nil contract as the cwd maps: `nil` means the `ps` snapshot
+    /// failed, and the caller must evict nothing.
+    public static func runningClaudePidSet() -> Set<Int>? {
+        runningClaudePids().map(Set.init)
+    }
+
+    public static func runningCodexPidSet() -> Set<Int>? {
+        runningAgentPids(.codex).map(Set.init)
+    }
+
     public static func runningClaudeCwds() -> [String: Int]? {
         guard let pids = runningClaudePids() else { return nil }
         let cwdMap = batchProcessCwds(pids: pids)

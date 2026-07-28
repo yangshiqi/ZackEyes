@@ -470,12 +470,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let claudeCandidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
             guard s.agent == .claude else { return nil }
             guard let cwd = s.cwd, s.pendingPermission == nil else { return nil }
-            return LivenessFilter.PruneCandidate(id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt)
+            return LivenessFilter.PruneCandidate(
+                id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt, pid: s.claudePidFromHook ? s.claudePid : nil)
         }
         let codexCandidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
             guard s.agent == .codex else { return nil }
             guard let cwd = s.cwd, s.pendingPermission == nil else { return nil }
-            return LivenessFilter.PruneCandidate(id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt)
+            return LivenessFilter.PruneCandidate(
+                id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt, pid: s.claudePidFromHook ? s.claudePid : nil)
         }
 
         // Codex sessions with `cwd == nil` (session_meta not yet written, or
@@ -506,11 +508,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let graceCutoff = Date().addingTimeInterval(-90)
             var deadIds = Set<String>()
 
+            // #217 — each agent's live PID set is the exact signal for the
+            // sessions we learned a PID for; the cwd map stays for the rest.
             if !claudeCandidates.isEmpty {
                 let cwdCounts = TerminalLocator.runningClaudeCwds()
                 deadIds.formUnion(LivenessFilter.computeDeadIds(
                     candidates: claudeCandidates,
                     cwdCounts: cwdCounts,
+                    livePids: TerminalLocator.runningClaudePidSet(),
                     graceCutoff: graceCutoff
                 ))
             }
@@ -519,6 +524,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 deadIds.formUnion(LivenessFilter.computeDeadIds(
                     candidates: codexCandidates,
                     cwdCounts: cwdCounts,
+                    livePids: TerminalLocator.runningCodexPidSet(),
                     graceCutoff: graceCutoff
                 ))
             }
@@ -526,8 +532,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard !deadIds.isEmpty else { return }
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                self.sessionStore.removeSessions(ids: deadIds)
-                NSLog("ZackEyes: liveness sweep pruned %d dead sessions", deadIds.count)
+                // The verdict was computed from a snapshot taken before the
+                // `ps` calls ran, but removal happens by id. Anything that
+                // became active in between — a hook landing mid-sweep, or the
+                // same session id being resumed — must not be deleted on the
+                // strength of a stale reading. Re-check against the same
+                // cutoff the decision used.
+                let stillIdle = deadIds.filter { id in
+                    guard let s = self.sessionStore.sessions[id] else { return false }
+                    return s.lastActiveAt <= graceCutoff
+                }
+                guard !stillIdle.isEmpty else { return }
+                self.sessionStore.removeSessions(ids: stillIdle)
+                NSLog("ZackEyes: liveness sweep pruned %d dead sessions", stillIdle.count)
             }
         }
     }

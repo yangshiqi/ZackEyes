@@ -1379,3 +1379,98 @@ struct SessionStoreTests {
     }
 
 }
+
+/// #217 — `handleEvent`'s switch only refreshed `lastActiveAt` inside the
+/// cases it handles, so an event it has no case for (SubagentStop today,
+/// whatever Claude Code adds tomorrow) threw away proof that the agent is
+/// alive. The liveness sweep, whose grace window is 90s, then evicted live
+/// sessions during ordinary think-time.
+@MainActor
+struct SessionActivityRefreshTests {
+
+    @Test func anEventWithNoCaseStillCountsAsProofOfLife() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+
+        // Backdate it well past the sweep's grace window.
+        let stale = Date().addingTimeInterval(-600)
+        store.sessions["s1"]?.lastActiveAt = stale
+
+        store.handleEvent(BridgeEvent(bridgeEvent: "SubagentStop", sessionId: "s1", cwd: "/tmp"))
+
+        let refreshed = try? #require(store.sessions["s1"]?.lastActiveAt)
+        #expect(refreshed.map { $0 > stale } == true)
+    }
+
+    /// The refresh must not conjure sessions the store never knew about —
+    /// that is the separate `dropped (session not tracked)` path.
+    @Test func theRefreshDoesNotCreateUnknownSessions() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SubagentStop", sessionId: "ghost", cwd: "/tmp"))
+        #expect(store.sessions["ghost"] == nil)
+    }
+}
+
+/// #217 / codex review — only a PID that came from a hook identifies THIS
+/// session's agent. `activateDetectedSessions` guesses one by cwd, and if a
+/// guess were allowed to decide liveness, a sibling agent exiting would evict
+/// a live session: the original bug wearing a new hat.
+@MainActor
+struct ClaudePidProvenanceTests {
+
+    @Test func aPidGuessedByCwdIsNotMarkedAsComingFromAHook() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        // What activateDetectedSessions does: fill in a discovered PID.
+        store.sessions["s1"]?.claudePid = 9999
+        #expect(store.sessions["s1"]?.claudePidFromHook == false)
+    }
+
+    @Test func aHookPidOverwritesAnEarlierGuessAndClaimsProvenance() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        store.sessions["s1"]?.claudePid = 9999          // guessed sibling
+
+        store.handleEvent(
+            BridgeEvent(bridgeEvent: "PreToolUse", sessionId: "s1", cwd: "/tmp", bridgePpid: 4242))
+
+        #expect(store.sessions["s1"]?.claudePid == 4242)
+        #expect(store.sessions["s1"]?.claudePidFromHook == true)
+    }
+}
+
+/// codex review of #217 — when the user already has a statusLine of their own,
+/// `deployStatusLineMux` runs the bridge as a background pipeline member
+/// (`… | bridge … &`), so its ppid is the mux shell, not the agent. Trusting
+/// it would overwrite the real PID with one that dies seconds later — and the
+/// PID-based sweep would then evict the live session, which is the very bug
+/// #217 set out to fix.
+@MainActor
+struct StatusLineMuxPidTests {
+
+    @Test func aStatusLinePpidNeverReplacesTheAgentPid() {
+        let store = SessionStore()
+        store.handleEvent(
+            BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp", bridgePpid: 4242))
+        #expect(store.sessions["s1"]?.claudePid == 4242)
+
+        // The mux shell's transient pid arrives on a StatusLine event.
+        store.handleEvent(
+            BridgeEvent(bridgeEvent: "StatusLine", sessionId: "s1", cwd: "/tmp", bridgePpid: 777))
+
+        #expect(store.sessions["s1"]?.claudePid == 4242)
+        #expect(store.sessions["s1"]?.claudePidFromHook == true)
+    }
+
+    /// It is still proof of life — the agent is rendering right now.
+    @Test func aStatusLineEventStillRefreshesActivity() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        let stale = Date().addingTimeInterval(-600)
+        store.sessions["s1"]?.lastActiveAt = stale
+
+        store.handleEvent(BridgeEvent(bridgeEvent: "StatusLine", sessionId: "s1", cwd: "/tmp"))
+
+        #expect((store.sessions["s1"]?.lastActiveAt).map { $0 > stale } == true)
+    }
+}

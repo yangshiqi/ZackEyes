@@ -74,11 +74,25 @@ public enum LivenessFilter {
         public let id: String
         public let cwd: String
         public let lastActiveAt: Date
+        /// The agent process that owns this session, captured from the
+        /// bridge's `getppid()`. Claude Code and Codex both run hooks through
+        /// a chain that `exec`s all the way down (`sh -c` → launcher →
+        /// bridge), so it collapses to a single process whose parent is the
+        /// agent itself — meaning this is the agent's real PID, not a
+        /// short-lived shell's.
+        ///
+        /// Pass `nil` unless the PID came from a hook. A session found by
+        /// transcript scanning may also carry a PID, but that one is a guess
+        /// (some agent process sharing its cwd), and letting a guessed
+        /// sibling's exit decide this session's fate would reintroduce the
+        /// eviction of live sessions in a new disguise.
+        public let pid: Int?
 
-        public init(id: String, cwd: String, lastActiveAt: Date) {
+        public init(id: String, cwd: String, lastActiveAt: Date, pid: Int? = nil) {
             self.id = id
             self.cwd = cwd
             self.lastActiveAt = lastActiveAt
+            self.pid = pid
         }
     }
 
@@ -86,38 +100,73 @@ public enum LivenessFilter {
     ///
     /// Rules, applied in order:
     ///
-    /// 1. **Snapshot failure → no eviction.** If `cwdCounts` is `nil`, the
-    ///    `ps`/`lsof` snapshot failed (transient subprocess error, missing
-    ///    entitlement, etc.). Evict nothing rather than risk wiping the
-    ///    panel; the next sweep will retry. An *empty but non-nil* dict
-    ///    is treated as legitimate "no claudes running" — every candidate
-    ///    is eligible for eviction (subject to the grace period).
+    /// 1. **Snapshot failure → no eviction, per signal.** A `nil` snapshot
+    ///    means that `ps`/`lsof` call failed (transient subprocess error,
+    ///    missing entitlement, etc.), so the candidates that depend on it are
+    ///    kept and the next sweep retries. The two snapshots fail
+    ///    independently: a `nil` `cwdCounts` disables only the cwd fallback,
+    ///    and a `nil` `livePids` disables only the PID rule. An *empty but
+    ///    non-nil* value is a legitimate "nothing is running" and does make
+    ///    its candidates eligible (subject to the grace period).
     /// 2. **Recent activity grace period** — sessions whose `lastActiveAt`
     ///    is newer than `graceCutoff` are kept regardless of cwd matching.
     ///    Hooks firing this minute is irrefutable proof of life and
     ///    overrides any cwd disagreement (symlink edge cases, subdirectory
     ///    mismatches, transient cwd drift).
-    /// 3. **Top-N per cwd** — within each cwd group, sort by `lastActiveAt`
-    ///    desc and keep the top `cwdCounts[cwd]` entries. Anything below
-    ///    that watermark is presumed dead and evicted.
+    /// 3. **Known PID decides, exactly** (#217). If the candidate carries a
+    ///    `pid` and `livePids` is available, membership in that set is the
+    ///    whole answer: present → alive, absent → dead. `livePids` holds only
+    ///    PIDs that are *currently agent processes*, so a recycled PID picked
+    ///    up by some unrelated program does not resurrect a dead session.
+    ///    This replaces the counting heuristic for every hooked session,
+    ///    which is what stopped live sessions being evicted whenever the
+    ///    agent's real cwd disagreed with the one its hooks reported.
+    /// 4. **Top-N per cwd** — the fallback for candidates with no PID (found
+    ///    by transcript scanning rather than hooks). Within each cwd group,
+    ///    sort by `lastActiveAt` desc and keep the top `cwdCounts[cwd]`
+    ///    entries. Anything below that watermark is presumed dead.
     public static func computeDeadIds(
         candidates: [PruneCandidate],
         cwdCounts: [String: Int]?,
+        livePids: Set<Int>? = nil,
         graceCutoff: Date
     ) -> Set<String> {
-        guard let cwdCounts = cwdCounts else { return [] }
+        var deadIds = Set<String>()
+        var cwdFallback: [PruneCandidate] = []
+        for c in candidates {
+            // Rule 2 first — recent hook traffic outranks every other signal.
+            guard c.lastActiveAt <= graceCutoff else { continue }
+            if let pid = c.pid {
+                // A PID-bearing candidate is NEVER sent to the cwd heuristic.
+                // The two snapshots come from separate `ps` runs, so the PID
+                // one can fail while the cwd one succeeded; falling back then
+                // would re-enable the exact eviction this fix exists to stop.
+                // No signal this sweep means keep it and retry next tick.
+                guard let livePids else { continue }
+                if !livePids.contains(pid) { deadIds.insert(c.id) }
+            } else {
+                cwdFallback.append(c)
+            }
+        }
+
+        // A failed cwd snapshot disables the cwd fallback and nothing else.
+        // The PID-bearing candidates above were already decided from the
+        // separate `livePids` snapshot; gating them on an unrelated failure
+        // would keep a confirmed-dead session alive for another sweep and
+        // contradict the independence rule 3 promises (CodeRabbit).
+        guard let cwdCounts else { return deadIds }
 
         var grouped: [String: [PruneCandidate]] = [:]
-        for c in candidates {
+        for c in cwdFallback {
             grouped[canonicalize(c.cwd), default: []].append(c)
         }
 
-        var deadIds = Set<String>()
         for (cwd, group) in grouped {
             let liveCount = cwdCounts[cwd] ?? 0
             let sortedDesc = group.sorted { $0.lastActiveAt > $1.lastActiveAt }
+            // The grace check already happened above, so everything here is
+            // outside the window.
             for (idx, c) in sortedDesc.enumerated() where idx >= liveCount {
-                if c.lastActiveAt > graceCutoff { continue }   // recent hooks = trusted alive
                 deadIds.insert(c.id)
             }
         }
