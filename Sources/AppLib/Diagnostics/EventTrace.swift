@@ -66,9 +66,18 @@ public final class EventTrace {
     /// be more plumbing than the feature is worth.
     public static let shared = EventTrace()
 
-    /// cc-island keeps 20. 30 covers a permission plus the whole turn around
-    /// it without turning the report into something nobody reads.
-    public static let capacity = 30
+    /// cc-island keeps 20 and 30 looked generous next to it — until a live
+    /// run showed two concurrent sessions filling all 30 slots in about 50
+    /// seconds. Every tool call is two events (Pre + PostToolUse) plus
+    /// StatusLine, multiplied by however many sessions are open, so our event
+    /// rate is an order of magnitude above theirs. The user exports the report
+    /// *after* noticing a missing notification, so a buffer that only spans a
+    /// minute has already discarded the incident by the time anyone looks.
+    ///
+    /// 150 entries is roughly five minutes of two busy sessions and costs a
+    /// few tens of KB. Raise it again if real reports keep arriving with the
+    /// evidence already evicted.
+    public static let capacity = 150
 
     public private(set) var entries: [EventTraceEntry] = []
 
