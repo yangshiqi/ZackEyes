@@ -39,7 +39,12 @@ describe('Astro site contract', () => {
     assert.equal(existsSync(join(root, 'src/styles/global.css')), true);
 
     const pkg = JSON.parse(read('package.json'));
-    assert.match(pkg.dependencies.astro, /^\^6\./);
+    // Astro 7: bumped by the dependabot security group in #219, and the pin
+    // is updated deliberately rather than loosened. This assertion exists to
+    // catch an ACCIDENTAL framework swap, so it stays major-pinned — it did
+    // its job here, blocking the v0.9.4 release until a human confirmed the
+    // major bump builds and deploys (it does: 9 pages, Vercel green).
+    assert.match(pkg.dependencies.astro, /^\^7\./);
     assert.match(pkg.dependencies.react, /^\^19\./);
     assert.match(pkg.dependencies.tailwindcss, /^\^4\./);
 
