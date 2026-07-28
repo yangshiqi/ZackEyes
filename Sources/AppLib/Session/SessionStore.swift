@@ -88,6 +88,13 @@ public struct SessionInfo: Identifiable {
     public var source: SessionSource = .live
     public var tasks: [TaskItem] = []
     public var claudePid: Int?   // PID of the claude/codex process (from bridge ppid)
+    /// Whether `claudePid` came from a hook (`_bridge_ppid`, the agent that
+    /// actually ran it) rather than from `activateDetectedSessions`, which
+    /// guesses by picking some agent process sharing the cwd. Only the former
+    /// identifies THIS session's owner, so only the former may decide
+    /// liveness (#217) — a guessed sibling exiting must never evict a live
+    /// session. Terminal jump is happy with either.
+    public var claudePidFromHook: Bool = false
     public var transcriptPath: String?  // Path to the JSONL transcript file (for lsof lookup)
     public var errorMessage: String?
     public var errorAt: Date?
@@ -292,6 +299,16 @@ public final class SessionStore: ObservableObject {
     public func handleEvent(_ event: BridgeEvent) {
         guard let sid = event.sessionId else { return }
 
+        // #217 — any hook event naming a session is proof that agent is
+        // alive, whatever the event happens to be. The switch below only
+        // refreshes `lastActiveAt` inside the cases it handles, so an event
+        // it has no case for (SubagentStop today, and whatever a future
+        // Claude Code adds tomorrow) threw that proof away — and the liveness
+        // sweep, whose grace window is 90s, then judged a live session dead.
+        if sessions[sid] != nil {
+            sessions[sid]?.lastActiveAt = Date()
+        }
+
         // Any live hook event upgrades a detected session to live
         if let existing = sessions[sid], existing.source == .detected {
             upgradeToLive(sessionId: sid)
@@ -306,6 +323,7 @@ public final class SessionStore: ObservableObject {
         case "SessionStart":
             var newSession = SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             newSession.claudePid = event.bridgePpid
+            newSession.claudePidFromHook = event.bridgePpid != nil
             // #181 — SessionStart(source:"compact") is a mid-session
             // administrative restart, not a new conversation, and its order
             // vs PostCompact is not guaranteed. Preserve the in-flight
@@ -479,8 +497,14 @@ public final class SessionStore: ObservableObject {
         // dies at GUARD-4 because KeystrokeInjector has no terminal pid.
         if var existing = sessions[sid] {
             var dirty = false
-            if let ppid = event.bridgePpid, existing.claudePid == nil {
+            // A hook's ppid is the agent that ran it, so it outranks whatever
+            // is stored — including a PID `activateDetectedSessions` guessed
+            // by cwd. Previously this only filled a nil, leaving a guess
+            // uncorrected forever (#217).
+            if let ppid = event.bridgePpid,
+               existing.claudePid != ppid || !existing.claudePidFromHook {
                 existing.claudePid = ppid
+                existing.claudePidFromHook = true
                 dirty = true
             }
             if let tp = event.transcriptPath, existing.transcriptPath == nil {
@@ -932,6 +956,7 @@ public final class SessionStore: ObservableObject {
             // mtime bump must not put an already-activated session back into
             // the re-lsof / re-title path.
             session.claudePid = sessions[d.id]?.claudePid
+            session.claudePidFromHook = sessions[d.id]?.claudePidFromHook ?? false
             sessions[d.id] = session
             imported += 1
         }

@@ -470,12 +470,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let claudeCandidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
             guard s.agent == .claude else { return nil }
             guard let cwd = s.cwd, s.pendingPermission == nil else { return nil }
-            return LivenessFilter.PruneCandidate(id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt)
+            return LivenessFilter.PruneCandidate(
+                id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt, pid: s.claudePidFromHook ? s.claudePid : nil)
         }
         let codexCandidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
             guard s.agent == .codex else { return nil }
             guard let cwd = s.cwd, s.pendingPermission == nil else { return nil }
-            return LivenessFilter.PruneCandidate(id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt)
+            return LivenessFilter.PruneCandidate(
+                id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt, pid: s.claudePidFromHook ? s.claudePid : nil)
         }
 
         // Codex sessions with `cwd == nil` (session_meta not yet written, or
@@ -506,11 +508,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let graceCutoff = Date().addingTimeInterval(-90)
             var deadIds = Set<String>()
 
+            // #217 — each agent's live PID set is the exact signal for the
+            // sessions we learned a PID for; the cwd map stays for the rest.
             if !claudeCandidates.isEmpty {
                 let cwdCounts = TerminalLocator.runningClaudeCwds()
                 deadIds.formUnion(LivenessFilter.computeDeadIds(
                     candidates: claudeCandidates,
                     cwdCounts: cwdCounts,
+                    livePids: TerminalLocator.runningClaudePidSet(),
                     graceCutoff: graceCutoff
                 ))
             }
@@ -519,6 +524,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 deadIds.formUnion(LivenessFilter.computeDeadIds(
                     candidates: codexCandidates,
                     cwdCounts: cwdCounts,
+                    livePids: TerminalLocator.runningCodexPidSet(),
                     graceCutoff: graceCutoff
                 ))
             }

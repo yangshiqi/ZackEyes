@@ -219,3 +219,109 @@ struct LivenessFilterTests {
         )
     }
 }
+
+// MARK: - PID-based liveness (#217)
+
+/// The bug these cover: a session's cwd as reported by its hooks and the cwd
+/// its process actually holds can disagree (worktrees, a directory deleted
+/// under a running agent, a `cd` mid-session). The counting heuristic then
+/// judged a perfectly live session dead as soon as it went 90s without a
+/// hook — which is just the user reading output or typing.
+struct LivenessPidTests {
+
+    private let now = Date()
+    private var graceCutoff: Date { now.addingTimeInterval(-90) }
+    private var stale: Date { now.addingTimeInterval(-300) }
+
+    @Test func aSessionWhoseAgentIsStillRunningSurvivesACwdWithNoProcesses() {
+        let dead = LivenessFilter.computeDeadIds(
+            candidates: [
+                LivenessFilter.PruneCandidate(
+                    id: "live", cwd: "/deleted/worktree", lastActiveAt: stale, pid: 4242)
+            ],
+            cwdCounts: [:],          // no process claims that cwd — the old death sentence
+            livePids: [4242],        // but the agent is demonstrably running
+            graceCutoff: graceCutoff
+        )
+        #expect(dead.isEmpty)
+    }
+
+    @Test func aSessionWhoseAgentExitedIsEvictedEvenIfItsCwdLooksBusy() {
+        let dead = LivenessFilter.computeDeadIds(
+            candidates: [
+                LivenessFilter.PruneCandidate(
+                    id: "gone", cwd: "/repo", lastActiveAt: stale, pid: 111)
+            ],
+            cwdCounts: ["/repo": 5],   // plenty of processes, none of them ours
+            livePids: [222, 333],
+            graceCutoff: graceCutoff
+        )
+        #expect(dead == ["gone"])
+    }
+
+    /// Sessions found by transcript scanning never ran a hook, so they have
+    /// no PID and must keep the old behaviour.
+    @Test func candidatesWithoutAPidStillUseTheCwdHeuristic() {
+        let dead = LivenessFilter.computeDeadIds(
+            candidates: [
+                LivenessFilter.PruneCandidate(id: "newer", cwd: "/repo", lastActiveAt: stale),
+                LivenessFilter.PruneCandidate(
+                    id: "older", cwd: "/repo", lastActiveAt: now.addingTimeInterval(-600))
+            ],
+            cwdCounts: ["/repo": 1],   // room for exactly one
+            livePids: [999],
+            graceCutoff: graceCutoff
+        )
+        #expect(dead == ["older"])
+    }
+
+    /// The PID and cwd snapshots are separate `ps` runs, so the PID one can
+    /// fail while the cwd one succeeded. A PID-bearing session must then be
+    /// KEPT, not quietly handed back to the heuristic that caused #217 — note
+    /// the cwd map here is empty, so a fallback would evict it.
+    @Test func aFailedPidSnapshotKeepsTheSessionInsteadOfFallingBackToCwd() {
+        let dead = LivenessFilter.computeDeadIds(
+            candidates: [
+                LivenessFilter.PruneCandidate(
+                    id: "s", cwd: "/repo", lastActiveAt: stale, pid: 111)
+            ],
+            cwdCounts: [:],
+            livePids: nil,
+            graceCutoff: graceCutoff
+        )
+        #expect(dead.isEmpty)
+    }
+
+    /// A hook that fired seconds ago outranks everything, including a PID we
+    /// can no longer find — the agent may have exited right after it.
+    @Test func recentHookTrafficOutranksAMissingPid() {
+        let dead = LivenessFilter.computeDeadIds(
+            candidates: [
+                LivenessFilter.PruneCandidate(
+                    id: "s", cwd: "/repo", lastActiveAt: now, pid: 111)
+            ],
+            cwdCounts: [:],
+            livePids: [],
+            graceCutoff: graceCutoff
+        )
+        #expect(dead.isEmpty)
+    }
+
+    /// Mixed fleets are the normal case; each candidate must be judged by the
+    /// signal it actually has.
+    @Test func pidAndCwdCandidatesAreJudgedIndependently() {
+        let dead = LivenessFilter.computeDeadIds(
+            candidates: [
+                LivenessFilter.PruneCandidate(
+                    id: "hooked-live", cwd: "/repo", lastActiveAt: stale, pid: 1),
+                LivenessFilter.PruneCandidate(
+                    id: "hooked-dead", cwd: "/repo", lastActiveAt: stale, pid: 2),
+                LivenessFilter.PruneCandidate(id: "scanned", cwd: "/repo", lastActiveAt: stale)
+            ],
+            cwdCounts: [:],   // nothing matches by cwd, so the scanned one dies
+            livePids: [1],
+            graceCutoff: graceCutoff
+        )
+        #expect(dead == ["hooked-dead", "scanned"])
+    }
+}
