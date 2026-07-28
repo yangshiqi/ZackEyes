@@ -2,6 +2,22 @@ import Testing
 import Foundation
 @testable import AppLib
 
+/// Execution budget for the tests whose launcher is *expected* to finish
+/// promptly — deliberately far above the product's 10s default (#216).
+///
+/// These tests spawn real processes and wait on real pipes, so their runtime
+/// tracks machine load rather than the code under test. At load ~15 the 10s
+/// product default failed about 1 run in 6; at load ~33, 2 in 3. A red test
+/// gate that depends on how busy the laptop is costs more than it catches: it
+/// blocked a release check and, worse, once sent me hunting a regression that
+/// did not exist.
+///
+/// A healthy run never waits this long — `waitForExit` returns the moment the
+/// process exits — so the only thing that pays 60s is a genuine hang, which is
+/// exactly when patience is worth more than speed. Tests that assert the
+/// timeout *fires* keep their own short values.
+private let generousExecution: Duration = .seconds(60)
+
 /// #205 — the self-test exists because file-existence checks report green on a
 /// dead pipeline. These pin what it concludes from each way the launcher can
 /// misbehave, using real spawned scripts rather than a mock: the whole point is
@@ -36,7 +52,7 @@ struct HookSelfTestTests {
     @Test func passesWhenTheLauncherIsSilentAndTheEventArrives() async throws {
         let launcher = try makeLauncher("cat > /dev/null\nexit 0\n")
         let watcher = FakeWatcher(arrives: true)
-        let result = await HookSelfTest(launcherPath: launcher).run(watcher: watcher)
+        let result = await HookSelfTest(launcherPath: launcher, executionTimeout: generousExecution).run(watcher: watcher)
 
         #expect(result.passed, "unexpected failures: \(result.failures)")
         #expect(watcher.begunSessionId?.hasPrefix(HookSelfTest.probeSessionPrefix) == true)
@@ -64,7 +80,7 @@ struct HookSelfTestTests {
         }
         defer { try? FileManager.default.removeItem(atPath: marker) }
 
-        let result = await HookSelfTest(launcherPath: launcher)
+        let result = await HookSelfTest(launcherPath: launcher, executionTimeout: generousExecution)
             .run(watcher: MarkerWatcher(path: marker))
 
         #expect(result.passed,
@@ -105,7 +121,7 @@ struct HookSelfTestTests {
     /// us and kill THIS process with SIGPIPE (found in review).
     @Test func survivesALauncherThatExitsWithoutReadingStdin() async throws {
         let launcher = try makeLauncher("exit 0\n")
-        let result = await HookSelfTest(launcherPath: launcher).run(watcher: FakeWatcher(arrives: true))
+        let result = await HookSelfTest(launcherPath: launcher, executionTimeout: generousExecution).run(watcher: FakeWatcher(arrives: true))
         #expect(result.passed, "unexpected failures: \(result.failures)")
     }
 
@@ -118,12 +134,16 @@ struct HookSelfTestTests {
         let clock = ContinuousClock()
         let started = clock.now
 
-        let result = await HookSelfTest(launcherPath: launcher, executionTimeout: .seconds(10))
+        let result = await HookSelfTest(launcherPath: launcher, executionTimeout: generousExecution)
             .run(watcher: FakeWatcher(arrives: true))
 
+        // The first expectation is what discriminates: a deadlocked drain
+        // would report "did not finish", not "printed output". The duration
+        // bound is a second guard, kept well under the budget so it still
+        // means "the timeout did not rescue us" without tracking load (#216).
         #expect(result.failure(at: .launcher)?.detail.contains("printed output") == true,
                 "expected the chatter to be reported, got: \(result.failures)")
-        #expect(clock.now - started < .seconds(9), "the drain deadlocked and only the timeout saved it")
+        #expect(clock.now - started < .seconds(50), "the drain deadlocked and only the timeout saved it")
     }
 
     /// A launcher that backgrounds something and returns: the process exits
@@ -145,7 +165,8 @@ struct HookSelfTestTests {
     /// The case file checks cannot see: everything installed, nothing arriving.
     @Test func reportsDeliveryWhenTheLauncherRunsButNothingArrives() async throws {
         let launcher = try makeLauncher("cat > /dev/null\nexit 0\n")
-        let result = await HookSelfTest(launcherPath: launcher, deliveryTimeout: .milliseconds(50))
+        let result = await HookSelfTest(launcherPath: launcher, executionTimeout: generousExecution,
+                                     deliveryTimeout: .milliseconds(50))
             .run(watcher: FakeWatcher(arrives: false))
 
         #expect(result.failure(at: .delivery) != nil)
@@ -154,7 +175,7 @@ struct HookSelfTestTests {
 
     @Test func reportsLauncherWhenItExitsNonZero() async throws {
         let launcher = try makeLauncher("cat > /dev/null\nexit 3\n")
-        let result = await HookSelfTest(launcherPath: launcher).run(watcher: FakeWatcher(arrives: true))
+        let result = await HookSelfTest(launcherPath: launcher, executionTimeout: generousExecution).run(watcher: FakeWatcher(arrives: true))
 
         let failure = result.failure(at: .launcher)
         #expect(failure != nil)
@@ -165,14 +186,14 @@ struct HookSelfTestTests {
     /// a launcher that "works" but chatters is still broken.
     @Test func reportsLauncherWhenItWritesToStderr() async throws {
         let launcher = try makeLauncher("cat > /dev/null\necho 'warning: something' >&2\nexit 0\n")
-        let result = await HookSelfTest(launcherPath: launcher).run(watcher: FakeWatcher(arrives: true))
+        let result = await HookSelfTest(launcherPath: launcher, executionTimeout: generousExecution).run(watcher: FakeWatcher(arrives: true))
 
         #expect(result.failure(at: .launcher)?.detail.contains("warning: something") == true)
     }
 
     @Test func reportsLauncherWhenItIsNotExecutable() async throws {
         let launcher = try makeLauncher("exit 0\n", executable: false)
-        let result = await HookSelfTest(launcherPath: launcher).run(watcher: FakeWatcher(arrives: true))
+        let result = await HookSelfTest(launcherPath: launcher, executionTimeout: generousExecution).run(watcher: FakeWatcher(arrives: true))
 
         #expect(result.failure(at: .launcher)?.detail.contains("not executable") == true)
     }
@@ -188,14 +209,18 @@ struct HookSelfTestTests {
         let clock = ContinuousClock()
         let started = clock.now
 
-        let result = await HookSelfTest(launcherPath: launcher, deliveryTimeout: .seconds(30))
-            .run(watcher: FakeWatcher(arrives: false))
+        let result = await HookSelfTest(
+            launcherPath: launcher,
+            executionTimeout: generousExecution,
+            deliveryTimeout: .seconds(30)
+        ).run(watcher: FakeWatcher(arrives: false))
 
         // Generous on purpose: these tests run in parallel with one that sleeps
         // and one that floods a pipe, so wall clock carries scheduling noise.
         // The bound only has to prove we did not sit through the 30s delivery
-        // wait — a tighter one made this flaky (1 run in 3).
-        #expect(clock.now - started < .seconds(15), "waited on delivery despite the launcher failing")
+        // wait — a tighter one made this flaky (1 run in 3), and load spikes
+        // then made it flaky again through the execution budget (#216).
+        #expect(clock.now - started < .seconds(25), "waited on delivery despite the launcher failing")
         #expect(result.failure(at: .delivery) == nil)
     }
 
