@@ -21,30 +21,6 @@ struct SocketServerSingleInstanceTests {
         return dir
     }
 
-    /// Holds the lock from another process for as long as it is alive.
-    ///
-    /// Built with `/usr/bin/python3` rather than `flock(1)`, which stock macOS
-    /// does not ship — a test that silently skips on the developer's machine is
-    /// no test at all.
-    private func spawnLockHolder(lockPath: String, seconds: Int = 30) throws -> Process {
-        let program = """
-        import fcntl, sys, time
-        fd = open(sys.argv[1], 'a+')
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        sys.stderr.write('locked\\n'); sys.stderr.flush()
-        time.sleep(float(sys.argv[2]))
-        """
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        task.arguments = ["-c", program, lockPath, "\(seconds)"]
-        let ready = Pipe()
-        task.standardError = ready
-        try task.run()
-        // Wait for it to say it holds the lock, rather than guessing with sleep.
-        _ = ready.fileHandleForReading.availableData
-        return task
-    }
-
     @Test func refusesToStartWhileAnotherProcessHoldsTheLock() throws {
         let dir = try tempDir(); defer { try? FileManager.default.removeItem(atPath: dir) }
         let path = dir + "/s.sock"
@@ -97,5 +73,76 @@ struct SocketServerSingleInstanceTests {
         let server = SocketServer(path: path)
         #expect(throws: Never.self) { try server.start() }
         server.stop()
+    }
+}
+
+/// Holds the lock from another process for as long as it is alive.
+///
+/// Built with `/usr/bin/python3` rather than `flock(1)`, which stock macOS
+/// does not ship — a test that silently skips on the developer's machine is
+/// no test at all.
+private func spawnLockHolder(lockPath: String, seconds: Int = 30) throws -> Process {
+    let program = """
+    import fcntl, sys, time
+    fd = open(sys.argv[1], 'a+')
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    sys.stderr.write('locked\\n'); sys.stderr.flush()
+    time.sleep(float(sys.argv[2]))
+    """
+    let task = Process()
+    task.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+    task.arguments = ["-c", program, lockPath, "\(seconds)"]
+    let ready = Pipe()
+    task.standardError = ready
+    try task.run()
+    // Wait for it to say it holds the lock, rather than guessing with sleep.
+    _ = ready.fileHandleForReading.availableData
+    return task
+}
+
+/// Found on a live machine, not in review: launching a second copy killed the
+/// FIRST one's endpoint. `stop()` unlinked the socket path unconditionally,
+/// but a loser of the single-instance race never bound and never took the lock
+/// — so its teardown deleted the running instance's node. Every hook then
+/// failed silently (the bridge exits 0 by design); the only visible sign was
+/// the health check flipping to "Socket: unreachable". That is precisely the
+/// outcome #205 item 4 exists to prevent, caused by the fix for it.
+@MainActor
+struct SocketServerTeardownOwnershipTests {
+
+    @Test func aServerThatLostTheRaceDoesNotDeleteTheWinnersSocket() throws {
+        let dir = NSTemporaryDirectory() + "/zackeyes-teardown-\(UUID().uuidString.prefix(8))"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let path = dir + "/s.sock"
+
+        // Stand in for the winner: a real bound node on disk, plus a lock held
+        // from another process (flock is per-process, so an in-process server
+        // would not exclude the loser).
+        let winner = socket(AF_UNIX, SOCK_STREAM, 0)
+        defer { close(winner) }
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let maxLen = MemoryLayout.size(ofValue: addr.sun_path) - 1
+        withUnsafeMutablePointer(to: &addr.sun_path) { ptr in
+            ptr.withMemoryRebound(to: CChar.self, capacity: maxLen + 1) { buf in
+                _ = path.withCString { strncpy(buf, $0, maxLen) }
+            }
+        }
+        _ = withUnsafePointer(to: &addr) { p in
+            p.withMemoryRebound(to: sockaddr.self, capacity: 1) { sa in
+                Darwin.bind(winner, sa, socklen_t(MemoryLayout<sockaddr_un>.size))
+            }
+        }
+        #expect(FileManager.default.fileExists(atPath: path))
+
+        let holder = try spawnLockHolder(lockPath: path + ".lock")
+        defer { holder.terminate() }
+
+        let loser = SocketServer(path: path)
+        #expect(throws: SocketError.alreadyRunning) { try loser.start() }
+        loser.stop()
+
+        #expect(FileManager.default.fileExists(atPath: path))
     }
 }

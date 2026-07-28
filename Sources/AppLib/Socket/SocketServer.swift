@@ -189,14 +189,20 @@ public final class SocketServer {
             close(serverFd)
             serverFd = -1
         }
+        // Tear down the endpoint ONLY if this instance owns it. The lock is
+        // the ownership token: a copy that lost the single-instance race never
+        // bound and never took it, and unlinking here would delete the RUNNING
+        // instance's node — severing every hook silently, since the bridge
+        // exits 0 by design. That is the exact outcome this lock exists to
+        // prevent, and it shipped as a live regression until a diagnostics
+        // export caught it ("Socket: unreachable" with the app still running).
+        guard instanceLockFd >= 0 else { return }
         unlink(path)
-        // Release the lock LAST. The other order reopens the exact hole this
-        // lock exists to close: the successor takes the lock and binds its own
-        // node at `path`, and then our unlink deletes it out from under them.
-        if instanceLockFd >= 0 {
-            close(instanceLockFd)   // releases the flock
-            instanceLockFd = -1
-        }
+        // Release the lock LAST. The other order reopens a different hole: the
+        // successor takes the lock and binds its own node at `path`, and then
+        // our unlink deletes it out from under them.
+        close(instanceLockFd)   // releases the flock
+        instanceLockFd = -1
     }
 
     // MARK: - Private
