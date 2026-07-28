@@ -11,6 +11,9 @@ public enum SocketError: Error {
     case createFailed
     case bindFailed
     case listenFailed
+    /// Another ZackEyes already owns the socket. Starting anyway would take the
+    /// endpoint from it (#205).
+    case alreadyRunning
 }
 
 // MARK: - SocketServer
@@ -34,7 +37,59 @@ public final class SocketServer {
         self.path = path
     }
 
-    /// Reject any peer whose effective uid differs from ours (scan findings
+    /// Take the instance lock, or report that someone else holds it.
+    ///
+    /// `flock` rather than probing the socket with `connect`: a probe is a
+    /// heuristic, and its wrong answers are destructive. Between another
+    /// instance's `bind` and its `listen` the probe is refused, and a busy
+    /// server whose backlog is full refuses too — in both cases we would have
+    /// concluded "stale" and deleted a live endpoint. The kernel arbitrates a
+    /// lock exactly once and drops it when the holder dies, so crash debris
+    /// needs no separate story (#205).
+    ///
+    /// Known limits, none of which the alternatives avoid: the owner can delete
+    /// the lock file while it is held, which frees the name for a second
+    /// process; and advisory locking is not guaranteed on every volume, so a
+    /// network-mounted home could both fail to serialize and wrongly serialize
+    /// across machines. `flock` is also per open file description, so two
+    /// `SocketServer`s inside ONE process would not block each other — there is
+    /// a single construction path today, and this is the reason to keep it that
+    /// way.
+    private func acquireInstanceLock() -> Bool {
+        let path = self.path
+        let lockPath = path + ".lock"
+        // O_EXLOCK takes the lock in the same call that opens the file, so there
+        // is no window between the two. O_CLOEXEC matters more than it looks:
+        // this process spawns the hook launcher during a self-test, and an
+        // inherited descriptor would keep the lock alive in a child after we
+        // exit. O_NOFOLLOW refuses a symlinked lock path.
+        let fd = open(lockPath, O_CREAT | O_RDWR | O_EXLOCK | O_NONBLOCK | O_CLOEXEC | O_NOFOLLOW, 0o600)
+        guard fd >= 0 else {
+            // EWOULDBLOCK is the answer we are looking for: someone holds it.
+            // Anything else (a squatted path, a filesystem without advisory
+            // locking) is also a reason not to proceed — unlinking a socket we
+            // cannot prove is ours is the outcome worth avoiding.
+            return false
+        }
+        // The fallback socket path lives in shared /tmp, where another uid could
+        // have pre-created this name. A lock file we do not own tells us nothing
+        // about whether a ZackEyes is running.
+        var info = stat()
+        guard fstat(fd, &info) == 0, info.st_uid == geteuid() else {
+            close(fd)
+            return false
+        }
+        instanceLockFd = fd
+        return true
+    }
+
+    /// Held for as long as this server owns the endpoint. Per instance, not per
+    /// process: a static would mean "this process locked something once", which
+    /// short-circuits the guard for every later server — including the one that
+    /// should have been refused.
+    private var instanceLockFd: Int32 = -1
+
+    /// Reject any peer whose effective uid differs from ours    /// Reject any peer whose effective uid differs from ours (scan findings
     /// F-001/F-002). On macOS, AF_UNIX socket file permissions are NOT enforced
     /// on connect, so a kernel-verified peer-credential check (`getpeereid`) is
     /// the reliable boundary that stops other local users from speaking the
@@ -72,7 +127,13 @@ public final class SocketServer {
             attributes: [.posixPermissions: 0o700])
         try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir)
 
-        // Unlink stale socket file if present
+        // `unlink` used to be unconditional, so a second ZackEyes silently took
+        // the endpoint: hooks reached whichever process won, and the loser sat
+        // in an accept loop on a node no one could dial — invisible to the user
+        // and to the health check (#205). Only the lock holder may reclaim it.
+        guard acquireInstanceLock() else {
+            throw SocketError.alreadyRunning
+        }
         unlink(path)
 
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -94,8 +155,12 @@ public final class SocketServer {
             }
         }
         guard bindResult == 0 else {
+            let code = errno
             close(fd)
-            throw SocketError.bindFailed
+            // We hold the lock, so this should not happen — but if the address
+            // is taken anyway, another server is on it and "already running" is
+            // the truthful answer, not a generic failure the caller shrugs off.
+            throw code == EADDRINUSE ? SocketError.alreadyRunning : SocketError.bindFailed
         }
 
         // F-002 defense in depth: restrict the socket node to the owner. BSD
@@ -125,6 +190,13 @@ public final class SocketServer {
             serverFd = -1
         }
         unlink(path)
+        // Release the lock LAST. The other order reopens the exact hole this
+        // lock exists to close: the successor takes the lock and binds its own
+        // node at `path`, and then our unlink deletes it out from under them.
+        if instanceLockFd >= 0 {
+            close(instanceLockFd)   // releases the flock
+            instanceLockFd = -1
+        }
     }
 
     // MARK: - Private

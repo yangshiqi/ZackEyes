@@ -10,10 +10,9 @@ import Foundation
 ///
 /// Concurrency is out of scope. A fingerprint check before the write would
 /// still leave a window between the check and the rename, so it would read as a
-/// guarantee it cannot make. Note this means a read-modify-write here can still
-/// lose an edit made from elsewhere between the read and the rename — nothing
-/// currently prevents that, since single-instance startup is a separate piece of
-/// #205 and is not in place yet.
+/// guarantee it cannot make. Two ZackEyes instances are prevented at startup
+/// instead (#205) — but an edit made from outside the app, in an editor, can
+/// still be lost by a read-modify-write here.
 public enum AtomicFileWriter {
 
     public enum WriteError: Error, CustomStringConvertible {
