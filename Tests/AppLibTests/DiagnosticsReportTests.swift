@@ -201,12 +201,60 @@ struct DiagnosticsReportTests {
     /// Every free-text field originates in bridge JSON. An MCP tool name can
     /// carry a private server name, and the report is meant to be attachable
     /// to a public issue.
+    /// Non-tool free text still goes through the ordinary redactor, so a
+    /// username reaching the trace by any route is scrubbed.
     @Test func eventFieldsAreRedacted() {
         let text = report(events: [
-            entry(event: "PreToolUse", tool: "mcp__alice__query", disposition: .applied)
+            entry(event: "hook-alice-custom", disposition: .dropped("path /Users/alice/x"))
         ])
         #expect(!text.contains("alice"))
-        #expect(text.contains("mcp__<user>__query"))
+        #expect(text.contains("hook-<user>-custom"))
+        #expect(text.contains("dropped (path ~/x)"))
+    }
+
+    /// An MCP tool name is `mcp__<server>__<tool>` — both halves are the
+    /// user's own naming, and this report is meant for a public issue.
+    @Test func mcpServerAndToolIdentityAreNotExported() {
+        let text = report(events: [
+            entry(event: "PreToolUse", tool: "mcp__acme-production__customer_lookup",
+                  disposition: .applied)
+        ])
+        #expect(!text.contains("acme-production"))
+        #expect(!text.contains("customer_lookup"))
+        // The useful half survives: it was an MCP call.
+        #expect(text.contains("tool=mcp__<redacted>"))
+        // Built-in tools are a fixed vocabulary and stay legible.
+        #expect(report(events: [entry(event: "PreToolUse", tool: "Bash", disposition: .applied)])
+            .contains("tool=Bash"))
+    }
+
+    /// CR, ANSI escapes, and bidi overrides would let a crafted tool name
+    /// rewrite how the report reads once pasted into an issue.
+    @Test func controlAndFormatCharactersAreStripped() {
+        let text = report(events: [
+            entry(event: "PreToolUse", tool: "a\r\u{1B}[31mb\u{202E}c", disposition: .applied)
+        ])
+        #expect(text.contains("tool=a[31mbc"))
+        #expect(!text.contains("\r"))
+        #expect(!text.contains("\u{1B}"))
+        #expect(!text.contains("\u{202E}"))
+    }
+
+    /// A `Character` can be an arbitrarily long combining cluster, so a
+    /// Character-count cap is not a length bound.
+    @Test func theCapCountsScalarsNotCharacters() {
+        let bomb = "a" + String(repeating: "\u{0301}", count: 500)
+        let text = report(events: [entry(event: "PreToolUse", tool: bomb, disposition: .applied)])
+        let widest = text.split(separator: "\n").map(\.unicodeScalars.count).max() ?? 0
+        #expect(widest < 140)
+    }
+
+    /// Handing a banner to UNUserNotificationCenter is not proof it appeared.
+    @Test func notificationsAreReportedAsRequestedNotDelivered() {
+        let text = report(events: [
+            entry(event: "Stop", disposition: .notified("finished"))
+        ])
+        #expect(text.contains("→ notification requested (finished)"))
     }
 
     @Test func overlongEventFieldsAreCapped() {

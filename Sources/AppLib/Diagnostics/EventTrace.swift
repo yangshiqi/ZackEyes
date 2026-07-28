@@ -120,8 +120,4 @@ public final class EventTrace {
         guard !entries.isEmpty else { return }
         entries[entries.count - 1].disposition = disposition
     }
-
-    public func clear() {
-        entries.removeAll()
-    }
 }

@@ -61,7 +61,7 @@ public enum DiagnosticsReport {
                 pad(field(e.agent, redactor: redactor), 6),
                 pad(field(e.event, redactor: redactor), 20)
             ]
-            if let tool = e.tool { parts.append("tool=\(field(tool, redactor: redactor))") }
+            if let tool = e.tool { parts.append("tool=\(toolField(tool, redactor: redactor))") }
             if let sid = e.session { parts.append("sid=\(field(sid, redactor: redactor))") }
             if e.replayed { parts.append("[replayed]") }
             parts.append("→ \(describe(e.disposition, redactor: redactor))")
@@ -79,7 +79,12 @@ public enum DiagnosticsReport {
         case .applied: return "applied"
         case .prompted: return "prompted"
         case .autoAllowed: return "auto-allowed"
-        case .notified(let kind): return "notified (\(field(kind, redactor: redactor)))"
+        // Deliberately not "notified": the banner is handed to
+        // UNUserNotificationCenter, which reports failure asynchronously and
+        // can silently drop it (authorization revoked, Focus). Claiming
+        // delivery here would produce the exact false reassurance this
+        // section exists to prevent.
+        case .notified(let kind): return "notification requested (\(field(kind, redactor: redactor)))"
         case .suppressed(let why): return "suppressed (\(field(why, redactor: redactor)))"
         case .dropped(let why): return "dropped (\(field(why, redactor: redactor)))"
         }
@@ -90,8 +95,27 @@ public enum DiagnosticsReport {
     /// redact, then cap. An MCP tool name can carry a private server name, and
     /// nothing here is worth an unbounded line in a shareable report.
     private static func field(_ raw: String, redactor: Redactor, max: Int = 40) -> String {
-        let clean = redactor.redact(raw).replacingOccurrences(of: "\n", with: " ")
-        return clean.count <= max ? clean : String(clean.prefix(max - 1)) + "…"
+        // Drop control and format scalars outright. They buy nothing in a
+        // report and they can smuggle CR, ANSI escapes, zero-width joiners,
+        // and bidi overrides into text destined for a GitHub issue.
+        let scalars = redactor.redact(raw).unicodeScalars.filter {
+            let category = $0.properties.generalCategory
+            return category != .control && category != .format
+        }
+        // Cap by scalar, not by Character: a single Character can be an
+        // arbitrarily long combining cluster, so a Character count is not a
+        // length bound at all.
+        guard scalars.count > max else { return String(String.UnicodeScalarView(scalars)) }
+        return String(String.UnicodeScalarView(scalars.prefix(max - 1))) + "…"
+    }
+
+    /// MCP tool names carry the user's own server and tool identity
+    /// (`mcp__acme-production__customer_lookup`). Keep the diagnostically
+    /// useful half — that this was an MCP call at all — and drop the rest;
+    /// built-in tool names are a fixed vocabulary and safe to show.
+    private static func toolField(_ raw: String, redactor: Redactor) -> String {
+        guard raw.hasPrefix("mcp__") else { return field(raw, redactor: redactor) }
+        return "mcp__<redacted>"
     }
 
     private static func pad(_ s: String, _ width: Int) -> String {

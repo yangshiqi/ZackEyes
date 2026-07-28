@@ -719,10 +719,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
 
             sessionStore.handleEvent(event)
-            // Baseline verdict for this branch: state moved, nothing
-            // user-visible. The notification blocks below overwrite it when
-            // one of them actually fires.
-            EventTrace.shared.note(.applied)
 
             // Whichever event just cleared an AskUQ popup (PostToolUse-after-
             // terminal-answer, UserPromptSubmit-after-reject-by-new-prompt,
@@ -743,8 +739,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // (The expanded panel still auto-opens via forceUiExpand on
             // PermissionRequest / error.)
 
-            guard let sid = event.sessionId,
-                  let session = sessionStore.sessions[sid] else { return }
+            // Split from one guard into two so the trace can tell the two
+            // silent discards apart. `SessionStore.handleEvent` itself
+            // returns immediately on a missing session id, so stamping
+            // `.applied` before this point would claim work that never
+            // happened — exactly the kind of lie this trace exists to stop.
+            guard let sid = event.sessionId else {
+                EventTrace.shared.note(.dropped("no session_id"))
+                return
+            }
+            guard let session = sessionStore.sessions[sid] else {
+                EventTrace.shared.note(.dropped("session not tracked"))
+                return
+            }
+            // State moved. The notification blocks below overwrite this when
+            // one of them actually fires.
+            EventTrace.shared.note(.applied)
 
             // Notify if an error was JUST detected on this session
             // Replayed events never notify — the error/finish happened while
@@ -797,6 +807,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                         projectName: session.displayName,
                         lastPrompt: session.lastUserPrompt
                     )
+                } else {
+                    // A deliberate silence that is indistinguishable from an
+                    // ordinary applied event unless the trace says so.
+                    EventTrace.shared.note(.suppressed("stop: no sign of work"))
                 }
             }
 
