@@ -100,12 +100,14 @@ public enum LivenessFilter {
     ///
     /// Rules, applied in order:
     ///
-    /// 1. **Snapshot failure → no eviction.** If `cwdCounts` is `nil`, the
-    ///    `ps`/`lsof` snapshot failed (transient subprocess error, missing
-    ///    entitlement, etc.). Evict nothing rather than risk wiping the
-    ///    panel; the next sweep will retry. An *empty but non-nil* dict
-    ///    is treated as legitimate "no claudes running" — every candidate
-    ///    is eligible for eviction (subject to the grace period).
+    /// 1. **Snapshot failure → no eviction, per signal.** A `nil` snapshot
+    ///    means that `ps`/`lsof` call failed (transient subprocess error,
+    ///    missing entitlement, etc.), so the candidates that depend on it are
+    ///    kept and the next sweep retries. The two snapshots fail
+    ///    independently: a `nil` `cwdCounts` disables only the cwd fallback,
+    ///    and a `nil` `livePids` disables only the PID rule. An *empty but
+    ///    non-nil* value is a legitimate "nothing is running" and does make
+    ///    its candidates eligible (subject to the grace period).
     /// 2. **Recent activity grace period** — sessions whose `lastActiveAt`
     ///    is newer than `graceCutoff` are kept regardless of cwd matching.
     ///    Hooks firing this minute is irrefutable proof of life and
@@ -129,8 +131,6 @@ public enum LivenessFilter {
         livePids: Set<Int>? = nil,
         graceCutoff: Date
     ) -> Set<String> {
-        guard let cwdCounts = cwdCounts else { return [] }
-
         var deadIds = Set<String>()
         var cwdFallback: [PruneCandidate] = []
         for c in candidates {
@@ -148,6 +148,13 @@ public enum LivenessFilter {
                 cwdFallback.append(c)
             }
         }
+
+        // A failed cwd snapshot disables the cwd fallback and nothing else.
+        // The PID-bearing candidates above were already decided from the
+        // separate `livePids` snapshot; gating them on an unrelated failure
+        // would keep a confirmed-dead session alive for another sweep and
+        // contradict the independence rule 3 promises (CodeRabbit).
+        guard let cwdCounts else { return deadIds }
 
         var grouped: [String: [PruneCandidate]] = [:]
         for c in cwdFallback {

@@ -292,6 +292,26 @@ struct LivenessPidTests {
         #expect(dead.isEmpty)
     }
 
+    /// The mirror of the test above: the two snapshots fail independently, so
+    /// a failed *cwd* snapshot must not suppress a verdict the PID snapshot
+    /// already gave (CodeRabbit). Keeping a confirmed-dead session alive for
+    /// another sweep because an unrelated `ps` call failed is a gap, not a
+    /// safety measure.
+    @Test func aFailedCwdSnapshotDoesNotSuppressThePidVerdict() {
+        let dead = LivenessFilter.computeDeadIds(
+            candidates: [
+                LivenessFilter.PruneCandidate(
+                    id: "gone", cwd: "/repo", lastActiveAt: stale, pid: 111),
+                LivenessFilter.PruneCandidate(id: "scanned", cwd: "/repo", lastActiveAt: stale)
+            ],
+            cwdCounts: nil,     // cwd snapshot failed…
+            livePids: [222],    // …but this one didn't, and 111 is not in it
+            graceCutoff: graceCutoff
+        )
+        // The PID verdict stands; the no-PID candidate is kept, as before.
+        #expect(dead == ["gone"])
+    }
+
     /// A hook that fired seconds ago outranks everything, including a PID we
     /// can no longer find — the agent may have exited right after it.
     @Test func recentHookTrafficOutranksAMissingPid() {
