@@ -587,9 +587,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         responder: (@Sendable (BridgeResponse) -> Void)?,
         permissionId: UUID? = nil
     ) {
+        // #205 item 3 — stamp every arrival before any branch can return, so
+        // the trace can never have a silent hole. Branches below refine the
+        // verdict via `note`; anything still `.received` at render time is an
+        // unclassified path, which the report says out loud.
+        EventTrace.shared.record(event)
+
         // A self-test probe proves the pipeline works and must not leave a
         // session card behind for a run that never happened (#205).
         if HookSelfTest.isProbe(sessionId: event.sessionId) {
+            EventTrace.shared.note(.probe)
             NotificationCenter.default.post(
                 name: .hookSelfTestProbeReceived, object: event.sessionId)
             return
@@ -609,13 +616,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // empty-answer/PostToolUse short-circuit that was clearing the
             // popup before the user could click an option.
             if event.toolName == "AskUserQuestion" {
+                EventTrace.shared.note(.dropped("AskUserQuestion has no responder path"))
                 return
             }
             guard let responder = responder else {
+                EventTrace.shared.note(.dropped("no responder"))
                 NSLog("ZackEyes: PermissionRequest received but no responder")
                 return
             }
             guard let sid = event.sessionId else {
+                EventTrace.shared.note(.dropped("no session_id"))
                 NSLog("ZackEyes: PermissionRequest missing session_id")
                 return
             }
@@ -625,6 +635,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // panel. Same client-side auto-respond pattern as the AskUQ early
             // return above.
             if sessionStore.isToolAutoAllowed(sessionId: sid, toolName: toolName) {
+                EventTrace.shared.note(.autoAllowed)
                 responder(.permission(.allow(message: "Auto-allowed via ZackEyes (Allow Always)")))
                 NSLog("ZackEyes: auto-allowed tool=%@ (Allow Always) sid=%@", toolName, sid)
                 return
@@ -639,6 +650,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             )
             NSLog("ZackEyes: PermissionRequest agent=%@ tool=%@",
                   event.agent.rawValue, event.toolName ?? "?")
+            EventTrace.shared.note(.prompted)
             sessionStore.handlePermissionRequest(
                 sessionId: sid, permission: pending, agent: event.agent
             )
@@ -653,6 +665,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // KeystrokeInjector). The PostToolUse(AskUQ) branch below
             // closes the popup if the user answered in the terminal first.
             guard let sid = event.sessionId else {
+                EventTrace.shared.note(.dropped("no session_id"))
                 NSLog("ZackEyes: PreToolUse AskUQ missing session_id")
                 return
             }
@@ -668,6 +681,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // normally captures bridgePpid into claudePid. AskUQ skips the
             // default branch, so apply the same field-stamping inline so
             // KeystrokeInjector knows which terminal to activate.
+            EventTrace.shared.note(.prompted)
             sessionStore.handleEvent(event)
             sessionStore.handlePermissionRequest(
                 sessionId: sid, permission: pending, agent: event.agent
@@ -725,8 +739,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // (The expanded panel still auto-opens via forceUiExpand on
             // PermissionRequest / error.)
 
-            guard let sid = event.sessionId,
-                  let session = sessionStore.sessions[sid] else { return }
+            // Split from one guard into two so the trace can tell the two
+            // silent discards apart. `SessionStore.handleEvent` itself
+            // returns immediately on a missing session id, so stamping
+            // `.applied` before this point would claim work that never
+            // happened — exactly the kind of lie this trace exists to stop.
+            guard let sid = event.sessionId else {
+                EventTrace.shared.note(.dropped("no session_id"))
+                return
+            }
+            guard let session = sessionStore.sessions[sid] else {
+                EventTrace.shared.note(.dropped("session not tracked"))
+                return
+            }
+            // State moved. The notification blocks below overwrite this when
+            // one of them actually fires.
+            EventTrace.shared.note(.applied)
 
             // Notify if an error was JUST detected on this session
             // Replayed events never notify — the error/finish happened while
@@ -734,6 +762,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if !event.isReplayed,
                let errLabel = session.errorMessage,
                session.errorAt != priorErrorAt {
+                EventTrace.shared.note(.notified("error"))
                 NotificationManager.shared.notifyError(
                     sessionId: sid,
                     agent: session.agent,
@@ -771,12 +800,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 let hasInteraction = priorUserPrompt != nil
                 let hasAssistantReply = (event.lastAssistantMessage?.isEmpty == false)
                 if didAnyTooling || hasInteraction || hasAssistantReply {
+                    EventTrace.shared.note(.notified("finished"))
                     NotificationManager.shared.notifySessionFinished(
                         sessionId: sid,
                         agent: session.agent,
                         projectName: session.displayName,
                         lastPrompt: session.lastUserPrompt
                     )
+                } else {
+                    // A deliberate silence that is indistinguishable from an
+                    // ordinary applied event unless the trace says so.
+                    EventTrace.shared.note(.suppressed("stop: no sign of work"))
                 }
             }
 
@@ -789,6 +823,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                    eventTrigger: event.trigger,
                    storedTrigger: priorCompactTrigger),
                compactAlertGatePasses(sessionId: sid) {
+                EventTrace.shared.note(.notified("compact"))
                 NSLog("ZackEyes: compact finished (PostCompact) sid=%@", String(sid.prefix(8)))
                 NotificationManager.shared.notifyCompactFinished(
                     sessionId: sid,
@@ -814,6 +849,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("ZackEyes: compact finished (inferred %.0f%%→%.0f%%) sid=%@",
                       priorCompactBaseline ?? -1, session.contextUsedPct ?? -1,
                       String(sid.prefix(8)))
+                EventTrace.shared.note(.notified("compact, inferred"))
                 sessionStore.clearCompactMarker(sessionId: sid)
                 NotificationManager.shared.notifyCompactFinished(
                     sessionId: sid,
@@ -929,8 +965,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// that actually render a waiting surface. `event.agent` keeps it agent-neutral
     /// (no Claude-only liveness assumptions for Codex).
     private func maybeNotifyWaiting(event: BridgeEvent, sessionId: String, kind: WaitingKind) {
+        // The trace verdict stays `.prompted` on the replayed path: the entry
+        // already carries a `[replayed]` marker, which says the same thing
+        // without a second line of explanation.
         guard !event.isReplayed else { return }
-        guard ConfigStore().loadNotifyWaitingForInput() else { return }
+        guard ConfigStore().loadNotifyWaitingForInput() else {
+            EventTrace.shared.note(.suppressed("waiting alert: setting off"))
+            return
+        }
         // Bound the cooldown map to live sessions: session IDs are unique and this
         // app runs for days, so without pruning it grows unbounded. The current
         // sessionId always survives (handlePermissionRequest just created it).
@@ -939,8 +981,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let now = Date()
         guard WaitingAlertGate.shouldAlert(
             lastAlertedAt: lastWaitingAlertAt[sessionId], now: now, cooldown: 12
-        ) else { return }
+        ) else {
+            EventTrace.shared.note(.suppressed("waiting alert: cooldown"))
+            return
+        }
         lastWaitingAlertAt[sessionId] = now
+        EventTrace.shared.note(.notified("waiting"))
         NotificationManager.shared.notifyWaitingForUser(
             sessionId: sessionId,
             agent: event.agent,
