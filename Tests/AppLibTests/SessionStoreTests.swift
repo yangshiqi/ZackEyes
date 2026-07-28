@@ -1438,3 +1438,39 @@ struct ClaudePidProvenanceTests {
         #expect(store.sessions["s1"]?.claudePidFromHook == true)
     }
 }
+
+/// codex review of #217 — when the user already has a statusLine of their own,
+/// `deployStatusLineMux` runs the bridge as a background pipeline member
+/// (`… | bridge … &`), so its ppid is the mux shell, not the agent. Trusting
+/// it would overwrite the real PID with one that dies seconds later — and the
+/// PID-based sweep would then evict the live session, which is the very bug
+/// #217 set out to fix.
+@MainActor
+struct StatusLineMuxPidTests {
+
+    @Test func aStatusLinePpidNeverReplacesTheAgentPid() {
+        let store = SessionStore()
+        store.handleEvent(
+            BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp", bridgePpid: 4242))
+        #expect(store.sessions["s1"]?.claudePid == 4242)
+
+        // The mux shell's transient pid arrives on a StatusLine event.
+        store.handleEvent(
+            BridgeEvent(bridgeEvent: "StatusLine", sessionId: "s1", cwd: "/tmp", bridgePpid: 777))
+
+        #expect(store.sessions["s1"]?.claudePid == 4242)
+        #expect(store.sessions["s1"]?.claudePidFromHook == true)
+    }
+
+    /// It is still proof of life — the agent is rendering right now.
+    @Test func aStatusLineEventStillRefreshesActivity() {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", sessionId: "s1", cwd: "/tmp"))
+        let stale = Date().addingTimeInterval(-600)
+        store.sessions["s1"]?.lastActiveAt = stale
+
+        store.handleEvent(BridgeEvent(bridgeEvent: "StatusLine", sessionId: "s1", cwd: "/tmp"))
+
+        #expect((store.sessions["s1"]?.lastActiveAt).map { $0 > stale } == true)
+    }
+}

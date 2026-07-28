@@ -501,7 +501,18 @@ public final class SessionStore: ObservableObject {
             // is stored — including a PID `activateDetectedSessions` guessed
             // by cwd. Previously this only filled a nil, leaving a guess
             // uncorrected forever (#217).
-            if let ppid = event.bridgePpid,
+            //
+            // StatusLine is the one exception. When the user already has a
+            // statusLine of their own, `deployStatusLineMux` runs the bridge
+            // as a BACKGROUND PIPELINE member (`... | bridge … &`), so its
+            // ppid is the mux shell — transient, and gone seconds later.
+            // Trusting it would overwrite the real agent PID with a corpse:
+            // terminal jump would miss, and the sweep would evict the session
+            // the moment statusLine traffic paused past the grace window.
+            // Real hooks supply the PID anyway; StatusLine only refreshes
+            // `lastActiveAt`, which it still does above.
+            if event.bridgeEvent != "StatusLine",
+               let ppid = event.bridgePpid,
                existing.claudePid != ppid || !existing.claudePidFromHook {
                 existing.claudePid = ppid
                 existing.claudePidFromHook = true

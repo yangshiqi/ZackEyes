@@ -532,8 +532,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             guard !deadIds.isEmpty else { return }
             await MainActor.run { [weak self] in
                 guard let self else { return }
-                self.sessionStore.removeSessions(ids: deadIds)
-                NSLog("ZackEyes: liveness sweep pruned %d dead sessions", deadIds.count)
+                // The verdict was computed from a snapshot taken before the
+                // `ps` calls ran, but removal happens by id. Anything that
+                // became active in between — a hook landing mid-sweep, or the
+                // same session id being resumed — must not be deleted on the
+                // strength of a stale reading. Re-check against the same
+                // cutoff the decision used.
+                let stillIdle = deadIds.filter { id in
+                    guard let s = self.sessionStore.sessions[id] else { return false }
+                    return s.lastActiveAt <= graceCutoff
+                }
+                guard !stillIdle.isEmpty else { return }
+                self.sessionStore.removeSessions(ids: stillIdle)
+                NSLog("ZackEyes: liveness sweep pruned %d dead sessions", stillIdle.count)
             }
         }
     }
