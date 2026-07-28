@@ -14,6 +14,7 @@ public enum DiagnosticsReport {
         appVersion: String,
         osVersion: String,
         arch: String,
+        events: [EventTraceEntry],
         redactor: Redactor,
         now: Date
     ) -> String {
@@ -40,7 +41,72 @@ public enum DiagnosticsReport {
         lines.append("Usage last updated: \(freshness(usage.lastUpdated, now: now))")
         lines.append("Claude usage data: \(usage.hasClaudeData ? "present" : "none")")
         lines.append("Codex usage data: \(usage.hasCodexData ? "present" : "none")")
+        lines.append("")
+        lines.append("Recent events")
+        lines.append("-------------")
+        lines.append(contentsOf: eventLines(events, redactor: redactor))
         return lines.joined(separator: "\n") + "\n"
+    }
+
+    /// Renders the event ring buffer (#205 item 3) — the section that answers
+    /// "why didn't my notification pop?". Oldest first, so it reads like a log.
+    private static func eventLines(
+        _ events: [EventTraceEntry], redactor: Redactor
+    ) -> [String] {
+        guard !events.isEmpty else { return ["No events recorded yet."] }
+        var out = ["(oldest first, times UTC; `replayed` = arrived while ZackEyes was closed)"]
+        for e in events {
+            var parts = [
+                clockTime(e.at),
+                pad(field(e.agent, redactor: redactor), 6),
+                pad(field(e.event, redactor: redactor), 20)
+            ]
+            if let tool = e.tool { parts.append("tool=\(field(tool, redactor: redactor))") }
+            if let sid = e.session { parts.append("sid=\(field(sid, redactor: redactor))") }
+            if e.replayed { parts.append("[replayed]") }
+            parts.append("→ \(describe(e.disposition, redactor: redactor))")
+            out.append(parts.joined(separator: "  "))
+        }
+        return out
+    }
+
+    private static func describe(
+        _ d: EventDisposition, redactor: Redactor
+    ) -> String {
+        switch d {
+        case .received: return "received (unclassified)"
+        case .probe: return "self-test probe"
+        case .applied: return "applied"
+        case .prompted: return "prompted"
+        case .autoAllowed: return "auto-allowed"
+        case .notified(let kind): return "notified (\(field(kind, redactor: redactor)))"
+        case .suppressed(let why): return "suppressed (\(field(why, redactor: redactor)))"
+        case .dropped(let why): return "dropped (\(field(why, redactor: redactor)))"
+        }
+    }
+
+    /// Every free-text field in the trace originates in bridge JSON, so it is
+    /// attacker-shaped in the same way a third-party statusLine command is:
+    /// redact, then cap. An MCP tool name can carry a private server name, and
+    /// nothing here is worth an unbounded line in a shareable report.
+    private static func field(_ raw: String, redactor: Redactor, max: Int = 40) -> String {
+        let clean = redactor.redact(raw).replacingOccurrences(of: "\n", with: " ")
+        return clean.count <= max ? clean : String(clean.prefix(max - 1)) + "…"
+    }
+
+    private static func pad(_ s: String, _ width: Int) -> String {
+        s.count >= width ? s : s + String(repeating: " ", count: width - s.count)
+    }
+
+    /// Wall-clock time only (UTC, matching the ISO `Generated:` header). The
+    /// report already carries an absolute timestamp, so this stays readable
+    /// without adding a second date to every line.
+    private static func clockTime(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm:ss"
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.locale = Locale(identifier: "en_US_POSIX")
+        return f.string(from: date)
     }
 
     /// Live gatherer. Reads HookHealth (real paths) + Bundle/ProcessInfo and
@@ -55,6 +121,7 @@ public enum DiagnosticsReport {
             appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
             osVersion: "\(v.majorVersion).\(v.minorVersion).\(v.patchVersion)",
             arch: currentArch,
+            events: EventTrace.shared.entries,
             redactor: Redactor(),
             now: Date()
         )
