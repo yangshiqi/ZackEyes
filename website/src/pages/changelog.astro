@@ -7,6 +7,31 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.9.4',
+    date: 'Published July 28, 2026',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Crayon Shin-chan theme with seven character sounds, plus three team-radio calls for the F1 2026 theme.',
+          'Test Pipeline button in Settings that spawns the real hook and waits for the event to arrive, instead of checking whether files exist.',
+          'Recent events section in the diagnostics export, recording what ZackEyes did with each event and why a notification did or did not fire.',
+          'Single-instance protection: a second copy now says the first one is running instead of quietly taking the socket from it.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'Concurrent permission requests could be answered on the wrong one. Approvals are now matched by request id.',
+          'Large hook payloads were dropped, and the bridge could print errors into the agent terminal.',
+          'Live sessions could vanish from the panel after about ninety seconds of thinking time.',
+          'Hook ownership is decided by the launcher executable rather than a path substring, so uninstall and repair leave third-party hooks alone.',
+          'User config writes now survive a crash or power loss.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.9.3',
     date: 'Published July 18, 2026',
     highlights: [
