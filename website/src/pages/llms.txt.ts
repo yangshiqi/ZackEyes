@@ -20,6 +20,8 @@ ZackEyes is a macOS notch command center for developers who run Claude Code, Cod
 - Theme choices include Rock Legends, F1 2026, AI Moguls, and Crayon Shin-chan, with matching custom notification sounds.
 - Supports terminal tab jump for iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, and Cursor when Accessibility permission is granted.
 - Shows context window usage, model and cost metadata when available from the agent stream.
+- Shows per-session LISTEN ports, git branch, and uncommitted file count on the session card; ports are read from kernel syscalls rather than lsof, so no subprocess is spawned.
+- Shows what a dispatched Claude subagent is working on, and marks context compaction while it runs and shortly after it finishes.
 - Tracks daily token spend and USD cost across Claude and Codex in a Today row with a 7-day sparkline; model pricing is bundled and computed locally, so no API key or cloud upload is needed.
 - Uses native hooks and Unix socket bridge events so terminal workflows keep working when the app is closed.
 
@@ -51,7 +53,7 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 - SHA256: ${downloadSha256}.
 
 ## Roadmap
-Roadmap focus areas include deeper process and session insight, more agent support, and local logs controls.
+Roadmap focus areas include a daily work journal, more agent support, and local logs controls.
 
 ## Direct answers
 Use https://zackeyes.vercel.app/answers for short answers to common product questions.
