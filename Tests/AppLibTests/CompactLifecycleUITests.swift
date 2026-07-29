@@ -92,6 +92,39 @@ struct CompactLifecycleUITests {
         #expect(s.sessions["s1"]?.compactCount == 1)
     }
 
+    /// Every real compaction is followed by `SessionStart(source:"compact")`,
+    /// which rebuilds SessionInfo. An earlier revision preserved only the
+    /// trigger/baseline/state, so the tally this feature exists to show was
+    /// wiped by the very event that follows a compaction — `×2` could never
+    /// appear, and `×1` vanished whenever SessionStart arrived after
+    /// PostCompact. Review finding F1.
+    @Test func compactTallySurvivesTheCompactRestart() {
+        let s = store()
+        s.handleEvent(pre("manual"))
+        s.handleEvent(post("manual"))
+        #expect(s.sessions["s1"]?.compactCount == 1)
+
+        s.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", agent: .claude,
+                                  sessionId: "s1", cwd: "/tmp/proj", source: "compact"))
+        #expect(s.sessions["s1"]?.compactCount == 1)
+        #expect(s.sessions["s1"]?.lastCompactedAt != nil)
+
+        // A second compaction then genuinely reads ×2.
+        s.handleEvent(pre("auto"))
+        s.handleEvent(post("auto"))
+        #expect(s.sessions["s1"]?.compactCount == 2)
+    }
+
+    /// A non-compact SessionStart is a real restart and still resets.
+    @Test func ordinarySessionStartResetsTheTally() {
+        let s = store()
+        s.handleEvent(pre("manual"))
+        s.handleEvent(post("manual"))
+        s.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", agent: .claude,
+                                  sessionId: "s1", cwd: "/tmp/proj", source: "startup"))
+        #expect(s.sessions["s1"]?.compactCount == 0)
+    }
+
     // MARK: - Marker expiry
 
     @Test func markerShowsRightAfterCompacting() {

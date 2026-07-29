@@ -442,6 +442,13 @@ public final class SessionStore: ObservableObject {
                 newSession.compactTrigger = prior.compactTrigger
                 newSession.compactStartContextPct = prior.compactStartContextPct
                 newSession.state = prior.state
+                // #37 — the compaction tally describes the session's history,
+                // which an administrative restart does not undo. Without this
+                // the counter is wiped by the very event that follows every
+                // compaction, so `×2` could never appear and even `×1` would
+                // vanish whenever SessionStart arrived after PostCompact.
+                newSession.compactCount = prior.compactCount
+                newSession.lastCompactedAt = prior.lastCompactedAt
             }
             sessions[sid] = newSession
 
@@ -482,15 +489,20 @@ public final class SessionStore: ObservableObject {
             session.errorMessage = nil       // user is retrying
             session.compactTrigger = nil     // #181 — marker can't outlive its turn
             session.compactStartContextPct = nil
-            // #40 — leak guard. Pairing is exact while both hooks arrive, but
-            // a dropped SubagentStop would otherwise leave "3 agents" on the
-            // card forever. A new user turn proves nothing from the previous
-            // one is still worth showing.
-            session.activeSubagents = []
-            // #79 — likewise for descriptions whose dispatch never started a
-            // subagent (denied, errored). Left queued, one would later be
-            // claimed by an unrelated subagent and describe the wrong work.
+            // #79 — drop descriptions whose dispatch never started a subagent
+            // (denied, errored). Left queued, one would later be claimed by an
+            // unrelated subagent and describe the wrong work. The queue is a
+            // within-turn pairing aid, so a new turn legitimately empties it.
             session.pendingSubagentCalls = []
+            // #40 — `activeSubagents` is deliberately NOT cleared here.
+            // Subagents run in the background by default and can finish after
+            // the user has sent another prompt, so clearing on a turn boundary
+            // hid agents that were still running and made their eventual
+            // SubagentStop remove an entry that was no longer there. Pairing
+            // is exact (both hooks carry `agent_id`), SessionStart rebuilds
+            // the session outright, and `maxTrackedSubagents` caps a runaway
+            // stream — the turn-boundary sweep was guarding a hypothetical at
+            // the cost of a documented feature.
             session.errorAt = nil
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
@@ -586,10 +598,16 @@ public final class SessionStore: ObservableObject {
                   session.activeSubagents.count < SessionInfo.maxTrackedSubagents
             else { break }
             // #79 — claim the queued description for this type, oldest first.
+            // #79 — match on type only. The previous `?? indices.first`
+            // fallback would hand a general-purpose agent the description of a
+            // queued Explore dispatch that never started, mislabelling one
+            // agent AND leaving the real Explore undescribed. No description
+            // beats a confidently wrong one — the same rule #76 applies to
+            // port attribution.
             var detail: String?
             if let index = session.pendingSubagentCalls.firstIndex(where: {
                 $0.subagentType == event.agentType
-            }) ?? session.pendingSubagentCalls.indices.first {
+            }) {
                 detail = session.pendingSubagentCalls[index].description
                 session.pendingSubagentCalls.remove(at: index)
             }

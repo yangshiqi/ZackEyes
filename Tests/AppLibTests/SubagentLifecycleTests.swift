@@ -158,14 +158,19 @@ struct SubagentLifecycleTests {
 
     // MARK: - Leak guards
 
-    /// If a SubagentStop is ever lost, the count would otherwise stay wrong
-    /// forever. A new user turn is proof that nothing from the previous one is
-    /// still worth showing.
-    @Test func newUserPromptClearsStaleSubagents() {
+    /// Subagents run in the background by default and can finish after the
+    /// user has already sent the next prompt. An earlier revision cleared the
+    /// list at this boundary as a leak guard; that hid still-running agents
+    /// and made their eventual SubagentStop remove an entry that was no
+    /// longer there. Review finding F2.
+    @Test func newUserPromptKeepsRunningBackgroundSubagents() {
         let s = store()
         s.handleEvent(start(id: "a1"))
         s.handleEvent(BridgeEvent(bridgeEvent: "UserPromptSubmit", agent: .claude,
                                   sessionId: "s1", userPrompt: "next"))
+        #expect(s.sessions["s1"]?.activeSubagents.count == 1)
+        // ...and it still pairs correctly when it eventually finishes.
+        s.handleEvent(stop(id: "a1"))
         #expect(s.sessions["s1"]?.activeSubagents.isEmpty == true)
     }
 
