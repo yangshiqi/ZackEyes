@@ -800,6 +800,14 @@ struct NotchExpandedView: View {
     }
 
     private func toolInputShortPreview(_ input: [String: Any]?) -> String? {
+        Self.toolInputPreview(input)
+    }
+
+    /// One-line summary of a tool call's input.
+    ///
+    /// Static and internal so the ordering rules are testable — the fallback
+    /// chain is the whole behaviour.
+    static func toolInputPreview(_ input: [String: Any]?) -> String? {
         guard let input = input else { return nil }
         if let filePath = input["file_path"] as? String {
             return (filePath as NSString).lastPathComponent
@@ -809,6 +817,12 @@ struct NotchExpandedView: View {
         }
         if let path = input["path"] as? String {
             return (path as NSString).lastPathComponent
+        }
+        // #79 — the `Agent` tool has none of the above, so a subagent dispatch
+        // used to render as a bare tool name with nothing beside it. Its
+        // `description` is the closest thing to a target it has.
+        if let description = input["description"] as? String, !description.isEmpty {
+            return description
         }
         return nil
     }
