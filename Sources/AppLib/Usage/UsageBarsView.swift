@@ -1,16 +1,16 @@
 import SwiftUI
+import Shared
 
-/// Compact 5h + 7d usage bars. Shared between the real-notch expanded view
+/// Data-driven quota bars. Shared between the real-notch expanded view
 /// (`NotchRootView.expanded`) and any other surface that needs a read-only
-/// usage summary. The simulated-notch path uses its own inline variant
-/// because it couples the 5h row with a gear menu + update indicator.
+/// usage summary. The simulated-notch path uses its own inline variant because
+/// it supports split-agent rows plus the update badge.
 struct UsageBarsView<Trailing: View>: View {
     @ObservedObject var usageTracker: UsageTracker
     let trailing: Trailing
 
-    /// `trailing` is placed at the end of the 5h row (same slot the
-    /// simulated-notch gear lives in). Default is `EmptyView` — callers
-    /// that don't need a trailing element can use `init(usageTracker:)`.
+    /// `trailing` is placed at the end of the first visible quota row, or the
+    /// empty-state row when no window exists, so settings never disappear.
     init(
         usageTracker: UsageTracker,
         @ViewBuilder trailing: () -> Trailing = { EmptyView() }
@@ -22,20 +22,22 @@ struct UsageBarsView<Trailing: View>: View {
     var body: some View {
         let snap = usageTracker.snapshot
         let agent = snap.displayAgent(preferred: usageTracker.compactAgent)
-        let fivePct = snap.fiveHourUsedPct(for: agent)
-        let fiveReset = agent == .codex ? snap.codexFiveHourResetsAt : snap.fiveHourResetsAt
-        let fiveETA = agent == .codex ? snap.codexFiveHourETA : snap.fiveHourETA
-        let sevenPct = snap.sevenDayUsedPct(for: agent)
-        let sevenReset = agent == .codex ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
+        let presentation = snap.quotaWindowPresentation(for: agent)
         VStack(spacing: 8) {
-            usageBar(label: "5h", usedPct: fivePct,
-                     resetsAt: fiveReset, windowDuration: TimeWindowProgress.fiveHours,
-                     eta: fiveETA) {
-                trailing
-            }
-            usageBar(label: "7d", usedPct: sevenPct, resetsAt: sevenReset,
-                     windowDuration: TimeWindowProgress.sevenDays) {
-                EmptyView()
+            if presentation.windows.isEmpty {
+                quotaEmptyState(snapshot: snap, agent: agent) { trailing }
+            } else {
+                ForEach(presentation.windows, id: \.self) { window in
+                    usageBar(
+                        label: window.label,
+                        usedPct: snap.usedPct(for: window, agent: agent),
+                        resetsAt: snap.resetsAt(for: window, agent: agent),
+                        windowDuration: window.duration,
+                        eta: snap.eta(for: window, agent: agent)
+                    ) {
+                        if window == presentation.primary { trailing }
+                    }
+                }
             }
             if usageTracker.showTodayConsumption, snap.hasConsumption {
                 Rectangle()
@@ -50,6 +52,36 @@ struct UsageBarsView<Trailing: View>: View {
                 UsageFreshnessLabel(lastUpdated: lastUpdated)
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func quotaEmptyState<T: View>(
+        snapshot: UsageTracker.Snapshot,
+        agent: AgentKind,
+        @ViewBuilder trailing: () -> T
+    ) -> some View {
+        HStack(spacing: 6) {
+            if agent == .codex && snapshot.codexLimitReached {
+                Text("limit reached")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Color.usageLimitRed)
+            } else {
+                Text(snapshot.hasAuthoritativeQuotaReading(for: agent)
+                     ? "no active quota windows"
+                     : "no quota data")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+            Spacer(minLength: 0)
+            if agent == .codex,
+               snapshot.codexLimitReached,
+               let reset = snapshot.codexLimitResetsAt?.usageResetDisplay {
+                Text("resets in \(reset)")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.45))
+            }
+            trailing()
         }
     }
 

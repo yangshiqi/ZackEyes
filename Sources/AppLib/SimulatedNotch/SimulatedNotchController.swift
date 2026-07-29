@@ -3,7 +3,7 @@ import SwiftUI
 import Shared
 
 /// Manages a floating simulated-notch panel that morphs between two states:
-/// - **compact**: narrow pill (220×32) with status icon + 5h/7d remaining
+/// - **compact**: narrow pill (220×32) with status icon + available quota windows
 /// - **full**: large panel (520×fullHeight) with the full session list
 ///
 /// Both the NSPanel frame and the SwiftUI content are animated together

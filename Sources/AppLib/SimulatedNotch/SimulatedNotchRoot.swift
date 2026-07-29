@@ -3,7 +3,7 @@ import Shared
 
 /// The three modes the simulated notch can morph between.
 public enum NotchMode: Sendable {
-    case compact      // narrow pill, just status + 5h/7d remaining
+    case compact      // narrow pill, status + currently available quota windows
     case hoverWide    // wider pill (transitional, currently unused)
     case full         // large panel with sessions + usage header
 }
@@ -20,7 +20,7 @@ public final class NotchModeStore: ObservableObject {
     /// auto-expand is suppressed, and a visual move-cue border is shown.
     @Published public var isMovingNotch: Bool = false
 
-    /// Which agent's 5h/7d quota the *collapsed* simulated notch shows.
+    /// Which agent's available quota windows the collapsed simulated notch shows.
     /// (The full panel always shows both when both have data — this only
     /// controls the narrow pill the user stares at all day.) Persisted to
     /// `~/.zackeyes/config.json` via `ConfigStore`. Initialized from disk

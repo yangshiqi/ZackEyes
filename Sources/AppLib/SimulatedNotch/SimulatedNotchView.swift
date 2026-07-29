@@ -4,8 +4,8 @@ import Shared
 /// Compact / expanded Dynamic Island-style content for the simulated notch.
 ///
 /// - Collapsed: narrow pill with just a status dot.
-/// - Compact (session active): working icon + 5h token bar.
-/// - Expanded (on hover): full stats with 5h + 7d token counts and active session name.
+/// - Compact (session active): status + currently available quota windows.
+/// - Expanded (on hover): quota stats and active session count.
 struct SimulatedNotchView: View {
     @ObservedObject var viewModel: NotchViewModel
     @ObservedObject var usageTracker: UsageTracker
@@ -58,28 +58,56 @@ struct SimulatedNotchView: View {
     private var compactContent: some View {
         let snap = usageTracker.snapshot
         let agent = snap.displayAgent(preferred: modeStore.compactAgent)
-        let fivePct = snap.fiveHourUsedPct(for: agent)
-        let sevenPct = snap.sevenDayUsedPct(for: agent)
-        let eta = (agent == .codex) ? snap.codexFiveHourETA : snap.fiveHourETA
-        // #86 — imminent cap (≤30 min) takes the 5h slot; 7d stays put.
-        if let urgent = eta?.pillUrgentLabel {
-            urgentETAChip(urgent)
+        let presentation = snap.quotaWindowPresentation(for: agent)
+
+        if let primary = presentation.primary {
+            compactQuotaContent(primary, snapshot: snap, agent: agent)
         } else {
-            percentageChip(label: "5h", usedPct: fivePct)
+            quotaPlaceholder(snapshot: snap, agent: agent)
         }
-        Text("·")
-            .font(.system(size: 12))
-            .foregroundColor(.white.opacity(0.3))
-        percentageChip(label: "7d", usedPct: sevenPct)
+        if let secondary = presentation.secondary {
+            Text("·")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.3))
+            compactQuotaContent(secondary, snapshot: snap, agent: agent)
+        }
     }
 
     @ViewBuilder
-    private func urgentETAChip(_ label: String) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: "bolt.fill").font(.system(size: 10, weight: .bold))
-            Text(label).font(.system(size: 13, weight: .semibold, design: .monospaced))
+    private func compactQuotaContent(
+        _ window: UsageQuotaWindow,
+        snapshot: UsageTracker.Snapshot,
+        agent: AgentKind
+    ) -> some View {
+        if window == .fiveHour,
+           let urgent = snapshot.eta(for: window, agent: agent)?.pillUrgentLabel {
+            HStack(spacing: 3) {
+                Image(systemName: "bolt.fill").font(.system(size: 10, weight: .bold))
+                Text(urgent).font(.system(size: 13, weight: .semibold, design: .monospaced))
+            }
+            .foregroundColor(AppColors.critical.color)
+        } else {
+            percentageChip(
+                label: window.label,
+                usedPct: snapshot.usedPct(for: window, agent: agent)
+            )
         }
-        .foregroundColor(AppColors.critical.color)
+    }
+
+    @ViewBuilder
+    private func quotaPlaceholder(
+        snapshot: UsageTracker.Snapshot,
+        agent: AgentKind
+    ) -> some View {
+        if agent == .codex && snapshot.codexLimitReached {
+            Text("limit")
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundColor(Color.usageLimitRed)
+        } else {
+            Text(snapshot.hasAuthoritativeQuotaReading(for: agent) ? "no active cap" : "quota —")
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(AppColors.noData.color.opacity(0.5))
+        }
     }
 
     @ViewBuilder
@@ -125,27 +153,31 @@ struct SimulatedNotchView: View {
     private var expandedContent: some View {
         let snap = usageTracker.snapshot
         let agent = snap.displayAgent(preferred: modeStore.compactAgent)
-        let fivePct = snap.fiveHourUsedPct(for: agent)
-        let fiveResets = (agent == .codex) ? snap.codexFiveHourResetsAt : snap.fiveHourResetsAt
-        let sevenPct = snap.sevenDayUsedPct(for: agent)
-        let sevenResets = (agent == .codex) ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
+        let presentation = snap.quotaWindowPresentation(for: agent)
 
-        usageStat(
-            label: "5h",
-            usedPct: fivePct,
-            resetsAt: fiveResets,
-            eta: (agent == .codex) ? snap.codexFiveHourETA : snap.fiveHourETA
-        )
+        if let primary = presentation.primary {
+            usageStat(
+                label: primary.label,
+                usedPct: snap.usedPct(for: primary, agent: agent),
+                resetsAt: snap.resetsAt(for: primary, agent: agent),
+                eta: snap.eta(for: primary, agent: agent)
+            )
+        } else {
+            quotaPlaceholder(snapshot: snap, agent: agent)
+        }
 
-        Rectangle()
-            .fill(Color.white.opacity(0.15))
-            .frame(width: 1, height: 14)
+        if let secondary = presentation.secondary {
+            Rectangle()
+                .fill(Color.white.opacity(0.15))
+                .frame(width: 1, height: 14)
 
-        usageStat(
-            label: "7d",
-            usedPct: sevenPct,
-            resetsAt: sevenResets
-        )
+            usageStat(
+                label: secondary.label,
+                usedPct: snap.usedPct(for: secondary, agent: agent),
+                resetsAt: snap.resetsAt(for: secondary, agent: agent),
+                eta: snap.eta(for: secondary, agent: agent)
+            )
+        }
 
         Spacer(minLength: 4)
 
