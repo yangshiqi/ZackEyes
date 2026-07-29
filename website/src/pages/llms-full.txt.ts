@@ -24,6 +24,8 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - Display modes: support the physical MacBook notch, simulated Dynamic Island-style panels on Macs without a notch, menu bar workflows, and external display setups.
 - terminal tab jump: click a session card to activate matching sessions in iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, and Cursor when Accessibility permission is granted.
 - Context window usage: session cards can show context window usage, model and cost metadata, and per-agent usage pressure.
+- Working-tree and port signals: each session card shows the lowest LISTEN port opened anywhere in that agent's process subtree, the git branch, and the uncommitted file count. Ports come from kernel syscalls (sysctl and proc_pidfdinfo) rather than lsof, so no subprocess is spawned.
+- Subagent and compaction visibility: the card shows what a dispatched Claude subagent is working on rather than only that one is running, and marks context compaction while it runs and for a short window after it completes.
 - Daily token and cost tracking: a Today row totals token spend and USD cost across Claude and Codex with a 7-day sparkline; model pricing is bundled and computed locally, so no API key or cloud upload is required.
 - Controls: a unified Settings window (opened from the notch gear or the menu-bar icon) collects the custom global hotkey, Dynamic Island visibility, quota presentation, and a Preferred quota source that picks whether the compact pill favors Claude or Codex; in-app DMG download handles updates.
 - Native macOS behavior: a small notch panel designed for the top edge of the screen, with terminal workflows kept intact.
@@ -64,7 +66,7 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - To reinstall hooks, remove stale hook entries containing zackeyes and reopen ZackEyes.
 
 ## Roadmap
-- Process and session insight.
+- Daily work journal.
 - More agent support.
 - Local logs controls.
 - Roadmap page: https://zackeyes.vercel.app/roadmap

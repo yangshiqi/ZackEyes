@@ -261,7 +261,10 @@ describe('Astro site contract', () => {
     // — removed from roadmap; the live roadmap items are below.
     assert.doesNotMatch(page, /Hook health and event resilience/);
     assert.doesNotMatch(page, /Privacy and logs controls/);
-    assert.match(page, /Process and session insight/);
+    // Shipped in v0.9.6 (ports #81+#76, git #77, subagents #40+#79,
+    // compaction #37, jump diagnostics #42) — removed from the roadmap.
+    assert.doesNotMatch(page, /Process and session insight/);
+    assert.match(page, /Daily work journal/);
     assert.match(page, /More agent support/);
     assert.match(page, /Local logs controls/);
     assert.match(page, /Codex/);

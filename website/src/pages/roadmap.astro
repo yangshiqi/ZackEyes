@@ -4,12 +4,12 @@ import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { appVersion, issuesUrl } from '../lib/release.mjs';
 
-const description = 'ZackEyes roadmap: deeper process and session insight, more agent support, and clearer local logs controls.';
+const description = 'ZackEyes roadmap: a daily work journal, more agent support, and clearer local logs controls.';
 const roadmapItems = [
   {
-    title: 'Process and session insight',
+    title: 'Daily work journal',
     horizon: 'Next',
-    copy: 'Surface what an agent is really doing — open ports and child processes, the subagent tree, and current git branch and dirty state — while holding the near-zero-CPU, no-polling line.'
+    copy: 'Distil each day of agent work into a dated summary plus a running lessons file, committed to a private GitHub repo you choose. Summarising runs on the agent CLI already installed on your Mac, so there is no API key and no new dependency.'
   },
   {
     title: 'More agent support',
@@ -52,7 +52,7 @@ const roadmapStructuredData = {
           <div class="section-eyebrow">Product direction</div>
           <h1 id="roadmap-title">Roadmap.</h1>
           <p class="policy-lede">
-            ZackEyes is focused on reliable local agent awareness: sharper session and process insight, broader agent support, and clearer local logs controls — without breaking its near-zero-CPU, zero-dependency design.
+            ZackEyes is focused on reliable local agent awareness: a daily record of what your agents actually did, broader agent support, and clearer local logs controls — without breaking its near-zero-CPU, zero-dependency design.
           </p>
           <p class="policy-lede">
             The current release is v{appVersion} — see the <a href="/changelog">changelog</a> for what has shipped; below is what is next.
