@@ -122,6 +122,14 @@ public struct BridgeEvent: Codable, Sendable {
     public let contextWindow: [String: AnyCodable]?  // per-session context usage (Claude statusLine)
     public let model: [String: AnyCodable]?           // {id, display_name}
     public let cost: [String: AnyCodable]?            // {total_cost_usd, total_duration_ms, ...}
+    /// SubagentStart/SubagentStop only: opaque id identifying one Task
+    /// dispatch. Present on BOTH events (verified against real Claude Code
+    /// payloads), which is what makes exact start/stop pairing possible. (#40)
+    public let agentId: String?
+    /// SubagentStart/SubagentStop only: the subagent's type, e.g. "Explore"
+    /// or "general-purpose". (#40)
+    public let agentType: String?
+
     /// True when this event was replayed from the pending spool at app
     /// startup rather than received live (#89). Suppresses notifications.
     public var isReplayed: Bool
@@ -145,6 +153,8 @@ public struct BridgeEvent: Codable, Sendable {
         contextWindow: [String: AnyCodable]? = nil,
         model: [String: AnyCodable]? = nil,
         cost: [String: AnyCodable]? = nil,
+        agentId: String? = nil,
+        agentType: String? = nil,
         isReplayed: Bool = false
     ) {
         self.bridgeEvent = bridgeEvent
@@ -165,6 +175,8 @@ public struct BridgeEvent: Codable, Sendable {
         self.contextWindow = contextWindow
         self.model = model
         self.cost = cost
+        self.agentId = agentId
+        self.agentType = agentType
         self.isReplayed = isReplayed
     }
 
@@ -187,6 +199,8 @@ public struct BridgeEvent: Codable, Sendable {
         case contextWindow        = "context_window"
         case model
         case cost
+        case agentId              = "agent_id"
+        case agentType            = "agent_type"
         case isReplayed           = "_bridge_replayed"
     }
 
@@ -215,6 +229,8 @@ public struct BridgeEvent: Codable, Sendable {
         self.contextWindow = try c.decodeIfPresent([String: AnyCodable].self, forKey: .contextWindow)
         self.model = try c.decodeIfPresent([String: AnyCodable].self, forKey: .model)
         self.cost = try c.decodeIfPresent([String: AnyCodable].self, forKey: .cost)
+        self.agentId = try c.decodeIfPresent(String.self, forKey: .agentId)
+        self.agentType = try c.decodeIfPresent(String.self, forKey: .agentType)
         self.isReplayed = (try? c.decodeIfPresent(Bool.self, forKey: .isReplayed)) ?? false
     }
 }
