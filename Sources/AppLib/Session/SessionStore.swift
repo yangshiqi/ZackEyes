@@ -20,13 +20,26 @@ public struct ActiveSubagent: Identifiable, Sendable, Equatable {
     /// `agent_type`, e.g. "Explore" / "general-purpose". Nil if a future
     /// Claude Code stops sending it — the subagent is still counted.
     public let type: String?
+    /// What this subagent was asked to do, e.g. "Fix Task 5: add missing
+    /// dedup tests" (#79). Comes from the parent's own `Agent` tool call,
+    /// which `PreToolUse` already delivers — the `SubagentStart` payload
+    /// itself carries no description. Nil when the two could not be paired.
+    public let detail: String?
     public let startedAt: Date
 
-    public init(id: String, type: String?, startedAt: Date) {
+    public init(id: String, type: String?, detail: String? = nil, startedAt: Date) {
         self.id = id
         self.type = type
+        self.detail = detail
         self.startedAt = startedAt
     }
+}
+
+/// An `Agent` tool call seen via `PreToolUse`, waiting for the matching
+/// `SubagentStart` to claim its description (#79).
+public struct PendingSubagentCall: Sendable, Equatable {
+    public let subagentType: String?
+    public let description: String
 }
 
 public struct SessionInfo: Identifiable {
@@ -145,6 +158,20 @@ public struct SessionInfo: Identifiable {
     /// Ceiling on tracked subagents. A malformed or runaway event stream must
     /// not grow this without bound; real fan-outs are well under it.
     public static let maxTrackedSubagents = 64
+
+    /// #79 — `Agent` tool calls seen but not yet claimed by a SubagentStart.
+    ///
+    /// The two events cannot be joined on an id: `PreToolUse` fires before the
+    /// subagent exists, so there is no `agent_id` yet, and no `tool_use_id`
+    /// reaches us to correlate on. Matching is therefore by `subagent_type`,
+    /// FIFO within a type. That is exact for a single dispatch — the case
+    /// where the description is actually rendered — and at worst swaps two
+    /// descriptions between same-type siblings in a parallel fan-out, where
+    /// the badge shows a count anyway and the detail only reaches a tooltip.
+    public var pendingSubagentCalls: [PendingSubagentCall] = []
+
+    /// Ceiling on unclaimed `Agent` calls held per session.
+    public static let maxQueuedSubagentCalls = 32
 
     /// Cross-agent permission risk. Nil = default "asks every time" stance
     /// (no badge). Populated from Claude `permission_mode` hook field, or
@@ -383,6 +410,19 @@ public final class SessionStore: ObservableObject {
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             session.currentToolName = event.toolName
             session.currentToolInput = event.toolInput?.mapValues { $0.value }
+            // #79 — the parent's `Agent` call is the only place a subagent's
+            // description exists at dispatch time; SubagentStart carries the
+            // ids but no description. Queue it for the start to claim.
+            if agent == .claude, event.toolName == "Agent",
+               let input = event.toolInput,
+               let description = (input["description"]?.value as? String)?
+                   .trimmingCharacters(in: .whitespacesAndNewlines),
+               !description.isEmpty,
+               session.pendingSubagentCalls.count < SessionInfo.maxQueuedSubagentCalls {
+                session.pendingSubagentCalls.append(PendingSubagentCall(
+                    subagentType: input["subagent_type"]?.value as? String,
+                    description: description))
+            }
             session.isToolRunning = true
             session.toolCallCount += 1
             session.lastActiveAt = Date()
@@ -404,6 +444,10 @@ public final class SessionStore: ObservableObject {
             // card forever. A new user turn proves nothing from the previous
             // one is still worth showing.
             session.activeSubagents = []
+            // #79 — likewise for descriptions whose dispatch never started a
+            // subagent (denied, errored). Left queued, one would later be
+            // claimed by an unrelated subagent and describe the wrong work.
+            session.pendingSubagentCalls = []
             session.errorAt = nil
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
@@ -498,8 +542,16 @@ public final class SessionStore: ObservableObject {
             guard !session.activeSubagents.contains(where: { $0.id == agentId }),
                   session.activeSubagents.count < SessionInfo.maxTrackedSubagents
             else { break }
+            // #79 — claim the queued description for this type, oldest first.
+            var detail: String?
+            if let index = session.pendingSubagentCalls.firstIndex(where: {
+                $0.subagentType == event.agentType
+            }) ?? session.pendingSubagentCalls.indices.first {
+                detail = session.pendingSubagentCalls[index].description
+                session.pendingSubagentCalls.remove(at: index)
+            }
             session.activeSubagents.append(ActiveSubagent(
-                id: agentId, type: event.agentType, startedAt: Date()))
+                id: agentId, type: event.agentType, detail: detail, startedAt: Date()))
             sessions[sid] = session
 
         case "SubagentStop":

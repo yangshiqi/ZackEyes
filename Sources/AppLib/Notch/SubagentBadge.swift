@@ -8,18 +8,32 @@ import SwiftUI
 struct SubagentBadge: View {
     let subagents: [ActiveSubagent]
 
+    /// Longest description shown inline before eliding. The badge shares one
+    /// crowded row with project name, port, agent, risk and elapsed time.
+    static let maxDetailLength = 28
+
     /// Badge text, or nil when nothing is running.
     ///
-    /// A single subagent shows its type, because "Explore" says more than
-    /// "1 agent" in the same width. Past one, the types are usually the same
-    /// (a fan-out of identical reviewers) and would not fit anyway, so the
-    /// count carries the message.
+    /// For a single subagent the description wins when we have one — "Fix
+    /// dedup tests" is what the user wants to know, and "Explore" is only the
+    /// fallback (#79). Past one, descriptions differ per agent and none of
+    /// them fit, so the count carries the message and the detail moves to the
+    /// tooltip.
     static func label(for subagents: [ActiveSubagent]) -> String? {
         guard !subagents.isEmpty else { return nil }
-        if subagents.count == 1, let type = subagents[0].type, !type.isEmpty {
-            return type
+        if subagents.count == 1 {
+            if let detail = subagents[0].detail, !detail.isEmpty {
+                return truncate(detail)
+            }
+            if let type = subagents[0].type, !type.isEmpty { return type }
+            return "1 agent"
         }
-        return subagents.count == 1 ? "1 agent" : "\(subagents.count) agents"
+        return "\(subagents.count) agents"
+    }
+
+    private static func truncate(_ text: String) -> String {
+        guard text.count > maxDetailLength else { return text }
+        return text.prefix(maxDetailLength).trimmingCharacters(in: .whitespaces) + "…"
     }
 
     var body: some View {
@@ -42,6 +56,15 @@ struct SubagentBadge: View {
     }
 
     private var tooltip: String {
+        // With descriptions available, list the actual work — that is the
+        // whole point of #79, and the tooltip is where a fan-out's individual
+        // tasks can be read without crowding the card.
+        let described = subagents.compactMap { s -> String? in
+            guard let detail = s.detail, !detail.isEmpty else { return nil }
+            return s.type.map { "\($0): \(detail)" } ?? detail
+        }
+        if !described.isEmpty { return described.joined(separator: "\n") }
+
         let named = subagents.compactMap(\.type)
         guard !named.isEmpty else { return "\(subagents.count) subagents running" }
         // Collapse a fan-out of identical types into "3 × Explore".
