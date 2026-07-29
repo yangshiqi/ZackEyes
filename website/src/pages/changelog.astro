@@ -7,6 +7,22 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.9.6',
+    date: 'Published July 29, 2026',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Per-session LISTEN port badge: the lowest port opened anywhere in a session\'s process subtree, shown as :3000 +2 when there are more. Read straight from kernel syscalls, with no lsof and no subprocess.',
+          'Git branch and uncommitted file count on every session card, staying correct when you switch branches mid-session.',
+          'Claude subagent tracking: the card shows what a dispatched subagent is working on, not just that one is running.',
+          'Context compaction is no longer indistinguishable from a hang. The card says "Compacting context" while it runs and "Context compacted" for a minute after it finishes.',
+          'A terminal jump that matches no window now says why, either no window or grant access, instead of silently doing nothing.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.9.4',
     date: 'Published July 28, 2026',
     highlights: [
