@@ -276,6 +276,22 @@ struct NotchExpandedView: View {
                     compactMarker(session)
                 }
 
+                // #42 — a click that matched no window used to be completely
+                // silent, which is indistinguishable from the click not
+                // registering at all. Say so, briefly.
+                if session.recentlyFailedJump(now: tick),
+                   let reason = session.jumpFailureReason {
+                    HStack(spacing: 5) {
+                        Image(systemName: reason == .accessibilityDenied
+                              ? "lock.slash" : "arrow.uturn.backward")
+                            .font(.system(size: 8, weight: .bold))
+                        Text(reason.shortLabel)
+                            .font(.system(size: 10, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    .foregroundColor(AppColors.attention.color.opacity(0.9))
+                }
+
                 // Row 4: current/last tool action with running indicator
                 if let tool = session.currentToolName {
                     HStack(spacing: 6) {

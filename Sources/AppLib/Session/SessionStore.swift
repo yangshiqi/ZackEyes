@@ -189,6 +189,18 @@ public struct SessionInfo: Identifiable {
     /// collapsed vs this baseline. Same lifecycle as `compactTrigger`.
     public var compactStartContextPct: Double?
 
+    /// #42 — when the last click-to-jump failed, and why. Transient: it
+    /// answers "I just clicked and nothing happened", which stops being a
+    /// live question shortly after.
+    public var jumpFailedAt: Date?
+    public var jumpFailureReason: JumpFailureReason?
+
+    /// Whether a just-failed jump is still worth showing on the card.
+    public func recentlyFailedJump(now: Date = Date(), within: TimeInterval = 8) -> Bool {
+        guard let jumpFailedAt else { return false }
+        return now.timeIntervalSince(jumpFailedAt) < within
+    }
+
     /// #37 — how many compactions this session has completed, and when the
     /// last one finished. Unlike `compactTrigger` (which is in-flight state
     /// cleared at every turn boundary) these accumulate for the life of the
@@ -1219,6 +1231,21 @@ public final class SessionStore: ObservableObject {
     /// #186 — drop the compaction marker + baseline after the inference path
     /// fired its notification, so the same collapsed reading (or a repeat)
     /// can't fire twice.
+    /// #42 — record how a click-to-jump ended.
+    ///
+    /// Success clears any previous failure marker, so a card that failed once
+    /// and then worked does not keep accusing itself.
+    public func recordJumpOutcome(
+        sessionId: String,
+        failure: JumpFailureReason?,
+        at date: Date = Date()
+    ) {
+        guard var session = sessions[sessionId] else { return }
+        session.jumpFailureReason = failure
+        session.jumpFailedAt = failure == nil ? nil : date
+        sessions[sessionId] = session
+    }
+
     public func clearCompactMarker(sessionId: String) {
         guard var session = sessions[sessionId] else { return }
         // #37 — this is #186's inferred-completion path, so it is a real
