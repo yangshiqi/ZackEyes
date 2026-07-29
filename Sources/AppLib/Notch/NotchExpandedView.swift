@@ -195,6 +195,10 @@ struct NotchExpandedView: View {
 
                     Spacer(minLength: 4)
 
+                    if !session.activeSubagents.isEmpty {
+                        SubagentBadge(subagents: session.activeSubagents)
+                    }
+
                     if !session.listeningPorts.isEmpty {
                         PortBadge(ports: session.listeningPorts)
                     }

@@ -11,6 +11,24 @@ public struct TaskItem: Identifiable, Sendable {
     public var isInProgress: Bool { status == "in_progress" }
 }
 
+/// One in-flight Claude subagent (a `Task` dispatch), tracked between its
+/// `SubagentStart` and `SubagentStop` hooks (#40).
+public struct ActiveSubagent: Identifiable, Sendable, Equatable {
+    /// Claude Code's `agent_id`. Present on both start and stop, so it pairs
+    /// them exactly rather than by guesswork.
+    public let id: String
+    /// `agent_type`, e.g. "Explore" / "general-purpose". Nil if a future
+    /// Claude Code stops sending it — the subagent is still counted.
+    public let type: String?
+    public let startedAt: Date
+
+    public init(id: String, type: String?, startedAt: Date) {
+        self.id = id
+        self.type = type
+        self.startedAt = startedAt
+    }
+}
+
 public struct SessionInfo: Identifiable {
     public let id: String
     public var agent: AgentKind = .claude
@@ -118,6 +136,15 @@ public struct SessionInfo: Identifiable {
     /// #77 — branch + uncommitted-work state of `cwd`. Nil when the cwd is
     /// not a git repo, is gone, or git declined to answer.
     public var git: GitStatusReader.Snapshot?
+
+    /// #40 — Claude subagents currently running under this session, oldest
+    /// first. Claude-only: Codex marks whole threads as subagent-owned via
+    /// `subagentLabel` instead, which is a different concept.
+    public var activeSubagents: [ActiveSubagent] = []
+
+    /// Ceiling on tracked subagents. A malformed or runaway event stream must
+    /// not grow this without bound; real fan-outs are well under it.
+    public static let maxTrackedSubagents = 64
 
     /// Cross-agent permission risk. Nil = default "asks every time" stance
     /// (no badge). Populated from Claude `permission_mode` hook field, or
@@ -372,6 +399,11 @@ public final class SessionStore: ObservableObject {
             session.errorMessage = nil       // user is retrying
             session.compactTrigger = nil     // #181 — marker can't outlive its turn
             session.compactStartContextPct = nil
+            // #40 — leak guard. Pairing is exact while both hooks arrive, but
+            // a dropped SubagentStop would otherwise leave "3 agents" on the
+            // card forever. A new user turn proves nothing from the previous
+            // one is still worth showing.
+            session.activeSubagents = []
             session.errorAt = nil
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
@@ -442,6 +474,39 @@ public final class SessionStore: ObservableObject {
             // compaction to "manual".
             session.compactTrigger = nil
             session.compactStartContextPct = nil
+            sessions[sid] = session
+
+        // #40 — Claude subagent lifecycle. Both hooks carry `agent_id` and
+        // `agent_type` (verified against real Claude Code payloads), so the
+        // pairing is exact rather than positional.
+        //
+        // Neither case touches `state`, `lastAssistantMessage` or the tool
+        // fields, and that restraint is the point: a subagent finishing is
+        // NOT the parent finishing. Idling the card here would make every
+        // Task dispatch look like the session was done mid-turn, and copying
+        // the subagent's `last_assistant_message` over the parent's would
+        // attribute a subagent's words to the main agent.
+        case "SubagentStart":
+            // Claude-only concept; Codex marks whole threads subagent-owned
+            // via `subagentLabel`, which this must not collide with.
+            guard agent == .claude else { break }
+            // Without an id we could never pair the matching stop, so the
+            // entry would be unremovable. An uncounted subagent beats a
+            // permanently stuck counter.
+            guard let agentId = event.agentId, !agentId.isEmpty else { break }
+            guard var session = sessions[sid] else { break }
+            guard !session.activeSubagents.contains(where: { $0.id == agentId }),
+                  session.activeSubagents.count < SessionInfo.maxTrackedSubagents
+            else { break }
+            session.activeSubagents.append(ActiveSubagent(
+                id: agentId, type: event.agentType, startedAt: Date()))
+            sessions[sid] = session
+
+        case "SubagentStop":
+            guard agent == .claude else { break }
+            guard let agentId = event.agentId, !agentId.isEmpty else { break }
+            guard var session = sessions[sid] else { break }
+            session.activeSubagents.removeAll { $0.id == agentId }
             sessions[sid] = session
 
         case "PreCompact":
