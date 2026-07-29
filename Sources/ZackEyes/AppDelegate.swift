@@ -386,8 +386,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 self?.runLivenessSweep()
                 self?.runPassiveClaudeRescan()
+                self?.refreshListeningPorts()
             }
         }
+
+        // 7.1 #76 — refresh port badges the moment the panel opens. The 60s
+        //     sweep keeps them current while it stays open, but a user who
+        //     starts a dev server and immediately looks would otherwise face
+        //     a blank badge for up to a minute. The scan is ~3ms of pure
+        //     syscalls (no fork/exec), so paying it per expansion is cheap.
+        viewModel.$panelState
+            .removeDuplicates()
+            .sink { [weak self] state in
+                guard state == .expanded else { return }
+                Task { @MainActor in self?.refreshListeningPorts() }
+            }
+            .store(in: &cancellables)
 
         // 7.5 Codex jsonl tailer. Real-time fallback for codex sessions
         //     whose owning TUI predates ~/.codex/hooks.json (those processes
@@ -545,6 +559,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 guard !stillIdle.isEmpty else { return }
                 self.sessionStore.removeSessions(ids: stillIdle)
                 NSLog("ZackEyes: liveness sweep pruned %d dead sessions", stillIdle.count)
+            }
+        }
+    }
+
+    /// #76 — refresh each session's "holding a port open" badge.
+    ///
+    /// Answers "which session is still squatting on :3000" by walking each
+    /// agent's process subtree. Runs on the existing 60s sweep and on panel
+    /// expansion; #81 measured the whole thing at ~3ms of pure syscalls with
+    /// no fork/exec, which is why it can ride a timer at all — the original
+    /// `lsof -i` plan would have cost ~180ms per tick and needed a lazy
+    /// trigger plus a cache to stay inside the CPU budget.
+    private func refreshListeningPorts() {
+        let roots = SessionStore.portScanRoots(Array(sessionStore.sessions.values))
+        guard !roots.isEmpty else {
+            // Nothing scannable — clear any badge left over from a session
+            // that has since lost its hook-supplied pid.
+            sessionStore.applyListeningPorts([:])
+            return
+        }
+
+        Task.detached(priority: .utility) { [weak self] in
+            // A failed snapshot means "no information this tick", not "no
+            // ports". Returning here leaves the previous badges alone; passing
+            // an empty map would blank every badge on a transient hiccup.
+            guard let snapshot = ProcessTreeInspector.captureSnapshot() else { return }
+
+            var portsBySession: [String: [Int]] = [:]
+            for (sessionId, pid) in roots {
+                portsBySession[sessionId] = ProcessTreeInspector.listeningPorts(
+                    inTreeRootedAt: pid, snapshot: snapshot
+                )
+            }
+
+            await MainActor.run { [weak self] in
+                self?.sessionStore.applyListeningPorts(portsBySession)
             }
         }
     }
