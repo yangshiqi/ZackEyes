@@ -128,6 +128,14 @@ Claude Code 周期性触发 statusLine command（每隔几秒）
           └──────────────────────────────────────────┘
 ```
 
+> ⚠️ **两个刘海面各有独立状态机，"面板打开了"必须两边都接**（#77 踩过）。
+> `NotchWindowController`（真刘海）驱动 `viewModel.panelState`（`.compact`/`.expanded`），
+> `SimulatedNotchController`（模拟岛）驱动自己的 `mode`（`.compact`/`.full`），**互不写对方**。
+> 因此订阅 `viewModel.$panelState` 来做"用户正在看，刷新一下"只在**有刘海的 MacBook 上生效**，
+> 在其它机型上永远不触发——而且不报错、不崩，只是那个特性静默半死。
+> 两边统一暴露 `onDidExpand: (() -> Void)?`，AppDelegate 给它实际创建的那一个赋值；
+> 新增任何"展开时刷新"的逻辑都必须走这个钩子，不要再挂 `panelState`。
+
 `hoverWide` 是中间过渡态（保留代码以便未来按需使用）。当前主路径是 `compact ⇄ full`。
 为避免上下排列的多屏幕跨屏误触，compact hover 使用共享的
 `HoverIntentTracker`：鼠标在热区内稳定停留 250ms 才展开，8pt 以上的
@@ -234,6 +242,8 @@ PricingStore.start()
 | `NotchCompactView` | `Sources/AppLib/Notch/NotchCompactView.swift` | 折叠 / 紧凑状态视图；固定宽状态位按错误（红）→待用户（黄）→工作/空闲排序，多项注意事件显示数量；配额百分比保持无后缀的紧凑形式 |
 | `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | 完整 popover：按 Needs You / Running / Recent 分组（有其它分组时 Recent 默认折叠，仅剩 Recent 时自动展开）；会话卡片以项目名为主身份、Buddy 为辅助，同名可见项目追加短 session id；保留 tasks、permission、错误和 AskUserQuestion 内容 |
 | `AgentBadge` | `Sources/AppLib/Notch/AgentBadge.swift` | 14×14 SwiftUI 角标：`[CLAUDE]` 紫色 / `[CODEX]` 绿色。也提供 `accentColor(for:)` 给其它视图染色（split usage bar / 通知标题映射）。 |
+| `GitStatusReader` | `Sources/AppLib/Process/GitStatusReader.swift` | #77 每会话分支 + 未提交计数。**一次子进程拿两样**：`git -C <cwd> status --porcelain=v2 --branch` 同时给出 `branch.head` / `branch.ab` / 脏文件行。**刻意不走 transcript 白捡分支**（Claude 每行 `gitBranch`、Codex `session_meta.payload.git.branch`）：codex 只在第 1 行记一次，中途切分支后卡片会一直说谎；而 dirty 本来就要起 git，分支顺路带出来还省掉一套 agent 分支的代码，且对没有实时 transcript 的 `.detected` 会话同样有效。`parse(_:)` 为纯函数（detached → 回退短 oid；`(initial)` 未生分支保留名字；`!` ignored 行不计数；`?` untracked **计入**——新写的文件也是会丢的活）。**成本**：实测 20ms(291 文件)~80ms(2833 文件)，约为整个端口扫描的 10-30 倍,故必须按 cwd 去重（多会话常在同一 repo）且只走 60s sweep + 展开时刷新。`read` 先 stat 目录再决定要不要起进程——实测活跃机器上 18 个 cwd 有 15 个是已删除的 `.claude/worktrees/*`，每个白白 fork 一次 git 只为被告知「不是 repo」。 |
+| `GitBadge` | `Sources/AppLib/Notch/GitBadge.swift` | #77 `⑂ feat/x ●3`。放在卡片**次要信息行**（buddy 名那一行）而非标题行——标题行已有项目名/端口/agent/risk/耗时，分支名长到足以把它们挤出去。`dirtyLabel(for:)` 纯函数，>99 收敛成 `●99+`。 |
 | `PortBadge` | `Sources/AppLib/Notch/PortBadge.swift` | #76 端口角标 `:3000`。多端口收敛成 `:3000 +2`（卡片一行已有项目名/agent/risk/耗时，不能被挤掉），取**最小**端口打头——它是用户认得的那个，不是框架顺带开的临时端口。`label(for:)` 为纯函数，无端口时返回 nil（不占位）。 |
 | `BuddyAvatar` | `Sources/AppLib/Notch/BuddyAvatar.swift` | 动画化 buddy（headbang / 睡觉 / 惊慌）；自动尊重 macOS Reduce Motion，关闭无限动画但保留静态状态表达 |
 | `Buddy` | `Sources/AppLib/Notch/Buddy.swift` | 摇滚传奇命名池（66 个）+ 性格标语池 |
