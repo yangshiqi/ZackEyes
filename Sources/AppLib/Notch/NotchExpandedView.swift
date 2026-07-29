@@ -195,6 +195,10 @@ struct NotchExpandedView: View {
 
                     Spacer(minLength: 4)
 
+                    if !session.listeningPorts.isEmpty {
+                        PortBadge(ports: session.listeningPorts)
+                    }
+
                     AgentBadge(agent: session.agent, subagentLabel: session.subagentLabel)
 
                     if let risk = session.permissionRisk {

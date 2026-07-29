@@ -177,7 +177,7 @@ PricingStore.start()
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `SocketServer` | `Sources/AppLib/Socket/SocketServer.swift` | 监听 `/tmp/zackeyes.sock`，`PermissionRequest` 连接保持到用户决策 / POLLHUP / 超时 |
-| `SessionStore` | `Sources/AppLib/Session/SessionStore.swift` | 按 `session_id` 索引的多 session 状态机，含 `aggregateState` / `primarySession` / 错误检测。`SessionInfo.agent: AgentKind` 标记每个 session 的 agent。`recordCodexTaskComplete(...)` 处理来自 jsonl tailer 的 turn 完成事件。 |
+| `SessionStore` | `Sources/AppLib/Session/SessionStore.swift` | 按 `session_id` 索引的多 session 状态机，含 `aggregateState` / `primarySession` / 错误检测。`SessionInfo.agent: AgentKind` 标记每个 session 的 agent。`recordCodexTaskComplete(...)` 处理来自 jsonl tailer 的 turn 完成事件。**#76 端口归属**：`SessionInfo.listeningPorts` 由 `applyListeningPorts(_:)` 写入，扫描根 pid 由纯函数 `portScanRoots(_:)` 决定——**只认 hook 的 `_bridge_ppid`**（`claudePidFromHook == true`），与 liveness 同一道闸（CLAUDE.md 铁律 #7 / #217）：`activateDetectedSessions` 猜的那个同 cwd 兄弟进程可以用来跳终端，但不能用来认领端口，否则会把别人的 dev server 印在这张卡上。`applyListeningPorts` 会把**结果里缺席的 session 一并清空**（这一 tick 没测到就不能继续声称它开着端口），因此调用方在快照失败时必须整个跳过、不能传 `[:]`。 |
 | `SessionScanner` | `Sources/AppLib/Session/SessionScanner.swift` | 扫描 `~/.claude/projects/*.jsonl` + `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` 导入既有会话。两个 agent **使用独立 recency 窗口**（claude 默认 8h，codex 默认 30 min）。Codex 路径按 UTC 日期裁剪只走候选日期子目录；#83 起每 60s 随 sweep 重扫 Claude transcript（claude-only、活性过滤、ps 失败跳过本轮、未变化跳过），hook 缺失时启动后新会话 ≤60s 可见 |
 | `LivenessFilter` | `Sources/AppLib/Session/LivenessFilter.swift` | 纯函数：根据 `cwd` → 运行中 `claude` 进程 map 决定哪些 detected session 还活着。Codex session 直接 pass-through 不参与（暂无 `runningCodexCwds()`）。 |
 | `CodexJsonlTailer` | `Sources/AppLib/Session/CodexJsonlTailer.swift` | kqueue 实时监控 `~/.codex/sessions/*/rollout-*.jsonl`，看到 `event_msg.task_started` 即标记 working，看到用户可见的 `event_msg.task_complete` 即触发通知（内部审批 / 空结果不响），看到 `event_msg.token_count.info` 即更新 popup 的 per-session context bar，看到 `event_msg.error`（usage-limit hit / API 错误，带 `message` + `codex_error_info`）即 `recordCodexError` 弹错误横幅 + 通知 + 强制展开。**Codex hooks 不投递 error 事件，jsonl 是唯一来源**，所以 error 路径对 `.live`（已挂 hook）session 也照样上报（不像 task_complete 对 `.live` 跳过）。**用于覆盖那些启动早于 hooks 安装的 codex TUI**——它们永远不会 fire hook，但会持续写 jsonl。 |
@@ -234,6 +234,7 @@ PricingStore.start()
 | `NotchCompactView` | `Sources/AppLib/Notch/NotchCompactView.swift` | 折叠 / 紧凑状态视图；固定宽状态位按错误（红）→待用户（黄）→工作/空闲排序，多项注意事件显示数量；配额百分比保持无后缀的紧凑形式 |
 | `NotchExpandedView` | `Sources/AppLib/Notch/NotchExpandedView.swift` | 完整 popover：按 Needs You / Running / Recent 分组（有其它分组时 Recent 默认折叠，仅剩 Recent 时自动展开）；会话卡片以项目名为主身份、Buddy 为辅助，同名可见项目追加短 session id；保留 tasks、permission、错误和 AskUserQuestion 内容 |
 | `AgentBadge` | `Sources/AppLib/Notch/AgentBadge.swift` | 14×14 SwiftUI 角标：`[CLAUDE]` 紫色 / `[CODEX]` 绿色。也提供 `accentColor(for:)` 给其它视图染色（split usage bar / 通知标题映射）。 |
+| `PortBadge` | `Sources/AppLib/Notch/PortBadge.swift` | #76 端口角标 `:3000`。多端口收敛成 `:3000 +2`（卡片一行已有项目名/agent/risk/耗时，不能被挤掉），取**最小**端口打头——它是用户认得的那个，不是框架顺带开的临时端口。`label(for:)` 为纯函数，无端口时返回 nil（不占位）。 |
 | `BuddyAvatar` | `Sources/AppLib/Notch/BuddyAvatar.swift` | 动画化 buddy（headbang / 睡觉 / 惊慌）；自动尊重 macOS Reduce Motion，关闭无限动画但保留静态状态表达 |
 | `Buddy` | `Sources/AppLib/Notch/Buddy.swift` | 摇滚传奇命名池（66 个）+ 性格标语池 |
 | `PixelAvatar` | `Sources/AppLib/Notch/PixelAvatar.swift` | 9 种 8×8 像素图案 + 8 色摇滚配色 |

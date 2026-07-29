@@ -110,6 +110,11 @@ public struct SessionInfo: Identifiable {
     /// Nil for the main user thread.
     public var subagentLabel: String?
 
+    /// #76 — TCP ports anything in this session's process subtree is
+    /// listening on, ascending. Empty means either "nothing listening" or
+    /// "couldn't tell"; both render as no badge, which is correct for both.
+    public var listeningPorts: [Int] = []
+
     /// Cross-agent permission risk. Nil = default "asks every time" stance
     /// (no badge). Populated from Claude `permission_mode` hook field, or
     /// from Codex `turn_context` policy fields.
@@ -925,6 +930,48 @@ public final class SessionStore: ObservableObject {
         }
         session.subagentLabel = label
         sessions[sessionId] = session
+    }
+
+    // MARK: - Listening ports (#76)
+
+    /// Which sessions may have their process subtree scanned for listening
+    /// ports, and under which root pid.
+    ///
+    /// Only pids that came from a hook's `_bridge_ppid` qualify. This is the
+    /// same gate liveness uses, for the same reason (CLAUDE.md invariant #7 /
+    /// #217): `activateDetectedSessions` fills `claudePid` by guessing *some*
+    /// agent process sharing the cwd, and that guess is good enough to jump a
+    /// terminal but not to own a port. Scanning a guessed sibling's subtree
+    /// would print its dev server on this session's card — a wrong answer
+    /// stated confidently, which is worse than no badge.
+    ///
+    /// Pure function so the gate is testable without real processes.
+    public static func portScanRoots(_ sessions: [SessionInfo]) -> [String: Int32] {
+        var roots: [String: Int32] = [:]
+        for session in sessions {
+            guard session.claudePidFromHook, let pid = session.claudePid, pid > 0
+            else { continue }
+            roots[session.id] = Int32(pid)
+        }
+        return roots
+    }
+
+    /// Store a completed port scan. Every known session is updated, including
+    /// those absent from `portsBySession` — an absent session was not measured
+    /// this tick, and showing its previous ports would claim a dev server is
+    /// up when we no longer have grounds to say so.
+    ///
+    /// Callers must therefore only invoke this with the result of a scan that
+    /// actually ran; a failed snapshot must skip the call entirely rather than
+    /// pass `[:]`, otherwise a transient kernel hiccup blanks every badge.
+    public func applyListeningPorts(_ portsBySession: [String: [Int]]) {
+        for (id, session) in sessions {
+            let ports = portsBySession[id] ?? []
+            guard session.listeningPorts != ports else { continue }
+            var updated = session
+            updated.listeningPorts = ports
+            sessions[id] = updated
+        }
     }
 
     /// Import sessions discovered by SessionScanner. These are read-only and
