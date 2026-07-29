@@ -387,21 +387,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.runLivenessSweep()
                 self?.runPassiveClaudeRescan()
                 self?.refreshListeningPorts()
+                self?.refreshGitStatus()
             }
         }
 
-        // 7.1 #76 — refresh port badges the moment the panel opens. The 60s
-        //     sweep keeps them current while it stays open, but a user who
-        //     starts a dev server and immediately looks would otherwise face
-        //     a blank badge for up to a minute. The scan is ~3ms of pure
-        //     syscalls (no fork/exec), so paying it per expansion is cheap.
-        viewModel.$panelState
-            .removeDuplicates()
-            .sink { [weak self] state in
-                guard state == .expanded else { return }
-                Task { @MainActor in self?.refreshListeningPorts() }
+        // 7.1 #76/#77 — refresh the port and git badges the moment the panel
+        //     opens. The 60s sweep keeps them current while it stays open, but
+        //     a user who starts a dev server and immediately looks would face a
+        //     blank badge for up to a minute, and checking "who has :3000" is
+        //     the whole point of the badge.
+        //
+        //     Wired through each controller's `onDidExpand` rather than by
+        //     observing `viewModel.panelState`: only NotchWindowController
+        //     publishes that property. SimulatedNotchController runs its own
+        //     `mode` machine, so a panelState subscription refreshes on
+        //     notched MacBooks and silently never fires anywhere else.
+        let refreshOnOpen: () -> Void = { [weak self] in
+            Task { @MainActor in
+                self?.refreshListeningPorts()
+                self?.refreshGitStatus()
             }
-            .store(in: &cancellables)
+        }
+        windowController?.onDidExpand = refreshOnOpen
+        simulatedNotch?.onDidExpand = refreshOnOpen
 
         // 7.5 Codex jsonl tailer. Real-time fallback for codex sessions
         //     whose owning TUI predates ~/.codex/hooks.json (those processes
@@ -595,6 +603,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
             await MainActor.run { [weak self] in
                 self?.sessionStore.applyListeningPorts(portsBySession)
+            }
+        }
+    }
+
+    /// #77 — refresh each session's branch + uncommitted-work badge.
+    ///
+    /// Shares the port badge's cadence (60s sweep + panel expansion) but not
+    /// its budget: `git status` is a real subprocess at 20-80ms per repo,
+    /// versus ~3ms of syscalls for every session's ports combined. Hence the
+    /// per-cwd deduplication — several sessions in one repo produce one call,
+    /// not one each.
+    private func refreshGitStatus() {
+        let cwds = GitStatusReader.scanCwds(Array(sessionStore.sessions.values))
+        guard !cwds.isEmpty else { return }
+
+        Task.detached(priority: .utility) { [weak self] in
+            var byCwd: [String: GitStatusReader.Snapshot] = [:]
+            for cwd in cwds {
+                // A cwd that is not a repo returns nil and is simply absent
+                // from the map; `applyGitSnapshots` leaves those sessions
+                // untouched rather than clearing them.
+                if let snapshot = GitStatusReader.read(cwd: cwd) {
+                    byCwd[cwd] = snapshot
+                }
+            }
+            guard !byCwd.isEmpty else { return }
+
+            await MainActor.run { [weak self] in
+                self?.sessionStore.applyGitSnapshots(byCwd)
             }
         }
     }

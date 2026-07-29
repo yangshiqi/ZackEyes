@@ -115,6 +115,10 @@ public struct SessionInfo: Identifiable {
     /// "couldn't tell"; both render as no badge, which is correct for both.
     public var listeningPorts: [Int] = []
 
+    /// #77 — branch + uncommitted-work state of `cwd`. Nil when the cwd is
+    /// not a git repo, is gone, or git declined to answer.
+    public var git: GitStatusReader.Snapshot?
+
     /// Cross-agent permission risk. Nil = default "asks every time" stance
     /// (no badge). Populated from Claude `permission_mode` hook field, or
     /// from Codex `turn_context` policy fields.
@@ -970,6 +974,24 @@ public final class SessionStore: ObservableObject {
             guard session.listeningPorts != ports else { continue }
             var updated = session
             updated.listeningPorts = ports
+            sessions[id] = updated
+        }
+    }
+
+    /// Store a completed git scan, keyed by cwd (#77).
+    ///
+    /// Unlike `applyListeningPorts`, a session missing from the map keeps its
+    /// previous snapshot rather than being cleared. The two differ because the
+    /// claims differ: "listening on :3000" is about a process that may have
+    /// just exited, so silence must retract it; "on branch feat/x with 3
+    /// changes" describes a directory that does not stop existing because one
+    /// git invocation timed out. Blanking it would make the badge flicker.
+    public func applyGitSnapshots(_ snapshotsByCwd: [String: GitStatusReader.Snapshot]) {
+        for (id, session) in sessions {
+            guard let cwd = session.cwd, let snapshot = snapshotsByCwd[cwd] else { continue }
+            guard session.git != snapshot else { continue }
+            var updated = session
+            updated.git = snapshot
             sessions[id] = updated
         }
     }

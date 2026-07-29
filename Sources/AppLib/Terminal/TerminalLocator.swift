@@ -366,7 +366,11 @@ public enum TerminalLocator {
     ///
     /// stderr is redirected to /dev/null — same deadlock applies to stderr,
     /// and we never look at stderr from any caller.
-    private static func runWithTimeout(_ path: String, args: [String], timeoutSeconds: Int) -> String? {
+    /// Internal rather than private: `GitStatusReader` (#77) needs the same
+    /// drain + timeout + SIGKILL discipline, and re-deriving 50 lines of
+    /// subprocess-deadlock handling in a second place is how one of them ends
+    /// up missing the drain and hanging.
+    static func runWithTimeout(_ path: String, args: [String], timeoutSeconds: Int) -> String? {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: path)
         task.arguments = args

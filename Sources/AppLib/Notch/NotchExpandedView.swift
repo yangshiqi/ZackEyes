@@ -223,11 +223,19 @@ struct NotchExpandedView: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
 
-                Text(buddy.name)
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundColor(.white.opacity(0.4))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+                // Metadata row: git state leads (actionable — "this session
+                // has uncommitted work"), buddy name is flavour and yields.
+                HStack(spacing: 6) {
+                    if let git = session.git {
+                        GitBadge(snapshot: git)
+                            .layoutPriority(1)
+                    }
+                    Text(buddy.name)
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.4))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
 
                 // Row 1.6: context window usage bar (per-session, from statusLine)
                 if let used = session.contextUsedPct {

@@ -44,6 +44,10 @@ public final class NotchWindowController {
     private let usageTracker: UsageTracker
     /// Supplies the same application command menu used by the menu-bar icon.
     public var menuBuilder: (() -> NSMenu)?
+
+    /// Fired when the panel opens to `.expanded`. Mirror of the same hook on
+    /// `SimulatedNotchController` — see the note there on why both are needed.
+    public var onDidExpand: (() -> Void)?
     private var panel: NotchPanel?
     private var mouseMonitor: Any?
     private var localMouseMonitor: Any?
@@ -225,6 +229,7 @@ public final class NotchWindowController {
         panel?.ignoresMouseEvents = (newState != .expanded)
 
         if newState == .expanded {
+            onDidExpand?()
             startOutsideClickMonitoring()
         } else {
             stopOutsideClickMonitoring()

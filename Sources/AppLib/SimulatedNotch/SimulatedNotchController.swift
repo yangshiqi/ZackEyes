@@ -21,6 +21,15 @@ public final class SimulatedNotchController {
     /// Supplies the same application command menu used by the menu-bar icon.
     public var menuBuilder: (() -> NSMenu)?
 
+    /// Fired when the island opens to `.full`.
+    ///
+    /// The two notch surfaces run independent state machines — this one owns
+    /// `mode` (`.compact`/`.full`), while `NotchWindowController` drives
+    /// `viewModel.panelState`. Anything that wants to refresh on "the user is
+    /// looking now" has to be told by both, or it silently works on only one
+    /// class of Mac (#77).
+    public var onDidExpand: (() -> Void)?
+
     public var anchorView: NSView? { hostingView }
 
     private var panel: SimulatedNotchPanel?
@@ -267,6 +276,7 @@ public final class SimulatedNotchController {
         }
 
         if newMode == .full {
+            onDidExpand?()
             startOutsideClickMonitoring()
         } else {
             stopOutsideClickMonitoring()
