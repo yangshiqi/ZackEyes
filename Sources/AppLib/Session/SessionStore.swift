@@ -159,6 +159,29 @@ public struct SessionInfo: Identifiable {
     /// not grow this without bound; real fan-outs are well under it.
     public static let maxTrackedSubagents = 64
 
+    /// Age past which a still-"running" subagent is treated as a lost
+    /// `SubagentStop` rather than a live agent.
+    ///
+    /// Bounding by age rather than by turn is the point. Clearing at every
+    /// turn boundary hid background subagents, which finish after the next
+    /// prompt by design; keeping entries until their exact Stop arrives meant
+    /// one lost event left the badge wrong forever AND — once enough
+    /// accumulated — filled `maxTrackedSubagents`, after which every genuine
+    /// new subagent was silently rejected. That turned a cosmetic error into
+    /// total tracking failure for a long-lived session.
+    ///
+    /// An hour is far longer than a real subagent runs, so the cost is at
+    /// worst under-reporting an unusually long background agent (its Stop is
+    /// then a harmless no-op), and never a stuck badge or a dead tracker.
+    public static let staleSubagentAge: TimeInterval = 60 * 60
+
+    /// Drop subagents old enough that their Stop is presumed lost.
+    mutating func pruneStaleSubagents(now: Date = Date()) {
+        activeSubagents.removeAll {
+            now.timeIntervalSince($0.startedAt) > SessionInfo.staleSubagentAge
+        }
+    }
+
     /// #79 — `Agent` tool calls seen but not yet claimed by a SubagentStart.
     ///
     /// The two events cannot be joined on an id: `PreToolUse` fires before the
@@ -494,7 +517,11 @@ public final class SessionStore: ObservableObject {
             // unrelated subagent and describe the wrong work. The queue is a
             // within-turn pairing aid, so a new turn legitimately empties it.
             session.pendingSubagentCalls = []
-            // #40 — `activeSubagents` is deliberately NOT cleared here.
+            // #40 — sweep only entries old enough to be presumed lost. A
+            // blanket clear here hid background subagents, which finish after
+            // the next prompt by design.
+            session.pruneStaleSubagents()
+            // `activeSubagents` is deliberately NOT cleared wholesale here.
             // Subagents run in the background by default and can finish after
             // the user has sent another prompt, so clearing on a turn boundary
             // hid agents that were still running and made their eventual
@@ -594,6 +621,10 @@ public final class SessionStore: ObservableObject {
             // permanently stuck counter.
             guard let agentId = event.agentId, !agentId.isEmpty else { break }
             guard var session = sessions[sid] else { break }
+            // Prune BEFORE the cap check: otherwise accumulated stale entries
+            // consume the ceiling and silently reject every real subagent
+            // from then on.
+            session.pruneStaleSubagents()
             guard !session.activeSubagents.contains(where: { $0.id == agentId }),
                   session.activeSubagents.count < SessionInfo.maxTrackedSubagents
             else { break }
