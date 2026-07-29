@@ -269,6 +269,13 @@ struct NotchExpandedView: View {
                     }
                 }
 
+                // #37 — compaction is otherwise invisible: the agent stops
+                // producing output for a while with no tool running, which
+                // reads exactly like a stalled session. Say what's happening.
+                if session.isCompacting || session.recentlyCompacted(now: tick) {
+                    compactMarker(session)
+                }
+
                 // Row 4: current/last tool action with running indicator
                 if let tool = session.currentToolName {
                     HStack(spacing: 6) {
@@ -797,6 +804,62 @@ struct NotchExpandedView: View {
         case .waiting: return AppColors.attention.color
         case .idle, .stopped: return AppColors.idle.color
         }
+    }
+
+    /// #37 — in-flight / just-finished context compaction.
+    ///
+    /// Two states rather than one, because they answer different questions:
+    /// "why has nothing moved for the last minute" while it runs, and "the
+    /// context you were watching just got rewritten" right after. The second
+    /// expires (see `recentlyCompacted`) — a permanent badge would be noise.
+    @ViewBuilder
+    private func compactMarker(_ session: SessionInfo) -> some View {
+        let running = session.isCompacting
+        HStack(spacing: 6) {
+            if running {
+                ProgressView()
+                    .progressViewStyle(.circular)
+                    .scaleEffect(0.4)
+                    .frame(width: 10, height: 10)
+            } else {
+                Image(systemName: "arrow.down.right.and.arrow.up.left")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+
+            Text(running ? "Compacting context…" : "Context compacted")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(running
+                                 ? AppColors.activity.color
+                                 : .white.opacity(0.55))
+
+            // Manual vs auto matters to the user: one they asked for, the
+            // other means they hit the window limit.
+            if running, let trigger = session.compactTrigger, !trigger.isEmpty {
+                Text(trigger)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+
+            if session.compactCount > 1 {
+                Text("×\(session.compactCount)")
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+        }
+        .help(Self.compactTooltip(session))
+    }
+
+    /// Static + internal so the wording rules are testable without a view.
+    static func compactTooltip(_ session: SessionInfo) -> String {
+        if session.isCompacting {
+            let kind = session.compactTrigger.map { " (\($0))" } ?? ""
+            return "Compacting context\(kind) — the agent is rewriting its history"
+        }
+        guard session.compactCount > 0 else { return "Context compacted" }
+        return session.compactCount == 1
+            ? "Context compacted once this session"
+            : "Context compacted \(session.compactCount) times this session"
     }
 
     private func toolInputShortPreview(_ input: [String: Any]?) -> String? {

@@ -189,6 +189,37 @@ public struct SessionInfo: Identifiable {
     /// collapsed vs this baseline. Same lifecycle as `compactTrigger`.
     public var compactStartContextPct: Double?
 
+    /// #37 — how many compactions this session has completed, and when the
+    /// last one finished. Unlike `compactTrigger` (which is in-flight state
+    /// cleared at every turn boundary) these accumulate for the life of the
+    /// session, so the card can say "compacted 3 times" rather than only
+    /// "compacting right now".
+    public var compactCount: Int = 0
+    public var lastCompactedAt: Date?
+
+    /// True while a compaction is running. `compactTrigger` is set by
+    /// PreCompact and cleared by both completion paths, so it doubles as the
+    /// in-flight flag (#181/#186).
+    public var isCompacting: Bool { compactTrigger != nil }
+
+    /// Whether a just-finished compaction is still worth showing. The marker
+    /// is transient by design: it explains a gap the user may have just
+    /// watched, and stops being news shortly after.
+    public func recentlyCompacted(now: Date = Date(), within: TimeInterval = 60) -> Bool {
+        guard let lastCompactedAt else { return false }
+        return now.timeIntervalSince(lastCompactedAt) < within
+    }
+
+    /// Both completion paths funnel here so the two can never disagree:
+    /// the real `PostCompact` event, and #186's StatusLine-drop inference for
+    /// interactive Claude Code, which never fires PostCompact at all.
+    mutating func recordCompactFinished(at date: Date = Date()) {
+        compactCount += 1
+        lastCompactedAt = date
+        compactTrigger = nil
+        compactStartContextPct = nil
+    }
+
     /// Display name — last path component of cwd, or first 8 chars of id
     public var displayName: String {
         if let cwd = cwd, !cwd.isEmpty {
@@ -594,8 +625,11 @@ public final class SessionStore: ObservableObject {
                 session.isToolRunning = false
                 session.dropAllStaleAskUserQuestions()
             }
-            session.compactTrigger = nil
-            session.compactStartContextPct = nil
+            // #37 — the real PostCompact path. Shares one recorder with
+            // #186's inference (`clearCompactMarker`) so the count cannot
+            // differ depending on which path observed the finish; it also
+            // clears the in-flight marker, which is what used to happen here.
+            session.recordCompactFinished()
             session.lastActiveAt = Date()
             sessions[sid] = session
 
@@ -1187,8 +1221,9 @@ public final class SessionStore: ObservableObject {
     /// can't fire twice.
     public func clearCompactMarker(sessionId: String) {
         guard var session = sessions[sessionId] else { return }
-        session.compactTrigger = nil
-        session.compactStartContextPct = nil
+        // #37 — this is #186's inferred-completion path, so it is a real
+        // finished compaction and counts as one.
+        session.recordCompactFinished()
         sessions[sessionId] = session
     }
 
