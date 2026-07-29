@@ -158,15 +158,66 @@ struct SubagentLifecycleTests {
 
     // MARK: - Leak guards
 
-    /// If a SubagentStop is ever lost, the count would otherwise stay wrong
-    /// forever. A new user turn is proof that nothing from the previous one is
-    /// still worth showing.
-    @Test func newUserPromptClearsStaleSubagents() {
+    /// Subagents run in the background by default and can finish after the
+    /// user has already sent the next prompt. An earlier revision cleared the
+    /// list at this boundary as a leak guard; that hid still-running agents
+    /// and made their eventual SubagentStop remove an entry that was no
+    /// longer there. Review finding F2.
+    @Test func newUserPromptKeepsRunningBackgroundSubagents() {
         let s = store()
         s.handleEvent(start(id: "a1"))
         s.handleEvent(BridgeEvent(bridgeEvent: "UserPromptSubmit", agent: .claude,
                                   sessionId: "s1", userPrompt: "next"))
+        #expect(s.sessions["s1"]?.activeSubagents.count == 1)
+        // ...and it still pairs correctly when it eventually finishes.
+        s.handleEvent(stop(id: "a1"))
         #expect(s.sessions["s1"]?.activeSubagents.isEmpty == true)
+    }
+
+    /// The staleness bound is by age, not by turn. A lost SubagentStop must
+    /// not leave the badge wrong forever — and crucially must not accumulate
+    /// into `maxTrackedSubagents`, after which every genuine new subagent
+    /// would be silently rejected and tracking would be dead for the session.
+    /// Round-2 review finding.
+    @Test func lostStopsAreSweptByAgeNotByTurn() {
+        let s = store()
+        // A subagent whose Stop never arrived, older than the bound.
+        var session = try! #require(s.sessions["s1"])
+        session.activeSubagents = [ActiveSubagent(
+            id: "lost", type: "Explore",
+            startedAt: Date().addingTimeInterval(-(SessionInfo.staleSubagentAge + 60)))]
+        s.sessions["s1"] = session
+
+        // A new turn sweeps it — but only because of its age.
+        s.handleEvent(BridgeEvent(bridgeEvent: "UserPromptSubmit", agent: .claude,
+                                  sessionId: "s1", userPrompt: "next"))
+        #expect(s.sessions["s1"]?.activeSubagents.isEmpty == true)
+    }
+
+    /// A recent background subagent survives the same sweep.
+    @Test func recentBackgroundSubagentsSurviveTheSweep() {
+        let s = store()
+        s.handleEvent(start(id: "a1"))
+        s.handleEvent(BridgeEvent(bridgeEvent: "UserPromptSubmit", agent: .claude,
+                                  sessionId: "s1", userPrompt: "next"))
+        #expect(s.sessions["s1"]?.activeSubagents.count == 1)
+    }
+
+    /// Stale entries must never starve the cap: a session full of lost
+    /// entries has to still accept a real new subagent.
+    @Test func staleEntriesDoNotStarveTheCap() {
+        let s = store()
+        var session = try! #require(s.sessions["s1"])
+        let old = Date().addingTimeInterval(-(SessionInfo.staleSubagentAge + 60))
+        session.activeSubagents = (0..<SessionInfo.maxTrackedSubagents).map {
+            ActiveSubagent(id: "lost\($0)", type: "Explore", startedAt: old)
+        }
+        s.sessions["s1"] = session
+        #expect(s.sessions["s1"]?.activeSubagents.count == SessionInfo.maxTrackedSubagents)
+
+        s.handleEvent(start(id: "fresh"))
+        let ids = s.sessions["s1"]?.activeSubagents.map(\.id) ?? []
+        #expect(ids == ["fresh"], "stale entries must be pruned before the cap check, got \(ids.count) entries")
     }
 
     @Test func sessionStartClearsStaleSubagents() {

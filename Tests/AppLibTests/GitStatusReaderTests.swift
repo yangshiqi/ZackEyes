@@ -199,6 +199,42 @@ struct GitStatusReaderTests {
         #expect(s.isDirty == true)
     }
 
+    /// Pins the documented counting semantics: in `normal` mode git collapses
+    /// an untracked DIRECTORY into one `? dir/` row, so the badge counts
+    /// entries, not files. Counting files individually would need `-uall`,
+    /// which walks the whole untracked tree — the cost this reader exists to
+    /// avoid. Review finding F5.
+    @Test func untrackedDirectoryCountsAsOneEntry() throws {
+        let dir = try makeRepo { dir in
+            let sub = dir + "/newdir"
+            try FileManager.default.createDirectory(
+                atPath: sub, withIntermediateDirectories: true)
+            for i in 0..<5 {
+                try "x".write(toFile: "\(sub)/f\(i).txt", atomically: true, encoding: .utf8)
+            }
+        }
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let s = try #require(GitStatusReader.read(cwd: dir))
+        #expect(s.dirtyCount == 1, "five files in one new directory is one entry, got \(s.dirtyCount)")
+        #expect(s.isDirty == true)
+    }
+
+    /// The reader pins `status.showUntrackedFiles` so a user who set it to
+    /// `no` still gets a truthful dirty count instead of one that silently
+    /// ignores every new file. Review finding F5.
+    @Test func userConfigCannotSuppressUntrackedCounting() throws {
+        let dir = try makeRepo { dir in
+            _ = TerminalLocator.runWithTimeout(
+                "/usr/bin/git",
+                args: ["-C", dir, "config", "status.showUntrackedFiles", "no"],
+                timeoutSeconds: 10)
+            try "x".write(toFile: dir + "/stray.txt", atomically: true, encoding: .utf8)
+        }
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let s = try #require(GitStatusReader.read(cwd: dir))
+        #expect(s.dirtyCount == 1, "user config must not hide untracked work, got \(s.dirtyCount)")
+    }
+
     /// Silent degradation: a plain directory is not an error to surface.
     @Test func nonGitDirectoryYieldsNil() throws {
         let dir = FileManager.default.temporaryDirectory

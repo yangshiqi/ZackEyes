@@ -159,6 +159,29 @@ public struct SessionInfo: Identifiable {
     /// not grow this without bound; real fan-outs are well under it.
     public static let maxTrackedSubagents = 64
 
+    /// Age past which a still-"running" subagent is treated as a lost
+    /// `SubagentStop` rather than a live agent.
+    ///
+    /// Bounding by age rather than by turn is the point. Clearing at every
+    /// turn boundary hid background subagents, which finish after the next
+    /// prompt by design; keeping entries until their exact Stop arrives meant
+    /// one lost event left the badge wrong forever AND — once enough
+    /// accumulated — filled `maxTrackedSubagents`, after which every genuine
+    /// new subagent was silently rejected. That turned a cosmetic error into
+    /// total tracking failure for a long-lived session.
+    ///
+    /// An hour is far longer than a real subagent runs, so the cost is at
+    /// worst under-reporting an unusually long background agent (its Stop is
+    /// then a harmless no-op), and never a stuck badge or a dead tracker.
+    public static let staleSubagentAge: TimeInterval = 60 * 60
+
+    /// Drop subagents old enough that their Stop is presumed lost.
+    mutating func pruneStaleSubagents(now: Date = Date()) {
+        activeSubagents.removeAll {
+            now.timeIntervalSince($0.startedAt) > SessionInfo.staleSubagentAge
+        }
+    }
+
     /// #79 — `Agent` tool calls seen but not yet claimed by a SubagentStart.
     ///
     /// The two events cannot be joined on an id: `PreToolUse` fires before the
@@ -188,6 +211,18 @@ public struct SessionInfo: Identifiable {
     /// compact completion is inferred from the first StatusLine whose usage
     /// collapsed vs this baseline. Same lifecycle as `compactTrigger`.
     public var compactStartContextPct: Double?
+
+    /// #42 — when the last click-to-jump failed, and why. Transient: it
+    /// answers "I just clicked and nothing happened", which stops being a
+    /// live question shortly after.
+    public var jumpFailedAt: Date?
+    public var jumpFailureReason: JumpFailureReason?
+
+    /// Whether a just-failed jump is still worth showing on the card.
+    public func recentlyFailedJump(now: Date = Date(), within: TimeInterval = 8) -> Bool {
+        guard let jumpFailedAt else { return false }
+        return now.timeIntervalSince(jumpFailedAt) < within
+    }
 
     /// #37 — how many compactions this session has completed, and when the
     /// last one finished. Unlike `compactTrigger` (which is in-flight state
@@ -430,6 +465,13 @@ public final class SessionStore: ObservableObject {
                 newSession.compactTrigger = prior.compactTrigger
                 newSession.compactStartContextPct = prior.compactStartContextPct
                 newSession.state = prior.state
+                // #37 — the compaction tally describes the session's history,
+                // which an administrative restart does not undo. Without this
+                // the counter is wiped by the very event that follows every
+                // compaction, so `×2` could never appear and even `×1` would
+                // vanish whenever SessionStart arrived after PostCompact.
+                newSession.compactCount = prior.compactCount
+                newSession.lastCompactedAt = prior.lastCompactedAt
             }
             sessions[sid] = newSession
 
@@ -470,15 +512,24 @@ public final class SessionStore: ObservableObject {
             session.errorMessage = nil       // user is retrying
             session.compactTrigger = nil     // #181 — marker can't outlive its turn
             session.compactStartContextPct = nil
-            // #40 — leak guard. Pairing is exact while both hooks arrive, but
-            // a dropped SubagentStop would otherwise leave "3 agents" on the
-            // card forever. A new user turn proves nothing from the previous
-            // one is still worth showing.
-            session.activeSubagents = []
-            // #79 — likewise for descriptions whose dispatch never started a
-            // subagent (denied, errored). Left queued, one would later be
-            // claimed by an unrelated subagent and describe the wrong work.
+            // #79 — drop descriptions whose dispatch never started a subagent
+            // (denied, errored). Left queued, one would later be claimed by an
+            // unrelated subagent and describe the wrong work. The queue is a
+            // within-turn pairing aid, so a new turn legitimately empties it.
             session.pendingSubagentCalls = []
+            // #40 — sweep only entries old enough to be presumed lost. A
+            // blanket clear here hid background subagents, which finish after
+            // the next prompt by design.
+            session.pruneStaleSubagents()
+            // `activeSubagents` is deliberately NOT cleared wholesale here.
+            // Subagents run in the background by default and can finish after
+            // the user has sent another prompt, so clearing on a turn boundary
+            // hid agents that were still running and made their eventual
+            // SubagentStop remove an entry that was no longer there. Pairing
+            // is exact (both hooks carry `agent_id`), SessionStart rebuilds
+            // the session outright, and `maxTrackedSubagents` caps a runaway
+            // stream — the turn-boundary sweep was guarding a hypothetical at
+            // the cost of a documented feature.
             session.errorAt = nil
             session.lastActiveAt = Date()
             if session.state == .idle { session.state = .working }
@@ -570,14 +621,24 @@ public final class SessionStore: ObservableObject {
             // permanently stuck counter.
             guard let agentId = event.agentId, !agentId.isEmpty else { break }
             guard var session = sessions[sid] else { break }
+            // Prune BEFORE the cap check: otherwise accumulated stale entries
+            // consume the ceiling and silently reject every real subagent
+            // from then on.
+            session.pruneStaleSubagents()
             guard !session.activeSubagents.contains(where: { $0.id == agentId }),
                   session.activeSubagents.count < SessionInfo.maxTrackedSubagents
             else { break }
             // #79 — claim the queued description for this type, oldest first.
+            // #79 — match on type only. The previous `?? indices.first`
+            // fallback would hand a general-purpose agent the description of a
+            // queued Explore dispatch that never started, mislabelling one
+            // agent AND leaving the real Explore undescribed. No description
+            // beats a confidently wrong one — the same rule #76 applies to
+            // port attribution.
             var detail: String?
             if let index = session.pendingSubagentCalls.firstIndex(where: {
                 $0.subagentType == event.agentType
-            }) ?? session.pendingSubagentCalls.indices.first {
+            }) {
                 detail = session.pendingSubagentCalls[index].description
                 session.pendingSubagentCalls.remove(at: index)
             }
@@ -1219,6 +1280,21 @@ public final class SessionStore: ObservableObject {
     /// #186 — drop the compaction marker + baseline after the inference path
     /// fired its notification, so the same collapsed reading (or a repeat)
     /// can't fire twice.
+    /// #42 — record how a click-to-jump ended.
+    ///
+    /// Success clears any previous failure marker, so a card that failed once
+    /// and then worked does not keep accusing itself.
+    public func recordJumpOutcome(
+        sessionId: String,
+        failure: JumpFailureReason?,
+        at date: Date = Date()
+    ) {
+        guard var session = sessions[sessionId] else { return }
+        session.jumpFailureReason = failure
+        session.jumpFailedAt = failure == nil ? nil : date
+        sessions[sessionId] = session
+    }
+
     public func clearCompactMarker(sessionId: String) {
         guard var session = sessions[sessionId] else { return }
         // #37 — this is #186's inferred-completion path, so it is a real

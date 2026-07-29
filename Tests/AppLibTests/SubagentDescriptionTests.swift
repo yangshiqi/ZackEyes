@@ -83,6 +83,24 @@ struct SubagentDescriptionTests {
         #expect(s.sessions["s1"]?.activeSubagents.first?.detail == nil)
     }
 
+    /// A queued dispatch that never started (denied, errored) must not have
+    /// its description handed to a different type of agent. An earlier
+    /// revision fell back to "first queued of any type", which mislabelled the
+    /// general-purpose agent AND left the real Explore undescribed. Review
+    /// finding F6.
+    @Test func descriptionIsNeverStolenAcrossTypes() {
+        let s = store()
+        s.handleEvent(agentCall("explore work that never started", type: "Explore"))
+        s.handleEvent(start(id: "a1", type: "general-purpose"))
+        #expect(s.sessions["s1"]?.activeSubagents.first?.detail == nil)
+
+        // The Explore description is still there for a real Explore agent.
+        s.handleEvent(start(id: "a2", type: "Explore"))
+        let byId = Dictionary(uniqueKeysWithValues:
+            (s.sessions["s1"]?.activeSubagents ?? []).map { ($0.id, $0.detail) })
+        #expect(byId["a2"] == "explore work that never started")
+    }
+
     @Test func agentCallWithoutADescriptionIsNotQueued() {
         let s = store()
         s.handleEvent(agentCall(nil, type: "Explore"))

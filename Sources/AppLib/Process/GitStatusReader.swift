@@ -74,9 +74,18 @@ public enum GitStatusReader {
 
         // `-C` rather than setting the child's working directory: the shared
         // runner does not expose one, and this avoids a chdir race entirely.
+        //
+        // `status.showUntrackedFiles` is pinned rather than inherited: a user
+        // who set it to `no` would otherwise get a dirty count that silently
+        // ignores every new file, and the badge would disagree with their own
+        // `git status` for reasons neither of us could see. `normal` (not
+        // `all`) is deliberate — `all` makes git walk the entire untracked
+        // tree, which is exactly the cost this reader is designed to avoid.
         let output = TerminalLocator.runWithTimeout(
             "/usr/bin/git",
-            args: ["-C", cwd, "status", "--porcelain=v2", "--branch"],
+            args: ["-C", cwd,
+                   "-c", "status.showUntrackedFiles=normal",
+                   "status", "--porcelain=v2", "--branch"],
             timeoutSeconds: 5
         )
         guard let output else { return nil }
@@ -116,9 +125,18 @@ public enum GitStatusReader {
                 }
             } else if line.hasPrefix("1 ") || line.hasPrefix("2 ")
                         || line.hasPrefix("u ") || line.hasPrefix("? ") {
-                // Untracked (`?`) counts: a session that wrote ten new files
-                // has ten things to lose. `--porcelain` already honours
-                // .gitignore, so real build output never reaches this line.
+                // Untracked (`?`) entries count too — new files are
+                // uncommitted work, and `--porcelain` already honours
+                // .gitignore so real build output never reaches this line.
+                //
+                // "Entries", not "files": in `normal` mode git collapses an
+                // untracked directory into a single `? dir/` row, so ten new
+                // files under one new directory count as 1. That is a
+                // deliberate trade — counting them individually needs
+                // `-uall`, which walks the whole untracked tree and costs far
+                // more than the badge is worth. The badge answers "is there
+                // uncommitted work here, roughly how much", not "exactly how
+                // many files".
                 dirty += 1
             }
             // `! ` (ignored) deliberately falls through uncounted.

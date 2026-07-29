@@ -125,8 +125,32 @@ public final class NotchViewModel: ObservableObject {
                 // through to cwd-based AX matching across every visible
                 // terminal — works as long as the tab title still contains
                 // the cwd basename, even if the agent process is gone.
-                TerminalLocator.activateTerminalDirectly(
+                activated = TerminalLocator.activateTerminalDirectly(
                     sessionId: sessionId, cwd: cwd
+                )
+            }
+
+            // #42 — this return value used to be discarded, so a click that
+            // matched nothing did nothing, said nothing, and left no trace.
+            // Classify off-main (AXIsProcessTrusted is a cheap C call) and
+            // report on main.
+            let failure: JumpFailureReason? = activated ? nil : JumpDiagnostics.classify(
+                hadPid: pid != nil,
+                hadCwd: !(cwd?.isEmpty ?? true),
+                accessibilityTrusted: AXIsProcessTrusted()
+            )
+
+            await MainActor.run { [weak self] in
+                self?.sessionStore.recordJumpOutcome(sessionId: sessionId, failure: failure)
+                EventTrace.shared.record(
+                    agent: agent == .codex ? "codex" : "claude",
+                    event: "Jump",
+                    tool: nil,
+                    session: String(sessionId.prefix(8)),
+                    replayed: false
+                )
+                EventTrace.shared.note(
+                    failure.map { .dropped($0.traceLabel) } ?? .applied
                 )
             }
         }

@@ -34,6 +34,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// in/out on the empty↔non-empty boundary (not on every event-field
     /// mutation, which would flicker the window).
     private var lastHadSessionsForVisibility = false
+    /// #77 — one git sweep at a time.
+    ///
+    /// Each sweep spawns `git status` per distinct cwd, and the 60s timer can
+    /// collide with an on-expand refresh. Without this, slow scans overlap:
+    /// duplicated subprocess work against the ~0%-idle budget, and a stalled
+    /// older scan can land *after* a newer one and overwrite fresh state with
+    /// a stale branch/dirty snapshot. Dropping the overlapping request (rather
+    /// than queueing it) is right because the next tick recomputes everything
+    /// anyway — there is nothing to catch up on.
+    private var isRefreshingGit = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Prevent macOS from auto-terminating this LSUIElement app when no windows are visible
@@ -617,6 +627,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private func refreshGitStatus() {
         let cwds = GitStatusReader.scanCwds(Array(sessionStore.sessions.values))
         guard !cwds.isEmpty else { return }
+        guard !isRefreshingGit else { return }
+        isRefreshingGit = true
 
         Task.detached(priority: .utility) { [weak self] in
             var byCwd: [String: GitStatusReader.Snapshot] = [:]
@@ -628,10 +640,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     byCwd[cwd] = snapshot
                 }
             }
-            guard !byCwd.isEmpty else { return }
-
             await MainActor.run { [weak self] in
-                self?.sessionStore.applyGitSnapshots(byCwd)
+                guard let self else { return }
+                self.isRefreshingGit = false
+                guard !byCwd.isEmpty else { return }
+                self.sessionStore.applyGitSnapshots(byCwd)
             }
         }
     }
