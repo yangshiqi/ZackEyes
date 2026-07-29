@@ -18,7 +18,10 @@ A native macOS Dynamic Island for AI coding agents. Watches every active **Claud
 - **Permission approval in the notch.** When either agent wants to run a command, it pops out under the notch with the tool, command preview, and Allow/Deny buttons.
 - **AskUserQuestion answers in the notch** (Claude). Numbered option cards instead of typing answers in the terminal.
 - **Live usage limits** for both agents. 5h and 7d quota with progress bars and reset countdowns — Claude data comes from Claude Code's `statusLine` channel; Codex data comes from `event_msg.token_count.rate_limits` events in the rollout JSONL. The expanded panel splits the bars left/right when both agents are active; Settings → General → "Preferred quota source" chooses which agent the always-visible pill favors when both are available.
-- **Jump to the right terminal tab**: click a session and ZackEyes activates the exact iTerm2 / Terminal.app / Ghostty / Warp / Kitty / Alacritty / VS Code / Cursor tab where that agent is running.
+- **Jump to the right terminal tab**: click a session and ZackEyes activates the exact iTerm2 / Terminal.app / Ghostty / Warp / Kitty / Alacritty / VS Code / Cursor tab where that agent is running. When nothing matches, the card says why (`no window`, `grant access`) instead of failing silently.
+- **Ports, branch, and dirty state on the card.** Each session shows the lowest `LISTEN` port opened anywhere in its process subtree (`:3000 +2` when there are more) alongside its git branch and uncommitted count (`⑂ main ●3`). Ports come from pure kernel syscalls — no `lsof`, no subprocess, ~3ms for every session at once.
+- **Subagents in flight** (Claude): the card shows what a dispatched subagent is actually doing (`Locate the theme color sourc…`), not just that one is running.
+- **Context compaction stops looking like a hang.** `Compacting context…` while it runs, `Context compacted ×N` for a minute after it finishes — for both auto and manual `/compact`.
 - **Real-time fallback for already-running Codex.** Codex TUIs that started before ZackEyes was installed never load our hooks. The `CodexJsonlTailer` watches their rollouts and fires notifications on `task_complete` events without requiring a Codex restart.
 - **Tagged notifications.** Time-sensitive macOS alerts when a session finishes a turn, hits a rate limit, or crashes — every title prefixed with `[Claude]` or `[Codex]` so you know who needs attention without opening the notch.
 - **Personality**: every session gets a deterministic pixel-art rock musician (66+ legends from Queen to RATM). Buddies bounce when working, sleep when idle, panic-shake when waiting on you.
@@ -131,6 +134,7 @@ Sources/
 │   ├── MenuBar/
 │   ├── HotKey/
 │   ├── Notifications/
+│   ├── Process/                  # ProcessTreeInspector (ports), GitStatusReader
 │   ├── Terminal/
 │   ├── Update/                   # UpdateChecker (GitHub version detection)
 │   └── Usage/
