@@ -58,9 +58,9 @@ public final class JournalManualTrigger {
         let dir = self.journalDir
         let day = Date()
         Task.detached(priority: .utility) {
+            let name = Self.fileName(for: day)
             let result: Result<URL, Error> = Result {
                 let out = try pipeline(day)
-                let name = Self.fileName(for: day)
                 try FileManager.default.createDirectory(
                     atPath: dir, withIntermediateDirectories: true)
                 _ = try AtomicFileWriter.write(
@@ -70,6 +70,17 @@ public final class JournalManualTrigger {
                 _ = try? AtomicFileWriter.write(
                     Data(out.report.utf8), to: dir + "/." + name + ".run.txt")
                 return URL(fileURLWithPath: dir + "/" + name)
+            }
+            if case .failure(let error) = result {
+                // A failed run must leave a trace on disk too. `.failed` lives
+                // in memory; if the app quits before anyone opens the menu,
+                // "why is there no journal today" (spec §7) becomes
+                // unanswerable. Best-effort, same as the success sidecar.
+                try? FileManager.default.createDirectory(
+                    atPath: dir, withIntermediateDirectories: true)
+                _ = try? AtomicFileWriter.write(
+                    Data("FAILED: \(String(describing: error))".utf8),
+                    to: dir + "/." + name + ".run.txt")
             }
             await MainActor.run { [weak self] in
                 guard let self else { return }

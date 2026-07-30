@@ -42,12 +42,14 @@ struct JournalManualTriggerTests {
         #expect(revealed?.lastPathComponent == name)
     }
 
-    @Test("a failing pipeline lands in .failed and reveals nothing")
+    @Test("a failing pipeline lands in .failed, persists the reason, reveals nothing")
     func failureRecorded() async throws {
         struct Boom: Error {}
+        let dir = tempDir()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
         var revealed: URL?
         let trigger = JournalManualTrigger(
-            journalDir: tempDir(),
+            journalDir: dir,
             pipeline: { _ in throw Boom() },
             reveal: { revealed = $0 })
 
@@ -60,6 +62,13 @@ struct JournalManualTriggerTests {
             return
         }
         #expect(revealed == nil)
+        // The reason must survive the app: `.failed` is memory, and "why is
+        // there no journal today" has to be answerable tomorrow too.
+        let name = JournalManualTrigger.fileName(for: Date())
+        let sidecar = try String(contentsOfFile: dir + "/." + name + ".run.txt",
+                                 encoding: .utf8)
+        #expect(sidecar.hasPrefix("FAILED: "))
+        #expect(sidecar.contains("Boom"))
         // Failed is retryable: the menu label says so and the guard lets a
         // new run start.
         #expect(JournalManualTrigger.menuLabel(for: trigger.state).enabled)
