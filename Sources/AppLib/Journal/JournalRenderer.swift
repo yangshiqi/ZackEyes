@@ -16,16 +16,22 @@ public struct DayFacts: Sendable, Equatable {
     public let costUSD: Double?
     /// Some models had no price entry, so `costUSD` is a floor, not a total.
     public let costIsFloor: Bool
+    /// "N more projects with minor changes" — composed by the assembler in
+    /// the journal's language when the length budget squeezed projects out.
+    /// A fact, not narrative: rendered verbatim, no sanitizer, no escaping.
+    public let omittedNote: String?
 
     public init(
         projectOrder: [String], sessionCount: Int, distinctTokens: Int,
-        costUSD: Double? = nil, costIsFloor: Bool = false
+        costUSD: Double? = nil, costIsFloor: Bool = false,
+        omittedNote: String? = nil
     ) {
         self.projectOrder = projectOrder
         self.sessionCount = sessionCount
         self.distinctTokens = distinctTokens
         self.costUSD = costUSD
         self.costIsFloor = costIsFloor
+        self.omittedNote = omittedNote
     }
 }
 
@@ -67,6 +73,11 @@ public enum JournalRenderer {
             for n in narratives {
                 out.append("- **\(label(n.agent))** · \(n.outcome.rawValue) — \(escape(n.text))")
             }
+        }
+
+        if let omitted = facts.omittedNote {
+            out.append("")
+            out.append(omitted)
         }
 
         if !note.lessons.isEmpty {
