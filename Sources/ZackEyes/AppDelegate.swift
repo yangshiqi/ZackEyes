@@ -167,7 +167,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // The context menu now contains only app-level commands. All
         // preferences are hosted by the shared Settings window.
-        let statusMenu = StatusBarMenu(updateChecker: uc, downloader: dl)
+        let statusMenu = StatusBarMenu(
+            updateChecker: uc, downloader: dl,
+            journalTrigger: JournalManualTrigger())
         mb.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
         self.statusBarMenu = statusMenu
 
