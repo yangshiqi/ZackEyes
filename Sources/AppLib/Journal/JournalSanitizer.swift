@@ -94,22 +94,43 @@ public enum JournalSanitizer {
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return .failure(.empty) }
 
+        // Inspect a compatibility-normalized copy, return the original.
+        //
+        // Without this the whitelist has a hole the size of a path: the
+        // fullwidth block admitted for CJK punctuation (`（），`) also contains
+        // fullwidth ASCII — `／` `．` `＄` `｛` `｜` and the entire Latin
+        // alphabet `ａ-ｚＡ-Ｚ`. `／Users／alice`, `测试．swift` and `ｇｅｔＵｓｅｒ`
+        // all sailed through every structural rule, because those rules match
+        // ASCII. NFKC folds the confusables back so one set of rules covers
+        // both forms.
+        //
+        // The original is what gets returned and written, so callers still get
+        // exactly what the model wrote — normalization is for judging, not for
+        // rewriting.
+        let probe = text.precomposedStringWithCompatibilityMapping
+
         // Credential and identity checks run FIRST, ahead of the character
         // whitelist. Most real tokens (`ghp_…`) would also trip the character
         // rule, but reporting `disallowedCharacter` for a leaked key makes the
         // run record useless for the one case anyone would want to grep for.
-        if firstSecretPrefix(in: text) != nil { return .failure(.secretPrefix) }
+        if firstSecretPrefix(in: probe) != nil { return .failure(.secretPrefix) }
         for literal in policy.forbiddenLiterals where !literal.isEmpty {
-            if text.range(of: literal, options: .caseInsensitive) != nil {
+            if probe.range(of: literal, options: .caseInsensitive) != nil {
                 return .failure(.forbiddenLiteral)
             }
         }
 
-        guard text.unicodeScalars.count <= policy.maxScalars else { return .failure(.tooLong) }
-        for scalar in text.unicodeScalars where !isAllowed(scalar) {
+        // Both lengths: the original is what lands in the file, but NFKC can
+        // expand (`㍿` → `株式会社`), so a short-looking item must not be able
+        // to smuggle a long one past the budget either.
+        guard text.unicodeScalars.count <= policy.maxScalars,
+              probe.unicodeScalars.count <= policy.maxScalars
+        else { return .failure(.tooLong) }
+
+        for scalar in probe.unicodeScalars where !isAllowed(scalar) {
             return .failure(.disallowedCharacter)
         }
-        if let failure = structuralFailure(in: text, policy: policy) {
+        if let failure = structuralFailure(in: probe, policy: policy) {
             return .failure(failure)
         }
         return .success(text)
@@ -185,14 +206,19 @@ public enum JournalSanitizer {
         matches(text, #"\b\d{1,3}(\.\d{1,3}){3}\b"#)
     }
 
-    /// A dot with a letter touching it — `foo.swift`, `api.example.com`, `a.b`.
+    /// A dot with a letter touching it — `foo.swift`, `api.example.com`,
+    /// `测试.swift`.
     ///
-    /// Requiring a *letter* rather than any word character is what keeps
-    /// `2.5 小时` alive. Prose only ever puts a dot at the end of a sentence,
-    /// where the next character is a space or nothing; decimals are the one
-    /// legitimate mid-word dot and they are digits on both sides.
+    /// Letters are matched by Unicode property, not by `A-Za-z`: an ASCII-only
+    /// class misses `测试.swift`, which is a filename in exactly the codebase
+    /// this journal is written about.
+    ///
+    /// The rule is "a letter on one side, a letter or digit on the other", so
+    /// the one legitimate mid-word dot — a decimal, digits on both sides —
+    /// survives. Prose otherwise only puts a dot at the end of a sentence,
+    /// where the next character is a space or nothing.
     static func containsDottedIdentifier(_ text: String) -> Bool {
-        matches(text, #"[A-Za-z0-9]\.[A-Za-z]|[A-Za-z]\.[A-Za-z0-9]"#)
+        matches(text, #"\p{L}\.[\p{L}\p{N}]|[\p{L}\p{N}]\.\p{L}"#)
     }
 
     /// `#` survives only as an issue reference. It is the design's single

@@ -175,6 +175,46 @@ struct JournalSanitizerTests {
         #expect(rejection("built on test-macbook overnight") == .forbiddenLiteral)
     }
 
+    // MARK: - Confusables
+
+    @Test("fullwidth forms cannot walk past the ASCII structural rules")
+    func fullwidthConfusablesRejected() {
+        // The whitelist admits the fullwidth block for CJK punctuation like
+        // （）， — and that same block carries fullwidth ASCII: `／` `．` `＄`
+        // `｜` and the whole Latin alphabet. Every structural rule matched
+        // ASCII, so each of these sailed through until the checks were run
+        // against an NFKC-normalized copy.
+        #expect(rejection("／Users／alice 下面的东西") == .disallowedCharacter)
+        #expect(rejection("改了 测试．swift 的解析") == .dottedIdentifier)
+        #expect(rejection("重写了 ｇｅｔＵｓｅｒ 的实现") == .codeIdentifier)
+        #expect(rejection("连到 １０．０．０．１ 之后卡住") == .ipAddress)
+        #expect(rejection("token ｇｈｐ＿AbCdEfGhIjKlMnOp") == .secretPrefix)
+    }
+
+    @Test("a CJK filename with an ASCII dot is rejected")
+    func cjkFilenameRejected() {
+        // `A-Za-z` on both sides of the dot misses this, and it is a filename
+        // in exactly the kind of codebase this journal is written about.
+        #expect(rejection("改了 测试.swift 里的解析") == .dottedIdentifier)
+        #expect(rejection("看了 文档.md 之后重写") == .dottedIdentifier)
+    }
+
+    @Test("normalization judges but never rewrites")
+    func normalizationDoesNotRewrite() {
+        // A fullwidth string that is otherwise clean must come back verbatim —
+        // the promise is "what came back is what the model wrote".
+        let input = "今天推进了三个项目（都已交付），没有踩坑。"
+        #expect(JournalSanitizer.sanitize(input, policy: policy) == input)
+    }
+
+    @Test("an item that only exceeds the budget after normalization is rejected")
+    func normalizationExpansionCaught() {
+        // NFKC can expand (㍿ → 株式会社). A short-looking item must not be
+        // able to smuggle a long one past the budget.
+        let tight = JournalSanitizer.Policy(maxScalars: 3)
+        #expect(JournalSanitizer.sanitize("㍿株式", policy: tight) == nil)
+    }
+
     // MARK: - Length and emptiness
 
     @Test("over-length items are discarded, never truncated")

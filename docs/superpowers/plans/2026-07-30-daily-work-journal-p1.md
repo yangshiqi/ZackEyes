@@ -138,4 +138,6 @@ Q0 之前，缺哪个引擎都能用另一个顶。现在不能了：**没装 co
 
 Keychain、`GitHubPublisher`、`LESSONS.md`、正式设置 UI（→ P2）；`JournalScheduler`、配额闸门、run 记录、网站文案（→ P3）。
 
+**run 记录分两段**：Q2 的重试要靠它，所以**基础的写入与读回落在 P2**（与 `GitHubPublisher` 同期）；P3 只加调度相关的部分（延后计数、跨日）与汇入诊断报告。原稿把它整块记在 P3，与 Q2 冲突 —— 那会让 P2 实现 lessons 重试时没有可依赖的持久状态。
+
 **注**：仓库里目前**没有任何 Keychain / `SecItem` 代码**，P2 要从零写。Security 是系统框架，不破铁律 6。

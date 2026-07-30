@@ -149,5 +149,11 @@ public struct DayNote: Sendable, Equatable {
         self.lessons = lessons
     }
 
-    public var isEmpty: Bool { projects.isEmpty && lessons.isEmpty }
+    /// A project key whose narrative list is empty renders as nothing, so a
+    /// note holding only empty buckets is empty in every sense that matters.
+    /// Reporting it as non-empty would let a publication gate push a file with
+    /// a facts line and no content.
+    public var isEmpty: Bool {
+        projects.values.allSatisfy(\.isEmpty) && lessons.isEmpty
+    }
 }
