@@ -2,15 +2,19 @@ import Testing
 @testable import AppLib
 
 @MainActor
-@Test func statusBarMenuBuildsTheThreeApplicationCommands() {
+@Test func statusBarMenuBuildsTheApplicationCommands() {
     let menu = StatusBarMenu(
         updateChecker: UpdateChecker(checkInterval: 60),
-        downloader: UpdateDownloader()
+        downloader: UpdateDownloader(),
+        journalTrigger: JournalManualTrigger()
     ).build()
 
     let commandTitles = menu.items
         .filter { !$0.isSeparatorItem }
         .map(\.title)
 
-    #expect(commandTitles == ["Settings...", "About ZackEyes", "Quit ZackEyes"])
+    #expect(commandTitles == [
+        "Settings...", "About ZackEyes",
+        "Generate Today's Journal", "Quit ZackEyes",
+    ])
 }
