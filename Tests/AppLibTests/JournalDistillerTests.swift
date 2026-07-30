@@ -183,12 +183,12 @@ struct JournalDistillerTests {
         #expect(result.failures[0].stage == .map)
     }
 
-    @Test("a failed reduce falls back to the first batch instead of dropping the project")
+    @Test("a failed reduce falls back to concatenating every successful batch")
     func reduceFailureFallsBack() {
         let big = String(repeating: "x", count: 90)
         let runner = FakeRunner([
-            .success(#"{"did":["第一批"],"outcome":"shipped","lessons":[]}"#),
-            .success(#"{"did":["第二批"],"outcome":"shipped","lessons":[]}"#),
+            .success(#"{"did":["第一批","重复项"],"outcome":"shipped","lessons":["教训甲"]}"#),
+            .success(#"{"did":["第二批","重复项"],"outcome":"blocked","lessons":["教训乙"]}"#),
             .failure(Boom()),                    // reduce attempt 1
             .failure(Boom()),                    // reduce attempt 2
         ])
@@ -199,9 +199,13 @@ struct JournalDistillerTests {
             slice(.claude, "p", text: big, start: 100),
         ])
 
-        // Half a narrative beats an unexplained hole in the day.
+        // First-batch-only quietly discarded most of a busy day's map work.
+        // The mechanical merge keeps everything, dedupes exact repeats, and
+        // reports disagreeing outcomes as partial.
         let key = JournalGroupKey(agent: .claude, project: "p")
-        #expect(result.notes[key]?.did == ["第一批"])
+        #expect(result.notes[key]?.did == ["第一批", "重复项", "第二批"])
+        #expect(result.notes[key]?.lessons == ["教训甲", "教训乙"])
+        #expect(result.notes[key]?.outcome == .partial)
         #expect(result.failures.count == 1)
         #expect(result.failures[0].stage == .reduce)
     }

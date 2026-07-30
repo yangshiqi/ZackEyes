@@ -156,10 +156,14 @@ public struct JournalDistiller {
                                              failures: &failures) {
                     notes[group] = merged
                 } else {
-                    // Reduce failed twice: fall back to the first batch alone
-                    // rather than dropping the project. Half a narrative beats
-                    // an unexplained hole in the day.
-                    notes[group] = batchNotes[0]
+                    // Reduce failed twice: fall back to a Swift concatenation
+                    // of every successful batch, not to the first batch alone.
+                    // The first-batch version quietly discarded most of a busy
+                    // day's map work — the exact silent data loss the failure
+                    // record exists to prevent. Concatenation loses the LLM's
+                    // dedup/synthesis, never its material; the assembler's
+                    // sanitizer and budget still apply downstream.
+                    notes[group] = Self.concatenate(batchNotes)
                 }
             }
         }
@@ -191,6 +195,23 @@ public struct JournalDistiller {
             }
         }
         return nil
+    }
+
+    /// Mechanical merge of batch notes, used when the LLM reduce is
+    /// unavailable. Exact-duplicate strings collapse; everything else is
+    /// kept in batch order. Outcome: unanimous value, else `.partial` —
+    /// a day whose batches disagree is by definition partially done.
+    static func concatenate(_ batchNotes: [SliceNote]) -> SliceNote {
+        var seenDid = Set<String>(), seenLessons = Set<String>()
+        var did: [String] = [], lessons: [String] = []
+        for note in batchNotes {
+            for d in note.did where seenDid.insert(d).inserted { did.append(d) }
+            for l in note.lessons where seenLessons.insert(l).inserted { lessons.append(l) }
+        }
+        let outcomes = Set(batchNotes.map(\.outcome))
+        return SliceNote(did: did,
+                         outcome: outcomes.count == 1 ? outcomes.first! : .partial,
+                         lessons: lessons)
     }
 
     // MARK: Grouping and batching (pure)

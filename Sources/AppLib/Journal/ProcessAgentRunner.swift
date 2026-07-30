@@ -77,11 +77,22 @@ public struct ProcessAgentRunner: AgentRunner {
         // the same help screen lists `--dangerously-bypass-approvals-and-
         // sandbox`, which is exactly what a smuggled argv element could name.
         // Keeping every untrusted byte out of argv closes the class.
+        // `-C dir` points codex at the empty scratch directory, so "the
+        // workspace" its tools see contains nothing. Known residual, recorded
+        // rather than hidden: `-s read-only` blocks writes, not reads — codex
+        // has no equivalent of claude's `--disallowedTools "*"`, so an
+        // injected transcript can still steer it into reading user-readable
+        // files and paraphrasing them into whitelist-shaped prose. The
+        // sanitizer mitigates but is not a boundary against deliberate
+        // encoding. Closing this needs a codex-side no-tools knob (tracked
+        // for P2's opt-in copy); the minimal environment below at least
+        // removes every secret that travels by env var.
         _ = try spawn(
             arguments: [
                 "codex", "exec",
                 "--ephemeral", "--disable", "hooks",
                 "-s", "read-only", "--skip-git-repo-check",
+                "-C", dir.path,
                 "--output-schema", schemaURL.path,
                 "-o", outURL.path,
                 "-",
@@ -89,11 +100,23 @@ public struct ProcessAgentRunner: AgentRunner {
             stdin: prompt,
             timeout: timeout)
 
+        // A SliceNote is a few hundred bytes; a megabyte of "note" is not a
+        // note, and materializing an arbitrarily large file into a String is
+        // how a hostile child turns disk into our memory.
+        let attrs = try? FileManager.default.attributesOfItem(atPath: outURL.path)
+        let size = attrs?[.size] as? Int ?? 0
+        guard size <= Self.maxOutputBytes else {
+            throw SpawnError(description: "codex output file exceeds cap (\(size) bytes)")
+        }
         guard let out = try? String(contentsOf: outURL, encoding: .utf8) else {
             throw SpawnError(description: "codex produced no output file")
         }
         return out
     }
+
+    /// Cap on anything a child hands back, stdout or file. Far above any real
+    /// SliceNote, far below anything that could hurt the host app.
+    static let maxOutputBytes = 2 * 1024 * 1024
 
     static let sliceNoteSchema = """
     {
@@ -118,9 +141,25 @@ public struct ProcessAgentRunner: AgentRunner {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         task.arguments = arguments
-        var env = ProcessInfo.processInfo.environment
-        env["ZACKEYES_JOURNAL"] = "1"
+
+        // Minimal environment, not an inherited one. The app's environment
+        // can carry secrets (API keys, tokens exported in the user's shell),
+        // and the child is fed hostile transcript text — inheriting
+        // everything hands an injected model the contents of every env var.
+        // The whitelist is what the CLIs demonstrably need: PATH to be found,
+        // HOME for their auth stores, USER/LOGNAME because claude's OAuth
+        // keychain lookup fails "Not logged in" without them (measured — the
+        // smoke caught it in 3.7s; they are identity, not secrets), TMPDIR
+        // for scratch, LANG for UTF-8, and ANTHROPIC_API_KEY passed through
+        // because for some users it is the claude CLI's only auth.
+        var env: [String: String] = ["ZACKEYES_JOURNAL": "1"]
+        let inherited = ProcessInfo.processInfo.environment
+        for key in ["PATH", "HOME", "USER", "LOGNAME", "TMPDIR", "LANG",
+                    "ANTHROPIC_API_KEY"] {
+            env[key] = inherited[key]
+        }
         task.environment = env
+        task.currentDirectoryURL = FileManager.default.temporaryDirectory
 
         let stdout = Pipe()
         task.standardOutput = stdout
@@ -141,7 +180,15 @@ public struct ProcessAgentRunner: AgentRunner {
         if let stdinPipe, let stdinText {
             // Write off-thread: a prompt larger than the pipe buffer would
             // otherwise deadlock against a child that hasn't started reading.
+            //
+            // F_SETNOSIGPIPE first. If the child dies before consuming the
+            // prompt, write(2) to the broken pipe raises SIGPIPE, whose
+            // default action terminates the PROCESS — the whole app, not the
+            // writer thread. With the flag, the write fails with EPIPE, which
+            // `try?` swallows, which is the correct amount of caring about a
+            // child that is already dead.
             let writeHandle = stdinPipe.fileHandleForWriting
+            _ = fcntl(writeHandle.fileDescriptor, F_SETNOSIGPIPE, 1)
             DispatchQueue.global(qos: .utility).async {
                 try? writeHandle.write(contentsOf: Data(stdinText.utf8))
                 try? writeHandle.close()
@@ -155,18 +202,32 @@ public struct ProcessAgentRunner: AgentRunner {
             func get() -> Bool { lock.lock(); defer { lock.unlock() }; return value }
         }
         let timedOut = Flag()
+        let overCap = Flag()
 
         let drained = DispatchGroup()
         drained.enter()
         final class Holder: @unchecked Sendable {
             private let lock = NSLock()
             private var data = Data()
-            func set(_ d: Data) { lock.lock(); data = d; lock.unlock() }
+            func append(_ d: Data) { lock.lock(); data.append(d); lock.unlock() }
+            func count() -> Int { lock.lock(); defer { lock.unlock() }; return data.count }
             func get() -> Data { lock.lock(); defer { lock.unlock() }; return data }
         }
         let holder = Holder()
-        DispatchQueue.global(qos: .utility).async {
-            holder.set(stdout.fileHandleForReading.readDataToEndOfFile())
+        let childPid = task.processIdentifier
+        DispatchQueue.global(qos: .utility).async { [task] in
+            // Chunked, capped drain. `readDataToEndOfFile` buffers without
+            // limit, so a child spraying stdout turns its disk quota into our
+            // memory; past the cap the child is killed and the run fails.
+            let handle = stdout.fileHandleForReading
+            while let chunk = try? handle.read(upToCount: 64 * 1024), !chunk.isEmpty {
+                holder.append(chunk)
+                if holder.count() > Self.maxOutputBytes {
+                    overCap.set()
+                    if task.isRunning { kill(childPid, SIGKILL) }
+                    break
+                }
+            }
             drained.leave()
         }
 
@@ -189,9 +250,20 @@ public struct ProcessAgentRunner: AgentRunner {
         // surface downstream as "unparseable JSON", pointing at the model when
         // the fault is the read.
         if drained.wait(timeout: .now() + 5) == .timedOut {
+            // A descendant inherited stdout and holds the pipe open. The
+            // reader thread stays parked until that descendant exits — a
+            // bounded leak (one thread + one fd per failed run), recorded
+            // here as the failure it is. Containing descendants for real
+            // needs a process group, which `Process` does not expose; the
+            // CLIs themselves are trusted (our threat model distrusts the
+            // *transcript*), so per-run process-group plumbing is not worth
+            // its complexity yet.
             throw SpawnError(description: "stdout drain incomplete after exit")
         }
 
+        if overCap.get() {
+            throw SpawnError(description: "stdout exceeded \(Self.maxOutputBytes) bytes")
+        }
         if timedOut.get() {
             throw SpawnError(description: "timed out after \(Int(timeout))s")
         }
