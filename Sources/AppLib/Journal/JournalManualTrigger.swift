@@ -102,8 +102,9 @@ public final class JournalManualTrigger {
     // MARK: - The real pipeline
 
     /// The four stages, exactly as tested individually. Runs for minutes and
-    /// spawns real agents — always called off the main actor.
-    public static let realPipeline: Pipeline = { day in
+    /// spawns real agents — always called off the main actor (the closure is
+    /// `@Sendable` and the class-level `@MainActor` must not capture it).
+    nonisolated public static let realPipeline: Pipeline = { day in
         let home = NSHomeDirectory()
         let slices = JournalCollector.collect(
             day: day,
