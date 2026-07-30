@@ -57,14 +57,22 @@ public enum JournalSanitizer {
         /// from `Redactor`'s inputs (home directory, username, hostname).
         public let forbiddenLiterals: [String]
 
+        /// Policy terms are normalized on the way in so they live in the same
+        /// compatibility-mapped domain as the text they are matched against.
+        /// Otherwise the normalization that closed the fullwidth bypass opens
+        /// two new ones in the other direction: a fullwidth username stops
+        /// matching (a leak), and a fullwidth project alias stops being
+        /// recognised as a proper noun (a silent false positive — and a CJK
+        /// IME produces fullwidth Latin by accident all the time).
         public init(
             maxScalars: Int,
             properNouns: Set<String> = JournalSanitizer.defaultProperNouns,
             forbiddenLiterals: [String] = []
         ) {
             self.maxScalars = maxScalars
-            self.properNouns = properNouns
-            self.forbiddenLiterals = forbiddenLiterals
+            self.properNouns = Set(properNouns.map(\.precomposedStringWithCompatibilityMapping))
+            self.forbiddenLiterals =
+                forbiddenLiterals.map(\.precomposedStringWithCompatibilityMapping)
         }
     }
 
@@ -80,6 +88,8 @@ public enum JournalSanitizer {
         case codeIdentifier
         case secretPrefix
         case highEntropy
+        case percentEncoded
+        case phoneNumber
         case forbiddenLiteral
         case strayHash
     }
@@ -182,7 +192,9 @@ public enum JournalSanitizer {
     // MARK: - Rules 2-4: structure
 
     private static func structuralFailure(in text: String, policy: Policy) -> Rejection? {
-        if containsIPv4(text) { return .ipAddress }
+        if containsPercentEncoding(text) { return .percentEncoded }
+        if containsIPv4(text) || containsIPv6(text) { return .ipAddress }
+        if containsPhoneNumber(text) { return .phoneNumber }
         if containsDottedIdentifier(text) { return .dottedIdentifier }
         if hasStrayHash(text) { return .strayHash }
         if let bad = firstCodeIdentifier(in: text, properNouns: policy.properNouns) {
@@ -200,10 +212,58 @@ public enum JournalSanitizer {
         secretPrefixes.first { text.contains($0) }
     }
 
+    /// Percent-encoding is never prose. It is also the cheapest way to smuggle
+    /// a credential past every other rule — `%67%68%70%5F…` is `ghp_…` with
+    /// each character hidden behind a `%`, short enough that no run looks
+    /// opaque and containing no dot, no camel boundary and no known prefix.
+    ///
+    /// `%` itself stays legal so `提升了 30%` survives; it is the `%XX` shape
+    /// that is rejected.
+    static func containsPercentEncoding(_ text: String) -> Bool {
+        matches(text, #"%[0-9A-Fa-f]{2}"#)
+    }
+
     /// `10.0.0.1`. Checked before the dotted-identifier rule so the rejection
     /// reason is the specific one.
     static func containsIPv4(_ text: String) -> Bool {
         matches(text, #"\b\d{1,3}(\.\d{1,3}){3}\b"#)
+    }
+
+    /// `2001:0db8:85a3::7334`. The design names IP addresses as a threat and
+    /// only v4 was implemented; a v6 literal has no dots at all, so every
+    /// dot-based rule misses it by construction.
+    ///
+    /// Scanned as whole tokens rather than by regex, because NFKC folds the
+    /// fullwidth colon `：` — which is ordinary Chinese punctuation — into
+    /// `:`. A colon-counting pattern would therefore reject any Chinese
+    /// sentence with two clauses.
+    ///
+    /// Two colons alone are not enough either: `12:30:45` is a time. The
+    /// qualifier is a compressed `::`, a hex letter, or four or more colons,
+    /// none of which a clock produces.
+    static func containsIPv6(_ text: String) -> Bool {
+        for token in text.split(whereSeparator: { $0 == " " }) {
+            let isHexOrColon = token.allSatisfy { $0.isHexDigit || $0 == ":" }
+            guard isHexOrColon, token.contains(":"), token.contains(where: \.isHexDigit)
+            else { continue }
+            let colons = token.filter { $0 == ":" }.count
+            guard colons >= 2 else { continue }
+            let hasHexLetter = token.contains { $0.isLetter }
+            if token.contains("::") || hasHexLetter || colons >= 4 { return true }
+        }
+        return false
+    }
+
+    /// A phone number is the one piece of personal data a character rule can
+    /// actually recognise. A person's *name* is not — "Jane Smith" is
+    /// indistinguishable from any other two capitalised words, which is why
+    /// the design puts customer identity behind the project alias/exclusion
+    /// table rather than pretending this layer can catch it.
+    ///
+    /// Requires nine consecutive digits or the dashed form, so `2026-07-30`
+    /// (runs of at most four) stays legal.
+    static func containsPhoneNumber(_ text: String) -> Bool {
+        matches(text, #"\d{9,}|\d{3}-\d{3}-\d{4}"#)
     }
 
     /// A dot with a letter touching it — `foo.swift`, `api.example.com`,
@@ -233,23 +293,46 @@ public enum JournalSanitizer {
     /// camelCase or snake_case — the direct expression of "no code entity
     /// names". `_` cannot reach here (the character rule already rejected it),
     /// so this is the camel boundary plus digit-suffixed identifiers.
+    /// Two shapes, because `[a-z][A-Z]` alone misses the commonest naming
+    /// style in this very codebase:
+    ///
+    /// - `sessionStore` — lower-to-upper, the classic camel boundary.
+    /// - `APIClient` — an acronym prefix, where the boundary is upper-to-upper.
+    ///   `URLSession`, `JSONDecoder`, `HTTPServer` all have this shape and all
+    ///   walked straight through the first rule.
+    ///
+    /// The acronym rule demands **two or more** trailing lowercase letters so
+    /// that `APIs` and `IDs` survive — those are ordinary English plurals a
+    /// developer's journal will contain, and killing them is the silent
+    /// false-positive failure this sanitizer is most at risk of.
     static func firstCodeIdentifier(in text: String, properNouns: Set<String>) -> String? {
-        let words = splitWords(text)
-        for word in words where !properNouns.contains(word) {
+        for word in splitWords(text) where !properNouns.contains(word) {
             if matches(word, #"[a-z][A-Z]"#) { return word }
+            if matches(word, #"[A-Z]{2,}[a-z]{2,}"#) { return word }
         }
         return nil
     }
 
     /// A long opaque run with mixed classes. English words do not look like
     /// this; base64 and hex secrets do.
+    ///
+    /// Checked over whitespace-delimited tokens as well as word characters,
+    /// because `-` is legal punctuation and splitting on it turns a UUID into
+    /// five short, innocent-looking pieces.
     static func containsHighEntropyRun(_ text: String) -> Bool {
         for word in splitWords(text) where word.count >= 20 {
-            let hasDigit = word.contains { $0.isNumber }
-            let hasLetter = word.contains { $0.isLetter }
-            if hasDigit && hasLetter { return true }
+            if isMixedClass(word) { return true }
+        }
+        for token in text.split(whereSeparator: { $0 == " " }) where token.count >= 20 {
+            let body = token.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == ":" }
+            guard body.count == token.count else { continue }
+            if isMixedClass(String(token)) { return true }
         }
         return false
+    }
+
+    private static func isMixedClass(_ s: String) -> Bool {
+        s.contains { $0.isNumber } && s.contains { $0.isLetter }
     }
 
     // MARK: - Helpers

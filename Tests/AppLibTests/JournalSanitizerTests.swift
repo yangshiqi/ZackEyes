@@ -215,6 +215,79 @@ struct JournalSanitizerTests {
         #expect(JournalSanitizer.sanitize("㍿株式", policy: tight) == nil)
     }
 
+    // MARK: - Bypasses found by an adversarial probe that compiled and ran this file
+
+    @Test("percent-encoding cannot smuggle a credential past every other rule")
+    func percentEncodedSecretRejected() {
+        // `%67%68%70%5F…` is `ghp_…` one character at a time: no known prefix
+        // survives the encoding, every run is two characters long so nothing
+        // looks opaque, and there is no dot or camel boundary anywhere.
+        let encoded = "deploy token %67%68%70%5F%41%62%43%64%45%66%47%68"
+        #expect(rejection(encoded) == .percentEncoded)
+        // A bare percent sign is ordinary prose and must survive.
+        #expect(rejection("提升了 30% 左右。") == nil)
+        #expect(rejection("Cut it by 30% overall.") == nil)
+    }
+
+    @Test("IPv6 is rejected as well as IPv4")
+    func ipv6Rejected() {
+        // A v6 literal contains no dots at all, so every dot-based rule misses
+        // it by construction.
+        #expect(rejection("Connected to 2001:0db8:85a3:0000:8a2e:0370:7334") == .ipAddress)
+        #expect(rejection("绑到 fe80::1 之后就好了") == .ipAddress)
+        // Two false positives this rule is one careless regex away from.
+        // NFKC folds the fullwidth colon — ordinary Chinese punctuation — into
+        // `:`, so a colon-counting pattern would eat any two-clause sentence.
+        #expect(rejection("结论：改了两处，跑了测试：都过了。") == nil)
+        // And two colons are also just a time.
+        #expect(rejection("会议 12:30:45 开始，没什么进展。") == nil)
+    }
+
+    @Test("acronym-prefixed type names are rejected, plural acronyms are not")
+    func acronymIdentifiersRejected() {
+        // `[a-z][A-Z]` alone misses the commonest naming style in this very
+        // codebase — the boundary in APIClient is upper-to-upper.
+        #expect(rejection("Rewrote APIClient after the outage.") == .codeIdentifier)
+        #expect(rejection("换掉了 URLSession 的实现") == .codeIdentifier)
+        #expect(rejection("Replaced JSONDecoder with something simpler.") == .codeIdentifier)
+        // …but ordinary English plurals of acronyms must survive, or the
+        // journal silently loses normal sentences.
+        #expect(rejection("Unified a few APIs today.") == nil)
+        #expect(rejection("Cleaned up the IDs we were passing around.") == nil)
+    }
+
+    @Test("a UUID is rejected even though hyphens split it into short pieces")
+    func uuidRejected() {
+        #expect(rejection("Reset token 550e8400-e29b-41d4-a716-446655440000") != nil)
+        // A date is hyphenated digits too and must survive.
+        #expect(rejection("排期定在 2026-07-30 之前。") == nil)
+    }
+
+    @Test("phone numbers are rejected; personal names are out of this layer's reach")
+    func phoneNumbersRejected() {
+        #expect(rejection("call 415-555-0123 for details") == .phoneNumber)
+        #expect(rejection("工号 123456789012 的那位") == .phoneNumber)
+        // Documented non-goal: a name is indistinguishable from any other two
+        // capitalised words. The design puts customer identity behind the
+        // project alias/exclusion table, not here — asserting it so the gap is
+        // recorded rather than discovered later.
+        #expect(rejection("Fixed the outage for Jane Smith today.") == nil)
+    }
+
+    @Test("policy terms are normalized into the same domain as the text")
+    func policyTermsNormalized() {
+        // Otherwise the normalization that closed the fullwidth bypass opens
+        // two more: a fullwidth alias stops being recognised (silent false
+        // positive), and a fullwidth identity literal stops matching (a leak).
+        let custom = JournalSanitizer.Policy(
+            maxScalars: 200,
+            properNouns: ["ＡcmeWidget"],
+            forbiddenLiterals: ["ａlice"]
+        )
+        #expect(JournalSanitizer.sanitize("推进了 AcmeWidget 的接入", policy: custom) != nil)
+        #expect(JournalSanitizer.sanitize("alice 反馈了一个问题", policy: custom) == nil)
+    }
+
     // MARK: - Length and emptiness
 
     @Test("over-length items are discarded, never truncated")
