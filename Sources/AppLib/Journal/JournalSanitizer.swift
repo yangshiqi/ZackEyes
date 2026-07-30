@@ -38,6 +38,11 @@ public enum JournalSanitizer {
     public static let defaultProperNouns: Set<String> = [
         "ZackEyes", "GitHub", "GitLab", "MacBook", "JavaScript", "TypeScript",
         "macOS", "iOS", "iPadOS", "PostgreSQL", "MySQL", "GraphQL", "OpenAI",
+        // Mixed-case product names the acronym rule would otherwise eat.
+        // Each one verified to actually trip a rule — `IPv6` was in this list
+        // briefly and did not need to be, because `v6` is one lowercase letter
+        // and the acronym rule requires two.
+        "OAuth", "OAuth2", "OpenAPI", "OpenSSL", "OpenTelemetry",
         "SwiftUI", "AppKit", "XcodeCloud", "CocoaPods", "PyTorch", "TensorFlow",
     ]
 
@@ -242,14 +247,17 @@ public enum JournalSanitizer {
     /// qualifier is a compressed `::`, a hex letter, or four or more colons,
     /// none of which a clock produces.
     static func containsIPv6(_ text: String) -> Bool {
-        for token in text.split(whereSeparator: { $0 == " " }) {
-            let isHexOrColon = token.allSatisfy { $0.isHexDigit || $0 == ":" }
-            guard isHexOrColon, token.contains(":"), token.contains(where: \.isHexDigit)
-            else { continue }
-            let colons = token.filter { $0 == ":" }.count
+        // Maximal runs, not whitespace tokens. Splitting on spaces made a
+        // trailing comma (`2001:db8::1,`) or a zone suffix (`fe80::1%en0`)
+        // enough to hide the whole address, because the token then held a
+        // character outside the allowed set and was skipped entirely.
+        for run in maximalRuns(in: text, where: { $0.isHexDigit || $0 == ":" }) {
+            guard run.contains(":"), run.contains(where: \.isHexDigit) else { continue }
+            let colons = run.filter { $0 == ":" }.count
             guard colons >= 2 else { continue }
-            let hasHexLetter = token.contains { $0.isLetter }
-            if token.contains("::") || hasHexLetter || colons >= 4 { return true }
+            if run.contains("::") || run.contains(where: \.isLetter) || colons >= 4 {
+                return true
+            }
         }
         return false
     }
@@ -260,10 +268,13 @@ public enum JournalSanitizer {
     /// the design puts customer identity behind the project alias/exclusion
     /// table rather than pretending this layer can catch it.
     ///
-    /// Requires nine consecutive digits or the dashed form, so `2026-07-30`
-    /// (runs of at most four) stays legal.
+    /// Matches the *shape* — grouped digits separated by spaces, dashes or
+    /// parentheses — and deliberately **not** a bare run of digits. A bare run
+    /// was the first attempt and it rejected `Processed 1000000000 rows`,
+    /// which is fatal for a journal whose whole subject is token counts. A
+    /// large number is not a leak; a grouped one is a phone number.
     static func containsPhoneNumber(_ text: String) -> Bool {
-        matches(text, #"\d{9,}|\d{3}-\d{3}-\d{4}"#)
+        matches(text, #"\(?\d{3}\)?[ -]\d{3}[ -]\d{4}\b"#)
     }
 
     /// A dot with a letter touching it — `foo.swift`, `api.example.com`,
@@ -277,8 +288,11 @@ public enum JournalSanitizer {
     /// the one legitimate mid-word dot — a decimal, digits on both sides —
     /// survives. Prose otherwise only puts a dot at the end of a sentence,
     /// where the next character is a space or nothing.
+    /// Requires a run of **two or more** letters on one side, so the ordinary
+    /// English abbreviations `e.g.` and `i.e.` survive. Single letters either
+    /// side of a dot are an abbreviation; a name has a real word in it.
     static func containsDottedIdentifier(_ text: String) -> Bool {
-        matches(text, #"\p{L}\.[\p{L}\p{N}]|[\p{L}\p{N}]\.\p{L}"#)
+        matches(text, #"\p{L}{2,}\.[\p{L}\p{N}]|[\p{L}\p{N}]\.\p{L}{2,}"#)
     }
 
     /// `#` survives only as an issue reference. It is the design's single
@@ -320,19 +334,49 @@ public enum JournalSanitizer {
     /// because `-` is legal punctuation and splitting on it turns a UUID into
     /// five short, innocent-looking pieces.
     static func containsHighEntropyRun(_ text: String) -> Bool {
-        for word in splitWords(text) where word.count >= 20 {
+        for word in splitWords(text) where word.count >= 16 {
             if isMixedClass(word) { return true }
         }
-        for token in text.split(whereSeparator: { $0 == " " }) where token.count >= 20 {
-            let body = token.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == ":" }
-            guard body.count == token.count else { continue }
-            if isMixedClass(String(token)) { return true }
+        return containsHyphenatedHexRun(text)
+    }
+
+    /// A UUID survives every other rule: `-` is legal punctuation, so word
+    /// splitting turns it into five short innocent pieces before the opaque-run
+    /// check ever sees it.
+    ///
+    /// Every segment must be hex, which is what separates `123e4567-e89b-…`
+    /// from `2026-07-30-release-candidate` — a hyphenated label that a first
+    /// attempt at this rule rejected. A release name is words; a UUID is not.
+    static func containsHyphenatedHexRun(_ text: String) -> Bool {
+        for run in maximalRuns(in: text, where: { $0.isHexDigit || $0 == "-" }) {
+            guard run.count >= 20 else { continue }
+            let segments = run.split(separator: "-")
+            guard segments.count >= 3,
+                  segments.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isHexDigit) })
+            else { continue }
+            return true
         }
         return false
     }
 
     private static func isMixedClass(_ s: String) -> Bool {
         s.contains { $0.isNumber } && s.contains { $0.isLetter }
+    }
+
+    /// Longest stretches satisfying `predicate`, ignoring what surrounds them.
+    static func maximalRuns(in text: String, where predicate: (Character) -> Bool) -> [String] {
+        var runs: [String] = []
+        var current = ""
+        for ch in text {
+            if predicate(ch) {
+                current.append(ch)
+            } else if !current.isEmpty {
+                runs.append(current)
+                current = ""
+            }
+        }
+        if !current.isEmpty { runs.append(current) }
+        return runs
     }
 
     // MARK: - Helpers

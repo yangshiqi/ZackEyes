@@ -258,15 +258,64 @@ struct JournalSanitizerTests {
 
     @Test("a UUID is rejected even though hyphens split it into short pieces")
     func uuidRejected() {
-        #expect(rejection("Reset token 550e8400-e29b-41d4-a716-446655440000") != nil)
+        // Asserting the specific reason, not just "rejected". An earlier
+        // version of this test used `!= nil` and was passing via the phone
+        // rule, so the rule it was written for was never actually exercised.
+        #expect(rejection("Reset token 550e8400-e29b-41d4-a716-446655440000") == .highEntropy)
+        // Trailing punctuation must not hide it — splitting on whitespace let
+        // a single full stop carry the whole UUID through.
+        #expect(rejection("The token was 123e4567-e89b-12d3-a456-42f614a74abc.") == .highEntropy)
         // A date is hyphenated digits too and must survive.
         #expect(rejection("排期定在 2026-07-30 之前。") == nil)
+        // So must a hyphenated release label — words, not hex.
+        #expect(rejection("把 2026-07-30-release-candidate 部署到了测试环境。") == nil)
+    }
+
+    // MARK: - False positives the leak rules were one careless line from causing
+
+    @Test("large numbers survive; only grouped phone shapes are rejected")
+    func largeNumbersSurvive() {
+        // A bare run of digits was the first phone rule, and it rejected
+        // `Processed 1000000000 rows` — fatal for a journal whose subject is
+        // token counts. A large number is not a leak.
+        #expect(rejection("Processed 1000000000 rows without timing out.") == nil)
+        #expect(rejection("压测跑完了 1000000000 条记录，没有超时。") == nil)
+        #expect(rejection("Call 415 555 0123 for details.") == .phoneNumber)
+        #expect(rejection("Call (415) 555-0123 for details.") == .phoneNumber)
+    }
+
+    @Test("standard English abbreviations survive the dotted rule")
+    func abbreviationsSurvive() {
+        // `e.g.` is single letters either side of the dot; a filename has a
+        // real word. Requiring a two-letter run on one side separates them.
+        #expect(rejection("Documented edge cases, e.g. empty responses.") == nil)
+        #expect(rejection("Deferred the rest, i.e. the scheduler work.") == nil)
+        #expect(rejection("改了 测试.swift 的解析") == .dottedIdentifier)
+    }
+
+    @Test("mixed-case product names survive the acronym rule")
+    func productNamesSurvive() {
+        // `OAuth` matches the acronym-identifier shape exactly. The whitelist
+        // is the designed mechanism for this, not a narrower regex.
+        #expect(rejection("Simplified the OAuth login flow after the outage.") == nil)
+        #expect(rejection("接通了 OAuth 登录，顺便简化了回调流程。") == nil)
+        #expect(rejection("Rewrote APIClient after the outage.") == .codeIdentifier)
+    }
+
+    @Test("IPv6 survives trailing punctuation and zone suffixes")
+    func ipv6NotHiddenByPunctuation() {
+        #expect(rejection("Connected to 2001:db8::1, then retried.") == .ipAddress)
+        #expect(rejection("Connected to fe80::1%en0 and retried") == .ipAddress)
     }
 
     @Test("phone numbers are rejected; personal names are out of this layer's reach")
     func phoneNumbersRejected() {
         #expect(rejection("call 415-555-0123 for details") == .phoneNumber)
-        #expect(rejection("工号 123456789012 的那位") == .phoneNumber)
+        // Deliberately NOT rejected: a bare run of digits. The rule matches the
+        // grouped *shape* instead, because "any nine digits" ate `Processed
+        // 1000000000 rows` — and a journal about token spend is made of large
+        // numbers. An ungrouped digit run is a quantity, not a phone number.
+        #expect(rejection("工号 123456789012 的那位") == nil)
         // Documented non-goal: a name is indistinguishable from any other two
         // capitalised words. The design puts customer identity behind the
         // project alias/exclusion table, not here — asserting it so the gap is
