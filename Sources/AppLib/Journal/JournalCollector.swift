@@ -41,9 +41,22 @@ public enum JournalCollector {
 
     // MARK: - Pure core
 
-    /// Last path component of a working directory.
+    /// Last path component of a working directory — except for agent
+    /// worktrees, which collapse to the repository that owns them.
+    ///
+    /// Found by the first live-data probe, not by design: a real day came back
+    /// as fifteen "projects" where most were `issue-1714`, `main-guard`,
+    /// `port-github` — all `console-ui-new/.claude/worktrees/*` checkouts.
+    /// Filing them separately shatters one repository's day into micro-projects
+    /// and hides what the user actually worked on. The `/.claude/worktrees/`
+    /// shape is unambiguous and the owning repo sits right before it.
     public static func projectName(fromCwd cwd: String) -> String? {
         let trimmed = cwd.hasSuffix("/") ? String(cwd.dropLast()) : cwd
+        if let range = trimmed.range(of: "/.claude/worktrees/") {
+            let owner = String(trimmed[..<range.lowerBound])
+            let name = (owner as NSString).lastPathComponent
+            if !name.isEmpty && name != "/" { return name }
+        }
         let name = (trimmed as NSString).lastPathComponent
         return name.isEmpty || name == "/" ? nil : name
     }

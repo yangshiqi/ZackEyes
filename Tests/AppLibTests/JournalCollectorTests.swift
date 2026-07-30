@@ -42,6 +42,23 @@ struct JournalCollectorTests {
         #expect(JournalCollector.projectName(fromCwd: "/Users/a/Work/lab-ZackEyes") == "lab-ZackEyes")
     }
 
+    @Test("an agent worktree files under the repository that owns it")
+    func worktreeCollapsesToOwner() {
+        // From the first live probe: a real day came back as fifteen
+        // "projects", most of them worktree checkouts of one repo. Filing by
+        // the worktree name shatters a repository's day into micro-projects.
+        #expect(JournalCollector.projectName(
+            fromCwd: "/Users/a/Work/console-ui-new/.claude/worktrees/issue-1714")
+            == "console-ui-new")
+        #expect(JournalCollector.projectName(
+            fromCwd: "/Users/a/Work/console-ui-new/.claude/worktrees/main-guard/sub")
+            == "console-ui-new")
+        // A directory merely *named* worktrees, without the .claude parent,
+        // is not the pattern and keeps its own name.
+        #expect(JournalCollector.projectName(
+            fromCwd: "/Users/a/Work/worktrees/thing") == "thing")
+    }
+
     // MARK: - Aliases and exclusions
 
     @Test("an excluded project resolves to nothing at all")
