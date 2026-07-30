@@ -116,6 +116,7 @@ diff ~/.claude/settings.json ~/.claude/settings.json.backup.*  # 确认只改了
 | `hooks` | HookInstaller（Claude）+ CodexHookInstaller |
 | `session` | SessionStore + SessionScanner + LivenessFilter（`AppLib/Session/`） |
 | `process` | ProcessTreeInspector（`AppLib/Process/`）—— 向下进程树 + LISTEN 端口 |
+| `journal` | #214 每日工作日志（`AppLib/Journal/`）—— Collector / Distiller / Sanitizer / Renderer / Assembler / ProcessAgentRunner |
 | `codex` | Codex 专属：CodexJsonlTailer / CodexHookInstaller / SessionStore.recordCodexTaskComplete / Codex usage 数据源 |
 | `usage` | UsageTracker（5h/7d，双 agent） |
 | `notify` | NotificationManager（agent 标签 / 错误 / 完成） |

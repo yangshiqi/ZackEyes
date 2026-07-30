@@ -290,6 +290,17 @@ PricingStore.start()
 | `PricingStore` / `PricingTable` | `Sources/AppLib/Usage/PricingStore.swift`、`PricingTable.swift` | 模型→单价查询（`price(for:)`）。`PricingTable` 纯解析+查找（exact→去日期后缀→alias→nil，仅接受原始 model id）；`PricingStore` 按 `version` 在 bundled 快照 / 磁盘缓存 / 24h 远端拉取间择新，失败静默。无 UI。 |
 | `TodayConsumptionRow` | `Sources/AppLib/Usage/TodayConsumptionRow.swift` | #84 消费轴（与 5h/7d 配额轴分开）：full-view header 的 "Today" 行——今日 token + $ + 近 7 日 token sparkline + 每 agent 副行。纯静态格式化助手（humanize / cost / sparkline，`nonisolated`）+ 只读视图。数据来自 `UsageTracker.Snapshot.dailyUsage`（7 个本地日桶；Claude 侧 `computeSnapshot` 递归全 projects 树扫 transcript——含 `<session>/subagents/` 与 Workflow 工具的 `<session>/wf_*/` agent 文件，#116——并按 `(mtime,size)` per-file 缓存解析；Codex 侧缓存式 `scanCodexDailyTokens`；cost 在主 actor 用 `PricingStore` 折算）。嵌入 `UsageBarsView`（真刘海）与 `SimulatedNotchFullView.usageHeader`（模拟），`hasConsumption` 为空时隐藏；由齿轮菜单「Show today's consumption」开关控制（默认开，flag 在 `UsageTracker.showTodayConsumption`，持久化 `ConfigStore`，两个面板响应式）。**收起的 compact pill 始终只显示 5h/7d 配额，不显示消费**（产品决策）。 |
 
+**Journal（#214 每日工作日志，v0.10.0 · P1 = 本地管道）**
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| `JournalTypes` | `Sources/AppLib/Journal/JournalTypes.swift` | 数据形状。**贯穿规则：LLM 只产出叙述，不产出事实** —— 项目名/时长/token/成本/出处全部 Swift 填，模型只写 `SliceNote{did,outcome,lessons}`。`DayNote` **没有模型写的 headline**（Q0 定案后它是唯一必然跨厂商的字段，改由事实合成，顺带消掉「headline 被拒 → 整天不推」失败路径）；每条 `ProjectNarrative` 带 `agent` 出处戳，「内容只回写它的厂商」在产物里可自验。 |
+| `JournalSanitizer` | `Sources/AppLib/Journal/JournalSanitizer.swift` | **唯一安全边界**（D2 无人工审阅门），纯函数、可穷举测试。字符**白名单**（CJK/假名/拉丁/数字/小标点集），判定跑在 **NFKC 规范化副本**上、返回原文（全角区段藏着整套全角 ASCII，`／Users／alice` 曾穿透全部结构规则）；结构规则：点号标识符（一侧需两个字母，`e.g.` 活）、IPv4/IPv6（token 扫描——NFKC 会把中文全角冒号折成 `:`，数冒号的正则会杀掉所有双分句中文）、驼峰+缩写前缀标识符（`APIClient` 形状；尾部需两个小写，`APIs` 活）、百分号编码、分组电话形状（裸数字串**不**拒——token 计数日志全是大数字）、连字符十六进制串（UUID；每段必须 hex，`2026-07-30-release-candidate` 活）、密钥前缀、高熵串（**仅 ASCII token**——中文无词界 + `三`.isNumber==true，曾把长中文句全判成密钥）。**丢弃不修补**：截断留半个密钥，替换成 `<user>` 读起来像事故。已知不管：人名（与两个大写词无法区分，客户身份走别名/排除表）。 |
+| `JournalRenderer` | `Sources/AppLib/Journal/JournalRenderer.swift` | `DayNote` → Markdown，纯函数。**Q3 结构转义**在此而非 Sanitizer（同一个 `-` 在句中是连字符、在行首是列表标记，混一层要么误杀要么漏注入）；**故意转义 Sanitizer 已拦的字符** —— 两层不依赖对方当前设定，将来放宽一个字符不会静默变成结构注入。对抗测试断言**文档形状**（除渲染器自己写的外无标题/列表/链接），不断言具体转义序列。 |
+| `JournalCollector` | `Sources/AppLib/Journal/JournalCollector.swift` + `JournalCollectorIO.swift` | transcript → 本地日 `[SessionSlice]`。项目名取**文件内 `cwd`** 而非目录名（目录编码有损，`lab-ZackEyes` vs `lab/ZackEyes` 无法区分）；归日按**条目自身时间戳**（跨零点会话 mtime 会把两天全算给第二天）；codex 按 UTC 分目录 → 每本地日扫**固定三个** UTC 目录（按偏移算会在夏令时切换时静默丢一小时）；`.claude/worktrees/*` 检出**收敛到宿主仓**（实机一天曾读成 15 个「项目」）；以 `<` 开头的 user turn 是机器注入不算工作。token 在同一次读里顺手折（曾计划复用 #116 缓存，但那缓存按天×模型聚合且在 MainActor——日终批处理每文件只读一次，缓存只赚耦合）。 |
+| `JournalDistiller` | `Sources/AppLib/Journal/JournalDistiller.swift` | **唯一 spawn 处**，runner 注入可测。工作单元 **(厂商×项目)**，把 Q0（不跨厂商——组的引擎就是组的 agent，无选择代码可错）和 Q1（不串项目——reduce 只见本项目 notes）变成结构而非纪律。map 按标量预算合批（实测一天 45 slice 多为 1-turn 微会话，逐 slice spawn 不可行）；超时 300s（spec 的 90s 被实测 >2min 推翻）；单批不 reduce；reduce 两败回退首批（半份叙述好过无解释的洞）；解析器**严格**（恰好一个 JSON 对象、恰好三键——codex 有 `--output-schema`，claude 只有这道）。 |
+| `JournalAssembler` | `Sources/AppLib/Journal/JournalAssembler.swift` | Distiller 输出 + Swift 事实 → 净化后的 `DayNote`+`DayFacts`，纯函数。**先净化后计预算**（被拒条目零重量，不能把合法项目挤出当天）；全天预算按 token 序整项目丢弃 + Swift 按日志语言合成省略行（事实不过 Sanitizer）；项目键自动进专名白名单（驼峰规则不能吃掉仓库自己的名字）。 |
+| `ProcessAgentRunner` | `Sources/AppLib/Journal/ProcessAgentRunner.swift` | 真实 spawn，带全套隔离（实测验证）：codex `--ephemeral --disable hooks -s read-only --output-schema`，claude `--no-session-persistence --disallowedTools "*"`，两者皆注入 `ZACKEYES_JOURNAL=1`。**安全审查后加固**：prompt 全走 **stdin**（argv 走私——同一 help 里就有 `--dangerously-bypass-approvals-and-sandbox`；stdin 写在后台线程防大 prompt 管道死锁）；claude **全禁工具**（提炼是纯文本变换；spawn 会继承用户 settings 的无人值守白名单，注入 transcript + 预放行 Bash = 真执行）。二进制经 `/usr/bin/env` 找——app 语境 PATH 极简，P3 调度器需显式发现，**此处故意不解**。 |
+
 **App 入口**
 | 模块 | 文件 | 职责 |
 |------|------|------|
@@ -311,6 +322,7 @@ Source code lives in **`yangshiqi/ZackEyes` (private)**; release artifacts (DMG)
 | 场景 | 行为 | Exit Code |
 |------|------|-----------|
 | 正常响应（权限决策） | stdout 输出 JSON | 0 |
+| `ZACKEYES_JOURNAL=1` 在环境中（#214 日志提炼 spawn 的 claude 触发本 bridge） | **读 stdin 之前**即静默退出——事件根本不进管道，杜绝幻影会话卡片 | **0** |
 | Socket 不存在 / App 未运行 | 静默退出（无 stdout）；白名单生命周期事件先落盘 pending 队列 | **0** |
 | Socket 连接超时 | 静默退出（无 stdout） | **0** |
 | stdin 为空 / JSON 解析失败 | 静默退出 | **0** |
@@ -380,6 +392,7 @@ ccisland/
 │   │   ├── HotKey/             # HotKeyManager（可配置快捷键）
 │   │   ├── Notifications/      # NotificationManager
 │   │   ├── Process/            # ProcessTreeInspector (向下进程树 + LISTEN 端口), GitStatusReader
+│   │   ├── Journal/            # #214 每日日志: Collector→Distiller→Sanitizer→Renderer, ProcessAgentRunner
 │   │   ├── Terminal/           # TerminalLocator (tab 跳转), JumpDiagnostics (失败归因)
 │   │   ├── Update/             # UpdateChecker (GitHub 版本检测)
 │   │   └── Usage/              # UsageTracker (5h/7d 限额)
