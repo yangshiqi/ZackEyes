@@ -45,6 +45,16 @@ public enum JournalTier: String, Sendable {
         case .detailed: 8
         }
     }
+
+    /// Whole-day narrative budget (spec §5.2). A hard cap: projects that
+    /// exceed it are dropped whole and counted in the omission line.
+    var totalScalars: Int {
+        switch self {
+        case .concise: 200
+        case .moderate: 500
+        case .detailed: 1200
+        }
+    }
 }
 
 /// Journal language (spec D11). Only scripts that are already inside the
