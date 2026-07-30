@@ -333,8 +333,21 @@ public enum JournalSanitizer {
     /// Checked over whitespace-delimited tokens as well as word characters,
     /// because `-` is legal punctuation and splitting on it turns a UUID into
     /// five short, innocent-looking pieces.
+    /// Restricted to **ASCII** tokens, which is not a tuning choice — it is the
+    /// difference between working and eating the journal.
+    ///
+    /// Chinese has no word separators, so `splitWords` returns an entire
+    /// sentence as one "word"; and Swift's `isNumber` is true for CJK numerals
+    /// (`三`, `十`, `百` all carry a Unicode numeric type). Together those made
+    /// every Chinese sentence of sixteen or more characters containing a
+    /// numeral look like a mixed-class opaque run — which is most real Chinese
+    /// work notes, in a feature whose primary language is Chinese.
+    ///
+    /// Nothing is lost by the restriction: base64 and hex are ASCII by
+    /// definition, so a CJK run was never a secret.
     static func containsHighEntropyRun(_ text: String) -> Bool {
-        for word in splitWords(text) where word.count >= 16 {
+        for word in splitWords(text)
+        where word.count >= 16 && word.allSatisfy(\.isASCII) {
             if isMixedClass(word) { return true }
         }
         return containsHyphenatedHexRun(text)

@@ -24,6 +24,21 @@ import Shared
 // EPIPE and fall into the ordinary silent-exit-0 paths (#200).
 signal(SIGPIPE, SIG_IGN)
 
+// MARK: - Step 0: Journal self-isolation (#214)
+//
+// The daily journal distils sessions by spawning the user's own agent CLI.
+// Codex can be told `--disable hooks`; Claude Code has no equivalent, so a
+// `claude -p` run launched by us would fire this bridge and mint a phantom
+// session card for work the user never did — and then the journal would report
+// on itself.
+//
+// The environment variable is set only by `JournalDistiller`, and only on the
+// processes it spawns. Exiting 0 with no output is the same contract every
+// other failure path here honours, so Claude Code sees nothing unusual.
+if ProcessInfo.processInfo.environment["ZACKEYES_JOURNAL"] == "1" {
+    exit(0)
+}
+
 // MARK: - Step 1: Read stdin
 
 // Read to EOF, not `availableData`. Claude Code pipes the payload, and a pipe

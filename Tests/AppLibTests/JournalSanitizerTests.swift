@@ -113,8 +113,29 @@ struct JournalSanitizerTests {
     @Test("a long opaque mixed run is rejected even without a known prefix")
     func highEntropyRejected() {
         #expect(rejection("deploy key was a1b2c3d4e5f6g7h8i9j0k1l2") == .highEntropy)
+        #expect(rejection("The API key was ABCD1234EFGH5678XYZ.") == .highEntropy)
         // A long *word* with no digits is just a long word.
         #expect(rejection("Discussed internationalization at length today.") == nil)
+    }
+
+    @Test("long Chinese sentences are not opaque runs")
+    func chineseSentencesSurviveEntropyRule() {
+        // Caught by the first hand-rendered preview, not by a test. Chinese has
+        // no word separators, so the whole sentence is one "word"; and Swift's
+        // isNumber is true for CJK numerals (三 十 百 all carry a Unicode
+        // numeric type). Every Chinese sentence of sixteen-plus characters
+        // containing a numeral therefore looked like a mixed-class opaque run
+        // — in a feature whose primary language is Chinese.
+        let corpus = [
+            "审查计量计费三页的分页状态同步修复",      // the exact one the preview ate
+            "重构了三个模块的配额读取逻辑并补了测试",
+            "把十几个项目的分支状态统一到一个视图里",
+            "花了大半天定位第二个环境上的偶发失败",
+            "确认修复覆盖全部分页表格且静态检查通过",
+        ]
+        for line in corpus {
+            #expect(rejection(line) == nil, "should survive: \(line)")
+        }
     }
 
     // MARK: - Paths, code, identity
