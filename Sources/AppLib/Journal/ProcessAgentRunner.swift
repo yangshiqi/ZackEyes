@@ -182,7 +182,15 @@ public struct ProcessAgentRunner: AgentRunner {
 
         task.waitUntilExit()
         killer.cancel()
-        _ = drained.wait(timeout: .now() + 2)
+        // The pipe's write end closes when the child exits, so the drain
+        // normally finishes instantly. If it doesn't — a grandchild inherited
+        // stdout and is holding the pipe open — the honest answer is failure,
+        // not whatever partial bytes happened to arrive: partial output would
+        // surface downstream as "unparseable JSON", pointing at the model when
+        // the fault is the read.
+        if drained.wait(timeout: .now() + 5) == .timedOut {
+            throw SpawnError(description: "stdout drain incomplete after exit")
+        }
 
         if timedOut.get() {
             throw SpawnError(description: "timed out after \(Int(timeout))s")

@@ -92,11 +92,28 @@ struct JournalE2EProbe {
         // a live machine.
         let after = sessionInventory()
         let phantoms = after.subtracting(before).filter { path in
+            // Match on the FIRST USER MESSAGE being our prompt, not on the
+            // prompt appearing anywhere: a concurrent session that merely
+            // reads this repo's source contains these literals in its tool
+            // results — which is exactly how the first false positive looked.
             guard let fh = FileHandle(forReadingAtPath: path),
-                  let head = try? fh.read(upToCount: 64 * 1024),
+                  let head = try? fh.read(upToCount: 256 * 1024),
                   let text = String(data: head, encoding: .utf8)
             else { return false }
-            return text.contains("把下面同一项目的") || text.contains("合并成一份。硬性要求")
+            for line in text.split(separator: "\n") {
+                guard let obj = try? JSONSerialization.jsonObject(
+                        with: Data(line.utf8)) as? [String: Any],
+                      let message = obj["message"] as? [String: Any],
+                      message["role"] as? String == "user"
+                else { continue }
+                let content = (message["content"] as? String)
+                    ?? (message["content"] as? [[String: Any]])?
+                        .compactMap { $0["text"] as? String }.joined()
+                    ?? ""
+                return content.hasPrefix("把下面同一项目的")
+                    || content.hasPrefix("下面是同一项目同一天")
+            }
+            return false
         }
 
         var report: [String] = []

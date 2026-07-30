@@ -71,7 +71,7 @@ struct JournalAssemblerTests {
         for (i, p) in ["p1", "p2", "p3"].enumerated() {
             slices.append(slice(.claude, p, tokens: 1000 - i))
             notes[JournalGroupKey(agent: .claude, project: p)] =
-                note(did: [long, long, long])
+                note(did: [long, long, long], lessons: ["\(p) 的教训"])
         }
         let out = JournalAssembler.assemble(
             day: day, slices: slices, notes: notes,
@@ -80,6 +80,14 @@ struct JournalAssemblerTests {
         #expect(out.facts.projectOrder == ["p1"])
         #expect(out.note.projects["p3"] == nil)
         #expect(out.facts.omittedNote == "2 more projects with minor changes")
+        // A squeezed project must vanish COMPLETELY: its lessons would
+        // otherwise resurface by name under ## Lessons with no heading to
+        // anchor them, after consuming cap slots kept projects deserved.
+        // They land in `dropped` instead — a lesson lost silently is exactly
+        // the failure mode this feature must not have.
+        #expect(out.note.lessons.map(\.projectKey) == ["p1"])
+        #expect(out.dropped.contains("[projectOmitted] p2 的教训"))
+        #expect(out.dropped.contains("[projectOmitted] p3 的教训"))
     }
 
     @Test("lessons cap globally across projects")

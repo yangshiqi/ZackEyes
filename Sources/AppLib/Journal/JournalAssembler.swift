@@ -65,7 +65,6 @@ public enum JournalAssembler {
 
         var dropped: [String] = []
         var projects: [String: [ProjectNarrative]] = [:]
-        var lessons: [Lesson] = []
 
         for project in order {
             // Claude first, then codex — stable, arbitrary, and visible.
@@ -77,14 +76,6 @@ public enum JournalAssembler {
                     case .success(let clean):
                         projects[project, default: []].append(
                             ProjectNarrative(agent: agent, text: clean, outcome: note.outcome))
-                    case .failure(let why):
-                        dropped.append("[\(why.rawValue)] \(item)")
-                    }
-                }
-                for item in note.lessons where lessons.count < config.tier.maxLessons {
-                    switch JournalSanitizer.check(item, policy: policy) {
-                    case .success(let clean):
-                        lessons.append(Lesson(agent: agent, projectKey: project, text: clean))
                     case .failure(let why):
                         dropped.append("[\(why.rawValue)] \(item)")
                     }
@@ -108,6 +99,43 @@ public enum JournalAssembler {
             } else {
                 projects[project] = nil
                 omitted += 1
+            }
+        }
+
+        // Lessons are collected AFTER the squeeze, from kept projects only.
+        // Collecting first had two defects the first review round caught: a
+        // squeezed project's name reappeared under ## Lessons with no heading
+        // to anchor it, and its lessons had already consumed global cap slots
+        // that a kept project's lessons deserved. A squeezed project's lesson
+        // lands in `dropped` so the run record shows it existed — lessons are
+        // the highest-value content (D4), and losing one silently is exactly
+        // the failure mode this feature must not have.
+        var lessons: [Lesson] = []
+        for project in kept {
+            for agent in [AgentKind.claude, AgentKind.codex] {
+                guard let note = notes[JournalGroupKey(agent: agent, project: project)]
+                else { continue }
+                for item in note.lessons {
+                    guard lessons.count < config.tier.maxLessons else {
+                        dropped.append("[lessonCap] \(item)")
+                        continue
+                    }
+                    switch JournalSanitizer.check(item, policy: policy) {
+                    case .success(let clean):
+                        lessons.append(Lesson(agent: agent, projectKey: project, text: clean))
+                    case .failure(let why):
+                        dropped.append("[\(why.rawValue)] \(item)")
+                    }
+                }
+            }
+        }
+        for project in order where !kept.contains(project) {
+            for agent in [AgentKind.claude, AgentKind.codex] {
+                guard let note = notes[JournalGroupKey(agent: agent, project: project)]
+                else { continue }
+                for item in note.lessons {
+                    dropped.append("[projectOmitted] \(item)")
+                }
             }
         }
 
