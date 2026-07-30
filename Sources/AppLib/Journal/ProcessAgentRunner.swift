@@ -43,9 +43,18 @@ public struct ProcessAgentRunner: AgentRunner {
 
     // MARK: Claude
 
+    /// Distillation is a pure text transform — the model is handed transcript
+    /// text and asked for JSON. It therefore gets **no tools at all**:
+    /// `--disallowedTools "*"` overrides whatever unattended allowlist the
+    /// user's own settings carry. Without it, a prompt-injected transcript
+    /// ("run this command…") plus a user who pre-approved Bash would execute
+    /// for real — the transcript is untrusted input (spec §6.1), and the env
+    /// var bridge only silences *our* hooks, it restricts nothing.
     private func runClaude(prompt: String, timeout: TimeInterval) throws -> String {
         try spawn(
-            arguments: ["claude", "-p", "--no-session-persistence", prompt],
+            arguments: ["claude", "-p", "--no-session-persistence",
+                        "--disallowedTools", "*"],
+            stdin: prompt,
             timeout: timeout)
     }
 
@@ -63,6 +72,11 @@ public struct ProcessAgentRunner: AgentRunner {
         let outURL = dir.appendingPathComponent("note.json")
         try Self.sliceNoteSchema.write(to: schemaURL, atomically: true, encoding: .utf8)
 
+        // `-` = read instructions from stdin (documented in `codex exec
+        // --help`). The prompt embeds transcript text — untrusted input — and
+        // the same help screen lists `--dangerously-bypass-approvals-and-
+        // sandbox`, which is exactly what a smuggled argv element could name.
+        // Keeping every untrusted byte out of argv closes the class.
         _ = try spawn(
             arguments: [
                 "codex", "exec",
@@ -70,8 +84,9 @@ public struct ProcessAgentRunner: AgentRunner {
                 "-s", "read-only", "--skip-git-repo-check",
                 "--output-schema", schemaURL.path,
                 "-o", outURL.path,
-                prompt,
+                "-",
             ],
+            stdin: prompt,
             timeout: timeout)
 
         guard let out = try? String(contentsOf: outURL, encoding: .utf8) else {
@@ -95,7 +110,11 @@ public struct ProcessAgentRunner: AgentRunner {
 
     // MARK: Spawn
 
-    private func spawn(arguments: [String], timeout: TimeInterval) throws -> String {
+    /// `stdin` carries the prompt for both agents. Argv holds only literals we
+    /// wrote ourselves — no byte of transcript-derived content may appear
+    /// there, because an element starting with `-` would parse as a flag.
+    private func spawn(arguments: [String], stdin stdinText: String?,
+                       timeout: TimeInterval) throws -> String {
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         task.arguments = arguments
@@ -106,9 +125,28 @@ public struct ProcessAgentRunner: AgentRunner {
         let stdout = Pipe()
         task.standardOutput = stdout
         task.standardError = FileHandle.nullDevice
-        task.standardInput = FileHandle.nullDevice
+
+        let stdinPipe: Pipe?
+        if stdinText != nil {
+            let p = Pipe()
+            task.standardInput = p
+            stdinPipe = p
+        } else {
+            task.standardInput = FileHandle.nullDevice
+            stdinPipe = nil
+        }
 
         try task.run()
+
+        if let stdinPipe, let stdinText {
+            // Write off-thread: a prompt larger than the pipe buffer would
+            // otherwise deadlock against a child that hasn't started reading.
+            let writeHandle = stdinPipe.fileHandleForWriting
+            DispatchQueue.global(qos: .utility).async {
+                try? writeHandle.write(contentsOf: Data(stdinText.utf8))
+                try? writeHandle.close()
+            }
+        }
 
         final class Flag: @unchecked Sendable {
             private let lock = NSLock()

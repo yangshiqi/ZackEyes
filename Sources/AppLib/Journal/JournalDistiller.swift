@@ -243,7 +243,7 @@ public struct JournalDistiller {
         把下面同一项目的 \(batch.count) 个开发会话提炼成工作日志条目。硬性要求：
         - 只写项目/任务层面做了什么，绝不出现代码、文件名、路径、URL、命令行、函数名、类名
         - did 最多 3 条，每条不超过 \(config.tier.perItemScalars) 个字
-        - lessons 只写因为踩坑而学到的东西，最多 \(config.tier.maxLessons) 条，没有就留空数组
+        - lessons 只写因为踩坑而学到的东西，最多 \(config.tier.maxLessons) 条、每条不超过 \(config.tier.perItemScalars) 个字，没有就留空数组
         - \(config.language.instruction)
         - 只输出一个 JSON 对象：{"did":["…"],"outcome":"shipped|partial|blocked|explored","lessons":["…"]}，不要任何其它文字或代码块标记
 
@@ -262,7 +262,7 @@ public struct JournalDistiller {
         下面是同一项目同一天多段工作的摘要，合并成一份。硬性要求：
         - 合并重复项，保留信息量最大的表述
         - did 最多 3 条，每条不超过 \(config.tier.perItemScalars) 个字
-        - lessons 去重后最多 \(config.tier.maxLessons) 条
+        - lessons 去重后最多 \(config.tier.maxLessons) 条、每条不超过 \(config.tier.perItemScalars) 个字
         - \(config.language.instruction)
         - 只输出一个 JSON 对象：{"did":["…"],"outcome":"shipped|partial|blocked|explored","lessons":["…"]}，不要任何其它文字或代码块标记
 

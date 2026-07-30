@@ -12,6 +12,25 @@ import Shared
 /// only, so wall clock stays in minutes. Env-gated; never runs in CI.
 struct JournalE2EProbe {
 
+    @Test("hardened runner smoke: both invocation shapes actually work")
+    func runnerSmoke() throws {
+        guard ProcessInfo.processInfo.environment["JOURNAL_RUNNER_SMOKE"] == "1" else { return }
+        // The hardening changed both invocations — claude gained
+        // --disallowedTools "*", codex switched to `-` stdin mode — and a flag
+        // the CLI rejects would fail every nightly run, silently. Prove each
+        // shape end to end with a trivial prompt before trusting it.
+        let runner = ProcessAgentRunner()
+        let prompt = """
+        只输出一个 JSON 对象：{"did":["测试"],"outcome":"shipped","lessons":[]}
+        不要任何其它文字。
+        """
+        for agent in [AgentKind.claude, AgentKind.codex] {
+            let raw = try runner.run(agent: agent, prompt: prompt, timeout: 240)
+            #expect(JournalDistiller.parseSliceNote(raw) != nil,
+                    "\(agent) returned unparseable: \(raw.prefix(200))")
+        }
+    }
+
     @Test("collect → distill → assemble → render, for real")
     func fullPipeline() throws {
         guard ProcessInfo.processInfo.environment["JOURNAL_E2E"] == "1" else { return }
@@ -63,9 +82,22 @@ struct JournalE2EProbe {
         let markdown = JournalRenderer.render(assembled.note, facts: assembled.facts)
 
         // The self-pollution check is the E2E's real payload: the pipeline
-        // just spawned real agents, and not one new transcript may exist.
+        // just spawned real agents, and none of them may have left a
+        // transcript. "New file" alone is not the test — the first run of
+        // this probe flagged a session that turned out to be a background
+        // security review the push itself had triggered, reading our source
+        // (which is why even grepping for the prompt text inside it matched).
+        // A phantom is a new transcript whose first user message IS our
+        // distillation prompt; anything else is unrelated concurrent work on
+        // a live machine.
         let after = sessionInventory()
-        let phantoms = after.subtracting(before)
+        let phantoms = after.subtracting(before).filter { path in
+            guard let fh = FileHandle(forReadingAtPath: path),
+                  let head = try? fh.read(upToCount: 64 * 1024),
+                  let text = String(data: head, encoding: .utf8)
+            else { return false }
+            return text.contains("把下面同一项目的") || text.contains("合并成一份。硬性要求")
+        }
 
         var report: [String] = []
         report.append("slices total=\(slices.count) kept=\(kept.count) groups=\(keep.count)")
