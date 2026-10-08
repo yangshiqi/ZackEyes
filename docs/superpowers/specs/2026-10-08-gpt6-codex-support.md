@@ -27,3 +27,24 @@ Test each behavior before implementing; run relevant suites per atomic component
 - https://developers.openai.com/api/docs/guides/latest-model
 - https://learn.chatgpt.com/docs/hooks
 - https://learn.chatgpt.com/docs/app-server
+
+
+## Verified model differences and integration scope
+
+| Property | GPT-6.1 Sol | GPT-6 Astra |
+| --- | --- | --- |
+| Context / max output | 1,050,000 / 128,000 tokens | 1,050,000 / 128,000 tokens |
+| Standard input / output per MTok | $2 / $10 | $10 / $50 |
+| Cache read / write per MTok | $0.10 / $2.50 | $1 / $12.50 |
+| >272,000 input per request | Whole-request input/read/write ×2, output ×1.5 | Same |
+| Observed API service tiers | Fast/priority ×2, Ultrafast ×6, Flex/Batch ×0.5 | Same |
+
+Published GPT-6 improvements include asynchronous tool calling, steering and runtime reasoning reconfiguration. ZackEyes needs concurrent event correlation for observation, but these API/runtime capabilities are not automatically UI controls for an independently launched CLI. Responses tools are distinct from Chat Completions capabilities. API reasoning options and a Codex model catalog's effort labels must remain distinct; do not infer availability or billing from effort labels. The dedicated Responses multi-agent beta guide explicitly names Sol 6.1 and GPT-5.6; Astra beta support must not be assumed from the family name.
+
+No context/window size is hardcoded into the observer: rollout model_context_window remains authoritative. No inference requests were made to benchmark these models or validate their claimed quality.
+
+## Implementation outcome
+
+Epic #243 owns native sub-issues #244–#250 and existing #233. Each implementation has an independent commit and behavioral regressions. App Server #250 is resolved by an ownership boundary decision, without introducing runtime control. Codex costs remain estimates, especially for missing tier/request metadata or history predating watcher attachment. Long-request multipliers are applied only when last-request components match the cumulative delta; unknown multi-request gaps retain the standard estimate.
+
+Additional primary sources: [pricing](https://developers.openai.com/api/docs/pricing), [steering](https://developers.openai.com/api/docs/guides/steering), [Responses multi-agent](https://developers.openai.com/api/docs/guides/responses-multi-agent), [Codex protocol source](https://github.com/openai/codex/blob/main/codex-rs/protocol/src/protocol.rs).

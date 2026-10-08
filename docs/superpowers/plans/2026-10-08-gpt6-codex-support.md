@@ -13,12 +13,22 @@ Never read/write ~/.codex/config.toml. Preserve unrelated user configuration, ba
 
 For every task: add behavioral regression, observe expected failure, implement minimally, run relevant suite, update architecture when needed, commit with corresponding issue reference.
 
-- [ ] Shared: EventProtocol.swift + EventProtocolTests.swift; dual model input, optional identifiers, round-trip and malformed metadata.
-- [ ] Usage: Resources/pricing.json + PricingTableTests.swift; exact GPT-6 prices and monotonic resource version.
-- [ ] Lifecycle: CodexHookInstaller.swift + SessionStore.swift + installer/session tests; end/interruption and safe cleanup.
-- [ ] Compaction (#233): CodexJsonlTailer.swift + SessionStore.swift + AppDelegate.swift; fallback completion and dual-source deduplication.
-- [ ] Subagents: installer/store/tailer and tests; exact parent pairing and spawned-thread display filtering.
-- [ ] Concurrency: Shared identifiers → SessionInfo turn/tool tracking → store/tailer/AppDelegate; stale events, concurrent tools and prompt updates.
-- [ ] Request pricing: ModelPrice/DailyUsage/SessionStore and tests; model attribution, tiers, input threshold, explicit estimate semantics.
-- [ ] App Server: official docs plus read-only local help/schema evidence; record existing-session ownership boundary in docs.
-- [ ] Final verification: swift build, swift test, make app, disconnected/malformed Bridge smoke checks, update memory and parent issue.
+- [x] Shared: EventProtocol.swift + EventProtocolTests.swift; dual model input, optional identifiers, round-trip and malformed metadata.
+- [x] Usage: Resources/pricing.json + PricingTableTests.swift; exact GPT-6 prices and monotonic resource version.
+- [x] Lifecycle: CodexHookInstaller.swift + SessionStore.swift + installer/session tests; end/interruption and safe cleanup.
+- [x] Compaction (#233): CodexJsonlTailer.swift + SessionStore.swift + AppDelegate.swift; fallback completion and dual-source deduplication.
+- [x] Subagents: installer/store/tailer and tests; exact parent pairing and spawned-thread display filtering.
+- [x] Concurrency: Shared identifiers → SessionInfo turn/tool tracking → store/tailer/AppDelegate; stale events, concurrent tools and prompt updates.
+- [x] Request pricing: ModelPrice/DailyUsage/SessionStore and tests; model attribution, tiers, input threshold, explicit estimate semantics.
+- [x] App Server: official docs plus read-only local help/schema evidence; record existing-session ownership boundary in docs.
+- [x] Final verification: swift build, swift test, make app, disconnected/malformed Bridge smoke checks, update memory and parent issue.
+
+
+## Final verification (2026-10-08)
+
+- `swift build`: passed, both executables built.
+- `swift test`: passed, 135 XCTest + 782 Swift Testing tests (917 total).
+- `make app`: passed; `codesign --verify --deep --strict .build/ZackEyes.app`: passed.
+- Bridge binary: empty stdin, malformed/non-object JSON, missing args and invalid flags all return 0 with empty stdout/stderr. Missing-socket and live-socket paths are covered by the full BridgeLib suite.
+- Installer fixtures verify backups, unrelated metadata preservation and restoration. Real user hook/config files were not modified by this development task.
+- `git diff --check`: passed. No agent inference/runtime takeover or manual GUI interaction was performed. UI change is limited to the estimate label; panel behavior is unchanged.

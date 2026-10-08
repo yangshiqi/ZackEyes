@@ -35,10 +35,10 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 |------|--------|-------|
 | Hook 配置文件 | `~/.claude/settings.json`（`HookInstaller`） | `~/.codex/hooks.json`（`CodexHookInstaller`） |
 | 启用 hooks 的额外 flag | 无（CC 默认） | `[features].hooks` 在 codex `default_enabled: true`，所以**我们也不碰 `config.toml`** |
-| 支持的事件 | 12 个：基础 8 个 + compact/subagent lifecycle；另有 `StatusLine` | 6 个：无 Notification / SessionEnd / StatusLine |
+| 支持的事件 | 12 个：基础 8 个 + compact/subagent lifecycle；另有 `StatusLine` | 12 个：基础 6 个 + SessionEnd / Interrupt / compact / subagent lifecycle；无 StatusLine |
 | 5h/7d 配额数据源 | StatusLine hook 的 `rate_limits.{five_hour,seven_day}` | rollout jsonl 的 `event_msg.token_count.rate_limits.{primary,secondary}`（UsageTracker 周期扫描） |
 | Permission 响应 JSON 形状 | `{hookSpecificOutput:{decision:{behavior,message}}}` | 同上（codex 文档形状完全一致，**Bridge 输出不需翻译**） |
-| AskUserQuestion | 支持（PreToolUse 阻塞） | 不支持（codex 不定义此工具） |
+| AskUserQuestion | 支持（PreToolUse 阻塞） | 原生 user-input 请求属于 App Server；现有 hook 观察路径未接入（见 #250） |
 | 进程探测（liveness sweep） | `TerminalLocator.runningClaudeCwds()` 走 `ps`/`lsof` | 暂无 `runningCodexCwds()`，改用 `lastActiveAt` 时间剪枝（15 min 阈值） |
 | 无 hook 兜底发现 | 启动扫描 + 60s 周期重扫（SessionScanner，#83） | CodexJsonlTailer kqueue 实时 + 30s rediscovery |
 | Detected session 启动扫描窗口 | 8h | 30 min（codex 一次 invocation = 一个 rollout，关掉就死） |
@@ -185,7 +185,7 @@ PricingStore.start()
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `SocketServer` | `Sources/AppLib/Socket/SocketServer.swift` | 监听 `/tmp/zackeyes.sock`，`PermissionRequest` 连接保持到用户决策 / POLLHUP / 超时 |
-| `SessionStore` (#40 subagent) | `Sources/AppLib/Session/SessionStore.swift` | **Claude subagent 生命周期**：`SubagentStart`/`SubagentStop` 实测**两边都带 `agent_id` + `agent_type`**（真实 payload 抓取确认，Stop 另带 `agent_transcript_path` / `last_assistant_message`），故配对是精确的而非位置猜测。`SessionInfo.activeSubagents: [ActiveSubagent]`，上限 `maxTrackedSubagents = 64`。**两个 case 都刻意不碰 `state` / `lastAssistantMessage` / tool 字段**——subagent 结束 ≠ 父会话结束；在这里 idle 掉卡片会让每次 Task 派发都显示成"会话已完成"，把 subagent 的 `last_assistant_message` 抄到父会话则会把子 agent 的话安在主 agent 头上（issue 的首要验收项）。**缺 `agent_id` 时整条忽略**：配不上 stop 的条目永远删不掉，宁可不计数也不要卡死的计数器。**泄漏兜底**：`UserPromptSubmit` 清空（新回合证明上一回合的东西不值得再显示），`SessionStart` 因为重建 `SessionInfo` 而自动清空。**Codex 走不到这条路**（`guard agent == .claude`）——codex 用 `subagentLabel` 标记整个线程，是另一个概念。**#79 描述富化**：`SubagentStart` 不带描述，但父会话自己那次工具调用是 `Agent`（注意不是 `Task`），`input` 含 `{description, prompt, subagent_type, model}`，而 `PreToolUse` 本来就把 `tool_input` 送到我们手上——所以描述是**零新增 I/O** 的。`PreToolUse(Agent)` 入队 `pendingSubagentCalls`，`SubagentStart` 按 `subagent_type` FIFO 认领。**为什么不按 id 关联**：`PreToolUse` 触发时 subagent 还不存在（没有 `agent_id`），且事件协议里没有 `tool_use_id`；按类型 FIFO 对单次派发是精确的（也正是描述真正会被渲染的场合），并行同类型 fan-out 最坏是把两个兄弟的描述对调，而那时徽章显示的是计数、描述只出现在 tooltip 里。队列在 `UserPromptSubmit` 清空——派发失败（被拒/报错）的描述若留着，会被后面无关的 subagent 认领并描述错工作。**刻意不做父子树**（issue 原要求）：实测 1052 个 subagent 里只有 32 个（~3%）是 depth 2、只有 19 个带 `parentAgentId`，而带父边的 `subagents/*.meta.json` 在 `SubagentStart` 触发时**尚未写出**（实测两次均为 False）——为 3% 的场景在热路径上加轮询重试，另外 97% 渲染出来和现在的平列表一模一样。 |
+| `SessionStore` (#40 subagent) | `Sources/AppLib/Session/SessionStore.swift` | **Claude subagent 生命周期**：`SubagentStart`/`SubagentStop` 实测**两边都带 `agent_id` + `agent_type`**（真实 payload 抓取确认，Stop 另带 `agent_transcript_path` / `last_assistant_message`），故配对是精确的而非位置猜测。`SessionInfo.activeSubagents: [ActiveSubagent]`，上限 `maxTrackedSubagents = 64`。**两个 case 都刻意不碰 `state` / `lastAssistantMessage` / tool 字段**——subagent 结束 ≠ 父会话结束；在这里 idle 掉卡片会让每次 Task 派发都显示成"会话已完成"，把 subagent 的 `last_assistant_message` 抄到父会话则会把子 agent 的话安在主 agent 头上（issue 的首要验收项）。**缺 `agent_id` 时整条忽略**：配不上 stop 的条目永远删不掉，宁可不计数也不要卡死的计数器。**泄漏兜底**：`UserPromptSubmit` 只清理过期条目，保留仍在运行的后台子代理；`SessionStart` 重建 `SessionInfo` 时清空。**Codex 同样按父 session_id + agent_id 配对**（#247）；显式带父线程的 spawned rollouts 不产生重复顶层卡片，独立 guardian/review 仍用 `subagentLabel`。**#79 描述富化**：`SubagentStart` 不带描述，但父会话自己那次工具调用是 `Agent`（注意不是 `Task`），`input` 含 `{description, prompt, subagent_type, model}`，而 `PreToolUse` 本来就把 `tool_input` 送到我们手上——所以描述是**零新增 I/O** 的。`PreToolUse(Agent)` 入队 `pendingSubagentCalls`，`SubagentStart` 按 `subagent_type` FIFO 认领。**为什么不按 id 关联**：`PreToolUse` 触发时 subagent 还不存在（没有 `agent_id`），当前描述队列尚未按新增的可选 `tool_use_id` 关联；按类型 FIFO 对单次派发是精确的（也正是描述真正会被渲染的场合），并行同类型 fan-out 最坏是把两个兄弟的描述对调，而那时徽章显示的是计数、描述只出现在 tooltip 里。队列在 `UserPromptSubmit` 清空——派发失败（被拒/报错）的描述若留着，会被后面无关的 subagent 认领并描述错工作。**刻意不做父子树**（issue 原要求）：实测 1052 个 subagent 里只有 32 个（~3%）是 depth 2、只有 19 个带 `parentAgentId`，而带父边的 `subagents/*.meta.json` 在 `SubagentStart` 触发时**尚未写出**（实测两次均为 False）——为 3% 的场景在热路径上加轮询重试，另外 97% 渲染出来和现在的平列表一模一样。 |
 | `SessionStore` | `Sources/AppLib/Session/SessionStore.swift` | 按 `session_id` 索引的多 session 状态机，含 `aggregateState` / `primarySession` / 错误检测。`SessionInfo.agent: AgentKind` 标记每个 session 的 agent。`recordCodexTaskComplete(...)` 处理来自 jsonl tailer 的 turn 完成事件。**#76 端口归属**：`SessionInfo.listeningPorts` 由 `applyListeningPorts(_:)` 写入，扫描根 pid 由纯函数 `portScanRoots(_:)` 决定——**只认 hook 的 `_bridge_ppid`**（`claudePidFromHook == true`），与 liveness 同一道闸（CLAUDE.md 铁律 #7 / #217）：`activateDetectedSessions` 猜的那个同 cwd 兄弟进程可以用来跳终端，但不能用来认领端口，否则会把别人的 dev server 印在这张卡上。`applyListeningPorts` 会把**结果里缺席的 session 一并清空**（这一 tick 没测到就不能继续声称它开着端口），因此调用方在快照失败时必须整个跳过、不能传 `[:]`。 |
 | `SessionScanner` | `Sources/AppLib/Session/SessionScanner.swift` | 扫描 `~/.claude/projects/*.jsonl` + `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` 导入既有会话。两个 agent **使用独立 recency 窗口**（claude 默认 8h，codex 默认 30 min）。Codex 路径按 UTC 日期裁剪只走候选日期子目录；#83 起每 60s 随 sweep 重扫 Claude transcript（claude-only、活性过滤、ps 失败跳过本轮、未变化跳过），hook 缺失时启动后新会话 ≤60s 可见 |
 | `LivenessFilter` | `Sources/AppLib/Session/LivenessFilter.swift` | 纯函数：根据 `cwd` → 运行中 `claude` 进程 map 决定哪些 detected session 还活着。Codex session 直接 pass-through 不参与（暂无 `runningCodexCwds()`）。 |
@@ -212,7 +212,7 @@ PricingStore.start()
 | 模块 | 文件 | 职责 |
 |------|------|------|
 | `HookInstaller` | `Sources/AppLib/Hooks/HookInstaller.swift` | Claude 路径——静默安装/卸载 `~/.claude/settings.json` 的 `hooks` + `statusLine`，备份保护，附加合并，支持可选 `~/.zackeyes/bin/statusline-user` 显示扩展，所有变更含 `zackeyes` 标识 + `--agent claude` flag；重装为 no-op 时跳过备份与写入（幂等，防 backup 刷屏）；卸载亦先备份 + no-op 跳过（#46） |
-| `CodexHookInstaller` | `Sources/AppLib/Hooks/CodexHookInstaller.swift` | Codex 路径——静默安装/卸载 `~/.codex/hooks.json` 的 6 个事件，命令含 `--agent codex`。同样的备份 / 解析失败不动 / 用户内容保留契约。**不读不写 `~/.codex/config.toml`**（codex 默认开 hooks）；重装为 no-op 时跳过备份与写入（幂等，防 backup 刷屏）；卸载亦先备份 + no-op 跳过（#46） |
+| `CodexHookInstaller` | `Sources/AppLib/Hooks/CodexHookInstaller.swift` | Codex 路径——静默安装/卸载 `~/.codex/hooks.json` 的 12 个事件（#246 / #247 / #233）；SessionEnd/Interrupt 超时 3s，命令含 `--agent codex`。同样的备份 / 解析失败不动 / 用户内容保留契约。**不读不写 `~/.codex/config.toml`**（codex 默认开 hooks）；重装为 no-op 时跳过备份与写入（幂等，防 backup 刷屏）；卸载亦先备份 + no-op 跳过（#46） |
 | `IntegrationUninstaller` | `Sources/AppLib/Hooks/IntegrationUninstaller.swift` | #46 完整卸载：只读 `preview()` 复用 installer 检测内核（与 `execute()` 不漂移）+ 尽力 `execute()`（双 `uninstallHooks()` + 清除 bridge/mux/.app-path/.statusline-original/pending）。保留第三方条目、config.json、pricing-cache.json、statusline-user；不碰 codex config.toml。 |
 | `HookHealth` | `Sources/AppLib/Hooks/HookHealth.swift` | 只读健康检查（#38）：claude/codex hook 条目完整性、bridge launcher 可执行、launcher 解析是否指向当前 bundle、socket 存在性、statusLine 归属分类（direct/mux/userRenderer/thirdParty/absent/unreadable）。复用 installer 的事件表与条目识别，绝不写任何文件。 |
 | `HookRepair` | `Sources/AppLib/Hooks/HookRepair.swift` | 共享修复入口 = deployLauncherScript + 双 installer 重装；AppDelegate 启动与 Hook Status 窗口 Repair 按钮共用。 |
@@ -411,3 +411,13 @@ ccisland/
 - PermissionRequest hook 事件未在官方文档列出（已通过外部实践验证可行）
 - PermissionRequest 响应格式基于逆向推断
 - 已准备 PreToolUse `permissionDecision` 作为 fallback 方案
+
+
+### GPT-6 / Codex 协议兼容（#243）
+
+- Bridge 接受 Codex 字符串 model 和 Claude 对象 model；保留可选 turn_id / tool_use_id，异常可选 model 不丢弃权限事件。
+- SessionEnd 删除会话并释放待决授权；Interrupt 清理当前回合，拒绝待决授权但不发送完成通知。Codex 按 turn_id 拒绝旧回合事件，按 tool_use_id 独立追踪并发工具；同回合 steering 提交保留正在运行的工具。
+- 压缩使用 PreCompact/PostCompact hooks 与 rollout context_compacted 双源；跨源 10s 去重，新 begin 不被误吞。Tailer 从 EOF 附着，历史完成不会补发通知。
+- GPT-6.1 Sol / Astra 使用精确标准价格；Codex 累计 usage 先求增量再按当时模型收费，服务档位来自 thread_settings_applied / session_configured。显式 cache_write_input_tokens 才记缓存写入。单请求 last_token_usage 与增量相符时，>272k 输入应用长请求倍率；不把多请求累计间隙当一次长请求。每日聚合保留加权计费量，token 数本身不乘倍率。
+- Codex 费用均标为估算：旧 CLI 缺少档位/单请求元数据、启动前历史模型不完整、订阅计费不同于 API 标价时，不能当账单。Hook 已有会话的模型字符串可即时显示；rollout 提供后续模型/档位变化。
+- App Server 支持 steering / interrupt / 原生问答，但另起 server 不等于接管已有 CLI 的活跃回合。本次维持观察架构；连接所有权结论见 docs/superpowers/specs/2026-10-08-codex-app-server-boundary.md。
