@@ -797,7 +797,9 @@ public final class SessionStore: ObservableObject {
             // differ depending on which path observed the finish; it also
             // clears the in-flight marker, which is what used to happen here.
             if agent == .codex {
-                guard session.recordCodexCompactFinished(source: "hook", at: Date()) else { break }
+                // Count deduplication must not discard the hook's manual
+                // compaction state transition when the rollout arrived first.
+                _ = session.recordCodexCompactFinished(source: "hook", at: Date())
             } else {
                 session.recordCompactFinished()
             }

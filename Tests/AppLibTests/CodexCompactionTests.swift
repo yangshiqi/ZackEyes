@@ -46,3 +46,18 @@ struct CodexCompactionTests {
     #expect(event.sessionId == "s")
     #expect(event.observedAt != nil)
 }
+
+@MainActor @Test func manualCompactStateIsSavedWhenRolloutAlreadyCountedCompletion() {
+    for rolloutFirst in [true, false] {
+        let store = SessionStore()
+        store.handleEvent(BridgeEvent(bridgeEvent: "PreToolUse", agent: .codex, sessionId: "s", toolName: "Bash"))
+        store.handleEvent(BridgeEvent(bridgeEvent: "PreCompact", agent: .codex, sessionId: "s", trigger: "manual"))
+        if rolloutFirst { _ = store.recordCodexCompacted(sessionId: "s", cwd: nil, transcriptPath: nil, observedAt: Date()) }
+        store.handleEvent(BridgeEvent(bridgeEvent: "PostCompact", agent: .codex, sessionId: "s", trigger: "manual"))
+        if !rolloutFirst { _ = store.recordCodexCompacted(sessionId: "s", cwd: nil, transcriptPath: nil, observedAt: Date()) }
+        #expect(store.sessions["s"]?.compactCount == 1)
+        #expect(store.sessions["s"]?.state == .idle)
+        #expect(store.sessions["s"]?.isToolRunning == false)
+        #expect(store.sessions["s"]?.isCompacting == false)
+    }
+}
