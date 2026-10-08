@@ -41,3 +41,12 @@ For every task: add behavioral regression, observe expected failure, implement m
 - Streamed turn_context propagates service_tier updates, preserving absent fields and clearing explicit nulls; live and daily cost estimates agree through tier changes (137f8b2, #248).
 - Four new tests: three regressions reproduced before fixes; the active-steering preservation test passed both before and after.
 - 123 relevant tests passed. Final swift build and all 921 tests passed (135 XCTest + 786 Swift Testing), including socket/process tests with the required sandbox permissions. make app and deep strict codesign verification passed; git diff --check passed.
+
+
+## Local app launch smoke test (2026-10-08)
+
+Launched `.build/ZackEyes.app` (PID 40568) and verified the owner-only socket at `~/.zackeyes/zackeyes.sock`. Accessibility inspection reported `frontmost == false` both at launch and while the permission panel was expanded, so the app did not steal foreground focus. Cropped screenshots confirmed the permission panel and existing GPT-6.1 Sol cards with `est.` costs.
+
+A uniquely named synthetic session sent events through the bundled Bridge: completed old turn → identifier-less prompt → new-ID PermissionRequest. The request remained pending (not prematurely denied); Interrupt returned `Turn interrupted` to the Bridge and exited cleanly. Manual PreCompact/PostCompact hooks were delivered; SessionEnd cleaned up the test session. No model inference was executed. Rollout-first compaction dedup and tier-change cost parity remain covered by the regression tests, not by this live smoke sequence.
+
+The app remains running for user inspection. Startup ran the normal HookRepair path. No manual edits to user configuration were made and config.toml was not accessed. Screenshots remain local under /private/tmp and were not attached to the PR.
