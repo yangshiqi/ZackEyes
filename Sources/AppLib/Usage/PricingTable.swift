@@ -27,8 +27,10 @@ public struct PricingTable: Sendable {
         let dto = try JSONDecoder().decode(PricingFile.self, from: data)
         self.version = dto.version ?? ""
         self.models = dto.models.mapValues {
-            ModelPrice(inputPerToken: $0.input, outputPerToken: $0.output,
+            var price = ModelPrice(inputPerToken: $0.input, outputPerToken: $0.output,
                        cacheReadPerToken: $0.cache_read, cacheCreatePerToken: $0.cache_creation)
+            price.cacheCreate1hPerToken = $0.cache_creation_1h
+            return price
         }
         self.aliases = dto.aliases ?? [:]
     }
@@ -68,6 +70,7 @@ private struct PricingFile: Decodable {
         let output: Double
         let cache_read: Double
         let cache_creation: Double
+        let cache_creation_1h: Double?
 
         init(from decoder: any Decoder) throws {
             let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -75,10 +78,11 @@ private struct PricingFile: Decodable {
             output         = try c.decode(Double.self, forKey: .output)
             cache_read     = try c.decodeIfPresent(Double.self, forKey: .cache_read) ?? 0
             cache_creation = try c.decodeIfPresent(Double.self, forKey: .cache_creation) ?? 0
+            cache_creation_1h = try c.decodeIfPresent(Double.self, forKey: .cache_creation_1h)
         }
 
         enum CodingKeys: String, CodingKey {
-            case input, output, cache_read, cache_creation
+            case input, output, cache_read, cache_creation, cache_creation_1h
         }
     }
 }

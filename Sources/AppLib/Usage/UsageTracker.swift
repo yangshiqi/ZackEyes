@@ -1162,6 +1162,8 @@ public final class UsageTracker: ObservableObject {
         var id: String?
         var model: String
         var input: Int, output: Int, cacheRead: Int, cacheCreate: Int
+        var writes1h: Int = 0
+        var speed: String? = nil
     }
 
     /// Cached parse of one transcript file, keyed by identity `(mtime, size)`.
@@ -1267,6 +1269,9 @@ public final class UsageTracker: ObservableObject {
                 if r.ts >= dailyCutoff {
                     let day = calendar.startOfDay(for: r.ts)
                     var tally = daily[day]?[r.model] ?? ModelTokenTally()
+                    tally.claudeBilling = (tally.claudeBilling ?? ClaudeBillingUnits())
+                        + .estimate(input: r.input, output: r.output, cached: r.cacheRead,
+                                    writes: r.cacheCreate, writes1h: r.writes1h, model: r.model, speed: r.speed)
                     tally.input += r.input; tally.output += r.output
                     tally.cacheRead += r.cacheRead; tally.cacheCreate += r.cacheCreate
                     daily[day, default: [:]][r.model] = tally
@@ -1318,7 +1323,9 @@ public final class UsageTracker: ObservableObject {
                 input: Self.clampTokens((usage["input_tokens"] as? Int) ?? 0),
                 output: Self.clampTokens((usage["output_tokens"] as? Int) ?? 0),
                 cacheRead: Self.clampTokens((usage["cache_read_input_tokens"] as? Int) ?? 0),
-                cacheCreate: Self.clampTokens((usage["cache_creation_input_tokens"] as? Int) ?? 0)))
+                cacheCreate: Self.clampTokens((usage["cache_creation_input_tokens"] as? Int) ?? 0),
+                writes1h: Self.clampTokens(((usage["cache_creation"] as? [String: Any])?["ephemeral_1h_input_tokens"] as? Int) ?? 0),
+                speed: usage["speed"] as? String))
         }
         return records
     }

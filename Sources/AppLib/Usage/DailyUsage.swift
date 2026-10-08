@@ -6,6 +6,7 @@ public struct ModelTokenTally: Sendable, Equatable {
     public var output: Int
     public var cacheRead: Int
     public var cacheCreate: Int
+    public var claudeBilling: ClaudeBillingUnits? = nil
     public var codexBilling: CodexBillingUnits? = nil
     public init(input: Int = 0, output: Int = 0, cacheRead: Int = 0, cacheCreate: Int = 0) {
         self.input = input; self.output = output
@@ -57,6 +58,10 @@ extension UsageTracker {
                     }
                     cur.codexBilling = units(cur) + units(t)
                 }
+                if cur.claudeBilling != nil || t.claudeBilling != nil {
+                    cur.claudeBilling = (cur.claudeBilling ?? .legacy(cur, model: model))
+                        + (t.claudeBilling ?? .legacy(t, model: model))
+                }
                 cur.input += t.input; cur.output += t.output
                 cur.cacheRead += t.cacheRead; cur.cacheCreate += t.cacheCreate
                 dst[day, default: [:]][model] = cur
@@ -94,10 +99,7 @@ extension UsageTracker {
                     u.cacheWriteTokens += t.cacheCreate
                     u.cacheReadTokens += t.cacheRead
                     if let p = pricing.price(for: model) {
-                        cost += Double(t.input) * p.inputPerToken
-                              + Double(t.output) * p.outputPerToken
-                              + Double(t.cacheRead) * p.cacheReadPerToken
-                              + Double(t.cacheCreate) * p.cacheCreatePerToken
+                        cost += (t.claudeBilling ?? .legacy(t, model: model)).cost(using: p)
                         priced = true
                     } else { u.anyUnpriced = true }
                 }
