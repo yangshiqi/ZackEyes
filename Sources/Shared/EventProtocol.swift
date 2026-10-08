@@ -120,7 +120,9 @@ public struct BridgeEvent: Codable, Sendable {
     public let lastAssistantMessage: String?
     public let rateLimits: [String: AnyCodable]?
     public let contextWindow: [String: AnyCodable]?  // per-session context usage (Claude statusLine)
-    public let model: [String: AnyCodable]?           // {id, display_name}
+    public let model: [String: AnyCodable]?           // normalized {id, display_name}
+    public let turnId: String?
+    public let toolUseId: String?
     public let cost: [String: AnyCodable]?            // {total_cost_usd, total_duration_ms, ...}
     /// SubagentStart/SubagentStop only: opaque id identifying one Task
     /// dispatch. Present on BOTH events (verified against real Claude Code
@@ -155,7 +157,9 @@ public struct BridgeEvent: Codable, Sendable {
         cost: [String: AnyCodable]? = nil,
         agentId: String? = nil,
         agentType: String? = nil,
-        isReplayed: Bool = false
+        isReplayed: Bool = false,
+        turnId: String? = nil,
+        toolUseId: String? = nil
     ) {
         self.bridgeEvent = bridgeEvent
         self.agent = agent
@@ -178,6 +182,8 @@ public struct BridgeEvent: Codable, Sendable {
         self.agentId = agentId
         self.agentType = agentType
         self.isReplayed = isReplayed
+        self.turnId = turnId
+        self.toolUseId = toolUseId
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -198,6 +204,8 @@ public struct BridgeEvent: Codable, Sendable {
         case rateLimits           = "rate_limits"
         case contextWindow        = "context_window"
         case model
+        case turnId = "turn_id"
+        case toolUseId = "tool_use_id"
         case cost
         case agentId              = "agent_id"
         case agentType            = "agent_type"
@@ -227,7 +235,15 @@ public struct BridgeEvent: Codable, Sendable {
         self.lastAssistantMessage = try c.decodeIfPresent(String.self, forKey: .lastAssistantMessage)
         self.rateLimits = try c.decodeIfPresent([String: AnyCodable].self, forKey: .rateLimits)
         self.contextWindow = try c.decodeIfPresent([String: AnyCodable].self, forKey: .contextWindow)
-        self.model = try c.decodeIfPresent([String: AnyCodable].self, forKey: .model)
+        // Codex hooks use a slug string; Claude StatusLine uses an object.
+        // Optional metadata must never discard an otherwise valid approval.
+        if let slug = try? c.decode(String.self, forKey: .model), !slug.isEmpty {
+            self.model = ["id": AnyCodable(slug), "display_name": AnyCodable(slug)]
+        } else {
+            self.model = try? c.decode([String: AnyCodable].self, forKey: .model)
+        }
+        self.turnId = try? c.decode(String.self, forKey: .turnId)
+        self.toolUseId = try? c.decode(String.self, forKey: .toolUseId)
         self.cost = try c.decodeIfPresent([String: AnyCodable].self, forKey: .cost)
         self.agentId = try c.decodeIfPresent(String.self, forKey: .agentId)
         self.agentType = try c.decodeIfPresent(String.self, forKey: .agentType)
