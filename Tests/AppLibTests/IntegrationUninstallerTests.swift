@@ -82,7 +82,7 @@ struct IntegrationUninstallerTests {
 
         let plan = makeUninstaller(tmpDir: tmpDir).preview()
 
-        #expect(plan.claudeHookEvents == 12)
+        #expect(plan.claudeHookEvents == 15)
         #expect(plan.claudeOwnsStatusLine == true)
         #expect(plan.codexHookEvents == 12)
 

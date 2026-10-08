@@ -35,7 +35,7 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 |------|--------|-------|
 | Hook 配置文件 | `~/.claude/settings.json`（`HookInstaller`） | `~/.codex/hooks.json`（`CodexHookInstaller`） |
 | 启用 hooks 的额外 flag | 无（CC 默认） | `[features].hooks` 在 codex `default_enabled: true`，所以**我们也不碰 `config.toml`** |
-| 支持的事件 | 12 个：基础 8 个 + compact/subagent lifecycle；另有 `StatusLine` | 12 个：基础 6 个 + SessionEnd / Interrupt / compact / subagent lifecycle；无 StatusLine |
+| 支持的事件 | 15 个：基础 8 个 + compact/subagent lifecycle + PostToolUseFailure / StopFailure / PostModelSwitch；另有 `StatusLine` | 12 个：基础 6 个 + SessionEnd / Interrupt / compact / subagent lifecycle；无 StatusLine |
 | 5h/7d 配额数据源 | StatusLine hook 的 `rate_limits.{five_hour,seven_day}` | rollout jsonl 的 `event_msg.token_count.rate_limits.{primary,secondary}`（UsageTracker 周期扫描） |
 | Permission 响应 JSON 形状 | `{hookSpecificOutput:{decision:{behavior,message}}}` | 同上（codex 文档形状完全一致，**Bridge 输出不需翻译**） |
 | AskUserQuestion | 支持（PreToolUse 阻塞） | 原生 user-input 请求属于 App Server；现有 hook 观察路径未接入（见 #250） |

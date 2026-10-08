@@ -307,9 +307,10 @@ struct NotchExpandedView: View {
                                 .scaleEffect(0.4)
                                 .frame(width: 10, height: 10)
                         } else {
-                            Image(systemName: "checkmark")
+                            Image(systemName: session.currentToolFailure == nil ? "checkmark" : "xmark")
                                 .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(.white.opacity(0.4))
+                                .foregroundColor(session.currentToolFailure == nil ? .white.opacity(0.4) : .red)
+                                .help(session.currentToolFailure ?? "Tool completed")
                         }
                         Text(tool)
                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -328,7 +329,7 @@ struct NotchExpandedView: View {
 
                 // Error banner (rate limit / API error)
                 if let errMsg = session.errorMessage {
-                    errorBanner(errMsg, detail: session.lastAssistantMessage)
+                    errorBanner(errMsg, detail: session.errorDetail ?? session.lastAssistantMessage)
                 }
 
                 // Tasks section — hidden once the session goes idle/stopped

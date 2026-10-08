@@ -720,7 +720,7 @@ struct HookInstallerTests {
         let repaired = try JSONSerialization.jsonObject(
             with: Data(contentsOf: settingsURL)) as! [String: Any]
         let hooks = repaired["hooks"] as! [String: Any]
-        #expect(hooks.count == 12)
+        #expect(hooks.count == 15)
     }
 
     // MARK: - #46 uninstall backup + no-op

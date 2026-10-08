@@ -50,6 +50,10 @@ public struct SessionInfo: Identifiable {
     public var currentToolName: String?
     public var currentToolInput: [String: Any]?
     public var isToolRunning: Bool = false
+    public var currentToolFailure: String?
+    var currentClaudeToolId: String?
+    var runningClaudeTools: [String: (name: String?, input: [String: Any]?)] = [:]
+    var seenClaudeToolIds: Set<String> = []
     public var currentCodexTurnId: String?
     var codexTurnCompleted = false
     var codexTurnStartedAt: Date?
@@ -140,6 +144,7 @@ public struct SessionInfo: Identifiable {
     /// session. Terminal jump is happy with either.
     public var claudePidFromHook: Bool = false
     public var transcriptPath: String?  // Path to the JSONL transcript file (for lsof lookup)
+    public var errorDetail: String?
     public var errorMessage: String?
     public var errorAt: Date?
 
@@ -481,6 +486,12 @@ public final class SessionStore: ObservableObject {
             sessions[sid]?.lastActiveAt = Date()
         }
 
+        // Ordinary child hooks reuse the parent session_id. Subagent lifecycle
+        // belongs to the parent; the child's tools and turn completions do not.
+        if event.agent == .claude, event.agentId?.isEmpty == false,
+           ["PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "StopFailure",
+            "UserPromptSubmit"].contains(event.bridgeEvent) { return }
+
         // Any live hook event upgrades a detected session to live
         if let existing = sessions[sid], existing.source == .detected {
             upgradeToLive(sessionId: sid)
@@ -566,6 +577,19 @@ public final class SessionStore: ObservableObject {
                     session.runningCodexToolIds.insert(callId)
                 }
             }
+            if agent == .claude, let callId = event.toolUseId, !callId.isEmpty {
+                guard !session.seenClaudeToolIds.contains(callId) else { break }
+                if session.seenClaudeToolIds.count >= 1024 {
+                    session.seenClaudeToolIds = Set(session.runningClaudeTools.keys)
+                }
+                session.seenClaudeToolIds.insert(callId)
+                // Bound malformed streams; a real tool batch is far smaller.
+                if session.runningClaudeTools.count < 256 {
+                    session.runningClaudeTools[callId] = (event.toolName, event.toolInput?.mapValues { $0.value })
+                }
+                session.currentClaudeToolId = callId
+            }
+            session.currentToolFailure = nil
             session.currentToolName = event.toolName
             session.currentToolInput = event.toolInput?.mapValues { $0.value }
             // #79 — the parent's `Agent` call is the only place a subagent's
@@ -616,6 +640,8 @@ public final class SessionStore: ObservableObject {
                 session.lastUserPrompt = prompt
                 session.lastAssistantMessage = nil  // clear stale reply on new prompt
             }
+            session.errorDetail = nil
+            session.currentToolFailure = nil
             session.errorMessage = nil       // user is retrying
             session.compactTrigger = nil     // #181 — marker can't outlive its turn
             session.compactStartContextPct = nil
@@ -655,7 +681,8 @@ public final class SessionStore: ObservableObject {
             session.dropAllStaleAskUserQuestions()
             sessions[sid] = session
 
-        case "PostToolUse":
+        case "PostToolUse", "PostToolUseFailure":
+            guard event.bridgeEvent != "PostToolUseFailure" || agent == .claude else { break }
             // Don't clear currentToolName — keep it as "most recent action".
             // Just mark that the tool is no longer running.
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
@@ -663,7 +690,26 @@ public final class SessionStore: ObservableObject {
                 if let callId = event.toolUseId { session.runningCodexToolIds.remove(callId) }
                 session.isToolRunning = !session.runningCodexToolIds.isEmpty
             } else {
-                session.isToolRunning = false
+                if let callId = event.toolUseId, !callId.isEmpty {
+                    let wasRunning = session.runningClaudeTools.removeValue(forKey: callId) != nil
+                    if !wasRunning && session.seenClaudeToolIds.contains(callId) { break }
+                    if session.currentClaudeToolId == callId || session.runningClaudeTools.isEmpty {
+                        if let next = session.runningClaudeTools.keys.sorted().first,
+                           let activity = session.runningClaudeTools[next] {
+                            session.currentClaudeToolId = next
+                            session.currentToolName = activity.name
+                            session.currentToolInput = activity.input
+                        } else {
+                            session.currentClaudeToolId = callId
+                            if let tool = event.toolName { session.currentToolName = tool }
+                        }
+                    }
+                }
+                session.isToolRunning = !session.runningClaudeTools.isEmpty
+                if !session.isToolRunning {
+                    session.currentToolFailure = event.bridgeEvent == "PostToolUseFailure"
+                        ? (event.isInterrupt == true ? "Tool interrupted" : event.hookError ?? "Tool failed") : nil
+                }
             }
             session.lastActiveAt = Date()
 
@@ -693,6 +739,7 @@ public final class SessionStore: ObservableObject {
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             session.state = .idle
             session.isToolRunning = false
+            session.runningClaudeTools = [:]
             if agent == .codex {
                 session.codexTurnCompleted = true
                 session.runningCodexToolIds = []
@@ -716,6 +763,34 @@ public final class SessionStore: ObservableObject {
             session.compactTrigger = nil
             session.compactStartContextPct = nil
             sessions[sid] = session
+
+        case "StopFailure":
+            guard agent == .claude else { break }
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
+            session.state = .idle
+            session.isToolRunning = false
+            session.runningClaudeTools = [:]
+            session.dropAllStaleAskUserQuestions()
+            let pending = session.pendingPermissions
+            session.pendingPermissions = []
+            session.state = .idle
+            let reasons = [
+                "rate_limit": "Rate limit reached", "overloaded": "Service overloaded",
+                "authentication_failed": "Authentication failed", "oauth_org_not_allowed": "Organization access denied",
+                "account_on_hold": "Account on hold", "billing_error": "Billing error",
+                "invalid_request": "Invalid API request", "model_not_found": "Model not found",
+                "server_error": "Server error", "max_output_tokens": "Output limit reached",
+                "cloud_credential_error": "Cloud credential error"
+            ]
+            session.errorMessage = event.hookError.flatMap { reasons[$0] } ?? "API request failed"
+            // StopFailure's rendered text is an API error, never a reply recap.
+            session.errorDetail = event.errorDetails ?? event.lastAssistantMessage ?? session.errorMessage
+            session.errorAt = Date()
+            session.lastActiveAt = Date()
+            session.compactTrigger = nil
+            session.compactStartContextPct = nil
+            sessions[sid] = session
+            for request in pending { request.responder(.permission(.deny(message: "Turn failed"))) }
 
         // #40/#247 — parent-owned subagent lifecycle. Both hooks carry `agent_id` and
         // `agent_type` (verified against real Claude Code payloads), so the
@@ -796,6 +871,7 @@ public final class SessionStore: ObservableObject {
             if trigger != "auto" {
                 session.state = .idle
                 session.isToolRunning = false
+                session.runningClaudeTools = [:]
                 session.dropAllStaleAskUserQuestions()
             }
             // #37 — the real PostCompact path. Shares one recorder with
@@ -1008,6 +1084,7 @@ public final class SessionStore: ObservableObject {
             // task_complete carries a nil/empty message (see real rollouts),
             // so this never wrongly clears the error it just surfaced.
             session.errorMessage = nil
+            session.errorDetail = nil
             session.errorAt = nil
         }
         if didCreateSession {

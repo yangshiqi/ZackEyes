@@ -89,7 +89,7 @@ struct PendingEventQueueTests {
 
     @Test func sessionLifecycleWhitelistIsExact() {
         #expect(PendingEventQueue.replayableEvents == [
-            "SessionStart", "SessionEnd", "Stop", "UserPromptSubmit",
+            "SessionStart", "SessionEnd", "Stop", "StopFailure", "PostModelSwitch", "UserPromptSubmit",
             "Notification", "PreCompact", "PostCompact",
             "SubagentStart", "SubagentStop",
         ])
