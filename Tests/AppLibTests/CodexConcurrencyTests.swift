@@ -69,3 +69,12 @@ struct CodexConcurrencyTests {
     store.recordCodexTaskStarted(sessionId: "s", cwd: nil, transcriptPath: nil, startedAt: newer.addingTimeInterval(-1), turnId: "old")
     #expect(store.sessions["s"]?.currentCodexTurnId == "new")
 }
+
+@MainActor @Test func firstCodexApprovalAdoptsTurnAndModelMetadata() {
+    let store = SessionStore()
+    let event = BridgeEvent(bridgeEvent: "PermissionRequest", agent: .codex, sessionId: "s", model: ["display_name": AnyCodable("gpt-6.1-sol")], turnId: "new")
+    store.handleEvent(event)
+    #expect(store.sessions["s"]?.currentCodexTurnId == "new")
+    #expect(store.sessions["s"]?.modelDisplayName == "gpt-6.1-sol")
+    #expect(!store.shouldAcceptCodexEvent(BridgeEvent(bridgeEvent: "Stop", agent: .codex, sessionId: "s", turnId: "old")))
+}

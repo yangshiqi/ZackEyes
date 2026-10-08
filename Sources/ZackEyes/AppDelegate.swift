@@ -754,6 +754,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("ZackEyes: PermissionRequest missing session_id")
                 return
             }
+            sessionStore.handleEvent(event)
             let toolName = event.toolName ?? "Unknown"
             // "Allow Always": a prior click approved this tool for the rest of the
             // session, so auto-allow without building a pending / expanding the

@@ -539,6 +539,13 @@ public final class SessionStore: ObservableObject {
                 request.responder(.permission(.deny(message: "Turn interrupted")))
             }
 
+        case "PermissionRequest":
+            if agent == .codex {
+                var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
+                session.beginCodexTurn(event.turnId)
+                sessions[sid] = session
+            }
+
         case "PreToolUse":
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             if agent == .codex {
