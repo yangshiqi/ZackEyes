@@ -228,15 +228,17 @@ struct SubagentLifecycleTests {
         #expect(s.sessions["s1"]?.activeSubagents.isEmpty == true)
     }
 
-    /// Subagents are a Claude concept; Codex threads carry `subagentLabel`
-    /// instead and must not be touched by this path.
-    @Test func codexSessionsAreUnaffected() {
+    /// Current Codex hooks track children on the parent, independently of
+    /// the label used for a standalone guardian/review thread.
+    @Test func codexParentTracksHookOwnedChildren() {
         let s = SessionStore()
         s.handleEvent(BridgeEvent(bridgeEvent: "SessionStart", agent: .codex,
                                   sessionId: "c1", cwd: "/tmp/proj"))
         s.handleEvent(BridgeEvent(bridgeEvent: "SubagentStart", agent: .codex,
                                   sessionId: "c1", agentId: "a1", agentType: "x"))
-        #expect(s.sessions["c1"]?.activeSubagents.isEmpty == true)
+        #expect(s.sessions["c1"]?.activeSubagents.map(\.id) == ["a1"])
+        #expect(s.sessions["c1"]?.subagentLabel == nil)
+        #expect(s.sessions["a1"] == nil)
     }
 
     // MARK: - Badge text
