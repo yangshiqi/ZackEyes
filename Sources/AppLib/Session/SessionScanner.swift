@@ -144,7 +144,10 @@ public struct SessionScanner {
             // form too — same as the user parsing above. Last one in the tail wins.
             if let type = obj["type"] as? String, type == "assistant",
                let msg = obj["message"] as? [String: Any] {
-                if let observed = msg["model"] as? String, !observed.isEmpty, observed != "<synthetic>" {
+                // CLI API errors are assistant-shaped synthetic envelopes, not replies.
+                guard msg["model"] as? String != "<synthetic>",
+                      obj["isApiErrorMessage"] as? Bool != true else { continue }
+                if let observed = msg["model"] as? String, !observed.isEmpty {
                     model = observed
                 }
                 let content = msg["content"]

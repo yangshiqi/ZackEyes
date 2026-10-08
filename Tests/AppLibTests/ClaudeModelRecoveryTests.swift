@@ -13,7 +13,7 @@ struct ClaudeModelRecoveryTests {
         let transcript = """
         {"type":"assistant","cwd":"/tmp","message":{"model":"claude-opus-5-5","content":[{"type":"text","text":"earlier"}]}}
         {"type":"assistant","message":{"model":"claude-fable-5-1","content":[{"type":"thinking","thinking":"private"},{"type":"text","text":"latest"}]}}
-        {"type":"assistant","message":{"model":"<synthetic>","content":[]}}
+        {"type":"assistant","message":{"model":"<synthetic>","content":[{"type":"text","text":"API Error: unavailable"}]}}
         """
         try transcript.write(to: project.appendingPathComponent("s.jsonl"), atomically: true, encoding: .utf8)
         let detected = SessionScanner(projectsDir: root, codexSessionsDir: nil).scan()

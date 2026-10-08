@@ -49,6 +49,9 @@ struct ClaudeMetadataTests {
         #expect(store.sessions["s"]?.reasoningEffort == nil)
         try send("PreToolUse", #""effort":{"level":"medium"}"#, to: store)
         #expect(store.sessions["s"]?.reasoningEffort == "medium")
+        try send("PostModelSwitch", #""to_model":null"#, to: store)
+        #expect(store.sessions["s"]?.modelDisplayName == nil)
+        #expect(store.sessions["s"]?.reasoningEffort == nil)
     }
     @Test func compactRestartPreservesObservedMetadataAndUnknownModelStillHasEffort() throws {
         let store = SessionStore()

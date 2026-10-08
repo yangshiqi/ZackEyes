@@ -487,10 +487,10 @@ public final class SessionStore: ObservableObject {
         }
 
         // Ordinary child hooks reuse the parent session_id. Subagent lifecycle
-        // belongs to the parent; the child's tools and turn completions do not.
+        // belongs to the parent; child state transitions do not. Child approvals
+        // still need the parent's approval queue.
         if event.agent == .claude, event.agentId?.isEmpty == false,
-           ["PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop", "StopFailure",
-            "UserPromptSubmit"].contains(event.bridgeEvent) { return }
+           !["SubagentStart", "SubagentStop", "PermissionRequest"].contains(event.bridgeEvent) { return }
 
         // Any live hook event upgrades a detected session to live
         if let existing = sessions[sid], existing.source == .detected {
@@ -1546,7 +1546,7 @@ public final class SessionStore: ObservableObject {
             && event.bridgeEvent != "SubagentStart" && event.bridgeEvent != "SubagentStop") else { return }
         let hasAny = event.contextWindow != nil || event.model != nil || event.cost != nil
             || event.effort != nil || event.bridgeEvent == "StatusLine"
-            || (event.bridgeEvent == "PostModelSwitch" && event.toModel != nil)
+            || (event.agent == .claude && event.bridgeEvent == "PostModelSwitch")
         guard hasAny else { return }
 
         var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: event.agent)
@@ -1571,8 +1571,10 @@ public final class SessionStore: ObservableObject {
         }
 
         if event.agent == .claude {
-            if event.bridgeEvent == "PostModelSwitch", let model = event.toModel, !model.isEmpty {
-                session.modelDisplayName = ClaudeModelMetadata.displayName(for: model)
+            if event.bridgeEvent == "PostModelSwitch" {
+                session.modelDisplayName = event.toModel.flatMap {
+                    $0.isEmpty ? nil : ClaudeModelMetadata.displayName(for: $0)
+                }
                 session.reasoningEffort = nil
             }
             // StatusLine is a full snapshot; ordinary hooks are patches.

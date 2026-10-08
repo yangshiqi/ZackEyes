@@ -43,15 +43,16 @@ struct ClaudeFailureTests {
         #expect(store.sessions["s"]?.errorMessage == nil)
     }
 
-    @Test func childStopAndFailureDoNotCompleteParentTurn() throws {
+    @Test func childHooksDoNotCompleteOrRecreateParentSession() throws {
         let store = SessionStore()
         try send("PreToolUse", #""tool_name":"Read","tool_use_id":"a""#, to: store)
-        for type in ["Stop", "StopFailure", "PostToolUseFailure"] {
-            try send(type, #""agent_id":"child","tool_use_id":"child-call","error":"rate_limit","last_assistant_message":"child reply""#, to: store)
+        for type in ["Stop", "StopFailure", "PostToolUseFailure", "PreCompact", "PostCompact", "SessionStart", "SessionEnd", "Notification"] {
+            try send(type, #""agent_id":"child","tool_use_id":"child-call","error":"rate_limit","trigger":"manual","last_assistant_message":"API Error: Rate limit reached""#, to: store)
             #expect(store.sessions["s"]?.state == .working)
             #expect(store.sessions["s"]?.isToolRunning == true)
             #expect(store.sessions["s"]?.lastAssistantMessage == nil)
             #expect(store.sessions["s"]?.errorMessage == nil)
+            #expect(store.sessions["s"]?.compactCount == 0)
         }
     }
 
