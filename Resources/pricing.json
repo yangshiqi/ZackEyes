@@ -1,29 +1,33 @@
 {
-  "version": "2026-10-08.1",
+  "version": "2026-10-08.2",
   "models": {
     "claude-opus-4-8": {
-      "input": 1.5e-05,
-      "output": 7.5e-05,
-      "cache_read": 1.5e-06,
-      "cache_creation": 1.875e-05
+      "input": 5e-06,
+      "output": 2.5e-05,
+      "cache_read": 5e-07,
+      "cache_creation": 6.25e-06,
+      "cache_creation_1h": 1e-05
     },
     "claude-opus-4-7": {
-      "input": 1.5e-05,
-      "output": 7.5e-05,
-      "cache_read": 1.5e-06,
-      "cache_creation": 1.875e-05
+      "input": 5e-06,
+      "output": 2.5e-05,
+      "cache_read": 5e-07,
+      "cache_creation": 6.25e-06,
+      "cache_creation_1h": 1e-05
     },
     "claude-sonnet-4-6": {
       "input": 3e-06,
       "output": 1.5e-05,
       "cache_read": 3e-07,
-      "cache_creation": 3.75e-06
+      "cache_creation": 3.75e-06,
+      "cache_creation_1h": 6e-06
     },
     "claude-haiku-4-5": {
       "input": 1e-06,
       "output": 5e-06,
       "cache_read": 1e-07,
-      "cache_creation": 1.25e-06
+      "cache_creation": 1.25e-06,
+      "cache_creation_1h": 2e-06
     },
     "gpt-5.5": {
       "input": 1.25e-06,
@@ -48,6 +52,62 @@
       "output": 5e-05,
       "cache_read": 1e-06,
       "cache_creation": 1.25e-05
+    },
+    "claude-fable-5": {
+      "input": 1e-05,
+      "output": 5e-05,
+      "cache_read": 1e-06,
+      "cache_creation": 1.25e-05,
+      "cache_creation_1h": 2e-05
+    },
+    "claude-fable-5-1": {
+      "input": 1e-05,
+      "output": 5e-05,
+      "cache_read": 2.5e-07,
+      "cache_creation": 1.25e-05,
+      "cache_creation_1h": 2e-05
+    },
+    "claude-opus-5-5": {
+      "input": 4e-06,
+      "output": 2e-05,
+      "cache_read": 2.0000000000000002e-07,
+      "cache_creation": 5e-06,
+      "cache_creation_1h": 8e-06
+    },
+    "claude-opus-5": {
+      "input": 5e-06,
+      "output": 2.5e-05,
+      "cache_read": 5e-07,
+      "cache_creation": 6.25e-06,
+      "cache_creation_1h": 1e-05
+    },
+    "claude-opus-4-6": {
+      "input": 5e-06,
+      "output": 2.5e-05,
+      "cache_read": 5e-07,
+      "cache_creation": 6.25e-06,
+      "cache_creation_1h": 1e-05
+    },
+    "claude-opus-4-5": {
+      "input": 5e-06,
+      "output": 2.5e-05,
+      "cache_read": 5e-07,
+      "cache_creation": 6.25e-06,
+      "cache_creation_1h": 1e-05
+    },
+    "claude-sonnet-5": {
+      "input": 2e-06,
+      "output": 1e-05,
+      "cache_read": 2.0000000000000002e-07,
+      "cache_creation": 2.5e-06,
+      "cache_creation_1h": 4e-06
+    },
+    "claude-sonnet-5-5": {
+      "input": 2e-06,
+      "output": 1e-05,
+      "cache_read": 1.0000000000000001e-07,
+      "cache_creation": 2.5e-06,
+      "cache_creation_1h": 4e-06
     }
   },
   "aliases": {}
