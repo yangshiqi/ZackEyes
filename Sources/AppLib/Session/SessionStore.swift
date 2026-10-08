@@ -147,6 +147,8 @@ public struct SessionInfo: Identifiable {
     public var contextUsedPct: Double?
     public var contextWindowSize: Int?
     public var modelDisplayName: String?
+    var codexUsageTotals: CodexUsageTotals?
+    public var codexServiceTier: String?
     public var totalCostUSD: Double?
 
     /// Codex-only: name of the subagent owning this thread when the rollout's
@@ -1158,22 +1160,32 @@ public final class SessionStore: ObservableObject {
         }
         session.lastActiveAt = observedAt
 
-        // #78: per-session Codex cost from cumulative totals × price. The raw
-        // model id lives in `modelDisplayName` for codex (set from
-        // turn_context.model). `cached` is a subset of `input` — mirrors the
-        // codex branch of `buildDailyUsage`. Unknown model / missing tokens →
-        // leave totalCostUSD unchanged (no $, consistent with "unpriced").
-        if let model = session.modelDisplayName,
-           let price = codexPriceLookup?(model),
-           let input = cumulativeInput, let output = cumulativeOutput {
-            let cached = cumulativeCached ?? 0
-            let uncached = max(0, input - cached)
-            session.totalCostUSD = Double(uncached) * price.inputPerToken
-                + Double(cached) * price.cacheReadPerToken
-                + Double(output) * price.outputPerToken
+        if let input = cumulativeInput, let output = cumulativeOutput {
+            updateCodexCost(&session, totals: CodexUsageTotals(input: input, cached: cumulativeCached ?? 0, output: output), request: nil)
         }
 
         sessions[sessionId] = session
+    }
+
+    private func updateCodexCost(_ session: inout SessionInfo, totals: CodexUsageTotals, request: CodexUsageTotals?) {
+        let delta = totals.delta(from: session.codexUsageTotals)
+        session.codexUsageTotals = totals
+        guard let model = session.modelDisplayName, let price = codexPriceLookup?(model) else { return }
+        let units = CodexBillingUnits.estimate(delta, model: model, tier: session.codexServiceTier, request: request)
+        session.totalCostUSD = (session.totalCostUSD ?? 0) + units.cost(using: price)
+    }
+
+    public func recordCodexTokenCount(_ event: CodexTokenCountEvent, observedAt: Date) {
+        recordCodexContext(sessionId: event.sessionId, cwd: event.cwd, contextUsedPct: event.contextUsedPct,
+                           contextWindowSize: event.contextWindowSize, transcriptPath: event.transcriptPath, observedAt: observedAt)
+        guard var session = sessions[event.sessionId], let input = event.cumulativeInput, let output = event.cumulativeOutput else { return }
+        updateCodexCost(&session, totals: CodexUsageTotals(input: input, cached: event.cumulativeCached ?? 0, writes: event.cumulativeWrites ?? 0, output: output), request: event.requestUsage)
+        sessions[event.sessionId] = session
+    }
+
+    public func recordCodexModel(_ event: CodexModelEvent) {
+        setCodexModelDisplayName(sessionId: event.sessionId, cwd: event.cwd, transcriptPath: event.transcriptPath, displayName: event.modelDisplayName)
+        if event.updatesServiceTier { sessions[event.sessionId]?.codexServiceTier = event.serviceTier }
     }
 
     /// Apply Codex's per-turn `turn_context.model` to the session. Mirrors

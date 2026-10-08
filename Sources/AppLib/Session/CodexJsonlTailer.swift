@@ -77,6 +77,8 @@ public struct CodexTokenCountEvent: Sendable {
     public let cumulativeInput: Int?
     public let cumulativeCached: Int?
     public let cumulativeOutput: Int?
+    public var cumulativeWrites: Int? = nil
+    public var requestUsage: CodexUsageTotals? = nil
 }
 
 /// Codex emits a top-level `turn_context` JSONL row per turn whose payload
@@ -88,6 +90,8 @@ public struct CodexModelEvent: Sendable {
     public let cwd: String?
     public let modelDisplayName: String
     public let transcriptPath: String
+    public var serviceTier: String? = nil
+    public var updatesServiceTier = false
 }
 
 /// Codex `turn_context.approval_policy` + `sandbox_policy.type` snapshot
@@ -343,6 +347,14 @@ extension CodexJsonlTailer {
             guard topType == "event_msg" else { continue }
 
             switch payload["type"] as? String {
+            case "thread_settings_applied", "session_configured":
+                let settings = (payload["thread_settings"] as? [String: Any]) ?? payload
+                if let model = settings["model"] as? String, !model.isEmpty {
+                    var event = CodexModelEvent(sessionId: sessionId, cwd: cwd, modelDisplayName: model, transcriptPath: transcriptPath)
+                    event.serviceTier = settings["service_tier"] as? String
+                    event.updatesServiceTier = true
+                    events.append(.modelChanged(event))
+                }
             case "context_compacted":
                 events.append(.compacted(CodexCompactedEvent(
                     sessionId: sessionId, cwd: cwd, transcriptPath: transcriptPath,
@@ -500,7 +512,7 @@ extension CodexJsonlTailer {
         let cumInput = totals.flatMap { number($0["input_tokens"]) }.map { Self.safeTokenInt($0) }
         let cumCached = totals.flatMap { number($0["cached_input_tokens"]) }.map { Self.safeTokenInt($0) }
         let cumOutput = totals.flatMap { number($0["output_tokens"]) }.map { Self.safeTokenInt($0) }
-        return CodexTokenCountEvent(
+        var event = CodexTokenCountEvent(
             sessionId: sessionId,
             cwd: cwd,
             contextUsedPct: (contextTokens / window) * 100,
@@ -510,6 +522,11 @@ extension CodexJsonlTailer {
             cumulativeCached: cumCached,
             cumulativeOutput: cumOutput
         )
+        event.cumulativeWrites = totals.flatMap { number($0["cache_write_input_tokens"]) }.map { Self.safeTokenInt($0) }
+        if let input = number(lastUsage["input_tokens"]), let output = number(lastUsage["output_tokens"]) {
+            event.requestUsage = CodexUsageTotals(input: safeTokenInt(input), cached: safeTokenInt(number(lastUsage["cached_input_tokens"]) ?? 0), writes: safeTokenInt(number(lastUsage["cache_write_input_tokens"]) ?? 0), output: safeTokenInt(output))
+        }
+        return event
     }
 
     private nonisolated static func number(_ raw: Any?) -> Double? {

@@ -246,7 +246,7 @@ struct NotchExpandedView: View {
                     contextBar(usedPct: used,
                                windowSize: session.contextWindowSize,
                                cost: session.totalCostUSD,
-                               model: session.modelDisplayName)
+                               model: session.modelDisplayName, estimated: session.agent == .codex)
                 }
 
                 // (User prompt now shown in Row 1.5 above)
@@ -368,7 +368,7 @@ struct NotchExpandedView: View {
     }
 
     @ViewBuilder
-    private func contextBar(usedPct: Double, windowSize: Int?, cost: Double?, model: String?) -> some View {
+    private func contextBar(usedPct: Double, windowSize: Int?, cost: Double?, model: String?, estimated: Bool) -> some View {
         let color = contextColor(for: usedPct)
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
@@ -391,7 +391,7 @@ struct NotchExpandedView: View {
                 }
                 Spacer(minLength: 0)
                 if let cost = cost, cost > 0 {
-                    Text(String(format: "$%.2f", cost))
+                    Text(String(format: estimated ? "est. $%.2f" : "$%.2f", cost))
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .foregroundColor(.white.opacity(0.5))
                 }
@@ -800,7 +800,7 @@ struct NotchExpandedView: View {
         let dur = session.lastActiveAt.timeIntervalSince(session.startedAt)
         if dur >= 60 { parts.append(durationString(dur)) }
         if let cost = session.totalCostUSD, cost > 0 {
-            parts.append(String(format: "$%.2f", cost))
+            parts.append(String(format: session.agent == .codex ? "est. $%.2f" : "$%.2f", cost))
         }
         return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Per-token USD unit prices for one model (LiteLLM convention, e.g. `1.5e-5`).
-/// `cacheCreatePerToken` is 0 for providers (Codex) with no cache-creation cost.
+/// `cacheCreatePerToken` is charged only when explicit cache-write usage is reported.
 public struct ModelPrice: Sendable, Equatable, Codable {
     public let inputPerToken: Double
     public let outputPerToken: Double

@@ -1178,12 +1178,7 @@ extension AppDelegate: CodexJsonlTailerDelegate {
     /// Tailer detected Codex's `turn_context.model`. Codex hooks don't carry
     /// a Claude-style `model.display_name`, so this is our only source.
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectModelChanged event: CodexModelEvent) {
-        sessionStore.setCodexModelDisplayName(
-            sessionId: event.sessionId,
-            cwd: event.cwd,
-            transcriptPath: event.transcriptPath,
-            displayName: event.modelDisplayName
-        )
+        sessionStore.recordCodexModel(event)
     }
 
     /// Tailer detected Codex's `session_meta.source.subagent`. Session-level,
@@ -1245,17 +1240,7 @@ extension AppDelegate: CodexJsonlTailerDelegate {
     /// Codex hooks do not carry Claude-style `context_window`, so this path
     /// fills the same SessionInfo fields from rollout JSONL.
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectTokenCount event: CodexTokenCountEvent) {
-        sessionStore.recordCodexContext(
-            sessionId: event.sessionId,
-            cwd: event.cwd,
-            contextUsedPct: event.contextUsedPct,
-            contextWindowSize: event.contextWindowSize,
-            transcriptPath: event.transcriptPath,
-            observedAt: Date(),
-            cumulativeInput: event.cumulativeInput,
-            cumulativeCached: event.cumulativeCached,
-            cumulativeOutput: event.cumulativeOutput
-        )
+        sessionStore.recordCodexTokenCount(event, observedAt: Date())
         if sessionStore.sessions[event.sessionId]?.claudePid == nil {
             activateCodexSession(event.sessionId)
         }
