@@ -476,8 +476,24 @@ public final class SessionStore: ObservableObject {
             sessions[sid] = newSession
 
         case "SessionEnd":
-            // Codex doesn't emit SessionEnd; only Claude does.
-            sessions.removeValue(forKey: sid)
+            if let session = sessions.removeValue(forKey: sid) {
+                for pending in session.pendingPermissions {
+                    pending.responder(.permission(.deny(message: "Session ended")))
+                }
+            }
+
+        case "Interrupt":
+            guard agent == .codex, var session = sessions[sid] else { break }
+            let pending = session.pendingPermissions
+            session.pendingPermissions = []
+            session.state = .idle
+            session.isToolRunning = false
+            session.compactTrigger = nil
+            session.compactStartContextPct = nil
+            sessions[sid] = session
+            for request in pending {
+                request.responder(.permission(.deny(message: "Turn interrupted")))
+            }
 
         case "PreToolUse":
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
@@ -577,8 +593,7 @@ public final class SessionStore: ObservableObject {
 
         case "Stop":
             // Stop = agent finished current turn, session still active.
-            // Codex uses Stop in place of SessionEnd, so we leave the
-            // session alive (it'll naturally idle out).
+            // SessionEnd removes the session; Stop only ends this turn.
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             session.state = .idle
             session.isToolRunning = false

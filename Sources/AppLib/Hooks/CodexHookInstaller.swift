@@ -31,8 +31,8 @@ public struct CodexHookInstaller {
         self.bridgePath = bridgePath
     }
 
-    // Codex defines six lifecycle hooks. There is no SessionEnd, no
-    // Notification, and no StatusLine — those are Claude-only. Reference:
+    // Observation and approval hooks supported by current Codex.
+    // Notification and StatusLine remain Claude-only. Reference:
     // https://developers.openai.com/codex/hooks
     static let hookEvents = [
         "PreToolUse",
@@ -41,19 +41,22 @@ public struct CodexHookInstaller {
         "SessionStart",
         "Stop",
         "UserPromptSubmit",
+        "SessionEnd",
+        "Interrupt",
     ]
 
     private var hookConfig: [String: Any] {
         var config: [String: Any] = [:]
         for event in Self.hookEvents {
+            var handler: [String: Any] = [
+                "type": "command",
+                "command": "\(bridgePath) --event \(event) --agent codex",
+            ]
+            // These terminal lifecycle hooks have a 1-3 second contract.
+            if event == "SessionEnd" || event == "Interrupt" { handler["timeout"] = 3 }
             config[event] = [
                 [
-                    "hooks": [
-                        [
-                            "type": "command",
-                            "command": "\(bridgePath) --event \(event) --agent codex",
-                        ]
-                    ]
+                    "hooks": [handler]
                 ]
             ]
         }
