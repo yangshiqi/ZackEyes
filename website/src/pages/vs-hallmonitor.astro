@@ -1,0 +1,254 @@
+---
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { releaseName, downloadUrl, sourceUrl } from '../lib/release.mjs';
+
+const description =
+  'ZackEyes vs Hallmonitor: a factual comparison of two free, MIT-licensed macOS notch panels for AI coding agents. Session states, permission prompts, cost tracking, SSH monitoring, and which one fits which workflow.';
+
+// Competitor facts below were read from github.com/hiteshbandhu/hallmonitor
+// on 2026-10-08 and are stated as-of that date. Keep the date honest when
+// refreshing this page — a stale claim about a competitor is worse than no
+// comparison page at all.
+const competitorCheckedOn = '2026-10-08';
+
+const rows = [
+  {
+    label: 'Price',
+    zack: 'Free',
+    rival: 'Free'
+  },
+  {
+    label: 'Licence',
+    zack: 'MIT open source — the whole app is public',
+    rival: 'MIT open source'
+  },
+  {
+    label: 'Agents',
+    zack: 'Claude Code, Codex CLI',
+    rival: 'Claude Code, Codex CLI'
+  },
+  {
+    label: 'Surfaces',
+    zack: 'Dynamic Island-style notch panel plus menu bar',
+    rival: 'Notch overlay plus menu bar plus a terminal TUI board'
+  },
+  {
+    label: 'Permission prompts',
+    zack: 'Surfaced in the notch; AskUserQuestion hands you back to the terminal to answer',
+    rival: 'Surfaced with the waiting reason; agent questions can be answered directly from the notch'
+  },
+  {
+    label: 'Session states',
+    zack: 'Running, needs-you, and recent sessions grouped by attention, with quota bars',
+    rival: 'Working, idle, and needs-you per session, with the waiting reason shown'
+  },
+  {
+    label: 'Jump to terminal',
+    zack: '9 terminals and editors, including iTerm2, Ghostty, Warp, Kitty, VS Code, and Cursor',
+    rival: 'One-click jump to the session, process-tree based, works through tmux'
+  },
+  {
+    label: 'Cost and token tracking',
+    zack: 'Per-session tokens and USD, plus a daily total with a 7-day sparkline; pricing table is bundled, so no API key',
+    rival: 'Tokens and agent-hours shown; USD cost conversion not published'
+  },
+  {
+    label: 'Rate limits',
+    zack: '5-hour and 7-day usage pressure for both agents',
+    rival: 'Claude 5h/weekly and Codex window limits'
+  },
+  {
+    label: 'Remote sessions',
+    zack: 'Not supported',
+    rival: 'Multi-machine monitoring over SSH'
+  },
+  {
+    label: 'Themes and sounds',
+    zack: '4 themes (Rock Legends, F1 2026, AI Moguls, Crayon Shin-chan) with matching notification sounds',
+    rival: 'Not published'
+  },
+  {
+    label: 'Telemetry',
+    zack: 'None — and you can verify that by reading the source',
+    rival: 'None stated'
+  },
+  {
+    label: 'Minimum macOS',
+    zack: 'macOS 14',
+    rival: 'Not published'
+  }
+];
+
+const faqs = [
+  {
+    question: 'Is there a free alternative to Hallmonitor?',
+    answer:
+      'Yes. ZackEyes is a free, MIT-licensed macOS notch panel for AI coding agents, same as Hallmonitor. Both track Claude Code and Codex CLI sessions and surface permission prompts. Hallmonitor adds SSH multi-machine monitoring and a terminal dashboard; ZackEyes adds per-session USD cost tracking and themes.'
+  },
+  {
+    question: 'What is the difference between ZackEyes and Hallmonitor?',
+    answer:
+      'Both are free and MIT licensed, both cover Claude Code and Codex CLI in the notch and menu bar, and both jump you to the right terminal. Hallmonitor answers agent questions directly from the notch and watches sessions on remote machines over SSH. ZackEyes converts token usage to USD cost with a daily total and 7-day sparkline, and ships themes with matching notification sounds.'
+  },
+  {
+    question: 'Which one should I use?',
+    answer:
+      'Use Hallmonitor if you run agents on remote machines over SSH, want a terminal dashboard alongside the notch, or prefer answering agent questions without leaving the panel. Use ZackEyes if you want per-session USD cost tracking, themes and sounds, or you run on an Intel Mac — ZackEyes ships a universal arm64/x86_64 build.'
+  },
+  {
+    question: 'Does Hallmonitor track token cost in USD?',
+    answer:
+      'Not as published: Hallmonitor shows tokens and agent-hours per session. ZackEyes shows per-session tokens and converts them to USD from a bundled pricing table, with a daily total and a 7-day sparkline, all computed locally with no API key.'
+  },
+  {
+    question: 'Is ZackEyes really free, or is there a paid tier?',
+    answer:
+      'ZackEyes is entirely free with no paid tier, no accounts, and no upsell. The source is MIT licensed on GitHub, and releases ship as a signed DMG.'
+  }
+];
+
+const faqStructuredData = {
+  '@type': 'FAQPage',
+  '@id': 'https://zackeyes.vercel.app/vs-hallmonitor#faq',
+  mainEntity: faqs.map((item) => ({
+    '@type': 'Question',
+    name: item.question,
+    acceptedAnswer: {
+      '@type': 'Answer',
+      text: item.answer
+    }
+  }))
+};
+---
+
+<SiteLayout
+  title="ZackEyes vs Hallmonitor - Notch Panels for AI Coding Agents"
+  description={description}
+  canonical="https://zackeyes.vercel.app/vs-hallmonitor"
+  structuredData={[faqStructuredData]}
+>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <SiteHeader />
+
+    <main id="top">
+      <section class="policy-hero compact-page-hero" aria-labelledby="vs-title">
+        <div class="policy-shell">
+          <div class="section-eyebrow">Comparison</div>
+          <h1 id="vs-title">ZackEyes vs Hallmonitor.</h1>
+          <p class="policy-lede">
+            ZackEyes and Hallmonitor are the two closest free, open-source notch panels for AI
+            coding agents: both are MIT licensed, both track Claude Code and Codex CLI sessions,
+            and both surface permission prompts without pulling you out of flow. Hallmonitor adds
+            SSH multi-machine monitoring and a terminal dashboard. ZackEyes adds USD cost tracking
+            and themes.
+          </p>
+          <p class="policy-lede muted-note">
+            Hallmonitor details were checked on {competitorCheckedOn} against
+            <a href="https://github.com/hiteshbandhu/hallmonitor" rel="noopener nofollow">github.com/hiteshbandhu/hallmonitor</a>.
+            ZackEyes details describe {releaseName}. If something here is out of date, please
+            <a href={sourceUrl} rel="noopener">open an issue</a> — an inaccurate comparison helps
+            nobody.
+          </p>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="vs-table-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="vs-table-title">Side by side.</h2>
+          <div class="compare-scroll">
+            <table class="compare-table">
+              <caption class="visually-hidden">
+                Feature comparison between ZackEyes and Hallmonitor
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">&nbsp;</th>
+                  <th scope="col">ZackEyes</th>
+                  <th scope="col">Hallmonitor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr>
+                    <th scope="row">{row.label}</th>
+                    <td>{row.zack}</td>
+                    <td>{row.rival}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="vs-pick-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="vs-pick-title">Which one fits.</h2>
+          <div class="spec-grid">
+            <article>
+              <span>Pick Hallmonitor</span>
+              <strong>You monitor agents on remote machines</strong>
+              <p>
+                Hallmonitor watches sessions on multiple machines over SSH from one panel.
+                ZackEyes only sees the Mac it runs on. If your agents live on a remote box,
+                that is the deciding feature.
+              </p>
+            </article>
+            <article>
+              <span>Pick Hallmonitor</span>
+              <strong>You want to answer from the notch</strong>
+              <p>
+                Hallmonitor lets you answer an agent's question directly in the notch panel.
+                ZackEyes deliberately does not: it surfaces the prompt and hands you back to
+                the terminal, because answering complex questions from a panel risks
+                incomplete answers — a partial answer is worse than a short trip to the
+                terminal.
+              </p>
+            </article>
+            <article>
+              <span>Pick ZackEyes</span>
+              <strong>You want USD cost tracking</strong>
+              <p>
+                ZackEyes shows per-session tokens and converts them to USD from a bundled
+                pricing table, with a daily total and a 7-day sparkline — computed locally,
+                no API key. Hallmonitor shows tokens and agent-hours without a USD figure.
+              </p>
+            </article>
+            <article>
+              <span>Pick ZackEyes</span>
+              <strong>You want themes, or you run Intel</strong>
+              <p>
+                ZackEyes ships four themes with matching buddy names and notification sounds,
+                and release builds are universal binaries for Apple Silicon and Intel Macs.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="vs-faq-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="vs-faq-title">Questions.</h2>
+          <div class="faq-list" id="faq">
+            {faqs.map((item) => (
+              <details class="faq-item" open>
+                <summary>{item.question}</summary>
+                <p>{item.answer}</p>
+              </details>
+            ))}
+          </div>
+          <div class="final-actions align-left">
+            <a class="button primary" href={downloadUrl}>Download ZackEyes <span aria-hidden="true">↓</span></a>
+            <a class="button" href="/docs">Read the docs <span aria-hidden="true">→</span></a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <SiteFooter />
+  </div>
+</SiteLayout>
