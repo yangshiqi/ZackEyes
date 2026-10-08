@@ -423,3 +423,10 @@ ccisland/
 - App Server 支持 steering / interrupt / 原生问答，但另起 server 不等于接管已有 CLI 的活跃回合。本次维持观察架构；连接所有权结论见 docs/superpowers/specs/2026-10-08-codex-app-server-boundary.md。
 
 - #253：模型旁展示观测到的 reasoning effort（例如 `gpt-6.1-sol · medium`）；数据来自 turn_context.effort 和设置快照 reasoning_effort，不读取 config.toml 或推断默认值。缺字段保留、显式 null/空值清除，模型改变后不会继承未知的新模型 effort。启动附着折叠最多各 1.1MB 首尾元数据，恢复最近可见的模型/effort/档位；历史完成不会投递。真刘海与模拟刘海共用 NotchExpandedView。
+
+
+### Claude model metadata and request pricing (#254)
+
+Claude StatusLine full snapshots supply live `effort.level`; main-thread hooks patch it when present. Child `agent_id` metadata and child tools/stops cannot overwrite or finish the parent. `PostModelSwitch.to_model` invalidates the old effort until observed again. SessionScanner restores the most recent non-synthetic assistant model; detected imports remain idle and do not replace live sessions. Shared NotchExpandedView displays effort even if model/context metadata has not arrived.
+
+Claude daily billing retains raw disjoint tokens and response-weighted `ClaudeBillingUnits`, preserving `usage.speed` and 1h cache writes across message dedup, cache reuse and merging. PricingTable optionally reads `cache_creation_1h`; old tables retain their legacy write estimate. Supported Opus fast responses use a 2x multiplier; other models/unknown speed retain standard estimates. Daily UI is already labeled `est.`; Claude session cost stays the CLI StatusLine total. `PostToolUseFailure` ends the matching concurrent tool and marks its failure without ending the parent turn; `StopFailure` ends a failed turn, displays structured API error detail separately from reply text, and releases pending responders with denial.

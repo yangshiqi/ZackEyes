@@ -15,11 +15,29 @@ Verified 2026-10-08 against official documentation and local Claude Code 2.1.295
 
 Real local transcript metadata (no conversation content copied): Fable 5.1, Opus 5.5 and Sonnet 5.5 exact IDs; usage.speed standard; cache_creation includes nonzero ephemeral_1h_input_tokens. Existing scanner ignores TTL and speed. Existing price table omits these models and prices Opus 4.7/4.8 at historical Opus 4 rates (three times current standard rates).
 
+## Model capabilities and observer implications
+
+[Opus 5.5 overview](https://platform.claude.com/docs/en/models/opus-5-5/overview) and [Fable 5.1 overview](https://platform.claude.com/docs/en/models/fable-5-1/overview): both have 1M context and 128K normal maximum output, adaptive thinking always enabled. Their API default effort differs (medium versus high); the UI therefore consumes effective runtime effort and never fills a default. Fable 5 remains a distinct ID, not an alias silently redirected to 5.1.
+
+New API breaking changes include disabled thinking and forced tool use being rejected, thinking signatures bound to model/conversation, and some inter-tool progress moving into thinking blocks. ZackEyes observes Claude Code rather than constructing Messages API requests, so the CLI owns those migrations. Transcript recovery continues to extract text blocks and skip thinking; it does not treat hidden reasoning as a reply.
+
+| Raw Claude API ID | Input / output USD per MTok | Cache read | Write 5m / 1h |
+| --- | --- | --- | --- |
+| claude-fable-5 | 10 / 50 | 1 | 12.5 / 20 |
+| claude-fable-5-1 | 10 / 50 | 0.25 | 12.5 / 20 |
+| claude-opus-5-5 | 4 / 20 | 0.20 | 5 / 8 |
+| claude-opus-5 | 5 / 25 | 0.50 | 6.25 / 10 |
+| claude-opus-4-8, claude-opus-4-7 | 5 / 25 | 0.50 | 6.25 / 10 |
+| claude-sonnet-5 | 2 / 10 | 0.20 | 2.5 / 4 |
+| claude-sonnet-5-5 | 2 / 10 | 0.10 | 2.5 / 4 |
+
+Startup scanning now recovers the latest real assistant model ID without waiting for another response. Synthetic error records cannot replace that model. Imported detected sessions remain idle and cannot overwrite live metadata. Numeric raw IDs receive readable display labels; the raw IDs remain the billing keys.
+
 ## Boundaries
 
 Session card cost remains Claude Code's authoritative total_cost_usd; daily price calculations are API list-price estimates, not subscription invoices. No Claude long-context surcharge for these models. Missing cache TTL uses legacy 5m estimate. Never infer active effort from model defaults or global configuration. Malformed optional metadata must not discard approvals. SubagentStop must not finish or overwrite the parent session.
 
-Haiku 5.5 variable prompt-length pricing, restricted Mythos models, provider/regional/custom billing and API server tool charges are outside this fix; leave unknown prices unpriced. Account/model quota limits remain their measured independent windows; existing #194/#240 own presentation changes. No new model-specific subscription quota is inferred. Workflow/subagent UI remains #154. ConfigChange is not used to read global effort. TaskCreated/Completed do not replace existing transcript extraction until task lifecycle correlation is proven. CwdChanged can be evaluated separately from these model fixes. Existing scanners discover running sessions; runtime effort requires a new live hook/status snapshot because transcript messages do not reliably contain effective effort.
+Haiku 5.5 variable prompt-length pricing, restricted Mythos models, provider/regional/custom billing and API server tool charges are outside this fix; leave unknown prices unpriced. Account/model quota limits remain their measured independent windows; existing #194/#240 own presentation changes. No new model-specific subscription quota is inferred. Workflow/subagent UI remains #154. ConfigChange is not used to read global effort. TaskCreated/Completed do not replace existing transcript extraction until task lifecycle correlation is proven. CwdChanged can be evaluated separately from these model fixes. Startup scanning restores observed model IDs from running sessions; runtime effort requires a new live hook/status snapshot because transcript messages do not reliably contain effective effort.
 
 ## Verification
 

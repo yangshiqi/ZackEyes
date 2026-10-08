@@ -1466,6 +1466,7 @@ public final class SessionStore: ObservableObject {
             // TaskExtractor only knows the Claude transcript schema. Codex
             // tasks would need their own extractor (deferred).
             if d.agent == .claude {
+                session.modelDisplayName = d.model.map { ClaudeModelMetadata.displayName(for: $0) }
                 session.tasks = TaskExtractor.extractTasks(fromTranscriptAt: d.transcriptPath)
             }
             session.source = .detected
@@ -1564,7 +1565,8 @@ public final class SessionStore: ObservableObject {
         }
 
         if let model = event.model {
-            if let name = model["display_name"]?.value as? String {
+            if let observed = (model["display_name"]?.value as? String) ?? (model["id"]?.value as? String) {
+                let name = event.agent == .claude ? ClaudeModelMetadata.displayName(for: observed) : observed
                 if session.modelDisplayName != name { session.reasoningEffort = nil }
                 session.modelDisplayName = name
             }
@@ -1572,7 +1574,7 @@ public final class SessionStore: ObservableObject {
 
         if event.agent == .claude {
             if event.bridgeEvent == "PostModelSwitch", let model = event.toModel, !model.isEmpty {
-                session.modelDisplayName = model
+                session.modelDisplayName = ClaudeModelMetadata.displayName(for: model)
                 session.reasoningEffort = nil
             }
             // StatusLine is a full snapshot; ordinary hooks are patches.
