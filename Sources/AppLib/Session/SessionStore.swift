@@ -516,6 +516,8 @@ public final class SessionStore: ObservableObject {
                 newSession.lastCompactedAt = prior.lastCompactedAt
             }
             sessions[sid] = newSession
+            // SessionStart rebuilt the row after the generic metadata pass.
+            applyStatusLineFields(event: event, sid: sid)
 
         case "SessionEnd":
             if let session = sessions.removeValue(forKey: sid) {

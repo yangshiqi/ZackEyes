@@ -54,3 +54,10 @@ struct CodexLifecycleTests {
         #expect(try Data(contentsOf: url) == original)
     }
 }
+
+@MainActor @Test func codexSessionStartRetainsStringModelMetadata() throws {
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: Data(#"{"_bridge_event":"SessionStart","_bridge_agent":"codex","session_id":"s","model":"gpt-6.1-sol"}"#.utf8))
+    let store = SessionStore()
+    store.handleEvent(event)
+    #expect(store.sessions["s"]?.modelDisplayName == "gpt-6.1-sol")
+}
