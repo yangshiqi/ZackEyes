@@ -84,3 +84,19 @@ struct PricingTableTests {
         #expect(table.price(for: "gpt-5.5") != nil)
     }
 }
+
+@Test func bundledPricingIncludesExactGPT6Models() throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let table = try PricingTable(data: Data(contentsOf: root.appendingPathComponent("Resources/pricing.json")))
+    let sol = try #require(table.price(for: "gpt-6.1-sol"))
+    #expect(sol.inputPerToken == 2e-6)
+    #expect(sol.outputPerToken == 10e-6)
+    #expect(sol.cacheReadPerToken == 0.1e-6)
+    #expect(sol.cacheCreatePerToken == 2.5e-6)
+    let astra = try #require(table.price(for: "gpt-6-astra"))
+    #expect(astra.inputPerToken == 10e-6)
+    #expect(astra.outputPerToken == 50e-6)
+    #expect(astra.cacheReadPerToken == 1e-6)
+    #expect(astra.cacheCreatePerToken == 12.5e-6)
+    #expect(table.price(for: "gpt-6-sol") == nil)
+}
