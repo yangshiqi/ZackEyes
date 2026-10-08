@@ -515,6 +515,11 @@ public final class SessionStore: ObservableObject {
                 // vanish whenever SessionStart arrived after PostCompact.
                 newSession.compactCount = prior.compactCount
                 newSession.lastCompactedAt = prior.lastCompactedAt
+                newSession.modelDisplayName = prior.modelDisplayName
+                newSession.reasoningEffort = prior.reasoningEffort
+                newSession.contextUsedPct = prior.contextUsedPct
+                newSession.contextWindowSize = prior.contextWindowSize
+                newSession.totalCostUSD = prior.totalCostUSD
             }
             sessions[sid] = newSession
             // SessionStart rebuilt the row after the generic metadata pass.
@@ -1460,7 +1465,12 @@ public final class SessionStore: ObservableObject {
     }
 
     private func applyStatusLineFields(event: BridgeEvent, sid: String) {
+        // Child hooks use the parent session_id, but describe the child model/effort.
+        guard event.agent != .claude || (event.agentId == nil
+            && event.bridgeEvent != "SubagentStart" && event.bridgeEvent != "SubagentStop") else { return }
         let hasAny = event.contextWindow != nil || event.model != nil || event.cost != nil
+            || event.effort != nil || event.bridgeEvent == "StatusLine"
+            || (event.bridgeEvent == "PostModelSwitch" && event.toModel != nil)
         guard hasAny else { return }
 
         var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: event.agent)
@@ -1480,6 +1490,20 @@ public final class SessionStore: ObservableObject {
             if let name = model["display_name"]?.value as? String {
                 if session.modelDisplayName != name { session.reasoningEffort = nil }
                 session.modelDisplayName = name
+            }
+        }
+
+        if event.agent == .claude {
+            if event.bridgeEvent == "PostModelSwitch", let model = event.toModel, !model.isEmpty {
+                session.modelDisplayName = model
+                session.reasoningEffort = nil
+            }
+            // StatusLine is a full snapshot; ordinary hooks are patches.
+            if event.bridgeEvent == "StatusLine" || event.effort != nil {
+                let level = (event.effort?.value as? [String: Any])?["level"] as? String
+                session.reasoningEffort = level.flatMap {
+                    ["low", "medium", "high", "xhigh", "max"].contains($0) ? $0 : nil
+                }
             }
         }
 

@@ -247,8 +247,8 @@ struct NotchExpandedView: View {
                                windowSize: session.contextWindowSize,
                                cost: session.totalCostUSD,
                                model: session.modelDisplayName, effort: session.reasoningEffort, estimated: session.agent == .codex)
-                } else if let model = session.modelDisplayName, let effort = session.reasoningEffort {
-                    Text("\(model) · \(effort)")
+                } else if let effort = session.reasoningEffort {
+                    Text("\(session.modelDisplayName ?? "Effort") · \(effort)")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.5))
                         .lineLimit(1)

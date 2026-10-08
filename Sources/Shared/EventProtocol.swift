@@ -121,6 +121,9 @@ public struct BridgeEvent: Codable, Sendable {
     public let rateLimits: [String: AnyCodable]?
     public let contextWindow: [String: AnyCodable]?  // per-session context usage (Claude statusLine)
     public let model: [String: AnyCodable]?           // normalized {id, display_name}
+    /// Optional live Claude metadata. AnyCodable preserves explicit null on replay.
+    public var effort: AnyCodable? = nil
+    public var toModel: String? = nil
     public let turnId: String?
     public let toolUseId: String?
     public let cost: [String: AnyCodable]?            // {total_cost_usd, total_duration_ms, ...}
@@ -204,6 +207,8 @@ public struct BridgeEvent: Codable, Sendable {
         case rateLimits           = "rate_limits"
         case contextWindow        = "context_window"
         case model
+        case effort
+        case toModel = "to_model"
         case turnId = "turn_id"
         case toolUseId = "tool_use_id"
         case cost
@@ -242,6 +247,8 @@ public struct BridgeEvent: Codable, Sendable {
         } else {
             self.model = try? c.decode([String: AnyCodable].self, forKey: .model)
         }
+        self.effort = try? c.decode(AnyCodable.self, forKey: .effort)
+        self.toModel = try? c.decode(String.self, forKey: .toModel)
         self.turnId = try? c.decode(String.self, forKey: .turnId)
         self.toolUseId = try? c.decode(String.self, forKey: .toolUseId)
         self.cost = try c.decodeIfPresent([String: AnyCodable].self, forKey: .cost)
