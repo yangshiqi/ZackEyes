@@ -49,3 +49,10 @@ struct CodexSubagentLifecycleTests {
     let scanner = SessionScanner(projectsDir: root.appendingPathComponent("absent"), codexSessionsDir: root)
     #expect(scanner.scan().map(\.id) == ["22222222-2222-2222-2222-222222222222"])
 }
+
+@Test func rootParentThreadMetadataAlsoFiltersSpawnedRollouts() throws {
+    let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jsonl")
+    defer { try? FileManager.default.removeItem(at: file) }
+    try #"{"type":"session_meta","payload":{"parent_thread_id":"parent","source":"cli"}}"#.write(to: file, atomically: true, encoding: .utf8)
+    #expect(CodexJsonlTailer.parseSessionMetaParentThreadId(at: file) == "parent")
+}

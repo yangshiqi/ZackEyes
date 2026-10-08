@@ -800,8 +800,9 @@ extension CodexJsonlTailer {
     /// Official SubAgentSource::ThreadSpawn metadata. Preserve standalone
     /// guardian/review rollouts; only an explicit parent link hides a child.
     nonisolated static func parseSessionMetaParentThreadId(at url: URL) -> String? {
-        guard let payload = readSessionMetaPayload(at: url),
-              let source = payload["source"] as? [String: Any],
+        guard let payload = readSessionMetaPayload(at: url) else { return nil }
+        if let parent = payload["parent_thread_id"] as? String, !parent.isEmpty { return parent }
+        guard let source = payload["source"] as? [String: Any],
               let subagent = source["subagent"] as? [String: Any],
               let spawn = subagent["thread_spawn"] as? [String: Any],
               let parent = spawn["parent_thread_id"] as? String, !parent.isEmpty
