@@ -78,3 +78,29 @@ struct CodexConcurrencyTests {
     #expect(store.sessions["s"]?.modelDisplayName == "gpt-6.1-sol")
     #expect(!store.shouldAcceptCodexEvent(BridgeEvent(bridgeEvent: "Stop", agent: .codex, sessionId: "s", turnId: "old")))
 }
+
+@MainActor @Test func identifierlessPromptAfterCompletionAcceptsNewApproval() {
+    let store = SessionStore()
+    store.handleEvent(BridgeEvent(bridgeEvent: "UserPromptSubmit", agent: .codex, sessionId: "s", turnId: "old"))
+    store.handleEvent(BridgeEvent(bridgeEvent: "Stop", agent: .codex, sessionId: "s", turnId: "old"))
+    store.handleEvent(BridgeEvent(bridgeEvent: "UserPromptSubmit", agent: .codex, sessionId: "s", userPrompt: "next"))
+    #expect(store.sessions["s"]?.currentCodexTurnId == nil)
+    #expect(store.sessions["s"]?.codexTurnCompleted == false)
+    let approval = BridgeEvent(bridgeEvent: "PermissionRequest", agent: .codex, sessionId: "s", turnId: "new")
+    #expect(store.shouldAcceptCodexEvent(approval))
+    store.handleEvent(approval)
+    #expect(store.sessions["s"]?.currentCodexTurnId == "new")
+}
+
+@MainActor @Test func identifierlessSteeringPreservesActiveToolsAndApproval() {
+    let store = SessionStore()
+    store.handleEvent(BridgeEvent(bridgeEvent: "PreToolUse", agent: .codex, sessionId: "s", turnId: "active", toolUseId: "call"))
+    let answered = Box<BridgeResponse>()
+    store.handlePermissionRequest(sessionId: "s", permission: PendingPermission(toolName: "Bash", toolInput: [:], cwd: nil, responder: { answered.value = $0 }), agent: .codex)
+    store.handleEvent(BridgeEvent(bridgeEvent: "UserPromptSubmit", agent: .codex, sessionId: "s", userPrompt: "correction"))
+    #expect(store.sessions["s"]?.currentCodexTurnId == "active")
+    #expect(store.sessions["s"]?.runningCodexToolIds == ["call"])
+    #expect(store.sessions["s"]?.isToolRunning == true)
+    #expect(store.sessions["s"]?.pendingPermissions.count == 1)
+    #expect(answered.value == nil)
+}

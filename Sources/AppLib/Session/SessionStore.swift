@@ -585,8 +585,18 @@ public final class SessionStore: ObservableObject {
         case "UserPromptSubmit":
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             if agent == .codex {
-                let isNewTurn = event.turnId != nil && event.turnId != session.currentCodexTurnId
-                session.beginCodexTurn(event.turnId)
+                let isNewTurn = event.turnId.map { $0 != session.currentCodexTurnId } ?? session.codexTurnCompleted
+                if event.turnId == nil && session.codexTurnCompleted {
+                    // A prompt after completion starts fresh even when the
+                    // hook omits an ID. Active identifier-less steering keeps
+                    // the current turn, tools and pending approvals intact.
+                    session.currentCodexTurnId = nil
+                    session.codexTurnCompleted = false
+                    session.runningCodexToolIds = []
+                    session.seenCodexToolIds = []
+                } else {
+                    session.beginCodexTurn(event.turnId)
+                }
                 if isNewTurn {
                     let pending = session.pendingPermissions
                     session.pendingPermissions = []
