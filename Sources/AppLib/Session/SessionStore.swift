@@ -147,6 +147,7 @@ public struct SessionInfo: Identifiable {
     public var contextUsedPct: Double?
     public var contextWindowSize: Int?
     public var modelDisplayName: String?
+    public var reasoningEffort: String?
     var codexUsageTotals: CodexUsageTotals?
     public var codexServiceTier: String?
     public var totalCostUSD: Double?
@@ -1207,6 +1208,7 @@ public final class SessionStore: ObservableObject {
     public func recordCodexModel(_ event: CodexModelEvent) {
         setCodexModelDisplayName(sessionId: event.sessionId, cwd: event.cwd, transcriptPath: event.transcriptPath, displayName: event.modelDisplayName)
         if event.updatesServiceTier { sessions[event.sessionId]?.codexServiceTier = event.serviceTier }
+        if event.updatesReasoningEffort { sessions[event.sessionId]?.reasoningEffort = event.reasoningEffort }
     }
 
     /// Apply Codex's per-turn `turn_context.model` to the session. Mirrors
@@ -1233,6 +1235,7 @@ public final class SessionStore: ObservableObject {
         if sessions[sessionId] == nil {
             session.source = .detected
         }
+        if session.modelDisplayName != displayName { session.reasoningEffort = nil }
         session.modelDisplayName = displayName
         sessions[sessionId] = session
     }
@@ -1475,6 +1478,7 @@ public final class SessionStore: ObservableObject {
 
         if let model = event.model {
             if let name = model["display_name"]?.value as? String {
+                if session.modelDisplayName != name { session.reasoningEffort = nil }
                 session.modelDisplayName = name
             }
         }

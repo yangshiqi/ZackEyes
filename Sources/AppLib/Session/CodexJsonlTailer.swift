@@ -92,6 +92,8 @@ public struct CodexModelEvent: Sendable {
     public let transcriptPath: String
     public var serviceTier: String? = nil
     public var updatesServiceTier = false
+    public var reasoningEffort: String? = nil
+    public var updatesReasoningEffort = false
 }
 
 /// Codex `turn_context.approval_policy` + `sandbox_policy.type` snapshot
@@ -333,6 +335,8 @@ extension CodexJsonlTailer {
                     // null clears it, matching daily rollout parsing.
                     event.updatesServiceTier = payload.keys.contains("service_tier")
                     event.serviceTier = payload["service_tier"] as? String
+                    event.updatesReasoningEffort = payload.keys.contains("effort")
+                    event.reasoningEffort = normalizedEffort(payload["effort"])
                     events.append(.modelChanged(event))
                 }
                 let approval = payload["approval_policy"] as? String
@@ -358,6 +362,8 @@ extension CodexJsonlTailer {
                     var event = CodexModelEvent(sessionId: sessionId, cwd: cwd, modelDisplayName: model, transcriptPath: transcriptPath)
                     event.serviceTier = settings["service_tier"] as? String
                     event.updatesServiceTier = true
+                    event.updatesReasoningEffort = settings.keys.contains("reasoning_effort")
+                    event.reasoningEffort = normalizedEffort(settings["reasoning_effort"])
                     events.append(.modelChanged(event))
                 }
             case "context_compacted":
@@ -534,6 +540,14 @@ extension CodexJsonlTailer {
         return event
     }
 
+    private nonisolated static func normalizedEffort(_ raw: Any?) -> String? {
+        guard let value = raw as? String else { return nil }
+        let effort = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !effort.isEmpty, effort.count <= 32,
+              effort.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" }) else { return nil }
+        return effort
+    }
+
     private nonisolated static func number(_ raw: Any?) -> Double? {
         switch raw {
         case let value as Double:
@@ -639,12 +653,12 @@ private final class Watcher: @unchecked Sendable {
         // next turn_context arrives via the stream.
         if let initial = CodexJsonlTailer.parseInitialTurnContext(at: url) {
             if let initialModel = initial.model {
-                onModelChanged(CodexModelEvent(
-                    sessionId: id,
-                    cwd: cwd,
-                    modelDisplayName: initialModel,
-                    transcriptPath: url.path
-                ))
+                var event = CodexModelEvent(sessionId: id, cwd: cwd, modelDisplayName: initialModel, transcriptPath: url.path)
+                event.reasoningEffort = initial.reasoningEffort
+                event.updatesReasoningEffort = initial.updatesReasoningEffort
+                event.serviceTier = initial.serviceTier
+                event.updatesServiceTier = initial.updatesServiceTier
+                onModelChanged(event)
             }
             if initial.approvalPolicy != nil || initial.sandboxType != nil {
                 onPolicyChanged(CodexPolicyEvent(
@@ -826,58 +840,62 @@ extension CodexJsonlTailer {
         return payload
     }
 
-    /// Subset of the first `turn_context.payload` we care about at watcher
+    /// Latest observed model, effort and policy metadata at watcher
     /// attach time. Any field can be nil — the rollout may have been written
     /// without it, or our schema knowledge may have drifted.
     public struct InitialTurnContext: Sendable, Equatable {
         public let model: String?
         public let approvalPolicy: String?
         public let sandboxType: String?
+        public var reasoningEffort: String? = nil
+        public var updatesReasoningEffort = false
+        public var serviceTier: String? = nil
+        public var updatesServiceTier = false
     }
 
-    /// Scan the rollout from the start for the first `turn_context` row and
-    /// extract model + policy fields in one pass. Used at watcher-attach time
-    /// so resumed sessions surface this state before the next turn fires.
+    /// Fold bounded head + tail metadata at attach time. Recent context and
+    /// settings snapshots replace the first turn's model/effort without a full
+    /// transcript read or replaying historical completions to the delegate.
     nonisolated static func parseInitialTurnContext(at url: URL) -> InitialTurnContext? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
-
-        // Slightly above the 1 MB session_meta cap so a turn_context line that
-        // sits immediately after a maximally-sized session_meta still lands in
-        // the read.
         let maxBytes = 1_100_000
-        guard let data = try? handle.read(upToCount: maxBytes), !data.isEmpty else {
-            return nil
+        guard let head = try? handle.read(upToCount: maxBytes), !head.isEmpty else { return nil }
+        var text = String(decoding: head, as: UTF8.self) + "\n"
+        if let size = try? handle.seekToEnd(), size > UInt64(maxBytes) {
+            let offset = size - UInt64(maxBytes)
+            do {
+                try handle.seek(toOffset: offset)
+                if let tail = try handle.read(upToCount: maxBytes), let newline = tail.firstIndex(of: 0x0A) {
+                    // The first segment can begin in the middle of a row.
+                    text += String(decoding: tail.suffix(from: tail.index(after: newline)), as: UTF8.self) + "\n"
+                }
+            } catch { /* Head metadata remains a best-effort fallback. */ }
         }
-        // String(decoding:as:) replaces invalid UTF-8 sequences with U+FFFD
-        // instead of failing — protects against the read truncating in the
-        // middle of a multi-byte char at the buffer edge.
-        let text = String(decoding: data, as: UTF8.self)
-
-        // Process every non-empty segment. Partial lines (the trailing segment
-        // when we hit the read cap mid-line, or anything we corrupted with the
-        // replacement char) just fail JSON parse and get skipped silently.
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard let lineData = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  obj["type"] as? String == "turn_context",
-                  let payload = obj["payload"] as? [String: Any] else {
-                continue
-            }
-            let model = (payload["model"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            let approval = payload["approval_policy"] as? String
-            let sandbox = (payload["sandbox_policy"] as? [String: Any])?["type"] as? String
-            // Don't return an empty result — keep scanning until we hit a
-            // turn_context that actually carries something useful.
-            if model != nil || approval != nil || sandbox != nil {
-                return InitialTurnContext(
-                    model: model,
-                    approvalPolicy: approval,
-                    sandboxType: sandbox
-                )
+        var pending = ""
+        let events = parseTaskLifecycleEvents(chunk: text, pending: &pending, sessionId: "", cwd: nil, transcriptPath: url.path)
+        var model: String?, approval: String?, sandbox: String?, effort: String?, tier: String?
+        var updatesEffort = false, updatesTier = false
+        for event in events {
+            switch event {
+            case .modelChanged(let context):
+                if model != context.modelDisplayName { effort = nil; updatesEffort = false }
+                model = context.modelDisplayName
+                if context.updatesReasoningEffort { effort = context.reasoningEffort; updatesEffort = true }
+                if context.updatesServiceTier { tier = context.serviceTier; updatesTier = true }
+            case .policyChanged(let policy):
+                approval = policy.approvalPolicy ?? approval
+                sandbox = policy.sandboxType ?? sandbox
+            default: break
             }
         }
-        return nil
+        guard model != nil || approval != nil || sandbox != nil else { return nil }
+        var context = InitialTurnContext(model: model, approvalPolicy: approval, sandboxType: sandbox)
+        context.reasoningEffort = effort
+        context.updatesReasoningEffort = updatesEffort
+        context.serviceTier = tier
+        context.updatesServiceTier = updatesTier
+        return context
     }
 
     /// Backward-compatible wrapper used by older callsites and tests.

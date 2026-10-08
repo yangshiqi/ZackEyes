@@ -246,7 +246,13 @@ struct NotchExpandedView: View {
                     contextBar(usedPct: used,
                                windowSize: session.contextWindowSize,
                                cost: session.totalCostUSD,
-                               model: session.modelDisplayName, estimated: session.agent == .codex)
+                               model: session.modelDisplayName, effort: session.reasoningEffort, estimated: session.agent == .codex)
+                } else if let model = session.modelDisplayName, let effort = session.reasoningEffort {
+                    Text("\(model) · \(effort)")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+                        .lineLimit(1)
+                        .help("Reasoning effort: \(effort)")
                 }
 
                 // (User prompt now shown in Row 1.5 above)
@@ -368,7 +374,7 @@ struct NotchExpandedView: View {
     }
 
     @ViewBuilder
-    private func contextBar(usedPct: Double, windowSize: Int?, cost: Double?, model: String?, estimated: Bool) -> some View {
+    private func contextBar(usedPct: Double, windowSize: Int?, cost: Double?, model: String?, effort: String?, estimated: Bool) -> some View {
         let color = contextColor(for: usedPct)
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
@@ -384,7 +390,8 @@ struct NotchExpandedView: View {
                         .foregroundColor(.white.opacity(0.4))
                 }
                 if let model = model {
-                    Text(model)
+                    Text(effort.map { "\(model) · \($0)" } ?? model)
+                        .help(effort.map { "Reasoning effort: \($0)" } ?? model)
                         .font(.system(size: 9, weight: .medium))
                         .foregroundColor(.white.opacity(0.5))
                         .lineLimit(1)

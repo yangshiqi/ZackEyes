@@ -50,3 +50,10 @@ Launched `.build/ZackEyes.app` (PID 40568) and verified the owner-only socket at
 A uniquely named synthetic session sent events through the bundled Bridge: completed old turn → identifier-less prompt → new-ID PermissionRequest. The request remained pending (not prematurely denied); Interrupt returned `Turn interrupted` to the Bridge and exited cleanly. Manual PreCompact/PostCompact hooks were delivered; SessionEnd cleaned up the test session. No model inference was executed. Rollout-first compaction dedup and tier-change cost parity remain covered by the regression tests, not by this live smoke sequence.
 
 The app remains running for user inspection. Startup ran the normal HookRepair path. No manual edits to user configuration were made and config.toml was not accessed. Screenshots remain local under /private/tmp and were not attached to the PR.
+
+
+## Reasoning effort display (#253)
+
+The user requested effort beside the model. Session cards now show observed Codex effort, including before context usage becomes available. Turn-context effort and settings-snapshot reasoning_effort update the same SessionInfo field. Missing fields preserve the current value; explicit null/empty values clear it, and a model switch drops an unknown effort. Startup metadata folds bounded head/tail records so recent settings replace the first-turn snapshot.
+
+Three regressions failed before implementation; a fourth test covers startup settings overrides/null resets. 112 relevant tests and all 925 tests pass (135 XCTest + 790 Swift Testing); make app/build and strict deep codesign pass. The rebuilt local app was restarted (PID 46260); a live GPT-6.1 Sol card visibly displayed `gpt-6.1-sol · medium`. The synthetic permission request used to expand the panel received a valid Allow response before the smoke harness's expected Interrupt denial, so that harness assertion was not a successful re-verification of Interrupt in this run. The test session was cleaned up. No model inference or config.toml access was performed by this task; screenshots stay local and are not attached.

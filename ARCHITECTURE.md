@@ -421,3 +421,5 @@ ccisland/
 - GPT-6.1 Sol / Astra 使用精确标准价格；Codex 累计 usage 先求增量再按当时模型收费，服务档位来自 thread_settings_applied / session_configured，以及 turn_context 中显式提供的 service_tier（缺字段保留前值，显式 null 清除）。显式 cache_write_input_tokens 才记缓存写入。单请求 last_token_usage 与增量相符时，>272k 输入应用长请求倍率；不把多请求累计间隙当一次长请求。每日聚合保留加权计费量，token 数本身不乘倍率。
 - Codex 费用均标为估算：旧 CLI 缺少档位/单请求元数据、启动前历史模型不完整、订阅计费不同于 API 标价时，不能当账单。Hook 已有会话的模型字符串可即时显示；rollout 提供后续模型/档位变化。
 - App Server 支持 steering / interrupt / 原生问答，但另起 server 不等于接管已有 CLI 的活跃回合。本次维持观察架构；连接所有权结论见 docs/superpowers/specs/2026-10-08-codex-app-server-boundary.md。
+
+- #253：模型旁展示观测到的 reasoning effort（例如 `gpt-6.1-sol · medium`）；数据来自 turn_context.effort 和设置快照 reasoning_effort，不读取 config.toml 或推断默认值。缺字段保留、显式 null/空值清除，模型改变后不会继承未知的新模型 effort。启动附着折叠最多各 1.1MB 首尾元数据，恢复最近可见的模型/effort/档位；历史完成不会投递。真刘海与模拟刘海共用 NotchExpandedView。
