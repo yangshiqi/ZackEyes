@@ -231,6 +231,21 @@ public struct SessionInfo: Identifiable {
     /// "compacting right now".
     public var compactCount: Int = 0
     public var lastCompactedAt: Date?
+    private var codexCompactSource: String?
+
+    /// Pair the hook and rollout observation of one compaction. A new begin
+    /// marker always identifies new work; only opposite sources within 10s
+    /// coalesce. Same-source completions on older CLIs remain independent.
+    mutating func recordCodexCompactFinished(source: String, at date: Date) -> Bool {
+        if !isCompacting, let priorSource = codexCompactSource, priorSource != source,
+           let priorAt = lastCompactedAt, abs(date.timeIntervalSince(priorAt)) <= 10 {
+            codexCompactSource = nil
+            return false
+        }
+        codexCompactSource = source
+        recordCompactFinished(at: date)
+        return true
+    }
 
     /// True while a compaction is running. `compactTrigger` is set by
     /// PreCompact and cleared by both completion paths, so it doubles as the
@@ -702,7 +717,11 @@ public final class SessionStore: ObservableObject {
             // #186's inference (`clearCompactMarker`) so the count cannot
             // differ depending on which path observed the finish; it also
             // clears the in-flight marker, which is what used to happen here.
-            session.recordCompactFinished()
+            if agent == .codex {
+                guard session.recordCodexCompactFinished(source: "hook", at: Date()) else { break }
+            } else {
+                session.recordCompactFinished()
+            }
             session.lastActiveAt = Date()
             sessions[sid] = session
 
@@ -1305,6 +1324,19 @@ public final class SessionStore: ObservableObject {
         session.jumpFailureReason = failure
         session.jumpFailedAt = failure == nil ? nil : date
         sessions[sessionId] = session
+    }
+
+    /// Older Codex CLIs expose only a completed marker in their rollout.
+    /// This observation does not imply the parent turn ended.
+    @discardableResult
+    public func recordCodexCompacted(sessionId: String, cwd: String?, transcriptPath: String?, observedAt: Date) -> Bool {
+        var session = sessions[sessionId] ?? SessionInfo(id: sessionId, cwd: cwd, agent: .codex, state: .idle)
+        if sessions[sessionId] == nil { session.source = .detected }
+        if session.transcriptPath == nil { session.transcriptPath = transcriptPath }
+        let recorded = session.recordCodexCompactFinished(source: "rollout", at: observedAt)
+        if recorded { session.lastActiveAt = max(session.lastActiveAt, observedAt) }
+        sessions[sessionId] = session
+        return recorded
     }
 
     public func clearCompactMarker(sessionId: String) {

@@ -828,6 +828,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } ?? false
             // #181 — PostCompact clears the stored trigger inside handleEvent,
             // so capture it first for the finish-notification gate below.
+            let priorCompactCount = event.sessionId.flatMap { sessionStore.sessions[$0]?.compactCount } ?? 0
             let priorCompactTrigger: String? = event.sessionId.flatMap {
                 sessionStore.sessions[$0]?.compactTrigger
             }
@@ -938,6 +939,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // (its turn's Stop notifies later; see CompactFinishGate).
             if !event.isReplayed,
                event.bridgeEvent == "PostCompact",
+               session.compactCount > priorCompactCount,
                CompactFinishGate.shouldNotify(
                    eventTrigger: event.trigger,
                    storedTrigger: priorCompactTrigger),
@@ -1118,6 +1120,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - CodexJsonlTailerDelegate
 
 extension AppDelegate: CodexJsonlTailerDelegate {
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectCompacted event: CodexCompactedEvent) {
+        sessionStore.recordCodexCompacted(sessionId: event.sessionId, cwd: event.cwd,
+            transcriptPath: event.transcriptPath, observedAt: event.observedAt ?? Date())
+    }
+
     /// Tailer detected an `event_msg.task_started` for a codex session.
     /// Mark detected/non-hooked sessions as working so the notch avatar uses
     /// the active animation while Codex is generating.

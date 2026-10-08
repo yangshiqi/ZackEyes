@@ -45,6 +45,8 @@ public struct CodexHookInstaller {
         "Interrupt",
         "SubagentStart",
         "SubagentStop",
+        "PreCompact",
+        "PostCompact",
     ]
 
     private var hookConfig: [String: Any] {

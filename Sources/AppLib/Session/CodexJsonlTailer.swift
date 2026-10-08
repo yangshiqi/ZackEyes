@@ -34,6 +34,16 @@ public protocol CodexJsonlTailerDelegate: AnyObject {
 
     @MainActor
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectError event: CodexErrorEvent)
+
+    @MainActor
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectCompacted event: CodexCompactedEvent)
+}
+
+public struct CodexCompactedEvent: Sendable {
+    public let sessionId: String
+    public let cwd: String?
+    public let transcriptPath: String
+    public let observedAt: Date?
 }
 
 public struct CodexTaskStartedEvent: Sendable {
@@ -117,6 +127,7 @@ public struct CodexErrorEvent: Sendable {
 }
 
 public enum CodexTaskLifecycleEvent: Sendable {
+    case compacted(CodexCompactedEvent)
     case started(CodexTaskStartedEvent)
     case complete(CodexTaskCompleteEvent)
     case tokenCount(CodexTokenCountEvent)
@@ -253,6 +264,11 @@ public final class CodexJsonlTailer {
                 guard let self = self else { return }
                 self.delegate?.codexTailer(self, didDetectError: event)
             }
+        }, onCompacted: { [weak self] event in
+            Task { @MainActor in
+                guard let self else { return }
+                self.delegate?.codexTailer(self, didDetectCompacted: event)
+            }
         }, onClosed: { [weak self] closedURL in
             Task { @MainActor in
                 self?.watchers.removeValue(forKey: closedURL)
@@ -327,6 +343,11 @@ extension CodexJsonlTailer {
             guard topType == "event_msg" else { continue }
 
             switch payload["type"] as? String {
+            case "context_compacted":
+                events.append(.compacted(CodexCompactedEvent(
+                    sessionId: sessionId, cwd: cwd, transcriptPath: transcriptPath,
+                    observedAt: parseCodexDate(obj["timestamp"]))))
+
             case "task_started":
                 let turnId = payload["turn_id"] as? String
                 let startedAt = parseCodexDate(payload["started_at"])
@@ -527,6 +548,7 @@ private final class Watcher: @unchecked Sendable {
     private let onSubagent: (CodexSubagentEvent) -> Void
     private let onPolicyChanged: (CodexPolicyEvent) -> Void
     private let onError: (CodexErrorEvent) -> Void
+    private let onCompacted: (CodexCompactedEvent) -> Void
     private let onClosed: (URL) -> Void
     /// Guards `isCancelled` so the MainActor `stop()` path and the
     /// DispatchSource event handler (private queue, fires on .delete /
@@ -543,6 +565,7 @@ private final class Watcher: @unchecked Sendable {
         onSubagent: @escaping (CodexSubagentEvent) -> Void,
         onPolicyChanged: @escaping (CodexPolicyEvent) -> Void,
         onError: @escaping (CodexErrorEvent) -> Void,
+        onCompacted: @escaping (CodexCompactedEvent) -> Void,
         onClosed: @escaping (URL) -> Void
     ) {
         // Codex session id is encoded in the rollout filename; bail if we
@@ -568,6 +591,7 @@ private final class Watcher: @unchecked Sendable {
         self.onSubagent = onSubagent
         self.onPolicyChanged = onPolicyChanged
         self.onError = onError
+        self.onCompacted = onCompacted
         self.onClosed = onClosed
 
         // Read session_meta once for cwd. Best-effort — if the file doesn't
@@ -704,6 +728,8 @@ private final class Watcher: @unchecked Sendable {
             )
             for ev in events {
                 switch ev {
+                case .compacted(let event):
+                    onCompacted(event)
                 case .started(let started):
                     onTaskStarted(started)
                 case .complete(let complete):
