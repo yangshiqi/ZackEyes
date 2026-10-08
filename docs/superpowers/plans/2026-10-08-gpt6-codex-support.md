@@ -32,3 +32,12 @@ For every task: add behavioral regression, observe expected failure, implement m
 - Bridge binary: empty stdin, malformed/non-object JSON, missing args and invalid flags all return 0 with empty stdout/stderr. Missing-socket and live-socket paths are covered by the full BridgeLib suite.
 - Installer fixtures verify backups, unrelated metadata preservation and restoration. Real user hook/config files were not modified by this development task.
 - `git diff --check`: passed. No agent inference/runtime takeover or manual GUI interaction was performed. UI change is limited to the estimate label; panel behavior is unchanged.
+
+
+## PR #252 review corrections (2026-10-08)
+
+- Completed-turn state resets when the next UserPromptSubmit omits turn_id; active identifier-less steering preserves tools and pending approvals (3fe28df, #249).
+- PostCompact always saves its manual completion state even when the rollout has already incremented the counter (2de407e, #233).
+- Streamed turn_context propagates service_tier updates, preserving absent fields and clearing explicit nulls; live and daily cost estimates agree through tier changes (137f8b2, #248).
+- Four new tests: three regressions reproduced before fixes; the active-steering preservation test passed both before and after.
+- 123 relevant tests passed. Final swift build and all 921 tests passed (135 XCTest + 786 Swift Testing), including socket/process tests with the required sandbox permissions. make app and deep strict codesign verification passed; git diff --check passed.
