@@ -94,3 +94,39 @@ struct CodexRequestPricingTests {
     #expect(result.codexTokens == 2200)
     #expect(abs((result.codexCostUSD ?? -1) - 0.009) < 1e-10)
 }
+
+@MainActor @Test func streamedTurnContextTierChangesMatchDailyPricing() throws {
+    let store = SessionStore()
+    store.codexPriceLookup = { CodexRequestPricingTests.price.price(for: $0) }
+    var transcript = ""
+    var expectedCost = 0.0
+    let variants: [(String, String?, Double)] = [
+        (#", "service_tier":"fast""#, "fast", 2),
+        ("", "fast", 2),
+        (#", "service_tier":"default""#, "default", 1),
+        (#", "service_tier":"fast""#, "fast", 2),
+        (#", "service_tier":null"#, nil, 1),
+    ]
+    for (index, variant) in variants.enumerated() {
+        let row = """
+        {"timestamp":"2026-10-08T12:00:00Z","type":"turn_context","payload":{"model":"gpt-6.1-sol"\(variant.0)}}
+        {"timestamp":"2026-10-08T12:00:00Z","type":"event_msg","payload":{"type":"token_count","info":{"model_context_window":1050000,"total_token_usage":{"input_tokens":\((index + 1) * 1000),"output_tokens":\((index + 1) * 100)},"last_token_usage":{"input_tokens":1000,"output_tokens":100,"total_tokens":1100}}}}
+        """ + "\n"
+        transcript += row
+        var pending = ""
+        let events = CodexJsonlTailer.parseTaskLifecycleEvents(chunk: row, pending: &pending, sessionId: "s", cwd: nil, transcriptPath: "/tmp/rollout")
+        for event in events {
+            switch event {
+            case .modelChanged(let model): store.recordCodexModel(model)
+            case .tokenCount(let usage): store.recordCodexTokenCount(usage, observedAt: Date())
+            default: break
+            }
+        }
+        expectedCost += 0.003 * variant.2
+        #expect(store.sessions["s"]?.codexServiceTier == variant.1)
+        #expect(abs((store.sessions["s"]?.totalCostUSD ?? -1) - expectedCost) < 1e-10)
+        let daily = UsageTracker.parseCodexDailyTallies(text: transcript, calendar: CodexRequestPricingTests.calendar, cutoff: .distantPast)
+        let cost = UsageTracker.buildDailyUsage(claude: [:], codex: daily, pricing: CodexRequestPricingTests.price, calendar: CodexRequestPricingTests.calendar, now: CodexRequestPricingTests.now).last?.codexCostUSD
+        #expect(abs((store.sessions["s"]?.totalCostUSD ?? -1) - (cost ?? -2)) < 1e-10)
+    }
+}

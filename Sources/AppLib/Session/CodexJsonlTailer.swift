@@ -323,12 +323,17 @@ extension CodexJsonlTailer {
             // respective fields are populated — they're independent surfaces.
             if topType == "turn_context" {
                 if let model = payload["model"] as? String, !model.isEmpty {
-                    events.append(.modelChanged(CodexModelEvent(
+                    var event = CodexModelEvent(
                         sessionId: sessionId,
                         cwd: cwd,
                         modelDisplayName: model,
                         transcriptPath: transcriptPath
-                    )))
+                    )
+                    // Absence preserves the previous snapshot; an explicit
+                    // null clears it, matching daily rollout parsing.
+                    event.updatesServiceTier = payload.keys.contains("service_tier")
+                    event.serviceTier = payload["service_tier"] as? String
+                    events.append(.modelChanged(event))
                 }
                 let approval = payload["approval_policy"] as? String
                 let sandboxType = (payload["sandbox_policy"] as? [String: Any])?["type"] as? String
