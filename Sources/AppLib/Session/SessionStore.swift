@@ -771,9 +771,8 @@ public final class SessionStore: ObservableObject {
             session.isToolRunning = false
             session.runningClaudeTools = [:]
             session.dropAllStaleAskUserQuestions()
-            let pending = session.pendingPermissions
-            session.pendingPermissions = []
-            session.state = .idle
+            // A background child's bridge may still be waiting after the
+            // parent API request fails. Preserve live approvals, as Stop does.
             let reasons = [
                 "rate_limit": "Rate limit reached", "overloaded": "Service overloaded",
                 "authentication_failed": "Authentication failed", "oauth_org_not_allowed": "Organization access denied",
@@ -790,7 +789,6 @@ public final class SessionStore: ObservableObject {
             session.compactTrigger = nil
             session.compactStartContextPct = nil
             sessions[sid] = session
-            for request in pending { request.responder(.permission(.deny(message: "Turn failed"))) }
 
         // #40/#247 — parent-owned subagent lifecycle. Both hooks carry `agent_id` and
         // `agent_type` (verified against real Claude Code payloads), so the

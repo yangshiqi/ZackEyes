@@ -78,7 +78,7 @@ struct ClaudeFailureTests {
         #expect(backups.count == 1)
         #expect(try Data(contentsOf: #require(backups.first)) == Data(original.utf8))
     }
-    @Test func failedTurnAnswersEachPendingApprovalAndStaysIdle() throws {
+    @Test func failedTurnPreservesLiveApprovalsUntilTheirSessionEnds() throws {
         let store = SessionStore()
         let answers = Box<Int>(); answers.value = 0
         for _ in 0..<2 {
@@ -91,10 +91,13 @@ struct ClaudeFailureTests {
                 }))
         }
         try send("StopFailure", #""error":"unknown""#, to: store)
-        #expect(answers.value == 2)
-        #expect(store.sessions["s"]?.pendingPermissions.isEmpty == true)
-        #expect(store.sessions["s"]?.state == .idle)
+        #expect(answers.value == 0)
+        #expect(store.sessions["s"]?.pendingPermissions.count == 2)
+        #expect(store.sessions["s"]?.state == .waiting)
         #expect(store.sessions["s"]?.errorDetail == "API request failed")
+        try send("SessionEnd", to: store)
+        #expect(answers.value == 2)
+        #expect(store.sessions["s"] == nil)
     }
 
     @Test func failureMetadataSurvivesReplayAndNeverBreaksApprovalDecoding() throws {
