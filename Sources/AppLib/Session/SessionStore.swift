@@ -617,7 +617,7 @@ public final class SessionStore: ObservableObject {
             session.compactStartContextPct = nil
             sessions[sid] = session
 
-        // #40 — Claude subagent lifecycle. Both hooks carry `agent_id` and
+        // #40/#247 — parent-owned subagent lifecycle. Both hooks carry `agent_id` and
         // `agent_type` (verified against real Claude Code payloads), so the
         // pairing is exact rather than positional.
         //
@@ -628,14 +628,12 @@ public final class SessionStore: ObservableObject {
         // the subagent's `last_assistant_message` over the parent's would
         // attribute a subagent's words to the main agent.
         case "SubagentStart":
-            // Claude-only concept; Codex marks whole threads subagent-owned
-            // via `subagentLabel`, which this must not collide with.
-            guard agent == .claude else { break }
+            // Both agents identify children on their parent's session_id.
             // Without an id we could never pair the matching stop, so the
             // entry would be unremovable. An uncounted subagent beats a
             // permanently stuck counter.
             guard let agentId = event.agentId, !agentId.isEmpty else { break }
-            guard var session = sessions[sid] else { break }
+            var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             // Prune BEFORE the cap check: otherwise accumulated stale entries
             // consume the ceiling and silently reject every real subagent
             // from then on.
@@ -662,7 +660,6 @@ public final class SessionStore: ObservableObject {
             sessions[sid] = session
 
         case "SubagentStop":
-            guard agent == .claude else { break }
             guard let agentId = event.agentId, !agentId.isEmpty else { break }
             guard var session = sessions[sid] else { break }
             session.activeSubagents.removeAll { $0.id == agentId }

@@ -255,6 +255,7 @@ public struct SessionScanner {
     /// Read the head for cwd, the tail for the last user prompt — same tail
     /// budget as the Claude parser.
     private func parseCodexSession(at url: URL, lastModified: Date) -> DetectedSession? {
+        guard CodexJsonlTailer.parseSessionMetaParentThreadId(at: url) == nil else { return nil }
         guard let id = Self.extractCodexSessionId(fromFilename: url.lastPathComponent) else {
             return nil
         }

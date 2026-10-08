@@ -43,6 +43,8 @@ public struct CodexHookInstaller {
         "UserPromptSubmit",
         "SessionEnd",
         "Interrupt",
+        "SubagentStart",
+        "SubagentStop",
     ]
 
     private var hookConfig: [String: Any] {

@@ -208,6 +208,9 @@ public final class CodexJsonlTailer {
             for file in files where file.pathExtension == "jsonl" {
                 guard let modDate = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
                       modDate >= cutoff else { continue }
+                // Spawned children are represented by their parent's hooks;
+                // watching them as user threads duplicates cards/notifications.
+                guard parseSessionMetaParentThreadId(at: file) == nil else { continue }
                 result.append(file)
             }
         }
@@ -749,6 +752,18 @@ extension CodexJsonlTailer {
             return other
         }
         return nil
+    }
+
+    /// Official SubAgentSource::ThreadSpawn metadata. Preserve standalone
+    /// guardian/review rollouts; only an explicit parent link hides a child.
+    nonisolated static func parseSessionMetaParentThreadId(at url: URL) -> String? {
+        guard let payload = readSessionMetaPayload(at: url),
+              let source = payload["source"] as? [String: Any],
+              let subagent = source["subagent"] as? [String: Any],
+              let spawn = subagent["thread_spawn"] as? [String: Any],
+              let parent = spawn["parent_thread_id"] as? String, !parent.isEmpty
+        else { return nil }
+        return parent
     }
 
     private nonisolated static func readSessionMetaPayload(at url: URL) -> [String: Any]? {
