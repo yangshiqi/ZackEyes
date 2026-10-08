@@ -50,6 +50,19 @@ public struct SessionInfo: Identifiable {
     public var currentToolName: String?
     public var currentToolInput: [String: Any]?
     public var isToolRunning: Bool = false
+    public var currentCodexTurnId: String?
+    var codexTurnCompleted = false
+    var codexTurnStartedAt: Date?
+    var runningCodexToolIds: Set<String> = []
+    var seenCodexToolIds: Set<String> = []
+
+    mutating func beginCodexTurn(_ turnId: String?) {
+        guard let turnId, currentCodexTurnId != turnId else { return }
+        currentCodexTurnId = turnId
+        codexTurnCompleted = false
+        runningCodexToolIds = []
+        seenCodexToolIds = []
+    }
     public var lastUserPrompt: String?
     public var lastAssistantMessage: String?
     /// Permission requests still waiting on the user, oldest first.
@@ -440,8 +453,20 @@ public final class SessionStore: ObservableObject {
 
     // MARK: - Event handling
 
+    /// Call before routing an approval or notifying completion as well as
+    /// before state mutation. Background subagent hooks deliberately bypass
+    /// the parent-turn check: a child can finish after its spawning turn.
+    public func shouldAcceptCodexEvent(_ event: BridgeEvent) -> Bool {
+        guard event.agent == .codex, let sid = event.sessionId,
+              let turn = event.turnId, let session = sessions[sid],
+              ["PreToolUse", "PostToolUse", "PermissionRequest", "Stop", "Interrupt"].contains(event.bridgeEvent)
+        else { return true }
+        if let current = session.currentCodexTurnId, current != turn { return false }
+        return !session.codexTurnCompleted
+    }
+
     public func handleEvent(_ event: BridgeEvent) {
-        guard let sid = event.sessionId else { return }
+        guard let sid = event.sessionId, shouldAcceptCodexEvent(event) else { return }
 
         // #217 — any hook event naming a session is proof that agent is
         // alive, whatever the event happens to be. The switch below only
@@ -503,6 +528,8 @@ public final class SessionStore: ObservableObject {
             session.pendingPermissions = []
             session.state = .idle
             session.isToolRunning = false
+            session.codexTurnCompleted = true
+            session.runningCodexToolIds = []
             session.compactTrigger = nil
             session.compactStartContextPct = nil
             sessions[sid] = session
@@ -512,6 +539,16 @@ public final class SessionStore: ObservableObject {
 
         case "PreToolUse":
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
+            if agent == .codex {
+                session.beginCodexTurn(event.turnId)
+                if let callId = event.toolUseId {
+                    guard !session.seenCodexToolIds.contains(callId) else { break }
+                    // Bound dedup state without dropping genuine tool calls.
+                    if session.seenCodexToolIds.count >= 1024 { session.seenCodexToolIds = session.runningCodexToolIds }
+                    session.seenCodexToolIds.insert(callId)
+                    session.runningCodexToolIds.insert(callId)
+                }
+            }
             session.currentToolName = event.toolName
             session.currentToolInput = event.toolInput?.mapValues { $0.value }
             // #79 — the parent's `Agent` call is the only place a subagent's
@@ -536,6 +573,18 @@ public final class SessionStore: ObservableObject {
 
         case "UserPromptSubmit":
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
+            if agent == .codex {
+                let isNewTurn = event.turnId != nil && event.turnId != session.currentCodexTurnId
+                session.beginCodexTurn(event.turnId)
+                if isNewTurn {
+                    let pending = session.pendingPermissions
+                    session.pendingPermissions = []
+                    session.state = .working
+                    session.isToolRunning = false
+                    session.codexTurnStartedAt = Date()
+                    for request in pending { request.responder(.permission(.deny(message: "Turn superseded"))) }
+                }
+            }
             if let prompt = event.userPrompt {
                 session.lastUserPrompt = prompt
                 session.lastAssistantMessage = nil  // clear stale reply on new prompt
@@ -583,7 +632,12 @@ public final class SessionStore: ObservableObject {
             // Don't clear currentToolName — keep it as "most recent action".
             // Just mark that the tool is no longer running.
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
-            session.isToolRunning = false
+            if agent == .codex {
+                if let callId = event.toolUseId { session.runningCodexToolIds.remove(callId) }
+                session.isToolRunning = !session.runningCodexToolIds.isEmpty
+            } else {
+                session.isToolRunning = false
+            }
             session.lastActiveAt = Date()
 
             // If a Task* tool just completed, refresh task list from transcript
@@ -612,6 +666,10 @@ public final class SessionStore: ObservableObject {
             var session = sessions[sid] ?? SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             session.state = .idle
             session.isToolRunning = false
+            if agent == .codex {
+                session.codexTurnCompleted = true
+                session.runningCodexToolIds = []
+            }
             if let msg = event.lastAssistantMessage {
                 session.lastAssistantMessage = msg
                 // Detect API errors / rate limits in assistant output
@@ -933,6 +991,20 @@ public final class SessionStore: ObservableObject {
         return session
     }
 
+    /// ID-aware rollout completion used by the app. nil means no mutation
+    /// or notification: an old turn or a repeated completion was observed.
+    public func completeCodexTurn(sessionId: String, cwd: String?, lastAgentMessage: String?, transcriptPath: String?, completedAt: Date, turnId: String?) -> SessionInfo? {
+        if let session = sessions[sessionId], let turnId {
+            guard !session.codexTurnCompleted,
+                  session.currentCodexTurnId == nil || session.currentCodexTurnId == turnId else { return nil }
+        }
+        let result = recordCodexTaskComplete(sessionId: sessionId, cwd: cwd,
+            lastAgentMessage: lastAgentMessage, transcriptPath: transcriptPath, completedAt: completedAt)
+        sessions[sessionId]?.codexTurnCompleted = true
+        sessions[sessionId]?.runningCodexToolIds = []
+        return result
+    }
+
     /// Notification dedup window for repeated identical Codex errors. Codex
     /// retries a usage-limit'd turn within seconds, re-emitting the same
     /// `error` row; collapse those into one notification while still keeping
@@ -1019,6 +1091,8 @@ public final class SessionStore: ObservableObject {
         turnId: String?
     ) {
         let didCreateSession = sessions[sessionId] == nil
+        if let turnId, sessions[sessionId]?.currentCodexTurnId == turnId { return }
+        if let latest = sessions[sessionId]?.codexTurnStartedAt, startedAt < latest { return }
         var session = sessions[sessionId]
             ?? SessionInfo(
                 id: sessionId,
@@ -1027,6 +1101,8 @@ public final class SessionStore: ObservableObject {
                 state: .working,
                 startedAt: startedAt
             )
+        session.beginCodexTurn(turnId)
+        session.codexTurnStartedAt = startedAt
         session.agent = .codex
         if session.cwd == nil { session.cwd = cwd }
         if session.transcriptPath == nil { session.transcriptPath = transcriptPath }

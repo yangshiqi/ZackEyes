@@ -721,6 +721,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        guard sessionStore.shouldAcceptCodexEvent(event) else {
+            EventTrace.shared.note(.dropped("stale Codex turn"))
+            responder?(.permission(.deny(message: "Turn is no longer active")))
+            return
+        }
+
         // Capture real subscriber rate limits if Claude Code provided them
         if let rl = event.rateLimits {
             usageTracker.updateFromHook(rateLimits: rl)
@@ -1129,10 +1135,6 @@ extension AppDelegate: CodexJsonlTailerDelegate {
     /// Mark detected/non-hooked sessions as working so the notch avatar uses
     /// the active animation while Codex is generating.
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectTaskStarted event: CodexTaskStartedEvent) {
-        if let existing = sessionStore.sessions[event.sessionId], existing.source == .live {
-            return
-        }
-
         sessionStore.recordCodexTaskStarted(
             sessionId: event.sessionId,
             cwd: event.cwd,
@@ -1154,13 +1156,14 @@ extension AppDelegate: CodexJsonlTailerDelegate {
             return
         }
 
-        let session = sessionStore.recordCodexTaskComplete(
+        guard let session = sessionStore.completeCodexTurn(
             sessionId: event.sessionId,
             cwd: event.cwd,
             lastAgentMessage: event.lastAgentMessage,
             transcriptPath: event.transcriptPath,
-            completedAt: event.completedAt ?? Date()
-        )
+            completedAt: event.completedAt ?? Date(),
+            turnId: event.turnId
+        ) else { return }
 
         guard event.shouldNotifyUser else { return }
 
