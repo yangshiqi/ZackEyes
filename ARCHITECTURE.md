@@ -280,6 +280,7 @@ PricingStore.start()
 | `AppColors` | `Sources/AppLib/Design/AppColors.swift` | 全局功能语义色唯一来源，同时提供 SwiftUI `Color` 与 AppKit `NSColor`：Activity、Information、Time Overlay、Attention、Critical、Success、Idle、No Data 和 Claude/Codex Identity；Buddy/F1 装饰色不纳入状态语义 |
 | `HotKeyManager` | `Sources/AppLib/HotKey/HotKeyManager.swift` | Carbon `RegisterEventHotKey` 注册全局快捷键（可配置，默认 `Cmd+Shift+Z`），支持运行时 `reregister` 热更新 |
 | `NotificationManager` | `Sources/AppLib/Notifications/NotificationManager.swift` | 时间敏感通知（session 完成 / API 错误 / 版本更新），点击跳转终端或打开 GitHub |
+| `SessionNotificationPolicy` | `Sources/AppLib/Notifications/SessionNotificationPolicy.swift` | 完成通知判断排除 Claude 子代理 Stop、重放和 API 错误；错误通知优先使用独立 errorDetail，避免显示旧对话 |
 | `UpdateChecker` | `Sources/AppLib/Update/UpdateChecker.swift` | 轮询公开发布仓库（6h）获取最新 DMG，语义版本比较，`@Published dmgURL` 驱动齿轮红点 + 系统通知；`checkNow()` 手动检查入口（`#48`） |
 | `UpdateDownloader` | `Sources/AppLib/Update/UpdateDownloader.swift` | URLSession 下载 DMG 到 `$TMPDIR`，通过 NSWorkspace 打开使 Finder 挂载；状态栏菜单 + 齿轮菜单 + 通知点击均通过此下载器 |
 | `TerminalLocator` | `Sources/AppLib/Terminal/TerminalLocator.swift` | 进程树**向上**遍历 + iTerm2/Terminal AppleScript + Ghostty/Warp/Kitty Accessibility |
