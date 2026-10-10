@@ -1183,15 +1183,20 @@ public final class SessionStore: ObservableObject {
         session.lastActiveAt = observedAt
 
         if let input = cumulativeInput, let output = cumulativeOutput {
-            updateCodexCost(&session, totals: CodexUsageTotals(input: input, cached: cumulativeCached ?? 0, output: output), request: nil)
+            updateCodexCost(&session, totals: CodexUsageTotals(input: input, cached: cumulativeCached ?? 0, output: output), request: nil, writesKnown: false)
         }
 
         sessions[sessionId] = session
     }
 
-    private func updateCodexCost(_ session: inout SessionInfo, totals: CodexUsageTotals, request: CodexUsageTotals?) {
-        let delta = totals.delta(from: session.codexUsageTotals)
-        session.codexUsageTotals = totals
+    private func updateCodexCost(_ session: inout SessionInfo, totals: CodexUsageTotals, request: CodexUsageTotals?, writesKnown: Bool) {
+        // Absent write metadata is unknown, not a reset of cumulative usage.
+        // Preserve the last known baseline; explicitly reported zero still resets it.
+        let effectiveTotals = writesKnown ? totals : CodexUsageTotals(
+            input: totals.input, cached: totals.cached,
+            writes: session.codexUsageTotals?.writes ?? 0, output: totals.output)
+        let delta = effectiveTotals.delta(from: session.codexUsageTotals)
+        session.codexUsageTotals = effectiveTotals
         guard let model = session.modelDisplayName, let price = codexPriceLookup?(model) else { return }
         let units = CodexBillingUnits.estimate(delta, model: model, tier: session.codexServiceTier, request: request)
         session.totalCostUSD = (session.totalCostUSD ?? 0) + units.cost(using: price)
@@ -1201,7 +1206,7 @@ public final class SessionStore: ObservableObject {
         recordCodexContext(sessionId: event.sessionId, cwd: event.cwd, contextUsedPct: event.contextUsedPct,
                            contextWindowSize: event.contextWindowSize, transcriptPath: event.transcriptPath, observedAt: observedAt)
         guard var session = sessions[event.sessionId], let input = event.cumulativeInput, let output = event.cumulativeOutput else { return }
-        updateCodexCost(&session, totals: CodexUsageTotals(input: input, cached: event.cumulativeCached ?? 0, writes: event.cumulativeWrites ?? 0, output: output), request: event.requestUsage)
+        updateCodexCost(&session, totals: CodexUsageTotals(input: input, cached: event.cumulativeCached ?? 0, writes: event.cumulativeWrites ?? 0, output: output), request: event.requestUsage, writesKnown: event.cumulativeWrites != nil)
         sessions[event.sessionId] = session
     }
 
