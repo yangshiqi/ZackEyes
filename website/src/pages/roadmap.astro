@@ -4,18 +4,8 @@ import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { appVersion, issuesUrl } from '../lib/release.mjs';
 
-const description = 'ZackEyes roadmap: Codex GPT-6 and Claude model compatibility in review, a daily work journal, more agent support, and local logs controls.';
+const description = 'ZackEyes roadmap: a daily work journal, more agent support, and local logs controls.';
 const roadmapItems = [
-  {
-    title: 'Codex GPT-6 compatibility',
-    horizon: 'In review',
-    copy: 'Implemented for GPT-6.1 Sol and GPT-6 Astra: observed reasoning effort, request-aware cost estimates, concurrent tools, turn boundaries, and compaction events. Pending merge and release; not included in the current download.'
-  },
-  {
-    title: 'Claude model and protocol compatibility',
-    horizon: 'In review',
-    copy: 'Implemented for Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5: observed effort and model changes, fast-response and cache-lifetime pricing, and tool/API failure handling. Pending merge and release; not included in the current download.'
-  },
   {
     title: 'Daily work journal',
     horizon: 'Next',
@@ -62,7 +52,7 @@ const roadmapStructuredData = {
           <div class="section-eyebrow">Product direction</div>
           <h1 id="roadmap-title">Roadmap.</h1>
           <p class="policy-lede">
-            ZackEyes is focused on reliable local agent awareness: compatibility with current Codex and Claude models, a daily record of agent work, broader agent support, and clearer local logs controls.
+            ZackEyes is focused on reliable local agent awareness: a daily record of agent work, broader agent support, and clearer local logs controls.
           </p>
           <p class="policy-lede">
             The current release is v{appVersion} — see the <a href="/changelog">changelog</a> for what has shipped; below is what is next.
@@ -77,7 +67,7 @@ const roadmapStructuredData = {
       <section class="policy-band" aria-labelledby="roadmap-items-title">
         <div class="policy-shell">
           <h2 class="section-title" id="roadmap-items-title">What is next.</h2>
-          <p class="section-copy">Model compatibility work is implemented and awaiting merge and release: <a href="https://github.com/yangshiqi/ZackEyes/pull/252">Codex PR #252</a> and <a href="https://github.com/yangshiqi/ZackEyes/pull/258">Claude PR #258</a>. See the <a href="/docs#model-compatibility">compatibility notes</a> for limits.</p>
+          <p class="section-copy">Codex GPT-6 and Claude model compatibility are included in v0.9.7. See the <a href="/docs#model-compatibility">compatibility notes</a>; future work is listed below.</p>
           <div class="timeline-list">
             {roadmapItems.map((item) => (
               <article class="timeline-item">

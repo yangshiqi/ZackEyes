@@ -7,6 +7,35 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.9.7',
+    date: 'Published October 10, 2026',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Display observed reasoning effort beside Codex and Claude session models.',
+          'Support current GPT-6.1 Sol, GPT-6 Astra, Fable, Opus and Sonnet model pricing.'
+        ]
+      },
+      {
+        label: 'Changed',
+        items: [
+          'Estimate Codex costs using reported request metadata and service tiers.',
+          'Price Claude fast responses and 5-minute/1-hour cache writes independently.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'Preserve the active turn across concurrent tools, steering and late lifecycle events.',
+          'Deduplicate compaction events while retaining completion state changes.',
+          'Keep child-agent completion separate from parent state and notifications.',
+          'Show API failure details without replacing conversational replies.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.9.6',
     date: 'Published July 29, 2026',
     highlights: [

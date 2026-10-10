@@ -267,10 +267,9 @@ describe('Astro site contract', () => {
     // compaction #37, jump diagnostics #42) — removed from the roadmap.
     assert.doesNotMatch(page, /Process and session insight/);
     assert.match(page, /Daily work journal/);
-    assert.match(page, /Codex GPT-6 compatibility/);
-    assert.match(page, /Claude model and protocol compatibility/);
-    assert.match(page, /In review/);
-    assert.match(page, /not included in the current download/);
+    assert.doesNotMatch(page, /title: 'Codex GPT-6 compatibility'/);
+    assert.doesNotMatch(page, /title: 'Claude model and protocol compatibility'/);
+    assert.match(page, /included in v0\.9\.7/);
     assert.match(page, /More agent support/);
     assert.match(page, /Local logs controls/);
     assert.match(page, /Codex/);

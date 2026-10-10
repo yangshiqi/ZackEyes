@@ -54,9 +54,11 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 - DMG size: ${downloadSize}.
 - SHA256: ${downloadSha256}.
 
+## Model compatibility (v0.9.7)
+Included in v0.9.7: Codex GPT-6.1 Sol / GPT-6 Astra compatibility (PR #252) and Claude Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5 compatibility (PR #258). They add observed effort, current pricing and lifecycle handling. Effort requires live CLI metadata; daily costs are API list-price estimates, not subscription invoices. Details: https://zackeyes.vercel.app/docs#model-compatibility
+
 ## Roadmap
-In review, implemented but awaiting merge and release: Codex GPT-6.1 Sol / GPT-6 Astra compatibility (PR #252) and Claude Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5 compatibility (PR #258). These changes are not included in the current download. They add observed effort, current pricing and lifecycle handling. Effort requires live CLI metadata; daily costs are API list-price estimates, not subscription invoices. Details: https://zackeyes.vercel.app/docs#model-compatibility
-Other focus areas include a daily work journal, more agent support, and local logs controls.
+Focus areas include a daily work journal, more agent support, and local logs controls.
 
 ## Direct answers
 Use https://zackeyes.vercel.app/answers for short answers to common product questions.

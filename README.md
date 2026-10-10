@@ -37,9 +37,9 @@ A native macOS Dynamic Island for AI coding agents. Watches every active **Claud
 - Claude Code (`claude` CLI) and/or Codex CLI (`codex`) installed — ZackEyes installs hooks for whichever it finds, skips silently for ones it doesn't
 - Xcode Command Line Tools (for building from source)
 
-## Model compatibility work (in review)
+## Model compatibility (v0.9.7)
 
-These improvements are implemented and tested in open PRs, awaiting merge and release. They are not included in the current downloadable release:
+v0.9.7 includes these model and protocol improvements:
 
 - **Codex GPT-6.1 Sol / GPT-6 Astra** — observed reasoning effort, request-aware service-tier and long-request cost estimates, concurrent tools, interruption/subagent lifecycle and compaction events. [PR #252](https://github.com/yangshiqi/ZackEyes/pull/252), [Epic #243](https://github.com/yangshiqi/ZackEyes/issues/243).
 - **Claude Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5** — observed effort/model changes, updated prices, actual fast-response and cache TTL billing, separate tool/API failures and parent-safe completion notifications. [PR #258](https://github.com/yangshiqi/ZackEyes/pull/258), [Epic #254](https://github.com/yangshiqi/ZackEyes/issues/254).
