@@ -130,3 +130,39 @@ struct CodexRequestPricingTests {
         #expect(abs((store.sessions["s"]?.totalCostUSD ?? -1) - (cost ?? -2)) < 1e-10)
     }
 }
+
+@MainActor @Test(arguments: [false, true]) func missingWriteTotalsPreserveBillingBaseline(useContext: Bool) {
+    let store = SessionStore()
+    store.codexPriceLookup = { CodexRequestPricingTests.price.price(for: $0) }
+    store.setCodexModelDisplayName(sessionId: "s", cwd: nil, transcriptPath: nil, displayName: "gpt-6.1-sol")
+    func record(input: Int, writes: Int?) {
+        let event = CodexTokenCountEvent(sessionId: "s", cwd: nil, contextUsedPct: 1,
+            contextWindowSize: 1000000, transcriptPath: "/tmp/rollout", cumulativeInput: input,
+            cumulativeCached: 0, cumulativeOutput: 0, cumulativeWrites: writes)
+        store.recordCodexTokenCount(event, observedAt: Date())
+    }
+    record(input: 1000, writes: 200)
+    if useContext {
+        store.recordCodexContext(sessionId: "s", cwd: nil, contextUsedPct: 1,
+            contextWindowSize: 1000000, transcriptPath: nil, observedAt: Date(),
+            cumulativeInput: 2000, cumulativeCached: 0, cumulativeOutput: 0)
+    } else {
+        record(input: 2000, writes: nil)
+    }
+    #expect(store.sessions["s"]?.codexUsageTotals?.writes == 200)
+    record(input: 3000, writes: 200)
+    #expect(abs((store.sessions["s"]?.totalCostUSD ?? -1) - (2800 * 2e-6 + 200 * 2.5e-6)) < 1e-10)
+}
+
+@MainActor @Test func explicitZeroWritesResetsBillingBaseline() {
+    let store = SessionStore()
+    store.codexPriceLookup = { CodexRequestPricingTests.price.price(for: $0) }
+    store.setCodexModelDisplayName(sessionId: "s", cwd: nil, transcriptPath: nil, displayName: "gpt-6.1-sol")
+    for (input, writes) in [(1000, 200), (2000, 0), (3000, 200)] {
+        store.recordCodexTokenCount(CodexTokenCountEvent(sessionId: "s", cwd: nil, contextUsedPct: 1,
+            contextWindowSize: 1000000, transcriptPath: "/tmp/rollout", cumulativeInput: input,
+            cumulativeCached: 0, cumulativeOutput: 0, cumulativeWrites: writes), observedAt: Date())
+        #expect(store.sessions["s"]?.codexUsageTotals?.writes == writes)
+    }
+    #expect(abs((store.sessions["s"]?.totalCostUSD ?? -1) - (2600 * 2e-6 + 400 * 2.5e-6)) < 1e-10)
+}
