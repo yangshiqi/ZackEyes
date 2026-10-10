@@ -106,8 +106,8 @@ const docsStructuredData = [
 
       <section class="policy-band" aria-labelledby="model-compatibility">
         <div class="policy-shell">
-          <h2 class="section-title" id="model-compatibility">Model compatibility work.</h2>
-          <p class="section-copy">In review: these changes are implemented and tested, awaiting merge and release. They are not included in the current v{appVersion} download.</p>
+          <h2 class="section-title" id="model-compatibility">Model compatibility.</h2>
+          <p class="section-copy">v0.9.7 adds the following model and protocol support. The current download is v{appVersion}.</p>
           <ul class="step-list">
             <li><strong>Codex GPT-6.1 Sol and GPT-6 Astra.</strong> Observed reasoning effort appears beside the model. Request-aware estimates account for reported service tiers and eligible long requests; concurrent tool, interruption, subagent and compaction events preserve the correct turn. <a href="https://github.com/yangshiqi/ZackEyes/pull/252">PR #252</a>.</li>
             <li><strong>Claude Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5.</strong> Cards follow model changes and display observed effort. Daily estimates distinguish actual fast responses and 5-minute/1-hour cache writes. Failed tools and API failures receive separate handling; child completion does not notify parent completion. <a href="https://github.com/yangshiqi/ZackEyes/pull/258">PR #258</a>.</li>
