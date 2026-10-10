@@ -97,7 +97,7 @@ public struct BridgeEvent: Codable, Sendable {
     /// side (PendingEventQueue) and the read side (PendingEventReplayer) must
     /// agree, so the allowlist lives here in Shared (#127/F-012).
     public static let replayableEventNames: Set<String> = [
-        "SessionStart", "SessionEnd", "Stop", "UserPromptSubmit",
+        "SessionStart", "SessionEnd", "Stop", "StopFailure", "PostModelSwitch", "UserPromptSubmit",
         "Notification", "PreCompact", "PostCompact",
         "SubagentStart", "SubagentStop",
     ]
@@ -121,6 +121,12 @@ public struct BridgeEvent: Codable, Sendable {
     public let rateLimits: [String: AnyCodable]?
     public let contextWindow: [String: AnyCodable]?  // per-session context usage (Claude statusLine)
     public let model: [String: AnyCodable]?           // normalized {id, display_name}
+    /// Optional live Claude metadata. AnyCodable preserves explicit null on replay.
+    public var effort: AnyCodable? = nil
+    public var toModel: String? = nil
+    public var hookError: String? = nil
+    public var errorDetails: String? = nil
+    public var isInterrupt: Bool? = nil
     public let turnId: String?
     public let toolUseId: String?
     public let cost: [String: AnyCodable]?            // {total_cost_usd, total_duration_ms, ...}
@@ -204,6 +210,11 @@ public struct BridgeEvent: Codable, Sendable {
         case rateLimits           = "rate_limits"
         case contextWindow        = "context_window"
         case model
+        case effort
+        case toModel = "to_model"
+        case hookError = "error"
+        case errorDetails = "error_details"
+        case isInterrupt = "is_interrupt"
         case turnId = "turn_id"
         case toolUseId = "tool_use_id"
         case cost
@@ -242,6 +253,11 @@ public struct BridgeEvent: Codable, Sendable {
         } else {
             self.model = try? c.decode([String: AnyCodable].self, forKey: .model)
         }
+        self.effort = try? c.decode(AnyCodable.self, forKey: .effort)
+        self.toModel = try? c.decode(String.self, forKey: .toModel)
+        self.hookError = try? c.decode(String.self, forKey: .hookError)
+        self.errorDetails = try? c.decode(String.self, forKey: .errorDetails)
+        self.isInterrupt = try? c.decode(Bool.self, forKey: .isInterrupt)
         self.turnId = try? c.decode(String.self, forKey: .turnId)
         self.toolUseId = try? c.decode(String.self, forKey: .toolUseId)
         self.cost = try c.decodeIfPresent([String: AnyCodable].self, forKey: .cost)

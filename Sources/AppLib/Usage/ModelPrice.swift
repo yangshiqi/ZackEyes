@@ -7,6 +7,8 @@ public struct ModelPrice: Sendable, Equatable, Codable {
     public let outputPerToken: Double
     public let cacheReadPerToken: Double
     public let cacheCreatePerToken: Double
+    /// Nil for legacy price files: retain their existing write estimate.
+    public var cacheCreate1hPerToken: Double? = nil
 
     public init(inputPerToken: Double, outputPerToken: Double,
                 cacheReadPerToken: Double, cacheCreatePerToken: Double) {

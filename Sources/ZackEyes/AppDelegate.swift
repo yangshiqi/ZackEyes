@@ -827,9 +827,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // Capture prior state BEFORE handling the event (for Stop detection)
             let priorState: SessionState? = event.sessionId.flatMap { sessionStore.sessions[$0]?.state }
             let priorErrorAt: Date? = event.sessionId.flatMap { sessionStore.sessions[$0]?.errorAt }
-            let priorUserPrompt = event.sessionId.flatMap {
-                sessionStore.sessions[$0]?.lastUserPrompt
-            }
             let priorPendingIsAskUQ: Bool = event.sessionId.flatMap {
                 sessionStore.sessions[$0]?.pendingPermission?.isAskUserQuestion
             } ?? false
@@ -895,7 +892,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     agent: session.agent,
                     projectName: session.displayName,
                     errorLabel: errLabel,
-                    detail: session.lastAssistantMessage
+                    detail: SessionNotificationPolicy.errorDetail(for: session)
                 )
                 // Force the active UI to expand so the user sees the error
                 forceUiExpand()
@@ -906,7 +903,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             //
             // 1. Lifetime tool calls > 0 — covers sessions that were
             //    running before ZackEyes launched and never fired
-            //    UserPromptSubmit (so `priorUserPrompt` is nil).
+            //    UserPromptSubmit (so `lastUserPrompt` is nil).
             // 2. User prompt observed this run — the original signal,
             //    catches chat-only turns once the user has submitted at
             //    least one prompt that we saw.
@@ -919,26 +916,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // The previous `didWorkThisTurn = toolCount-after > toolCount-before`
             // check was always false: Stop doesn't change toolCallCount,
             // so both sides of the comparison were the same captured value.
-            if !event.isReplayed,
-               event.bridgeEvent == "Stop",
-               session.errorMessage == nil,    // don't double-notify on errors
-               priorState == .working || priorState == .waiting {
-                let didAnyTooling = session.toolCallCount > 0
-                let hasInteraction = priorUserPrompt != nil
-                let hasAssistantReply = (event.lastAssistantMessage?.isEmpty == false)
-                if didAnyTooling || hasInteraction || hasAssistantReply {
-                    EventTrace.shared.note(.notified("finished"))
-                    NotificationManager.shared.notifySessionFinished(
-                        sessionId: sid,
-                        agent: session.agent,
-                        projectName: session.displayName,
-                        lastPrompt: session.lastUserPrompt
-                    )
-                } else {
-                    // A deliberate silence that is indistinguishable from an
-                    // ordinary applied event unless the trace says so.
-                    EventTrace.shared.note(.suppressed("stop: no sign of work"))
-                }
+            if SessionNotificationPolicy.shouldNotifyFinished(
+                event: event, priorState: priorState, session: session
+            ) {
+                EventTrace.shared.note(.notified("finished"))
+                NotificationManager.shared.notifySessionFinished(
+                    sessionId: sid,
+                    agent: session.agent,
+                    projectName: session.displayName,
+                    lastPrompt: session.lastUserPrompt
+                )
+            } else if !event.isReplayed, event.bridgeEvent == "Stop" {
+                EventTrace.shared.note(.suppressed("stop: no parent turn completion"))
             }
 
             // #181 — manual /compact finishes with PostCompact, not Stop, so

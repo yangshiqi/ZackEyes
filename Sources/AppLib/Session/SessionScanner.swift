@@ -19,6 +19,7 @@ public struct SessionScanner {
         public let lastAssistantMessage: String?
         public let messageCount: Int
         public let transcriptPath: String
+        public var model: String? = nil
     }
 
     private let projectsDir: URL
@@ -106,6 +107,7 @@ public struct SessionScanner {
         var lastUserPrompt: String? = nil
         var lastAssistantMessage: String? = nil
         var messageCount = 0
+        var model: String?
 
         for line in text.split(separator: "\n") {
             guard let lineData = line.data(using: .utf8) else { continue }
@@ -142,6 +144,12 @@ public struct SessionScanner {
             // form too — same as the user parsing above. Last one in the tail wins.
             if let type = obj["type"] as? String, type == "assistant",
                let msg = obj["message"] as? [String: Any] {
+                // CLI API errors are assistant-shaped synthetic envelopes, not replies.
+                guard msg["model"] as? String != "<synthetic>",
+                      obj["isApiErrorMessage"] as? Bool != true else { continue }
+                if let observed = msg["model"] as? String, !observed.isEmpty {
+                    model = observed
+                }
                 let content = msg["content"]
                 if let text = content as? String, !text.isEmpty {
                     lastAssistantMessage = text
@@ -164,7 +172,8 @@ public struct SessionScanner {
             lastUserPrompt: lastUserPrompt,
             lastAssistantMessage: lastAssistantMessage,
             messageCount: messageCount,
-            transcriptPath: url.path
+            transcriptPath: url.path,
+            model: model
         )
     }
 

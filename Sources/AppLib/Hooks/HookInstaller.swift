@@ -19,10 +19,13 @@ public struct HookInstaller {
     static let hookEvents = [
         "PreToolUse",
         "PostToolUse",
+        "PostToolUseFailure",
         "PermissionRequest",
         "SessionStart",
         "SessionEnd",
         "Stop",
+        "StopFailure",
+        "PostModelSwitch",
         "UserPromptSubmit",
         "Notification",
         "PreCompact",

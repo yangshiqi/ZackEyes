@@ -35,7 +35,7 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 |------|--------|-------|
 | Hook 配置文件 | `~/.claude/settings.json`（`HookInstaller`） | `~/.codex/hooks.json`（`CodexHookInstaller`） |
 | 启用 hooks 的额外 flag | 无（CC 默认） | `[features].hooks` 在 codex `default_enabled: true`，所以**我们也不碰 `config.toml`** |
-| 支持的事件 | 12 个：基础 8 个 + compact/subagent lifecycle；另有 `StatusLine` | 12 个：基础 6 个 + SessionEnd / Interrupt / compact / subagent lifecycle；无 StatusLine |
+| 支持的事件 | 15 个：基础 8 个 + compact/subagent lifecycle + PostToolUseFailure / StopFailure / PostModelSwitch；另有 `StatusLine` | 12 个：基础 6 个 + SessionEnd / Interrupt / compact / subagent lifecycle；无 StatusLine |
 | 5h/7d 配额数据源 | StatusLine hook 的 `rate_limits.{five_hour,seven_day}` | rollout jsonl 的 `event_msg.token_count.rate_limits.{primary,secondary}`（UsageTracker 周期扫描） |
 | Permission 响应 JSON 形状 | `{hookSpecificOutput:{decision:{behavior,message}}}` | 同上（codex 文档形状完全一致，**Bridge 输出不需翻译**） |
 | AskUserQuestion | 支持（PreToolUse 阻塞） | 原生 user-input 请求属于 App Server；现有 hook 观察路径未接入（见 #250） |
@@ -280,6 +280,7 @@ PricingStore.start()
 | `AppColors` | `Sources/AppLib/Design/AppColors.swift` | 全局功能语义色唯一来源，同时提供 SwiftUI `Color` 与 AppKit `NSColor`：Activity、Information、Time Overlay、Attention、Critical、Success、Idle、No Data 和 Claude/Codex Identity；Buddy/F1 装饰色不纳入状态语义 |
 | `HotKeyManager` | `Sources/AppLib/HotKey/HotKeyManager.swift` | Carbon `RegisterEventHotKey` 注册全局快捷键（可配置，默认 `Cmd+Shift+Z`），支持运行时 `reregister` 热更新 |
 | `NotificationManager` | `Sources/AppLib/Notifications/NotificationManager.swift` | 时间敏感通知（session 完成 / API 错误 / 版本更新），点击跳转终端或打开 GitHub |
+| `SessionNotificationPolicy` | `Sources/AppLib/Notifications/SessionNotificationPolicy.swift` | 完成通知判断排除 Claude 子代理 Stop、重放和 API 错误；错误通知优先使用独立 errorDetail，避免显示旧对话 |
 | `UpdateChecker` | `Sources/AppLib/Update/UpdateChecker.swift` | 轮询公开发布仓库（6h）获取最新 DMG，语义版本比较，`@Published dmgURL` 驱动齿轮红点 + 系统通知；`checkNow()` 手动检查入口（`#48`） |
 | `UpdateDownloader` | `Sources/AppLib/Update/UpdateDownloader.swift` | URLSession 下载 DMG 到 `$TMPDIR`，通过 NSWorkspace 打开使 Finder 挂载；状态栏菜单 + 齿轮菜单 + 通知点击均通过此下载器 |
 | `TerminalLocator` | `Sources/AppLib/Terminal/TerminalLocator.swift` | 进程树**向上**遍历 + iTerm2/Terminal AppleScript + Ghostty/Warp/Kitty Accessibility |
@@ -423,3 +424,10 @@ ccisland/
 - App Server 支持 steering / interrupt / 原生问答，但另起 server 不等于接管已有 CLI 的活跃回合。本次维持观察架构；连接所有权结论见 docs/superpowers/specs/2026-10-08-codex-app-server-boundary.md。
 
 - #253：模型旁展示观测到的 reasoning effort（例如 `gpt-6.1-sol · medium`）；数据来自 turn_context.effort 和设置快照 reasoning_effort，不读取 config.toml 或推断默认值。缺字段保留、显式 null/空值清除，模型改变后不会继承未知的新模型 effort。启动附着折叠最多各 1.1MB 首尾元数据，恢复最近可见的模型/effort/档位；历史完成不会投递。真刘海与模拟刘海共用 NotchExpandedView。
+
+
+### Claude model metadata and request pricing (#254)
+
+Claude StatusLine full snapshots supply live `effort.level`; main-thread hooks patch it when present. Child `agent_id` metadata and child tools/stops cannot overwrite or finish the parent. `PostModelSwitch.to_model` invalidates the old effort until observed again. SessionScanner restores the most recent non-synthetic assistant model; detected imports remain idle and do not replace live sessions. Shared NotchExpandedView displays effort even if model/context metadata has not arrived.
+
+Claude daily billing retains raw disjoint tokens and response-weighted `ClaudeBillingUnits`, preserving `usage.speed` and 1h cache writes across message dedup, cache reuse and merging. PricingTable optionally reads `cache_creation_1h`; old tables retain their legacy write estimate. Supported Opus fast responses use a 2x multiplier; other models/unknown speed retain standard estimates. Daily UI is already labeled `est.`; Claude session cost stays the CLI StatusLine total. `PostToolUseFailure` ends the matching concurrent tool and marks its failure without ending the parent turn; `StopFailure` ends a failed turn, displays structured API error detail separately from reply text, and preserves still-live background approvals until their session ends.
