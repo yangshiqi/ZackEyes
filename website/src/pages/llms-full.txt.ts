@@ -66,6 +66,9 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - To reinstall hooks, remove stale hook entries containing zackeyes and reopen ZackEyes.
 
 ## Roadmap
+- In review, implemented but awaiting merge and release: Codex GPT-6.1 Sol / GPT-6 Astra compatibility, PR #252: https://github.com/yangshiqi/ZackEyes/pull/252. Observed effort, request-aware service-tier/long-request estimates, concurrent tools, interruptions, subagents and compaction events. No native steering or second runtime; ZackEyes never reads or modifies Codex config.toml.
+- In review, implemented but awaiting merge and release: Claude Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5 compatibility, PR #258: https://github.com/yangshiqi/ZackEyes/pull/258. Observed effort/model changes, actual fast-response pricing, 5-minute/1-hour cache writes, and separate tool/API failure handling. Child completion does not notify parent completion.
+- These model improvements are not included in the current download. Effort requires live CLI metadata; a Claude Code 2.1.295 probe supplied it on Stop after the reply. Startup model recovery does not invent effort. Daily totals use API list-price estimates, not subscription invoices; unknown pricing remains unpriced. Codex estimates may lack request metadata or earlier history; Claude session-card cost uses the CLI-reported total. Compatibility notes: https://zackeyes.vercel.app/docs#model-compatibility
 - Daily work journal.
 - More agent support.
 - Local logs controls.

@@ -104,6 +104,20 @@ const docsStructuredData = [
         </div>
       </section>
 
+      <section class="policy-band" aria-labelledby="model-compatibility">
+        <div class="policy-shell">
+          <h2 class="section-title" id="model-compatibility">Model compatibility work.</h2>
+          <p class="section-copy">In review: these changes are implemented and tested, awaiting merge and release. They are not included in the current v{appVersion} download.</p>
+          <ul class="step-list">
+            <li><strong>Codex GPT-6.1 Sol and GPT-6 Astra.</strong> Observed reasoning effort appears beside the model. Request-aware estimates account for reported service tiers and eligible long requests; concurrent tool, interruption, subagent and compaction events preserve the correct turn. <a href="https://github.com/yangshiqi/ZackEyes/pull/252">PR #252</a>.</li>
+            <li><strong>Claude Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5.</strong> Cards follow model changes and display observed effort. Daily estimates distinguish actual fast responses and 5-minute/1-hour cache writes. Failed tools and API failures receive separate handling; child completion does not notify parent completion. <a href="https://github.com/yangshiqi/ZackEyes/pull/258">PR #258</a>.</li>
+            <li><strong>Metadata availability.</strong> Effort is shown only after the CLI supplies it; no model default or global configuration is inferred. A local Claude Code 2.1.295 probe supplied effort on Stop, after the reply. Startup recovery can restore the model without restoring effort.</li>
+            <li><strong>Cost estimates.</strong> Daily totals use API list prices, not subscription invoices. Codex costs may be incomplete when request metadata or pre-attachment history is missing. Claude session-card cost uses the CLI-reported total. Unknown model pricing remains unpriced.</li>
+            <li><strong>Codex hooks.</strong> The current flag is <code>hooks</code>; <code>codex_hooks</code> is deprecated. ZackEyes does not read or modify <code>~/.codex/config.toml</code>. These changes observe existing CLI sessions and do not add native steering or a second agent runtime.</li>
+          </ul>
+        </div>
+      </section>
+
       <section class="policy-band" aria-labelledby="source-title">
         <div class="policy-shell docs-layout">
           <div>
