@@ -84,7 +84,7 @@ struct IntegrationUninstallerTests {
 
         #expect(plan.claudeHookEvents == 12)
         #expect(plan.claudeOwnsStatusLine == true)
-        #expect(plan.codexHookEvents == 6)
+        #expect(plan.codexHookEvents == 12)
 
         // bridge and .app-path must appear
         #expect(plan.files.contains(bridgePath))

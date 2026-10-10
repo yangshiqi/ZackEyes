@@ -1,12 +1,54 @@
 {
-  "version": "2026-06-02.1",
+  "version": "2026-10-08.1",
   "models": {
-    "claude-opus-4-8":   { "input": 1.5e-5, "output": 7.5e-5, "cache_read": 1.5e-6,  "cache_creation": 1.875e-5 },
-    "claude-opus-4-7":   { "input": 1.5e-5, "output": 7.5e-5, "cache_read": 1.5e-6,  "cache_creation": 1.875e-5 },
-    "claude-sonnet-4-6": { "input": 3.0e-6, "output": 1.5e-5, "cache_read": 3.0e-7,  "cache_creation": 3.75e-6 },
-    "claude-haiku-4-5":  { "input": 1.0e-6, "output": 5.0e-6, "cache_read": 1.0e-7,  "cache_creation": 1.25e-6 },
-    "gpt-5.5":           { "input": 1.25e-6, "output": 1.0e-5, "cache_read": 1.25e-7, "cache_creation": 0 },
-    "gpt-5-codex":       { "input": 1.25e-6, "output": 1.0e-5, "cache_read": 1.25e-7, "cache_creation": 0 }
+    "claude-opus-4-8": {
+      "input": 1.5e-05,
+      "output": 7.5e-05,
+      "cache_read": 1.5e-06,
+      "cache_creation": 1.875e-05
+    },
+    "claude-opus-4-7": {
+      "input": 1.5e-05,
+      "output": 7.5e-05,
+      "cache_read": 1.5e-06,
+      "cache_creation": 1.875e-05
+    },
+    "claude-sonnet-4-6": {
+      "input": 3e-06,
+      "output": 1.5e-05,
+      "cache_read": 3e-07,
+      "cache_creation": 3.75e-06
+    },
+    "claude-haiku-4-5": {
+      "input": 1e-06,
+      "output": 5e-06,
+      "cache_read": 1e-07,
+      "cache_creation": 1.25e-06
+    },
+    "gpt-5.5": {
+      "input": 1.25e-06,
+      "output": 1e-05,
+      "cache_read": 1.25e-07,
+      "cache_creation": 0
+    },
+    "gpt-5-codex": {
+      "input": 1.25e-06,
+      "output": 1e-05,
+      "cache_read": 1.25e-07,
+      "cache_creation": 0
+    },
+    "gpt-6.1-sol": {
+      "input": 2e-06,
+      "output": 1e-05,
+      "cache_read": 1e-07,
+      "cache_creation": 2.5e-06
+    },
+    "gpt-6-astra": {
+      "input": 1e-05,
+      "output": 5e-05,
+      "cache_read": 1e-06,
+      "cache_creation": 1.25e-05
+    }
   },
   "aliases": {}
 }

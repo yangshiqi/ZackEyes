@@ -721,6 +721,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        guard sessionStore.shouldAcceptCodexEvent(event) else {
+            EventTrace.shared.note(.dropped("stale Codex turn"))
+            responder?(.permission(.deny(message: "Turn is no longer active")))
+            return
+        }
+
         // Capture real subscriber rate limits if Claude Code provided them
         if let rl = event.rateLimits {
             usageTracker.updateFromHook(rateLimits: rl)
@@ -748,6 +754,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 NSLog("ZackEyes: PermissionRequest missing session_id")
                 return
             }
+            sessionStore.handleEvent(event)
             let toolName = event.toolName ?? "Unknown"
             // "Allow Always": a prior click approved this tool for the rest of the
             // session, so auto-allow without building a pending / expanding the
@@ -828,6 +835,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             } ?? false
             // #181 — PostCompact clears the stored trigger inside handleEvent,
             // so capture it first for the finish-notification gate below.
+            let priorCompactCount = event.sessionId.flatMap { sessionStore.sessions[$0]?.compactCount } ?? 0
             let priorCompactTrigger: String? = event.sessionId.flatMap {
                 sessionStore.sessions[$0]?.compactTrigger
             }
@@ -938,6 +946,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // (its turn's Stop notifies later; see CompactFinishGate).
             if !event.isReplayed,
                event.bridgeEvent == "PostCompact",
+               session.compactCount > priorCompactCount,
                CompactFinishGate.shouldNotify(
                    eventTrigger: event.trigger,
                    storedTrigger: priorCompactTrigger),
@@ -1118,14 +1127,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 // MARK: - CodexJsonlTailerDelegate
 
 extension AppDelegate: CodexJsonlTailerDelegate {
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectCompacted event: CodexCompactedEvent) {
+        sessionStore.recordCodexCompacted(sessionId: event.sessionId, cwd: event.cwd,
+            transcriptPath: event.transcriptPath, observedAt: event.observedAt ?? Date())
+    }
+
     /// Tailer detected an `event_msg.task_started` for a codex session.
     /// Mark detected/non-hooked sessions as working so the notch avatar uses
     /// the active animation while Codex is generating.
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectTaskStarted event: CodexTaskStartedEvent) {
-        if let existing = sessionStore.sessions[event.sessionId], existing.source == .live {
-            return
-        }
-
         sessionStore.recordCodexTaskStarted(
             sessionId: event.sessionId,
             cwd: event.cwd,
@@ -1147,13 +1157,14 @@ extension AppDelegate: CodexJsonlTailerDelegate {
             return
         }
 
-        let session = sessionStore.recordCodexTaskComplete(
+        guard let session = sessionStore.completeCodexTurn(
             sessionId: event.sessionId,
             cwd: event.cwd,
             lastAgentMessage: event.lastAgentMessage,
             transcriptPath: event.transcriptPath,
-            completedAt: event.completedAt ?? Date()
-        )
+            completedAt: event.completedAt ?? Date(),
+            turnId: event.turnId
+        ) else { return }
 
         guard event.shouldNotifyUser else { return }
 
@@ -1168,12 +1179,7 @@ extension AppDelegate: CodexJsonlTailerDelegate {
     /// Tailer detected Codex's `turn_context.model`. Codex hooks don't carry
     /// a Claude-style `model.display_name`, so this is our only source.
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectModelChanged event: CodexModelEvent) {
-        sessionStore.setCodexModelDisplayName(
-            sessionId: event.sessionId,
-            cwd: event.cwd,
-            transcriptPath: event.transcriptPath,
-            displayName: event.modelDisplayName
-        )
+        sessionStore.recordCodexModel(event)
     }
 
     /// Tailer detected Codex's `session_meta.source.subagent`. Session-level,
@@ -1235,17 +1241,7 @@ extension AppDelegate: CodexJsonlTailerDelegate {
     /// Codex hooks do not carry Claude-style `context_window`, so this path
     /// fills the same SessionInfo fields from rollout JSONL.
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectTokenCount event: CodexTokenCountEvent) {
-        sessionStore.recordCodexContext(
-            sessionId: event.sessionId,
-            cwd: event.cwd,
-            contextUsedPct: event.contextUsedPct,
-            contextWindowSize: event.contextWindowSize,
-            transcriptPath: event.transcriptPath,
-            observedAt: Date(),
-            cumulativeInput: event.cumulativeInput,
-            cumulativeCached: event.cumulativeCached,
-            cumulativeOutput: event.cumulativeOutput
-        )
+        sessionStore.recordCodexTokenCount(event, observedAt: Date())
         if sessionStore.sessions[event.sessionId]?.claudePid == nil {
             activateCodexSession(event.sessionId)
         }

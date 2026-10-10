@@ -37,7 +37,7 @@ Source of truth: <https://developers.openai.com/codex/hooks> +
 | Aspect | Codex | Claude (existing) |
 |---|---|---|
 | Config file | `~/.codex/hooks.json` (or `[hooks]` in `config.toml`) | `~/.claude/settings.json` |
-| Feature flag | `[features].hooks = true` (alias `codex_hooks`), **default `true`** | n/a |
+| Feature flag | `[features].hooks = true`, **default `true`** (`codex_hooks` is deprecated; do not use it) | n/a |
 | Events | SessionStart, PreToolUse, PostToolUse, PermissionRequest, UserPromptSubmit, Stop | + SessionEnd, Notification, StatusLine |
 | Stdin common fields | session_id, cwd, hook_event_name, transcript_path, model, turn_id | session_id, cwd, hook_event_name, transcript_path |
 | PreToolUse block | `{permissionDecision:"deny", permissionDecisionReason}` | `{permissionDecision:"deny"}` (same) |
@@ -143,3 +143,12 @@ Existing Claude users on update:
 2. CodexHookInstaller writes `~/.codex/hooks.json` if `~/.codex/` exists; skips
    silently otherwise (mirrors Claude's "skip if `~/.claude/` doesn't exist"
    pattern).
+
+
+### Feature flag update (2026-10-08)
+
+Current Codex warns when `[features].codex_hooks` is set. Use the canonical
+`hooks` flag (or `--enable hooks` for a one-off invocation); hooks are enabled
+by default. This corrects the historical alias note above. ZackEyes does not
+read or modify `~/.codex/config.toml`; an existing deprecated user setting
+must be migrated separately. [Official feature flags](https://developers.openai.com/codex/config-basic#feature-flags).

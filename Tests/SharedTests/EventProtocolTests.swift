@@ -232,3 +232,30 @@ import Foundation
     let event = try JSONDecoder().decode(BridgeEvent.self, from: Data(json.utf8))
     #expect(event.isReplayed == true)
 }
+
+@Test func decodeBridgeEvent_codexModelStringPreservesPermissionRequest() throws {
+    let data = Data(#"{"_bridge_event":"PermissionRequest","_bridge_agent":"codex","session_id":"parent","model":"gpt-6.1-sol","tool_name":"Bash","tool_input":{"command":"pwd"},"turn_id":"turn-1","tool_use_id":"call-1"}"#.utf8)
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: data)
+    #expect(event.model?["id"]?.value as? String == "gpt-6.1-sol")
+    #expect(event.requiresBlockingResponse)
+    // Verify normalization remains compatible with existing encode/decode consumers.
+    let roundTrip = try JSONDecoder().decode(BridgeEvent.self, from: JSONEncoder().encode(event))
+    #expect(roundTrip.model?["id"]?.value as? String == "gpt-6.1-sol")
+}
+
+@Test func decodeBridgeEvent_invalidOptionalModelPreservesLifecycle() throws {
+    let data = Data(#"{"_bridge_event":"Stop","_bridge_agent":"codex","session_id":"s1","model":42}"#.utf8)
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: data)
+    #expect(event.sessionId == "s1")
+    #expect(event.model == nil)
+}
+
+@Test func decodeBridgeEvent_preservesCodexCorrelationIds() throws {
+    let data = Data(#"{"_bridge_event":"PreToolUse","_bridge_agent":"codex","session_id":"s1","turn_id":"turn-1","tool_use_id":"call-1"}"#.utf8)
+    let event = try JSONDecoder().decode(BridgeEvent.self, from: data)
+    #expect(event.turnId == "turn-1")
+    #expect(event.toolUseId == "call-1")
+    let roundTrip = try JSONDecoder().decode(BridgeEvent.self, from: JSONEncoder().encode(event))
+    #expect(roundTrip.turnId == event.turnId)
+    #expect(roundTrip.toolUseId == event.toolUseId)
+}

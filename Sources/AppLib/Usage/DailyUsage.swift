@@ -6,6 +6,7 @@ public struct ModelTokenTally: Sendable, Equatable {
     public var output: Int
     public var cacheRead: Int
     public var cacheCreate: Int
+    public var codexBilling: CodexBillingUnits? = nil
     public init(input: Int = 0, output: Int = 0, cacheRead: Int = 0, cacheCreate: Int = 0) {
         self.input = input; self.output = output
         self.cacheRead = cacheRead; self.cacheCreate = cacheCreate
@@ -23,11 +24,10 @@ public struct DayUsage: Sendable, Codable, Equatable {
     // Token composition across both agents (display-only breakdown; does NOT change the
     // count or cost basis). Invariant: totalTokens == inputTokens + outputTokens + cacheWriteTokens.
     // cacheReadTokens (cache reuse) is deliberately excluded from the headline count but
-    // surfaced here for transparency — see #167. Codex has no cache-creation, so its
-    // contribution to cacheWriteTokens is always 0.
+    // surfaced here for transparency — see #167. Codex cache writes are counted only when explicitly reported.
     public var inputTokens: Int          // uncached input (Codex: input − cached)
     public var outputTokens: Int
-    public var cacheWriteTokens: Int     // Claude cache_creation only
+    public var cacheWriteTokens: Int     // Explicit cache creation/write tokens
     public var cacheReadTokens: Int      // Claude cache_read + Codex cached_input
     public var totalTokens: Int { claudeTokens + codexTokens }
 
@@ -51,6 +51,12 @@ extension UsageTracker {
         for (day, models) in src {
             for (model, t) in models {
                 var cur = dst[day]?[model] ?? ModelTokenTally()
+                if cur.codexBilling != nil || t.codexBilling != nil {
+                    func units(_ value: ModelTokenTally) -> CodexBillingUnits {
+                        value.codexBilling ?? .estimate(CodexUsageTotals(input: value.input, cached: value.cacheRead, writes: value.cacheCreate, output: value.output), model: model, tier: nil, request: nil)
+                    }
+                    cur.codexBilling = units(cur) + units(t)
+                }
                 cur.input += t.input; cur.output += t.output
                 cur.cacheRead += t.cacheRead; cur.cacheCreate += t.cacheCreate
                 dst[day, default: [:]][model] = cur
@@ -103,15 +109,15 @@ extension UsageTracker {
                     // Codex's input_tokens INCLUDES cached_input (stored in cacheRead),
                     // which is cache reuse — the analogue of Claude's cache_read. Exclude
                     // it so the count is distinct tokens, same convention as Claude above.
-                    let uncached = max(0, t.input - t.cacheRead)
-                    u.codexTokens += uncached + t.output
+                    let uncached = max(0, t.input - t.cacheRead - t.cacheCreate)
+                    u.codexTokens += uncached + t.cacheCreate + t.output
                     u.inputTokens += uncached
                     u.outputTokens += t.output
-                    u.cacheReadTokens += t.cacheRead   // codex has no cache-creation
+                    u.cacheReadTokens += t.cacheRead
+                    u.cacheWriteTokens += t.cacheCreate
                     if let p = pricing.price(for: model) {
-                        cost += Double(uncached) * p.inputPerToken
-                              + Double(t.cacheRead) * p.cacheReadPerToken
-                              + Double(t.output) * p.outputPerToken
+                        let units = t.codexBilling ?? .estimate(CodexUsageTotals(input: t.input, cached: t.cacheRead, writes: t.cacheCreate, output: t.output), model: model, tier: nil, request: nil)
+                        cost += units.cost(using: p)
                         priced = true
                     } else { u.anyUnpriced = true }
                 }
@@ -132,7 +138,8 @@ extension UsageTracker {
         let isoNoFrac = ISO8601DateFormatter()
         var out: [Date: [String: ModelTokenTally]] = [:]
         var currentModel = "unknown"
-        var prevInput = 0, prevCached = 0, prevOutput = 0
+        var prevInput = 0, prevCached = 0, prevOutput = 0, prevWrites = 0
+        var serviceTier: String?
         var sawTotals = false
 
         for line in text.split(separator: "\n") {
@@ -142,7 +149,16 @@ extension UsageTracker {
             let payload = obj["payload"] as? [String: Any]
 
             if type == "turn_context", let m = payload?["model"] as? String {
-                currentModel = m; continue
+                currentModel = m
+                if payload?.keys.contains("service_tier") == true { serviceTier = payload?["service_tier"] as? String }
+                continue
+            }
+            if type == "event_msg", let kind = payload?["type"] as? String,
+               kind == "thread_settings_applied" || kind == "session_configured" {
+                let settings = (payload?["thread_settings"] as? [String: Any]) ?? payload ?? [:]
+                if let model = settings["model"] as? String { currentModel = model }
+                serviceTier = settings["service_tier"] as? String
+                continue
             }
             guard type == "event_msg",
                   (payload?["type"] as? String) == "token_count",
@@ -163,6 +179,7 @@ extension UsageTracker {
             let curInput = tok(totals["input_tokens"], prevInput)
             let curCached = tok(totals["cached_input_tokens"], prevCached)
             let curOutput = tok(totals["output_tokens"], prevOutput)
+            let curWrites = tok(totals["cache_write_input_tokens"], prevWrites)
             // Schema assumption (locked by fixtures): a rollout's total_token_usage
             // starts from 0 at turn 1, and `codex --resume` appends to the ORIGINAL
             // file (never a continuation carrying prior totals), so the first totals
@@ -170,7 +187,8 @@ extension UsageTracker {
             let dInput = sawTotals ? max(0, curInput - prevInput) : curInput
             let dCached = sawTotals ? max(0, curCached - prevCached) : curCached
             let dOutput = sawTotals ? max(0, curOutput - prevOutput) : curOutput
-            prevInput = curInput; prevCached = curCached; prevOutput = curOutput; sawTotals = true
+            let dWrites = sawTotals ? max(0, curWrites - prevWrites) : curWrites
+            prevInput = curInput; prevCached = curCached; prevOutput = curOutput; prevWrites = curWrites; sawTotals = true
 
             // Drop no-op rows. cached_input_tokens is a subset of input_tokens, so
             // dCached > 0 implies dInput > 0 — the (dInput + dOutput) > 0 check never
@@ -184,6 +202,13 @@ extension UsageTracker {
             tally.input += dInput
             tally.cacheRead += dCached
             tally.output += dOutput
+            tally.cacheCreate += dWrites
+            let usage = CodexUsageTotals(input: dInput, cached: dCached, writes: dWrites, output: dOutput)
+            var request: CodexUsageTotals?
+            if let last = info["last_token_usage"] as? [String: Any], last["input_tokens"] != nil, last["output_tokens"] != nil {
+                request = CodexUsageTotals(input: tok(last["input_tokens"], 0), cached: tok(last["cached_input_tokens"], 0), writes: tok(last["cache_write_input_tokens"], 0), output: tok(last["output_tokens"], 0))
+            }
+            tally.codexBilling = (tally.codexBilling ?? CodexBillingUnits()) + .estimate(usage, model: currentModel, tier: serviceTier, request: request)
             out[day, default: [:]][currentModel] = tally
         }
         return out

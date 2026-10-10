@@ -34,6 +34,16 @@ public protocol CodexJsonlTailerDelegate: AnyObject {
 
     @MainActor
     func codexTailer(_ tailer: CodexJsonlTailer, didDetectError event: CodexErrorEvent)
+
+    @MainActor
+    func codexTailer(_ tailer: CodexJsonlTailer, didDetectCompacted event: CodexCompactedEvent)
+}
+
+public struct CodexCompactedEvent: Sendable {
+    public let sessionId: String
+    public let cwd: String?
+    public let transcriptPath: String
+    public let observedAt: Date?
 }
 
 public struct CodexTaskStartedEvent: Sendable {
@@ -67,6 +77,8 @@ public struct CodexTokenCountEvent: Sendable {
     public let cumulativeInput: Int?
     public let cumulativeCached: Int?
     public let cumulativeOutput: Int?
+    public var cumulativeWrites: Int? = nil
+    public var requestUsage: CodexUsageTotals? = nil
 }
 
 /// Codex emits a top-level `turn_context` JSONL row per turn whose payload
@@ -78,6 +90,10 @@ public struct CodexModelEvent: Sendable {
     public let cwd: String?
     public let modelDisplayName: String
     public let transcriptPath: String
+    public var serviceTier: String? = nil
+    public var updatesServiceTier = false
+    public var reasoningEffort: String? = nil
+    public var updatesReasoningEffort = false
 }
 
 /// Codex `turn_context.approval_policy` + `sandbox_policy.type` snapshot
@@ -117,6 +133,7 @@ public struct CodexErrorEvent: Sendable {
 }
 
 public enum CodexTaskLifecycleEvent: Sendable {
+    case compacted(CodexCompactedEvent)
     case started(CodexTaskStartedEvent)
     case complete(CodexTaskCompleteEvent)
     case tokenCount(CodexTokenCountEvent)
@@ -208,6 +225,9 @@ public final class CodexJsonlTailer {
             for file in files where file.pathExtension == "jsonl" {
                 guard let modDate = (try? file.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate,
                       modDate >= cutoff else { continue }
+                // Spawned children are represented by their parent's hooks;
+                // watching them as user threads duplicates cards/notifications.
+                guard parseSessionMetaParentThreadId(at: file) == nil else { continue }
                 result.append(file)
             }
         }
@@ -249,6 +269,11 @@ public final class CodexJsonlTailer {
             Task { @MainActor in
                 guard let self = self else { return }
                 self.delegate?.codexTailer(self, didDetectError: event)
+            }
+        }, onCompacted: { [weak self] event in
+            Task { @MainActor in
+                guard let self else { return }
+                self.delegate?.codexTailer(self, didDetectCompacted: event)
             }
         }, onClosed: { [weak self] closedURL in
             Task { @MainActor in
@@ -300,12 +325,19 @@ extension CodexJsonlTailer {
             // respective fields are populated — they're independent surfaces.
             if topType == "turn_context" {
                 if let model = payload["model"] as? String, !model.isEmpty {
-                    events.append(.modelChanged(CodexModelEvent(
+                    var event = CodexModelEvent(
                         sessionId: sessionId,
                         cwd: cwd,
                         modelDisplayName: model,
                         transcriptPath: transcriptPath
-                    )))
+                    )
+                    // Absence preserves the previous snapshot; an explicit
+                    // null clears it, matching daily rollout parsing.
+                    event.updatesServiceTier = payload.keys.contains("service_tier")
+                    event.serviceTier = payload["service_tier"] as? String
+                    event.updatesReasoningEffort = payload.keys.contains("effort")
+                    event.reasoningEffort = normalizedEffort(payload["effort"])
+                    events.append(.modelChanged(event))
                 }
                 let approval = payload["approval_policy"] as? String
                 let sandboxType = (payload["sandbox_policy"] as? [String: Any])?["type"] as? String
@@ -324,6 +356,21 @@ extension CodexJsonlTailer {
             guard topType == "event_msg" else { continue }
 
             switch payload["type"] as? String {
+            case "thread_settings_applied", "session_configured":
+                let settings = (payload["thread_settings"] as? [String: Any]) ?? payload
+                if let model = settings["model"] as? String, !model.isEmpty {
+                    var event = CodexModelEvent(sessionId: sessionId, cwd: cwd, modelDisplayName: model, transcriptPath: transcriptPath)
+                    event.serviceTier = settings["service_tier"] as? String
+                    event.updatesServiceTier = true
+                    event.updatesReasoningEffort = settings.keys.contains("reasoning_effort")
+                    event.reasoningEffort = normalizedEffort(settings["reasoning_effort"])
+                    events.append(.modelChanged(event))
+                }
+            case "context_compacted":
+                events.append(.compacted(CodexCompactedEvent(
+                    sessionId: sessionId, cwd: cwd, transcriptPath: transcriptPath,
+                    observedAt: parseCodexDate(obj["timestamp"]))))
+
             case "task_started":
                 let turnId = payload["turn_id"] as? String
                 let startedAt = parseCodexDate(payload["started_at"])
@@ -476,7 +523,7 @@ extension CodexJsonlTailer {
         let cumInput = totals.flatMap { number($0["input_tokens"]) }.map { Self.safeTokenInt($0) }
         let cumCached = totals.flatMap { number($0["cached_input_tokens"]) }.map { Self.safeTokenInt($0) }
         let cumOutput = totals.flatMap { number($0["output_tokens"]) }.map { Self.safeTokenInt($0) }
-        return CodexTokenCountEvent(
+        var event = CodexTokenCountEvent(
             sessionId: sessionId,
             cwd: cwd,
             contextUsedPct: (contextTokens / window) * 100,
@@ -486,6 +533,19 @@ extension CodexJsonlTailer {
             cumulativeCached: cumCached,
             cumulativeOutput: cumOutput
         )
+        event.cumulativeWrites = totals.flatMap { number($0["cache_write_input_tokens"]) }.map { Self.safeTokenInt($0) }
+        if let input = number(lastUsage["input_tokens"]), let output = number(lastUsage["output_tokens"]) {
+            event.requestUsage = CodexUsageTotals(input: safeTokenInt(input), cached: safeTokenInt(number(lastUsage["cached_input_tokens"]) ?? 0), writes: safeTokenInt(number(lastUsage["cache_write_input_tokens"]) ?? 0), output: safeTokenInt(output))
+        }
+        return event
+    }
+
+    private nonisolated static func normalizedEffort(_ raw: Any?) -> String? {
+        guard let value = raw as? String else { return nil }
+        let effort = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !effort.isEmpty, effort.count <= 32,
+              effort.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" }) else { return nil }
+        return effort
     }
 
     private nonisolated static func number(_ raw: Any?) -> Double? {
@@ -524,6 +584,7 @@ private final class Watcher: @unchecked Sendable {
     private let onSubagent: (CodexSubagentEvent) -> Void
     private let onPolicyChanged: (CodexPolicyEvent) -> Void
     private let onError: (CodexErrorEvent) -> Void
+    private let onCompacted: (CodexCompactedEvent) -> Void
     private let onClosed: (URL) -> Void
     /// Guards `isCancelled` so the MainActor `stop()` path and the
     /// DispatchSource event handler (private queue, fires on .delete /
@@ -540,6 +601,7 @@ private final class Watcher: @unchecked Sendable {
         onSubagent: @escaping (CodexSubagentEvent) -> Void,
         onPolicyChanged: @escaping (CodexPolicyEvent) -> Void,
         onError: @escaping (CodexErrorEvent) -> Void,
+        onCompacted: @escaping (CodexCompactedEvent) -> Void,
         onClosed: @escaping (URL) -> Void
     ) {
         // Codex session id is encoded in the rollout filename; bail if we
@@ -565,6 +627,7 @@ private final class Watcher: @unchecked Sendable {
         self.onSubagent = onSubagent
         self.onPolicyChanged = onPolicyChanged
         self.onError = onError
+        self.onCompacted = onCompacted
         self.onClosed = onClosed
 
         // Read session_meta once for cwd. Best-effort — if the file doesn't
@@ -590,12 +653,12 @@ private final class Watcher: @unchecked Sendable {
         // next turn_context arrives via the stream.
         if let initial = CodexJsonlTailer.parseInitialTurnContext(at: url) {
             if let initialModel = initial.model {
-                onModelChanged(CodexModelEvent(
-                    sessionId: id,
-                    cwd: cwd,
-                    modelDisplayName: initialModel,
-                    transcriptPath: url.path
-                ))
+                var event = CodexModelEvent(sessionId: id, cwd: cwd, modelDisplayName: initialModel, transcriptPath: url.path)
+                event.reasoningEffort = initial.reasoningEffort
+                event.updatesReasoningEffort = initial.updatesReasoningEffort
+                event.serviceTier = initial.serviceTier
+                event.updatesServiceTier = initial.updatesServiceTier
+                onModelChanged(event)
             }
             if initial.approvalPolicy != nil || initial.sandboxType != nil {
                 onPolicyChanged(CodexPolicyEvent(
@@ -701,6 +764,8 @@ private final class Watcher: @unchecked Sendable {
             )
             for ev in events {
                 switch ev {
+                case .compacted(let event):
+                    onCompacted(event)
                 case .started(let started):
                     onTaskStarted(started)
                 case .complete(let complete):
@@ -751,6 +816,19 @@ extension CodexJsonlTailer {
         return nil
     }
 
+    /// Official SubAgentSource::ThreadSpawn metadata. Preserve standalone
+    /// guardian/review rollouts; only an explicit parent link hides a child.
+    nonisolated static func parseSessionMetaParentThreadId(at url: URL) -> String? {
+        guard let payload = readSessionMetaPayload(at: url) else { return nil }
+        if let parent = payload["parent_thread_id"] as? String, !parent.isEmpty { return parent }
+        guard let source = payload["source"] as? [String: Any],
+              let subagent = source["subagent"] as? [String: Any],
+              let spawn = subagent["thread_spawn"] as? [String: Any],
+              let parent = spawn["parent_thread_id"] as? String, !parent.isEmpty
+        else { return nil }
+        return parent
+    }
+
     private nonisolated static func readSessionMetaPayload(at url: URL) -> [String: Any]? {
         guard let line = readFirstLine(of: url, maxBytes: 1_048_576),
               let lineData = line.data(using: .utf8),
@@ -762,58 +840,62 @@ extension CodexJsonlTailer {
         return payload
     }
 
-    /// Subset of the first `turn_context.payload` we care about at watcher
+    /// Latest observed model, effort and policy metadata at watcher
     /// attach time. Any field can be nil — the rollout may have been written
     /// without it, or our schema knowledge may have drifted.
     public struct InitialTurnContext: Sendable, Equatable {
         public let model: String?
         public let approvalPolicy: String?
         public let sandboxType: String?
+        public var reasoningEffort: String? = nil
+        public var updatesReasoningEffort = false
+        public var serviceTier: String? = nil
+        public var updatesServiceTier = false
     }
 
-    /// Scan the rollout from the start for the first `turn_context` row and
-    /// extract model + policy fields in one pass. Used at watcher-attach time
-    /// so resumed sessions surface this state before the next turn fires.
+    /// Fold bounded head + tail metadata at attach time. Recent context and
+    /// settings snapshots replace the first turn's model/effort without a full
+    /// transcript read or replaying historical completions to the delegate.
     nonisolated static func parseInitialTurnContext(at url: URL) -> InitialTurnContext? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
-
-        // Slightly above the 1 MB session_meta cap so a turn_context line that
-        // sits immediately after a maximally-sized session_meta still lands in
-        // the read.
         let maxBytes = 1_100_000
-        guard let data = try? handle.read(upToCount: maxBytes), !data.isEmpty else {
-            return nil
+        guard let head = try? handle.read(upToCount: maxBytes), !head.isEmpty else { return nil }
+        var text = String(decoding: head, as: UTF8.self) + "\n"
+        if let size = try? handle.seekToEnd(), size > UInt64(maxBytes) {
+            let offset = size - UInt64(maxBytes)
+            do {
+                try handle.seek(toOffset: offset)
+                if let tail = try handle.read(upToCount: maxBytes), let newline = tail.firstIndex(of: 0x0A) {
+                    // The first segment can begin in the middle of a row.
+                    text += String(decoding: tail.suffix(from: tail.index(after: newline)), as: UTF8.self) + "\n"
+                }
+            } catch { /* Head metadata remains a best-effort fallback. */ }
         }
-        // String(decoding:as:) replaces invalid UTF-8 sequences with U+FFFD
-        // instead of failing — protects against the read truncating in the
-        // middle of a multi-byte char at the buffer edge.
-        let text = String(decoding: data, as: UTF8.self)
-
-        // Process every non-empty segment. Partial lines (the trailing segment
-        // when we hit the read cap mid-line, or anything we corrupted with the
-        // replacement char) just fail JSON parse and get skipped silently.
-        for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
-            guard let lineData = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any],
-                  obj["type"] as? String == "turn_context",
-                  let payload = obj["payload"] as? [String: Any] else {
-                continue
-            }
-            let model = (payload["model"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            let approval = payload["approval_policy"] as? String
-            let sandbox = (payload["sandbox_policy"] as? [String: Any])?["type"] as? String
-            // Don't return an empty result — keep scanning until we hit a
-            // turn_context that actually carries something useful.
-            if model != nil || approval != nil || sandbox != nil {
-                return InitialTurnContext(
-                    model: model,
-                    approvalPolicy: approval,
-                    sandboxType: sandbox
-                )
+        var pending = ""
+        let events = parseTaskLifecycleEvents(chunk: text, pending: &pending, sessionId: "", cwd: nil, transcriptPath: url.path)
+        var model: String?, approval: String?, sandbox: String?, effort: String?, tier: String?
+        var updatesEffort = false, updatesTier = false
+        for event in events {
+            switch event {
+            case .modelChanged(let context):
+                if model != context.modelDisplayName { effort = nil; updatesEffort = false }
+                model = context.modelDisplayName
+                if context.updatesReasoningEffort { effort = context.reasoningEffort; updatesEffort = true }
+                if context.updatesServiceTier { tier = context.serviceTier; updatesTier = true }
+            case .policyChanged(let policy):
+                approval = policy.approvalPolicy ?? approval
+                sandbox = policy.sandboxType ?? sandbox
+            default: break
             }
         }
-        return nil
+        guard model != nil || approval != nil || sandbox != nil else { return nil }
+        var context = InitialTurnContext(model: model, approvalPolicy: approval, sandboxType: sandbox)
+        context.reasoningEffort = effort
+        context.updatesReasoningEffort = updatesEffort
+        context.serviceTier = tier
+        context.updatesServiceTier = updatesTier
+        return context
     }
 
     /// Backward-compatible wrapper used by older callsites and tests.
