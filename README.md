@@ -169,6 +169,16 @@ The product landing page at [zackeyes.vercel.app](https://zackeyes.vercel.app) l
 - [`CLAUDE.md`](CLAUDE.md) — agent harness instructions for working on this project
 - [`AGENTS.md`](AGENTS.md) — development workflow
 
+## Alternatives
+
+A few similar tools, so you can pick the right one:
+
+- [Vibe Island](https://vibeisland.app) — the paid original ($19.99 one-time): 25+ agents, 20+ terminals, SSH remote monitoring. Pick it if you run many agents or need remote sessions. [Full comparison](https://zackeyes.vercel.app/vs-vibe-island)
+- [open-vibe-island](https://github.com/Octane0411/open-vibe-island) — free and open source (GPL v3): 10+ agents, broad terminal coverage. Pick it if you need Cursor / Gemini CLI / OpenCode and don't mind copyleft. [Full comparison](https://zackeyes.vercel.app/vs-open-vibe-island)
+- [Hallmonitor](https://github.com/hiteshbandhu/hallmonitor) — free and MIT like ZackEyes, with SSH multi-machine monitoring and a terminal dashboard. Pick it if you monitor remote boxes. [Full comparison](https://zackeyes.vercel.app/vs-hallmonitor)
+
+ZackEyes is the pick when your workflow is Claude Code + Codex CLI and you want per-session USD cost tracking, themes with matching sounds, and a permissive MIT licence — free forever.
+
 ## License
 
 MIT. Use it, fork it, ship a competing product. Just don't break Claude Code.

@@ -1,0 +1,247 @@
+---
+import SiteFooter from '../components/SiteFooter.astro';
+import SiteHeader from '../components/SiteHeader.astro';
+import SiteLayout from '../layouts/SiteLayout.astro';
+import { releaseName, downloadUrl, sourceUrl } from '../lib/release.mjs';
+
+const description =
+  'ZackEyes vs open-vibe-island: a factual comparison of two free, open-source macOS notch panels for AI coding agents. Licence (MIT vs GPL), agent coverage, cost tracking, and which one fits which workflow.';
+
+// Competitor facts below were read from github.com/Octane0411/open-vibe-island
+// on 2026-10-08 and are stated as-of that date. Keep the date honest when
+// refreshing this page — a stale claim about a competitor is worse than no
+// comparison page at all.
+const competitorCheckedOn = '2026-10-08';
+
+const rows = [
+  {
+    label: 'Price',
+    zack: 'Free',
+    rival: 'Free'
+  },
+  {
+    label: 'Licence',
+    zack: 'MIT — permissive; fork it into commercial or closed products freely',
+    rival: 'GPL v3 — copyleft; derivative works must stay open source'
+  },
+  {
+    label: 'Agents',
+    zack: 'Claude Code and Codex CLI, tracked in depth',
+    rival: '10+ agents, including Claude Code, Codex, Cursor, Gemini CLI, OpenCode, and Kimi CLI'
+  },
+  {
+    label: 'Surfaces',
+    zack: 'Dynamic Island-style notch panel plus menu bar',
+    rival: 'Notch panel (or top bar on Macs without a notch)'
+  },
+  {
+    label: 'Permission prompts',
+    zack: 'Surfaced in the notch; AskUserQuestion hands you back to the terminal to answer',
+    rival: 'Surfaced in the notch with one-click approval'
+  },
+  {
+    label: 'Jump to terminal',
+    zack: '9 terminals and editors, including iTerm2, Ghostty, Warp, Kitty, VS Code, and Cursor',
+    rival: '15+ terminals and IDEs'
+  },
+  {
+    label: 'Cost and token tracking',
+    zack: 'Per-session tokens and USD, plus a daily total with a 7-day sparkline; pricing table is bundled, so no API key',
+    rival: 'Token usage shown; USD cost conversion not published'
+  },
+  {
+    label: 'Rate limits',
+    zack: '5-hour and 7-day usage pressure gauges for both agents',
+    rival: 'Usage remaining visible in the collapsed notch'
+  },
+  {
+    label: 'Themes and sounds',
+    zack: '4 themes (Rock Legends, F1 2026, AI Moguls, Crayon Shin-chan) with matching notification sounds',
+    rival: 'Not published'
+  },
+  {
+    label: 'Telemetry',
+    zack: 'None — and you can verify that by reading the source',
+    rival: 'None — local-first, no account, no server'
+  },
+  {
+    label: 'Distribution',
+    zack: 'Signed DMG on GitHub Releases',
+    rival: 'Community DMG builds and source builds on GitHub (varies by fork)'
+  },
+  {
+    label: 'Minimum macOS',
+    zack: 'macOS 14',
+    rival: 'macOS 14 (per the main fork)'
+  }
+];
+
+const faqs = [
+  {
+    question: 'What is the difference between ZackEyes and open-vibe-island?',
+    answer:
+      'Both are free, open-source, local-first notch panels for AI coding agents. open-vibe-island covers 10+ agents broadly — Cursor, Gemini CLI, OpenCode, and more — and is GPL v3 licensed. ZackEyes goes deep on two agents, Claude Code and Codex CLI, adds per-session USD cost tracking and themes, and is MIT licensed.'
+  },
+  {
+    question: 'Is there a free alternative to Vibe Island?',
+    answer:
+      'Two, actually. ZackEyes (MIT) and open-vibe-island (GPL v3) are both free and open-source macOS notch panels for AI coding agents, positioned as free alternatives to the paid Vibe Island app. ZackEyes covers Claude Code and Codex CLI in depth with USD cost tracking; open-vibe-island covers 10+ agents more broadly.'
+  },
+  {
+    question: 'MIT vs GPL — why does the licence matter?',
+    answer:
+      'MIT is permissive: you can fork the code, modify it, and ship it inside commercial or closed products. GPL v3 is copyleft: if you distribute a modified version, it must stay open source under the same licence. If you hack on the tool at work or might embed it in something you sell, MIT is the simpler choice.'
+  },
+  {
+    question: 'Which one should I use?',
+    answer:
+      'Use open-vibe-island if your workflow spans agents beyond Claude Code and Codex — Cursor, Gemini CLI, OpenCode, Kimi CLI — and you are comfortable with GPL v3. Use ZackEyes if Claude Code and Codex CLI are your workflow, you want per-session USD cost tracking and themes, or you want a permissive MIT licence.'
+  },
+  {
+    question: 'Is ZackEyes really free, or is there a paid tier?',
+    answer:
+      'ZackEyes is entirely free with no paid tier, no accounts, and no upsell. The source is MIT licensed on GitHub, and releases ship as a signed DMG.'
+  }
+];
+
+const faqStructuredData = {
+  '@type': 'FAQPage',
+  '@id': 'https://zackeyes.vercel.app/vs-open-vibe-island#faq',
+  mainEntity: faqs.map((item) => ({
+    '@type': 'Question',
+    name: item.question,
+    acceptedAnswer: {
+      '@type': 'Answer',
+      text: item.answer
+    }
+  }))
+};
+---
+
+<SiteLayout
+  title="ZackEyes vs open-vibe-island - Notch Panels for AI Coding Agents"
+  description={description}
+  canonical="https://zackeyes.vercel.app/vs-open-vibe-island"
+  structuredData={[faqStructuredData]}
+>
+  <div class="grain" aria-hidden="true"></div>
+
+  <div class="site-shell">
+    <SiteHeader />
+
+    <main id="top">
+      <section class="policy-hero compact-page-hero" aria-labelledby="vs-title">
+        <div class="policy-shell">
+          <div class="section-eyebrow">Comparison</div>
+          <h1 id="vs-title">ZackEyes vs open-vibe-island.</h1>
+          <p class="policy-lede">
+            ZackEyes and open-vibe-island are the two free, open-source answers to paid notch
+            panels for AI coding agents. open-vibe-island covers 10+ agents broadly under GPL v3.
+            ZackEyes goes deep on Claude Code and Codex CLI under the permissive MIT licence,
+            with USD cost tracking and themes.
+          </p>
+          <p class="policy-lede muted-note">
+            open-vibe-island details were checked on {competitorCheckedOn} against
+            <a href="https://github.com/Octane0411/open-vibe-island" rel="noopener nofollow">github.com/Octane0411/open-vibe-island</a>
+            and its forks. ZackEyes details describe {releaseName}. If something here is out of
+            date, please <a href={sourceUrl} rel="noopener">open an issue</a> — an inaccurate
+            comparison helps nobody.
+          </p>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="vs-table-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="vs-table-title">Side by side.</h2>
+          <div class="compare-scroll">
+            <table class="compare-table">
+              <caption class="visually-hidden">
+                Feature comparison between ZackEyes and open-vibe-island
+              </caption>
+              <thead>
+                <tr>
+                  <th scope="col">&nbsp;</th>
+                  <th scope="col">ZackEyes</th>
+                  <th scope="col">open-vibe-island</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr>
+                    <th scope="row">{row.label}</th>
+                    <td>{row.zack}</td>
+                    <td>{row.rival}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="vs-pick-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="vs-pick-title">Which one fits.</h2>
+          <div class="spec-grid">
+            <article>
+              <span>Pick open-vibe-island</span>
+              <strong>You run more than two agents</strong>
+              <p>
+                open-vibe-island tracks 10+ agents including Cursor, Gemini CLI, OpenCode, and
+                Kimi CLI, and jumps to 15+ terminals and IDEs. If your day spans several agent
+                CLIs, breadth wins — ZackEyes only reads Claude Code and Codex CLI state.
+              </p>
+            </article>
+            <article>
+              <span>Pick open-vibe-island</span>
+              <strong>You are fine with GPL v3</strong>
+              <p>
+                GPL v3 keeps every derivative open, which suits personal and community use.
+                If you never plan to embed the tool in closed or commercial software, the
+                copyleft clause costs you nothing.
+              </p>
+            </article>
+            <article>
+              <span>Pick ZackEyes</span>
+              <strong>You want USD cost tracking</strong>
+              <p>
+                ZackEyes shows per-session tokens and converts them to USD from a bundled
+                pricing table, with a daily total and a 7-day sparkline — computed locally,
+                no API key. open-vibe-island shows token usage without a USD figure.
+              </p>
+            </article>
+            <article>
+              <span>Pick ZackEyes</span>
+              <strong>The licence matters to you</strong>
+              <p>
+                MIT lets you fork, modify, and ship the code inside commercial or closed
+                products. If you hack on the tool at work or might build on it, the permissive
+                licence is the simpler choice — plus you get themes with matching sounds.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="faq-band" aria-labelledby="vs-faq-title">
+        <div class="section-inner">
+          <h2 class="section-title" id="vs-faq-title">Questions.</h2>
+          <div class="faq-list" id="faq">
+            {faqs.map((item) => (
+              <details class="faq-item" open>
+                <summary>{item.question}</summary>
+                <p>{item.answer}</p>
+              </details>
+            ))}
+          </div>
+          <div class="final-actions align-left">
+            <a class="button primary" href={downloadUrl}>Download ZackEyes <span aria-hidden="true">↓</span></a>
+            <a class="button" href="/docs">Read the docs <span aria-hidden="true">→</span></a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <SiteFooter />
+  </div>
+</SiteLayout>

@@ -24,7 +24,9 @@ const publicPagePaths = [
   'src/pages/security.astro',
   'src/pages/download.astro',
   'src/pages/privacy.astro',
-  'src/pages/vs-vibe-island.astro'
+  'src/pages/vs-vibe-island.astro',
+  'src/pages/vs-hallmonitor.astro',
+  'src/pages/vs-open-vibe-island.astro'
 ];
 
 function read(path) {

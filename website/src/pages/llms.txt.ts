@@ -42,6 +42,8 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 - Roadmap: https://zackeyes.vercel.app/roadmap
 - Direct answers: https://zackeyes.vercel.app/answers
 - ZackEyes vs Vibe Island comparison: https://zackeyes.vercel.app/vs-vibe-island
+- ZackEyes vs Hallmonitor comparison: https://zackeyes.vercel.app/vs-hallmonitor
+- ZackEyes vs open-vibe-island comparison: https://zackeyes.vercel.app/vs-open-vibe-island
 - Security and safety model: https://zackeyes.vercel.app/security
 - Privacy and local-first notes: https://zackeyes.vercel.app/privacy
 - Full LLM context: https://zackeyes.vercel.app/llms-full.txt
