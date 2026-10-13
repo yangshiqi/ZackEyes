@@ -74,18 +74,24 @@ Claude Code 触发 SessionStart/PreToolUse/PostToolUse/Stop hook
   → NotchPanel 响应式更新 UI
 ```
 
-### AskUserQuestion 自动作答流（双向，同步）
+### AskUserQuestion 作答流（双向，同步，#260 opt-in）
 
 ```
 Claude Code 触发 PreToolUse hook (tool_name="AskUserQuestion")
-  → bridge --event PreToolUse 阻塞 60s 等响应（其他 PreToolUse 仍 fire-and-forget）
+  → bridge --event PreToolUse 阻塞 600s 等响应（其他 PreToolUse 仍 fire-and-forget）
     → SocketServer 持 fd（沿用 PermissionRequest 的 fd-hold 模式）
-    → SessionStore 标 pending（responder 类型为 BridgeResponse）
-    → NotchExpandedView 渲染**可点击**选项（单选 tap 直接提交，多选 checkbox + Submit）
-    → 用户点 → submitAskUQAnswer 调 responder(.preToolUse(...))
-    → bridge stdout = JSON → CC 消费 updatedInput.answers，跳过终端 UI
-  → 60s 内未点 / app 崩 / socket 异常 → bridge 静默 exit 0 → CC 渲染终端 UI
-    （SocketClient 用 poll() 检测 POLLHUP，app 崩溃时 < 1s 内回退）
+    → AppDelegate 查 answerQuestionsFromNotch 开关（默认 OFF）
+      → OFF: 立刻 responder(.deferToTerminal) → CC 渲染终端 UI；
+             弹窗保持 notice-only + "answer in terminal" CTA（#260 前的行为）
+      → ON:  SessionStore 标 pending（responder 为 live bridge，answerableFromNotch=true）
+             + 启动 120s 超时计时
+    → NotchExpandedView 渲染 AskUQAnswerBlock：每题选项（单选 radio / 多选 checkbox）
+      + Submit + "Answer in terminal" 逃生口
+    → 用户 Submit → submitAskUQAnswer 调 responder(.preToolUse(askUQAnswers))
+      → bridge stdout = JSON → CC 消费 updatedInput.answers，跳过终端 UI
+    → 用户点 "Answer in terminal" / 120s 超时无应答 → responder(.deferToTerminal)
+      → bridge 看到 EOF，静默 exit 0 → CC 渲染终端 UI
+    → app 崩 / socket 异常 → bridge 600s cap 熔断，静默 exit 0 → CC 渲染终端 UI
 ```
 
 `BridgeEvent.requiresBlockingResponse` 把"哪些 hook 走阻塞"集中起来：当前 `PermissionRequest` + `PreToolUse(AskUserQuestion)`。AskUQ 的 `answers` 形状由 spike 验证（2026-04-25）：单选 `{"<question>": "<label>"}`，多选 `{"<question>": "<label1>, <label2>"}` 单字符串逗号分隔。

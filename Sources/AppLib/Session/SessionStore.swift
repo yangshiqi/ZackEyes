@@ -538,9 +538,7 @@ public final class SessionStore: ObservableObject {
 
         case "SessionEnd":
             if let session = sessions.removeValue(forKey: sid) {
-                for pending in session.pendingPermissions {
-                    pending.responder(.permission(.deny(message: "Session ended")))
-                }
+                releasePendings(session.pendingPermissions, denyMessage: "Session ended")
             }
 
         case "Interrupt":
@@ -554,9 +552,7 @@ public final class SessionStore: ObservableObject {
             session.compactTrigger = nil
             session.compactStartContextPct = nil
             sessions[sid] = session
-            for request in pending {
-                request.responder(.permission(.deny(message: "Turn interrupted")))
-            }
+            releasePendings(pending, denyMessage: "Turn interrupted")
 
         case "PermissionRequest":
             if agent == .codex {
@@ -633,7 +629,7 @@ public final class SessionStore: ObservableObject {
                     session.state = .working
                     session.isToolRunning = false
                     session.codexTurnStartedAt = Date()
-                    for request in pending { request.responder(.permission(.deny(message: "Turn superseded"))) }
+                    releasePendings(pending, denyMessage: "Turn superseded")
                 }
             }
             if let prompt = event.userPrompt {
@@ -977,6 +973,7 @@ public final class SessionStore: ObservableObject {
               let idx = session.pendingPermissions.firstIndex(where: { $0.id == requestId })
         else { return }
         let pending = session.pendingPermissions.remove(at: idx)
+        if pending.isAskUserQuestion { cancelAskUQTimeout(requestId: requestId) }
         let response: PermissionResponse = allow
             ? .allow(message: "User approved via ZackEyes")
             : .deny(message: "User denied via ZackEyes")
@@ -1039,12 +1036,126 @@ public final class SessionStore: ObservableObject {
         guard var session = sessions[sessionId],
               let idx = session.pendingPermissions.firstIndex(where: { $0.id == requestId })
         else { return }
-        session.pendingPermissions.remove(at: idx)
+        let removed = session.pendingPermissions.remove(at: idx)
+        if removed.isAskUserQuestion { cancelAskUQTimeout(requestId: requestId) }
         if session.pendingPermissions.isEmpty {
             session.state = .working  // back to normal
         }
         session.lastActiveAt = Date()
         sessions[sessionId] = session
+    }
+
+    // MARK: - Answer from the notch (#260)
+
+    /// Seconds an in-notch AskUserQuestion waits for an answer before the
+    /// question is handed back to the terminal.
+    public static let askUQAnswerTimeout: TimeInterval = 120
+
+    /// Pending answer-timeout tasks, keyed by request id.
+    private var askUQTimeoutTasks: [UUID: Task<Void, Never>] = [:]
+
+    /// Start the answer-timeout countdown for an AskUQ request. On fire, the
+    /// request is deferred to the terminal (bridge closes → CC's native UI)
+    /// and dropped from the queue. Safe no-op if already resolved — the
+    /// guard in `deferAskUQToTerminal` finds nothing to defer.
+    public func startAskUQTimeout(sessionId: String, requestId: UUID) {
+        cancelAskUQTimeout(requestId: requestId)
+        askUQTimeoutTasks[requestId] = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.askUQAnswerTimeout))
+            self?.askUQTimeoutTasks.removeValue(forKey: requestId)
+            guard !Task.isCancelled else { return }
+            self?.deferAskUQToTerminal(sessionId: sessionId, requestId: requestId)
+        }
+    }
+
+    public func cancelAskUQTimeout(requestId: UUID) {
+        askUQTimeoutTasks.removeValue(forKey: requestId)?.cancel()
+    }
+
+    /// Release all pending requests for a session that is going away
+    /// (session end, turn interrupt/supersede). AskUserQuestion pendings are
+    /// deferred to the terminal — a deny is meaningless for a question — and
+    /// their answer-timeout is cancelled; everything else is denied.
+    private func releasePendings(_ pendings: [PendingPermission], denyMessage: String) {
+        for pending in pendings {
+            if pending.isAskUserQuestion {
+                cancelAskUQTimeout(requestId: pending.id)
+                pending.responder(.deferToTerminal)
+            } else {
+                pending.responder(.permission(.deny(message: denyMessage)))
+            }
+        }
+    }
+
+    /// "Answer in terminal" escape hatch + timeout path (#260). Closes the
+    /// bridge connection without answering so Claude Code falls back to its
+    /// native AskUQ UI. No-op when the request is already gone.
+    public func deferAskUQToTerminal(sessionId: String, requestId: UUID) {
+        guard var session = sessions[sessionId],
+              let idx = session.pendingPermissions.firstIndex(where: { $0.id == requestId }),
+              session.pendingPermissions[idx].isAskUserQuestion
+        else { return }
+        let pending = session.pendingPermissions.remove(at: idx)
+        cancelAskUQTimeout(requestId: requestId)
+        pending.responder(.deferToTerminal)
+        session.state = session.pendingPermissions.isEmpty ? .working : .waiting
+        session.lastActiveAt = Date()
+        sessions[sessionId] = session
+    }
+
+    /// Answer an AskUserQuestion from the notch (#260).
+    ///
+    /// Builds a `PreToolUseHookResponse` via the shared `askUQAnswers`
+    /// builder and sends it through the pending request's bridge responder —
+    /// no keystroke injection (that path was removed in f5b2bd3 for
+    /// brittleness across multi-tab terminal layouts).
+    ///
+    /// - Parameter answers: question text → selected option label(s);
+    ///   multi-select values are comma-joined labels.
+    /// - Returns: true if the answer reached the bridge; false if the request
+    ///   is gone, isn't notch-answerable, or the answers don't match the
+    ///   parsed questions (caller falls back to the terminal).
+    @discardableResult
+    public func submitAskUQAnswer(
+        sessionId: String,
+        requestId: UUID,
+        answers: [String: String]
+    ) -> Bool {
+        guard var session = sessions[sessionId],
+              let idx = session.pendingPermissions.firstIndex(where: { $0.id == requestId })
+        else { return false }
+        let pending = session.pendingPermissions[idx]
+        guard pending.isAskUserQuestion, pending.answerableFromNotch else { return false }
+        let questions = pending.questions
+        guard !questions.isEmpty,
+              let rawQuestions = pending.toolInput["questions"] as? [[String: Any]]
+        else { return false }
+        // Every question needs a valid answer; anything else goes to the
+        // terminal rather than sending a partial response.
+        var resolved: [String: String] = [:]
+        for question in questions {
+            guard let raw = answers[question.text], !raw.isEmpty else { return false }
+            if question.multiSelect {
+                let labels = raw.split(separator: ",")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                let valid = labels.filter { label in
+                    question.options.contains { $0.label == label }
+                }
+                guard !valid.isEmpty else { return false }
+                resolved[question.text] = valid.joined(separator: ",")
+            } else {
+                guard question.options.contains(where: { $0.label == raw }) else { return false }
+                resolved[question.text] = raw
+            }
+        }
+        session.pendingPermissions.remove(at: idx)
+        cancelAskUQTimeout(requestId: requestId)
+        pending.responder(.preToolUse(.askUQAnswers(questions: rawQuestions, answers: resolved)))
+        session.state = session.pendingPermissions.isEmpty ? .working : .waiting
+        session.lastActiveAt = Date()
+        sessions[sessionId] = session
+        return true
     }
 
     /// Apply a Codex `event_msg.task_complete` observation to the session
@@ -1707,19 +1818,26 @@ public struct PendingPermission {
     public let toolInput: [String: Any]
     public let cwd: String?
     public let responder: @Sendable (BridgeResponse) -> Void
+    /// True when this AskUserQuestion may be answered from the notch (#260):
+    /// the answer-from-notch toggle was on at arrival and the responder is a
+    /// live bridge connection. Otherwise the notch renders the notice-only
+    /// CTA and answering happens in the terminal.
+    public let answerableFromNotch: Bool
 
     public init(
         id: UUID = UUID(),
         toolName: String,
         toolInput: [String: Any],
         cwd: String?,
-        responder: @escaping @Sendable (BridgeResponse) -> Void
+        responder: @escaping @Sendable (BridgeResponse) -> Void,
+        answerableFromNotch: Bool = false
     ) {
         self.id = id
         self.toolName = toolName
         self.toolInput = toolInput
         self.cwd = cwd
         self.responder = responder
+        self.answerableFromNotch = answerableFromNotch
     }
 
     public var isAskUserQuestion: Bool {

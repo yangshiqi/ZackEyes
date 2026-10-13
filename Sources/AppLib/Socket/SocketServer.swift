@@ -301,6 +301,13 @@ public final class SocketServer {
 
             let responder: @Sendable (BridgeResponse) -> Void = { response in
                 defer { tracker.completed = true }
+                // Defer-to-terminal (#260): close without writing. The bridge
+                // sees EOF, exits 0 with empty stdout, and Claude Code falls
+                // back to its native UI. Never reaches `encoded()`.
+                if case .deferToTerminal = response {
+                    close(capturedFd)
+                    return
+                }
                 guard let responseData = try? response.encoded() else {
                     close(capturedFd)
                     return

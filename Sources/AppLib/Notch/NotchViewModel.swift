@@ -70,6 +70,21 @@ public final class NotchViewModel: ObservableObject {
         sessionStore.allowAlways(sessionId: sessionId, requestId: requestId)
     }
 
+    /// Answer an AskUserQuestion from the notch (#260). Returns false when
+    /// the answer didn't reach the bridge — the caller should fall back to
+    /// the terminal.
+    @discardableResult
+    public func submitAskUQAnswer(sessionId: String, requestId: UUID, answers: [String: String]) -> Bool {
+        sessionStore.submitAskUQAnswer(sessionId: sessionId, requestId: requestId, answers: answers)
+    }
+
+    /// "Answer in terminal" escape hatch (#260): release the bridge so CC
+    /// shows its native UI, then jump to the terminal tab.
+    public func deferAskUQToTerminal(for session: SessionInfo, requestId: UUID) {
+        sessionStore.deferAskUQToTerminal(sessionId: session.id, requestId: requestId)
+        activateTerminal(for: session)
+    }
+
     /// Click handler: jump to the terminal tab for this session.
     /// Runs on a background task so subprocess + AppleScript calls don't block the UI.
     public func activateTerminal(for session: SessionInfo) {

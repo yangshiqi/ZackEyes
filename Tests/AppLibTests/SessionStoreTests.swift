@@ -1474,3 +1474,172 @@ struct StatusLineMuxPidTests {
         #expect((store.sessions["s1"]?.lastActiveAt).map { $0 > stale } == true)
     }
 }
+
+// MARK: - Answer from the notch (#260)
+
+/// Builds an AskUserQuestion PendingPermission for #260 tests.
+@MainActor
+private func makeAskUQPending(
+    questions: [[String: Any]],
+    answerableFromNotch: Bool = true,
+    captured: Box<BridgeResponse>? = nil
+) -> PendingPermission {
+    PendingPermission(
+        toolName: "AskUserQuestion",
+        toolInput: ["questions": questions],
+        cwd: "/tmp",
+        responder: { captured?.value = $0 },
+        answerableFromNotch: answerableFromNotch
+    )
+}
+
+@MainActor
+private func singleQuestion(_ text: String = "Which?", options: [String] = ["A", "B"]) -> [[String: Any]] {
+    [["question": text, "header": "Q",
+      "options": options.map { ["label": $0] }]]
+}
+
+@MainActor
+struct AskUQAnswerTests {
+    @Test func submitSendsPreToolUseResponse() throws {
+        let store = SessionStore()
+        let captured = Box<BridgeResponse>()
+        let pending = makeAskUQPending(questions: singleQuestion(), captured: captured)
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+
+        let ok = store.submitAskUQAnswer(sessionId: "s1", requestId: pending.id, answers: ["Which?": "A"])
+
+        #expect(ok == true)
+        #expect(store.sessions["s1"]?.pendingPermissions.isEmpty == true)
+        #expect(store.sessions["s1"]?.state == .working)
+        guard case .preToolUse = captured.value else {
+            Issue.record("expected .preToolUse, got \(String(describing: captured.value))")
+            return
+        }
+        let data = try captured.value!.encoded()
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let hookOutput = json["hookSpecificOutput"] as! [String: Any]
+        #expect(hookOutput["hookEventName"] as? String == "PreToolUse")
+        #expect(hookOutput["permissionDecision"] as? String == "allow")
+        let updatedInput = hookOutput["updatedInput"] as! [String: Any]
+        let answers = updatedInput["answers"] as! [String: String]
+        #expect(answers["Which?"] == "A")
+    }
+
+    @Test func submitRejectsUnknownRequestId() {
+        let store = SessionStore()
+        let captured = Box<BridgeResponse>()
+        let pending = makeAskUQPending(questions: singleQuestion(), captured: captured)
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+
+        let ok = store.submitAskUQAnswer(sessionId: "s1", requestId: UUID(), answers: ["Which?": "A"])
+
+        #expect(ok == false)
+        #expect(captured.value == nil)
+        #expect(store.sessions["s1"]?.pendingPermissions.count == 1)
+    }
+
+    @Test func submitRejectsWhenNotAnswerableFromNotch() {
+        let store = SessionStore()
+        let captured = Box<BridgeResponse>()
+        // Toggle-off path: no-op responder, notice-only UI.
+        let pending = makeAskUQPending(questions: singleQuestion(), answerableFromNotch: false, captured: captured)
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+
+        let ok = store.submitAskUQAnswer(sessionId: "s1", requestId: pending.id, answers: ["Which?": "A"])
+
+        #expect(ok == false)
+        #expect(captured.value == nil)
+    }
+
+    @Test func submitRejectsInvalidOption() {
+        let store = SessionStore()
+        let captured = Box<BridgeResponse>()
+        let pending = makeAskUQPending(questions: singleQuestion(), captured: captured)
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+
+        let ok = store.submitAskUQAnswer(sessionId: "s1", requestId: pending.id, answers: ["Which?": "Z"])
+
+        #expect(ok == false)
+        #expect(captured.value == nil)
+    }
+
+    @Test func submitRejectsPartialAnswers() {
+        let store = SessionStore()
+        let captured = Box<BridgeResponse>()
+        let questions: [[String: Any]] = [
+            ["question": "Q1", "options": [["label": "A"]]],
+            ["question": "Q2", "options": [["label": "B"]]],
+        ]
+        let pending = makeAskUQPending(questions: questions, captured: captured)
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+
+        // Only Q1 answered — must not send a partial response.
+        let ok = store.submitAskUQAnswer(sessionId: "s1", requestId: pending.id, answers: ["Q1": "A"])
+
+        #expect(ok == false)
+        #expect(captured.value == nil)
+    }
+
+    @Test func submitMultiSelectJoinsLabels() throws {
+        let store = SessionStore()
+        let captured = Box<BridgeResponse>()
+        let questions: [[String: Any]] = [
+            ["question": "Pick", "multiSelect": true,
+             "options": [["label": "A"], ["label": "B"], ["label": "C"]]],
+        ]
+        let pending = makeAskUQPending(questions: questions, captured: captured)
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+
+        let ok = store.submitAskUQAnswer(sessionId: "s1", requestId: pending.id, answers: ["Pick": "C, A"])
+
+        #expect(ok == true)
+        let data = try captured.value!.encoded()
+        let json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        let hookOutput = json["hookSpecificOutput"] as! [String: Any]
+        let updatedInput = hookOutput["updatedInput"] as! [String: Any]
+        let answers = updatedInput["answers"] as! [String: String]
+        #expect(answers["Pick"] == "A,C")
+    }
+
+    @Test func deferToTerminalClosesWithoutAnswer() {
+        let store = SessionStore()
+        let captured = Box<BridgeResponse>()
+        let pending = makeAskUQPending(questions: singleQuestion(), captured: captured)
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+
+        store.deferAskUQToTerminal(sessionId: "s1", requestId: pending.id)
+
+        guard case .deferToTerminal = captured.value else {
+            Issue.record("expected .deferToTerminal, got \(String(describing: captured.value))")
+            return
+        }
+        #expect(store.sessions["s1"]?.pendingPermissions.isEmpty == true)
+        #expect(store.sessions["s1"]?.state == .working)
+    }
+
+    @Test func deferToTerminalNoopsForUnknownId() {
+        let store = SessionStore()
+        // Must not crash; nothing to defer.
+        store.deferAskUQToTerminal(sessionId: "nope", requestId: UUID())
+    }
+
+    @Test func deferToTerminalNoopsForNonAskUQ() {
+        let store = SessionStore()
+        let captured = Box<BridgeResponse>()
+        let pending = PendingPermission(
+            toolName: "Bash", toolInput: [:], cwd: "/tmp",
+            responder: { captured.value = $0 }
+        )
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+
+        store.deferAskUQToTerminal(sessionId: "s1", requestId: pending.id)
+
+        #expect(captured.value == nil)
+        #expect(store.sessions["s1"]?.pendingPermissions.count == 1)
+    }
+
+    @Test func answerTimeoutDefaultsToTwoMinutes() {
+        #expect(SessionStore.askUQAnswerTimeout == 120)
+    }
+}

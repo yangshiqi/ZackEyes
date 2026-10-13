@@ -557,6 +557,17 @@ struct NotchExpandedView: View {
 
     @ViewBuilder
     private func askUserQuestionBlock(session: SessionInfo, pending: PendingPermission) -> some View {
+        if pending.answerableFromNotch {
+            // #260 (opt-in): the bridge is waiting on this request — render
+            // the options so the user can answer right here.
+            AskUQAnswerBlock(session: session, pending: pending, viewModel: viewModel)
+        } else {
+            askUserQuestionNoticeBlock(session: session, pending: pending)
+        }
+    }
+
+    @ViewBuilder
+    private func askUserQuestionNoticeBlock(session: SessionInfo, pending: PendingPermission) -> some View {
         // Notice-only surface: shows the question text so the user knows
         // what's being asked, plus a CTA hint to answer in the terminal.
         // The wrapping session card already has an .onTapGesture that
