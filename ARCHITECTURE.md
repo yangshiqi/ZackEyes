@@ -83,20 +83,26 @@ Claude Code 触发 PreToolUse hook (tool_name="AskUserQuestion")
     → AppDelegate 查 answerQuestionsFromNotch 开关（默认 OFF）
       → OFF: 立刻 responder(.deferToTerminal) → CC 渲染终端 UI；
              弹窗保持 notice-only + "answer in terminal" CTA（#260 前的行为）
-      → ON:  SessionStore 标 pending（responder 为 live bridge，answerableFromNotch=true）
+      → ON 且题目/选项完整且无歧义: SessionStore 标 pending（live bridge，answerableFromNotch=true）
              + 启动 120s 超时计时
+      → 不支持的题目（预览/未知内容字段、缺选项、重复题目/标签、多选标签含逗号）: 立刻回到终端
     → NotchExpandedView 渲染 AskUQAnswerBlock：每题选项（单选 radio / 多选 checkbox）
       + Submit + "Answer in terminal" 逃生口
     → 用户 Submit → submitAskUQAnswer 调 responder(.preToolUse(askUQAnswers))
       → bridge stdout = JSON → CC 消费 updatedInput.answers，跳过终端 UI
     → 用户点 "Answer in terminal" / 120s 超时无应答 → responder(.deferToTerminal)
       → bridge 看到 EOF，静默 exit 0 → CC 渲染终端 UI
-    → app 崩 / socket 异常 → bridge 600s cap 熔断，静默 exit 0 → CC 渲染终端 UI
+    → app 崩 / socket 断开 → poll 检测 EOF，静默 exit 0 → CC 渲染终端 UI
+      （无断开信号时以 600s 为上限）
 ```
 
 `BridgeEvent.requiresBlockingResponse` 把"哪些 hook 走阻塞"集中起来：当前 `PermissionRequest` + `PreToolUse(AskUserQuestion)`。AskUQ 的 `answers` 形状由 spike 验证（2026-04-25）：单选 `{"<question>": "<label>"}`，多选 `{"<question>": "<label1>, <label2>"}` 单字符串逗号分隔。
 
-⚠️ **PreToolUse 路径独占 AskUQ**。如果用户的 allow 列表没把 `AskUserQuestion` 加白，CC 还会另外发一次 `PermissionRequest` —— `AppDelegate.handleEvent` 里那条早期 `if event.toolName == "AskUserQuestion"` 自动 allow，避免老的"只读预览"块叠在新的可点击块后面。
+⚠️ **PreToolUse 路径独占 AskUQ**。伴随的 `PermissionRequest(AskUserQuestion)` 保持 fire-and-forget，AppDelegate 丢弃该观察事件，不发送 allow，以免提前结束原生问答。
+
+提交必须覆盖每道题并验证全部选项，不能丢弃无效选项后提交部分回答。失败提交先释放 Bridge，再跳转终端。回合结束/失败、新 prompt、会话重建/结束和问答完成的清理路径都会释放问答 responder 并取消倒计时；无关权限请求保留原有独立队列行为。SwiftUI 选择状态按请求 ID 隔离，题目和说明完整显示于滚动面板。
+
+问答完成先精确匹配 `tool_use_id`，再考虑 notice 兜底；缺 ID 时不清理仍阻塞的刘海问题，避免前一题完成误释放下一题。题目仅接受 `question/header/options/multiSelect`、选项仅接受 `label/description`，包括官方 `options[].preview` 在内的额外内容字段一律转终端，避免隐去决策上下文后让用户提交。
 
 ### 失败流
 

@@ -71,11 +71,15 @@ public final class NotchViewModel: ObservableObject {
     }
 
     /// Answer an AskUserQuestion from the notch (#260). Returns false when
-    /// the answer didn't reach the bridge — the caller should fall back to
+    /// the answer couldn't be handed to the responder — the caller should fall back to
     /// the terminal.
     @discardableResult
     public func submitAskUQAnswer(sessionId: String, requestId: UUID, answers: [String: String]) -> Bool {
-        sessionStore.submitAskUQAnswer(sessionId: sessionId, requestId: requestId, answers: answers)
+        let submitted = sessionStore.submitAskUQAnswer(sessionId: sessionId, requestId: requestId, answers: answers)
+        if !submitted {
+            sessionStore.deferAskUQToTerminal(sessionId: sessionId, requestId: requestId)
+        }
+        return submitted
     }
 
     /// "Answer in terminal" escape hatch (#260): release the bridge so CC

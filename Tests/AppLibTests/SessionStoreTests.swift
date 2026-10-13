@@ -1489,7 +1489,8 @@ private func makeAskUQPending(
         toolInput: ["questions": questions],
         cwd: "/tmp",
         responder: { captured?.value = $0 },
-        answerableFromNotch: answerableFromNotch
+        answerableFromNotch: answerableFromNotch,
+        toolUseId: "question-call"
     )
 }
 
@@ -1501,6 +1502,42 @@ private func singleQuestion(_ text: String = "Which?", options: [String] = ["A",
 
 @MainActor
 struct AskUQAnswerTests {
+    @Test(arguments: ["SessionStart", "UserPromptSubmit", "Stop", "StopFailure", "PostCompact", "SessionEnd", "Interrupt", "PostToolUse"])
+    func lifecycleReleasesWaitingQuestion(eventName: String) {
+        let store = SessionStore()
+        let captured = Box<BridgeResponse>()
+        let pending = makeAskUQPending(questions: singleQuestion(), captured: captured)
+        let agent: AgentKind = eventName == "Interrupt" ? .codex : .claude
+        store.handlePermissionRequest(sessionId: "s1", permission: pending, agent: agent)
+        store.startAskUQTimeout(sessionId: "s1", requestId: pending.id)
+        store.handleEvent(BridgeEvent(bridgeEvent: eventName, agent: agent, sessionId: "s1", toolName: "AskUserQuestion", toolUseId: "question-call"))
+        guard case .deferToTerminal = captured.value else {
+            Issue.record("\(eventName) stranded the question's bridge")
+            return
+        }
+        #expect(store.sessions["s1"]?.pendingPermissions.isEmpty != false)
+    }
+
+    @Test func submitRejectsPartlyInvalidMultiSelect() {
+        let store = SessionStore()
+        let captured = Box<BridgeResponse>()
+        let questions: [[String: Any]] = [["question": "Pick", "multiSelect": true,
+            "options": [["label": "A"], ["label": "B"]]]]
+        let pending = makeAskUQPending(questions: questions, captured: captured)
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+        #expect(!store.submitAskUQAnswer(sessionId: "s1", requestId: pending.id, answers: ["Pick": "A,Z"]))
+        #expect(captured.value == nil)
+    }
+
+    @Test func submitRejectsUnparseableQuestionRatherThanPartialAnswer() {
+        let store = SessionStore()
+        let captured = Box<BridgeResponse>()
+        let pending = makeAskUQPending(questions: singleQuestion() + [["options": [["label": "C"]]]], captured: captured)
+        store.handlePermissionRequest(sessionId: "s1", permission: pending)
+        #expect(!store.submitAskUQAnswer(sessionId: "s1", requestId: pending.id, answers: ["Which?": "A"]))
+        #expect(captured.value == nil)
+    }
+
     @Test func submitSendsPreToolUseResponse() throws {
         let store = SessionStore()
         let captured = Box<BridgeResponse>()

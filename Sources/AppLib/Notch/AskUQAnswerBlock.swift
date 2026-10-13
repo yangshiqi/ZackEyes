@@ -101,7 +101,6 @@ struct AskUQAnswerBlock: View {
                 Text(question.text)
                     .font(.system(size: 11))
                     .foregroundColor(.white)
-                    .lineLimit(4)
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(question.options) { option in
@@ -132,7 +131,7 @@ struct AskUQAnswerBlock: View {
                         Text(desc)
                             .font(.system(size: 10))
                             .foregroundColor(.white.opacity(0.5))
-                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)

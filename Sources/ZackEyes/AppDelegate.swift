@@ -795,22 +795,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
             let toolInput = event.toolInput?.mapValues { $0.value } ?? [:]
             let answerFromNotch = ConfigStore().loadAnswerQuestionsFromNotch()
+            let candidate = PendingPermission(
+                id: permissionId ?? UUID(),
+                toolName: "AskUserQuestion",
+                toolInput: toolInput,
+                cwd: event.cwd,
+                responder: responder ?? { _ in },
+                answerableFromNotch: answerFromNotch && responder != nil,
+                toolUseId: event.toolUseId
+            )
             let pending: PendingPermission
-            if answerFromNotch, let responder {
-                // Toggle ON: keep the bridge waiting; the notch renders the
-                // options. Timeout / "Answer in terminal" defers back to CC.
-                pending = PendingPermission(
-                    id: permissionId ?? UUID(),
-                    toolName: event.toolName ?? "AskUserQuestion",
-                    toolInput: toolInput,
-                    cwd: event.cwd,
-                    responder: responder,
-                    answerableFromNotch: true
-                )
+            if candidate.answerableFromNotch {
+                // Only complete, unambiguous choices keep the bridge waiting.
+                pending = candidate
                 NSLog("ZackEyes: PreToolUse AskUQ (answer-from-notch) sid=%@",
                       String(sid.prefix(8)))
             } else {
-                // Toggle OFF (default): release the bridge immediately so CC
+                // Toggle OFF or unsupported input: release the bridge so CC
                 // shows its native terminal UI — the pre-#260 behavior. The
                 // popup stays a notice with the "answer in terminal" CTA.
                 responder?(.deferToTerminal)
@@ -818,7 +819,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     toolName: event.toolName ?? "AskUserQuestion",
                     toolInput: toolInput,
                     cwd: event.cwd,
-                    responder: { _ in }   // no-op — bridge already released
+                    responder: { _ in },   // no-op — bridge already released
+                    toolUseId: event.toolUseId
                 )
                 NSLog("ZackEyes: PreToolUse AskUQ (notice-only) sid=%@",
                       String(sid.prefix(8)))

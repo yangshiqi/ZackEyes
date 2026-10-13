@@ -11,8 +11,8 @@ import Shared
 // unreachable (the app isn't running) is an expected state, not a bug
 // to surface.
 //
-// The only path that writes to stdout is PermissionRequest success,
-// where Claude Code expects a JSON response. If that socket round-trip
+// Successful PermissionRequest and opt-in PreToolUse(AskUserQuestion)
+// responses write JSON to stdout. If that socket round-trip
 // fails, we still exit 0 with empty stdout — Claude Code treats the
 // missing response as "no hook preference" and falls back to its own
 // default permission prompt.

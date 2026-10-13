@@ -561,6 +561,7 @@ struct NotchExpandedView: View {
             // #260 (opt-in): the bridge is waiting on this request — render
             // the options so the user can answer right here.
             AskUQAnswerBlock(session: session, pending: pending, viewModel: viewModel)
+                .id(pending.id)
         } else {
             askUserQuestionNoticeBlock(session: session, pending: pending)
         }

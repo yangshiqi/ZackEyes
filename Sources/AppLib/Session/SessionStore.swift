@@ -88,17 +88,22 @@ public struct SessionInfo: Identifiable {
     /// one question finished; clearing the whole set there would dismiss a
     /// sibling question the user still has open in the terminal.
     ///
-    /// We have no `tool_use_id` in the event protocol to correlate precisely,
-    /// so oldest-first is the approximation. It is safe because these entries
-    /// carry a no-op responder — they are UI notices, not blocking requests, so
-    /// picking the wrong one costs a prompt card, never a stranded bridge.
-    mutating func dropOldestStaleAskUserQuestion() {
-        guard let idx = pendingPermissions.firstIndex(where: { $0.isAskUserQuestion }) else { return }
-        pendingPermissions.remove(at: idx)
+    /// Match tool-use IDs when present. Without an ID, only drop a notice:
+    /// answered notch requests have already left the queue, so picking the
+    /// next live request would incorrectly defer a sibling question.
+    mutating func dropOldestStaleAskUserQuestion(toolUseId: String?) -> [PendingPermission] {
+        let exact = toolUseId.flatMap { id in
+            pendingPermissions.firstIndex { $0.isAskUserQuestion && $0.toolUseId == id }
+        }
+        guard let idx = exact ?? pendingPermissions.firstIndex(where: {
+            $0.isAskUserQuestion && !$0.answerableFromNotch && (toolUseId == nil || $0.toolUseId == nil)
+        }) else { return [] }
+        let removed = pendingPermissions.remove(at: idx)
         rederiveWaitingState()
+        return [removed]
     }
 
-    /// Drop every AskUserQuestion notice — at a turn boundary they are all dead
+    /// Drop every AskUserQuestion request — at a turn boundary they are all dead
     /// by definition. Used by UserPromptSubmit / Stop / PostCompact.
     ///
     /// Position matters in both helpers: an AskUQ can be queued *behind* a
@@ -107,9 +112,11 @@ public struct SessionInfo: Identifiable {
     /// surface later as a zombie head, blocking the real requests behind it.
     /// Blocking PermissionRequests are never stripped: they own a real socket
     /// responder that must be answered.
-    mutating func dropAllStaleAskUserQuestions() {
+    mutating func dropAllStaleAskUserQuestions() -> [PendingPermission] {
+        let removed = pendingPermissions.filter { $0.isAskUserQuestion }
         pendingPermissions.removeAll { $0.isAskUserQuestion }
         rederiveWaitingState()
+        return removed
     }
 
     /// Re-derive the waiting flag from the queue, both directions.
@@ -504,6 +511,9 @@ public final class SessionStore: ObservableObject {
 
         switch event.bridgeEvent {
         case "SessionStart":
+            if let prior = sessions[sid] {
+                releasePendings(prior.pendingPermissions, denyMessage: "Session restarted")
+            }
             var newSession = SessionInfo(id: sid, cwd: event.cwd, agent: agent)
             newSession.claudePid = event.bridgePpid
             newSession.claudePidFromHook = event.bridgePpid != nil
@@ -518,7 +528,7 @@ public final class SessionStore: ObservableObject {
             if event.source == "compact", let prior = sessions[sid] {
                 newSession.compactTrigger = prior.compactTrigger
                 newSession.compactStartContextPct = prior.compactStartContextPct
-                newSession.state = prior.state
+                newSession.state = prior.state == .waiting ? .working : prior.state
                 // #37 — the compaction tally describes the session's history,
                 // which an administrative restart does not undo. Without this
                 // the counter is wiped by the very event that follows every
@@ -674,7 +684,7 @@ public final class SessionStore: ObservableObject {
             // at .waiting, and without this the session would stay flagged
             // as waiting (wrongly prioritized in the UI ranking) even though
             // there's nothing waiting on the user anymore.
-            session.dropAllStaleAskUserQuestions()
+            releasePendings(session.dropAllStaleAskUserQuestions(), denyMessage: "Question ended")
             sessions[sid] = session
 
         case "PostToolUse", "PostToolUseFailure":
@@ -724,7 +734,7 @@ public final class SessionStore: ObservableObject {
             // session so it doesn't sit there pointing at a question that's
             // already been resolved.
             if event.toolName == "AskUserQuestion" {
-                session.dropOldestStaleAskUserQuestion()
+                releasePendings(session.dropOldestStaleAskUserQuestion(toolUseId: event.toolUseId), denyMessage: "Question completed")
             }
 
             sessions[sid] = session
@@ -752,7 +762,7 @@ public final class SessionStore: ObservableObject {
             // Backstop for the UserPromptSubmit branch above: if a turn ends
             // with a stale AskUQ still pending (no rejection prompt, no
             // PostToolUse fired), it can never be resolved. Same gate.
-            session.dropAllStaleAskUserQuestions()
+            releasePendings(session.dropAllStaleAskUserQuestions(), denyMessage: "Question ended")
             // #181 — a compaction marker whose PostCompact was lost must not
             // survive the turn boundary and promote a later trigger-less
             // compaction to "manual".
@@ -766,7 +776,7 @@ public final class SessionStore: ObservableObject {
             session.state = .idle
             session.isToolRunning = false
             session.runningClaudeTools = [:]
-            session.dropAllStaleAskUserQuestions()
+            releasePendings(session.dropAllStaleAskUserQuestions(), denyMessage: "Question ended")
             // A background child's bridge may still be waiting after the
             // parent API request fails. Preserve live approvals, as Stop does.
             let reasons = [
@@ -866,7 +876,7 @@ public final class SessionStore: ObservableObject {
                 session.state = .idle
                 session.isToolRunning = false
                 session.runningClaudeTools = [:]
-                session.dropAllStaleAskUserQuestions()
+                releasePendings(session.dropAllStaleAskUserQuestions(), denyMessage: "Question ended")
             }
             // #37 — the real PostCompact path. Shares one recorder with
             // #186's inference (`clearCompactMarker`) so the count cannot
@@ -1059,11 +1069,16 @@ public final class SessionStore: ObservableObject {
     /// and dropped from the queue. Safe no-op if already resolved — the
     /// guard in `deferAskUQToTerminal` finds nothing to defer.
     public func startAskUQTimeout(sessionId: String, requestId: UUID) {
+        startAskUQTimeout(sessionId: sessionId, requestId: requestId, timeout: .seconds(Self.askUQAnswerTimeout))
+    }
+
+    /// A shorter duration lets tests exercise the same countdown and cancellation.
+    func startAskUQTimeout(sessionId: String, requestId: UUID, timeout: Duration) {
         cancelAskUQTimeout(requestId: requestId)
         askUQTimeoutTasks[requestId] = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(Self.askUQAnswerTimeout))
-            self?.askUQTimeoutTasks.removeValue(forKey: requestId)
+            try? await Task.sleep(for: timeout)
             guard !Task.isCancelled else { return }
+            self?.askUQTimeoutTasks.removeValue(forKey: requestId)
             self?.deferAskUQToTerminal(sessionId: sessionId, requestId: requestId)
         }
     }
@@ -1112,7 +1127,7 @@ public final class SessionStore: ObservableObject {
     ///
     /// - Parameter answers: question text → selected option label(s);
     ///   multi-select values are comma-joined labels.
-    /// - Returns: true if the answer reached the bridge; false if the request
+    /// - Returns: true if the answer was handed to the bridge responder; false if the request
     ///   is gone, isn't notch-answerable, or the answers don't match the
     ///   parsed questions (caller falls back to the terminal).
     @discardableResult
@@ -1128,7 +1143,8 @@ public final class SessionStore: ObservableObject {
         guard pending.isAskUserQuestion, pending.answerableFromNotch else { return false }
         let questions = pending.questions
         guard !questions.isEmpty,
-              let rawQuestions = pending.toolInput["questions"] as? [[String: Any]]
+              let rawQuestions = pending.toolInput["questions"] as? [[String: Any]],
+              questions.count == rawQuestions.count
         else { return false }
         // Every question needs a valid answer; anything else goes to the
         // terminal rather than sending a partial response.
@@ -1136,14 +1152,14 @@ public final class SessionStore: ObservableObject {
         for question in questions {
             guard let raw = answers[question.text], !raw.isEmpty else { return false }
             if question.multiSelect {
-                let labels = raw.split(separator: ",")
+                let labels = raw.split(separator: ",", omittingEmptySubsequences: false)
                     .map { $0.trimmingCharacters(in: .whitespaces) }
-                    .filter { !$0.isEmpty }
                 let valid = labels.filter { label in
                     question.options.contains { $0.label == label }
                 }
-                guard !valid.isEmpty else { return false }
-                resolved[question.text] = valid.joined(separator: ",")
+                guard !valid.isEmpty, valid.count == labels.count,
+                      Set(labels).count == labels.count else { return false }
+                resolved[question.text] = valid.sorted().joined(separator: ",")
             } else {
                 guard question.options.contains(where: { $0.label == raw }) else { return false }
                 resolved[question.text] = raw
@@ -1823,6 +1839,7 @@ public struct PendingPermission {
     /// live bridge connection. Otherwise the notch renders the notice-only
     /// CTA and answering happens in the terminal.
     public let answerableFromNotch: Bool
+    public let toolUseId: String?
 
     public init(
         id: UUID = UUID(),
@@ -1830,7 +1847,8 @@ public struct PendingPermission {
         toolInput: [String: Any],
         cwd: String?,
         responder: @escaping @Sendable (BridgeResponse) -> Void,
-        answerableFromNotch: Bool = false
+        answerableFromNotch: Bool = false,
+        toolUseId: String? = nil
     ) {
         self.id = id
         self.toolName = toolName
@@ -1838,6 +1856,38 @@ public struct PendingPermission {
         self.cwd = cwd
         self.responder = responder
         self.answerableFromNotch = answerableFromNotch
+            && toolName == "AskUserQuestion" && Self.supportsNotchAnswers(toolInput)
+        self.toolUseId = toolUseId
+    }
+
+    /// The answer dictionary is keyed by question text; selection state is
+    /// keyed by option label. Reject ambiguous or partially parsed input.
+    /// Commas in multi-select labels cannot be represented by our wire format.
+    private static func supportsNotchAnswers(_ input: [String: Any]) -> Bool {
+        guard let questions = input["questions"] as? [[String: Any]], !questions.isEmpty else { return false }
+        var texts = Set<String>()
+        for question in questions {
+            guard Set(question.keys).isSubset(of: ["question", "header", "options", "multiSelect"]) else { return false }
+            guard let text = question["question"] as? String,
+                  !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  texts.insert(text).inserted,
+                  let options = question["options"] as? [[String: Any]], !options.isEmpty else { return false }
+            if let multiSelect = question["multiSelect"], !(multiSelect is Bool) { return false }
+            let multiSelect = question["multiSelect"] as? Bool ?? false
+            var labels = Set<String>()
+            for option in options {
+                // Rich previews and future content fields belong in the native
+                // terminal. Never let unseen context influence a notch answer.
+                guard Set(option.keys).isSubset(of: ["label", "description"]) else { return false }
+                guard let label = option["label"] as? String,
+                      !label.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                      labels.insert(label).inserted else { return false }
+                if multiSelect && (label.contains(",") || label != label.trimmingCharacters(in: .whitespaces)) {
+                    return false
+                }
+            }
+        }
+        return true
     }
 
     public var isAskUserQuestion: Bool {
