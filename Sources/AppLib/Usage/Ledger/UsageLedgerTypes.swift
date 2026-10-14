@@ -1,5 +1,5 @@
-import Foundation
 import CryptoKit
+import Foundation
 import Shared
 
 /// The complete persistence allowlist. Source text and paths cannot be encoded.
@@ -23,11 +23,13 @@ struct UsageLedgerRecord: Codable, Equatable, Sendable {
     var tokens: Int { input + output + cacheWrite }
     var isValid: Bool {
         version == 1 && !id.isEmpty && id.utf8.count <= 128 && !session.isEmpty && session.utf8.count <= 128
-        && [project, model, tool ?? ""].allSatisfy { $0.utf8.count <= 512 && !$0.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) }
-        && [input, output, cacheRead, cacheWrite].allSatisfy { (0...1_000_000_000).contains($0) }
-        && date.timeIntervalSince1970.isFinite
-        && (end.map { $0.timeIntervalSince1970.isFinite && $0 >= date } ?? true)
-        && ((kind == .work || kind == .wait) == (end != nil))
+            && [project, model, tool ?? ""].allSatisfy {
+                $0.utf8.count <= 512 && !$0.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+            }
+            && [input, output, cacheRead, cacheWrite].allSatisfy { (0...1_000_000_000).contains($0) }
+            && date.timeIntervalSince1970.isFinite
+            && (end.map { $0.timeIntervalSince1970.isFinite && $0 >= date } ?? true)
+            && ((kind == .work || kind == .wait) == (end != nil))
     }
 
     /// Repeated scans/copies are observations, not a new authoritative revision.
@@ -38,7 +40,8 @@ struct UsageLedgerRecord: Codable, Equatable, Sendable {
         let oldAmount = old.input + old.output + old.cacheRead + old.cacheWrite
         if amount != oldAmount { return amount > oldAmount }
         if end != old.end { return (end ?? date) > (old.end ?? old.date) }
-        return [project, model, tool ?? ""].joined(separator: "|") > [old.project, old.model, old.tool ?? ""].joined(separator: "|")
+        return [project, model, tool ?? ""].joined(separator: "|")
+            > [old.project, old.model, old.tool ?? ""].joined(separator: "|")
     }
 
     static func identity(_ value: String) -> String {
@@ -46,7 +49,9 @@ struct UsageLedgerRecord: Codable, Equatable, Sendable {
     }
     static func label(_ raw: String?) -> String {
         guard let raw else { return "Unknown" }
-        let clean = String(String.UnicodeScalarView(raw.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })).trimmingCharacters(in: .whitespacesAndNewlines)
+        let clean = String(
+            String.UnicodeScalarView(raw.unicodeScalars.filter { !CharacterSet.controlCharacters.contains($0) })
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
         return clean.isEmpty ? "Unknown" : String(clean.prefix(96))
     }
 }
