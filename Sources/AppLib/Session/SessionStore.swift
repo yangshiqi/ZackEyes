@@ -348,6 +348,7 @@ public struct SessionInfo: Identifiable {
 public enum SessionSource: Sendable {
     case live        // tracked via hooks (real-time)
     case detected    // discovered by scanning ~/.claude/projects/ (read-only)
+    case demo        // in-memory samples, never part of live ingestion
 }
 
 /// Cross-agent risk classification for the session's current permission stance.
