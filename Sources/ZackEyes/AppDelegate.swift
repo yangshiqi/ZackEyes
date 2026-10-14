@@ -12,6 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarFallback: MenuBarFallback?
     private var simulatedNotch: SimulatedNotchController?
     private var usageTracker: UsageTracker!
+    private var usageLedger: UsageLedgerService?
 
     /// Last blocked-waiting alert time per session, for the #169 per-session
     /// cooldown (see `maybeNotifyWaiting`).
@@ -142,6 +143,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // the simulated path's `start()` is idempotent (cancels + restarts
         // the same task), so this is safe whether or not we hit that branch.
         usageTracker.start(intervalSeconds: 30)
+        let ledger = UsageLedgerService()
+        usageLedger = ledger
+        ledger.start()
 
         // 4. UI — Notch or Menu Bar (+ simulated notch on notchless Macs)
         // UpdateChecker is ALWAYS created so real-notch users also get
@@ -161,7 +165,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let settingsWindow = SettingsWindowController(
             usageTracker: usageTracker,
             updateChecker: uc,
-            downloader: dl
+            downloader: dl,
+            usageLedger: ledger
         )
         settingsWindowController = settingsWindow
 
@@ -710,6 +715,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         livenessSweepTimer?.invalidate()
         updateChecker?.stop()
         pricingStore?.stop()
+        usageLedger?.stop()
         hotKeyManager?.unregister()
         socketServer?.stop()
         windowController?.teardown()
