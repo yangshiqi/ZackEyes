@@ -25,7 +25,7 @@
 
 **Interfaces:** `UsageLedgerParser.parse(text: String, agent: AgentKind, sourceID: String) -> [UsageLedgerRecord]`; `UsageLedgerSummary.make(records: [UsageLedgerRecord], days: Int, now: Date, calendar: Calendar) -> UsageLedgerSummary`. Records carry version/id/session/agent/project/model/date, four token counters, optional tool, kind and optional interval end.
 
-- [ ] Write fixture assertions for Claude repeated message revisions and tools; Codex cumulative deltas/reset and copied session identities; no content-bearing keys in encoded records; ten-minute sparse/dense tool activity equality, interval overlap/question subtraction and midnight/DST buckets.
+- [x] Write fixture assertions for Claude repeated message revisions and tools; Codex cumulative deltas/reset and copied session identities; no content-bearing keys in encoded records; ten-minute sparse/dense tool activity equality, interval overlap/question subtraction and midnight/DST buckets.
 
 ```swift
 let records = UsageLedgerParser.parse(text: fixture, agent: .claude, sourceID: "fixture")
@@ -34,9 +34,9 @@ let report = UsageLedgerSummary.make(records: records, days: 7, now: now, calend
 #expect(report.activeSeconds == 600)
 ```
 
-- [ ] Run `swift test --filter UsageLedgerTests` and confirm missing types/behavior fails.
-- [ ] Implement validated records, SHA256 natural identities, per-agent pure parsers, per-session interval union/subtraction and local-day/hour clipping. Use `#expect` fixtures to pin each statistical definition.
-- [ ] Re-run the focused tests and fix failures before proceeding. Commit `feat(usage): parse private ledger observations`.
+- [x] Run `swift test --filter UsageLedgerTests` and confirm missing types/behavior fails.
+- [x] Implement validated records, SHA256 natural identities, per-agent pure parsers, per-session interval union/subtraction and local-day/hour clipping. Use `#expect` fixtures to pin each statistical definition.
+- [x] Re-run the focused tests and fix failures before proceeding. Commit `feat(usage): parse private ledger observations`.
 
 ### Task 2: Durable append-only store and cached collector
 
@@ -44,7 +44,7 @@ let report = UsageLedgerSummary.make(records: records, days: 7, now: now, calend
 
 **Interfaces:** actor `UsageLedgerStore(url:)` with `upsert(_ records:) async throws`, `summary(days:now:calendar:) async throws`; actor `UsageLedgerCollector(claudeRoot:codexRoot:)` with `scan() async throws -> Scan` (observations + nonfatal scan issues). Persist updates only when changed and only mark recorded after successful append+sync.
 
-- [ ] Write and run failing restart/duplicate/revision, deleted-source retention, partial-tail recovery, unsupported schema, file permissions and write-error tests using temporary directories.
+- [x] Write and run failing restart/duplicate/revision, deleted-source retention, partial-tail recovery, unsupported schema, file permissions and write-error tests using temporary directories.
 
 ```swift
 try await store.upsert(records)
@@ -53,8 +53,8 @@ let restored = UsageLedgerStore(url: url)
 #expect(try await restored.summary(days: 7, now: now, calendar: utc).totalTokens == 150)
 ```
 
-- [ ] Implement owner-only regular-file I/O with no symlink/FIFO reads, newline separation after a partial tail, bounded decode/validation and visible warnings. Collector recursively walks only allowed roots, skips symlinks/oversized files, caches unchanged metadata, reports incomplete scans and honors cancellation.
-- [ ] Run focused tests; commit `feat(usage): persist deduplicated local history`.
+- [x] Implement owner-only regular-file I/O with no symlink/FIFO reads, newline separation after a partial tail, bounded decode/validation and visible warnings. Collector recursively walks only allowed roots, skips symlinks/oversized files, caches unchanged metadata, reports incomplete scans and honors cancellation.
+- [x] Run focused tests; commit `feat(usage): persist deduplicated local history`.
 
 ### Task 3: Observable lifecycle and native Usage page
 
@@ -62,8 +62,8 @@ let restored = UsageLedgerStore(url: url)
 
 **Interfaces:** `@MainActor public final class UsageLedgerService: ObservableObject` owns published summary/loading/error/last-successful-date and selected range; `start()`, `stop()`, `refresh() async`, `setDays(_:)`. AppDelegate owns one instance, starts it after initialization and cancels on shutdown. Settings accepts the same service and requests refresh when opened.
 
-- [ ] Write/run failing service tests for first collection, range change, visible scan/write failures, overlapping refresh prevention and canceled generation not publishing.
-- [ ] Implement the service using actor work and a 60-second loop. Settings sidebar adds Usage; page shows totals, two per-agent daily charts, cache rate, top project/model/tool lists, a 24-hour heatmap, loading/error/empty states, last update and explicit estimation/privacy copy.
+- [x] Write/run failing service tests for first collection, range change, visible scan/write failures, overlapping refresh prevention and canceled generation not publishing.
+- [x] Implement the service using actor work and a 60-second loop. Settings sidebar adds Usage; page shows totals, two per-agent daily charts, cache rate, top project/model/tool lists, a 24-hour heatmap, loading/error/empty states, last update and explicit estimation/privacy copy.
 
 ```swift
 .task { await ledger.refresh() }
@@ -74,14 +74,23 @@ Picker("Period", selection: rangeBinding) {
 }
 ```
 
-- [ ] Run focused tests and compile native Charts/Settings; commit `feat(usage): show local history in settings`.
+- [x] Run focused tests and compile native Charts/Settings; commit `feat(usage): show local history in settings`.
 
 ### Task 4: Review, integration verification and merge
 
 **Files:** update `ARCHITECTURE.md`, `README.md`, this plan, local memory; no SSH code/spec in this PR.
 
-- [ ] Run full `swift build`, `swift test`, `make app`, strict deep codesign and `git diff --check`; inspect exit statuses and totals.
-- [ ] Use an isolated CFFIXED_USER_HOME with seeded Claude/Codex fixtures to exercise actual Settings Usage, all ranges, populated/empty/error paths, restart and source deletion; inspect persisted JSONL for content leakage and actual-user config hashes for changes.
-- [ ] Apply code-review skill with independent Spec and Standards agents against base `5f389ec`; fix concrete findings with regression coverage and repeat affected checks.
+- [x] Run full `swift build`, `swift test`, `make app`, strict deep codesign and `git diff --check`; inspect exit statuses and totals.
+- [x] Use an isolated CFFIXED_USER_HOME with seeded Claude/Codex fixtures to exercise actual Settings Usage, all ranges, populated/empty/error paths, restart and source deletion; inspect persisted JSONL for content leakage and actual-user config hashes for changes.
+- [x] Apply code-review skill with independent Spec and Standards agents against base `5f389ec`; fix concrete findings with regression coverage and repeat affected checks.
 - [ ] Update developer-build README/architecture and plan with actual results. Commit, push feature branch, create PR closing #263 using a body file, inspect checks and merge the exact tested full head.
 - [ ] Verify merged state and #263 closure, update #265 checkbox and memory, sync master. Continue #261 from its separately approved spec; final roadmap/site reconciliation follows both features.
+
+## Verification record
+
+- Initial failing tests established missing core/store/service APIs, then focused passes. Incremental independent reviews caught and red/green tests fixed partial Codex copies, old/incomplete Claude copies, invalid counters, injected-vs-genuine XML tasks, interrupted question waits, existing broad permissions and short-write recovery.
+- 2026-10-14 full suite before final explicit overnight/concurrency fixture: 1,013 tests pass (875 Swift Testing + 138 XCTest), `make app`, strict deep codesign and diff check pass. Final fixture adds coverage without production changes; final suite log `/tmp/zackeyes-263-final-tests.log`.
+- Actual UI probe `/tmp/zackeyes-263-ui.py`, results `/tmp/zackeyes-263-ui-results.log`: populated totals/charts and all ranges, private counts-only JSONL/no fixture leakage, restart after source deletion without duplicate appends, empty state, unsupported-format error plus in-process repair recovery, startup nonactivation and unchanged actual-user config hashes all pass. Isolated home `/tmp/zackeyes-263-home`; fixture app stopped, user app preserved. No physical-notch interaction changes were made.
+- Independent final specification and standards rechecks found no remaining blockers. No release/version bump. SSH spec remains separate from this PR.
+
+Final suite: 1,014 tests pass (876 Swift Testing + 138 XCTest), including the explicit overnight/concurrent-session fixture. Production sources match the native-tested signed app.

@@ -46,6 +46,14 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 
 ## 核心数据流
 
+### 本地用量账本（#263）
+
+`UsageLedgerParser` 从 Claude/Codex transcript 提取计数、项目/模型/工具名称及时间区间，不保留 prompt、回复、工具参数、完整路径或原始 session/message id；标识在进入持久化 DTO 前做 SHA256。Claude 完整 usage 按消息身份及源时间去重，旧副本/部分 usage 不覆盖新统计；Codex 持久化累计观测，跨文件合并同一 session 后再差分，避免部分副本的不同前驱产生重复 token。重置计数开启新累计段。
+
+`UsageLedgerCollector` actor 只递归两种 agent 的 transcript roots，使用 inode/mtime/size 缓存；NOFOLLOW、regular-file 检查和有上限的 fd 读取阻止链接替换及无界增长。`UsageLedgerStore` actor 将版本化计数记录追加到 `~/.zackeyes/usage/history-v1.jsonl`，目录/文件要求 owner-only 0700/0600；写完 fsync 后才更新内存状态，短写失败强制重载并分隔残行。最新有效观测覆盖旧修订，重启与源文件删除不丢既有历史；未知版本拒绝写入，坏行警告后跳过。
+
+`UsageLedgerSummary` 按当前本地 Calendar 生成 7/30/90 日、每 agent 的 token/工时桶与小时热图。工时合并同 session 的任务/工具区间、扣除已知问题等待，缺边界时只估计短活动间隙（最多 5 min，超过 30 min 的未配对空闲间隙不推断），不把开着的终端时长当工作时长；并发 session 可累加 agent-hours。`UsageLedgerService` 通过独立 60s 循环和 Settings 手动刷新调度，取消/generation 隔离过期回调，报告不完整扫描/保存失败。Settings 的 Usage 页面复用同一个 service，展示分 agent 汇总、双图、缓存命中率、三类排行和热图。数据不经 Bridge、quota cache、journal、通知或模型网络；demo/SSH 会话不是采集来源。
+
 ### Demo 会话展示（#262）
 
 `DemoSessionController` 拥有独立的内存 `SessionStore`，每 6 秒轮换四个 Claude/Codex 示例项目，展示 working / needs-you / idle、工具、任务、模型/effort、context 和示例费用。样本来源为 `.demo`，不经 Bridge 或 AppDelegate 事件路由，不进入真实会话、通知、日志或用量缓存。
@@ -228,7 +236,7 @@ PricingStore.start()
 |------|------|------|
 | `SettingsWindowController` | `Sources/AppLib/Settings/SettingsWindowController.swift` | 单例、非模态的标准 macOS 设置窗口；首次 `show()` 才创建 SettingsViewModel / 读取配置；重复打开聚焦既有窗口，不阻塞权限 socket；获得焦点时用 floating level 可靠置前，失焦后降到 normal 避免遮挡其它应用 |
 | `SettingsViewModel` | `Sources/AppLib/Settings/SettingsViewModel.swift` | 统一加载/保存 `ConfigStore` 偏好并发送既有运行时通知；聚合 Hook Health |
-| `SettingsRootView` | `Sources/AppLib/Settings/SettingsRootView.swift` | General / Appearance / Notifications / Integrations / About 五分区设置 UI；沿用 About 卡片的深色表面、activity 强调色和半透明描边；General 支持 Preferred quota source、Progress mode、Left 填充方向、Window elapsed、Overlap 透明度和 Today's consumption；首选 Agent 无配额数据时自动回退另一方 |
+| `SettingsRootView` | `Sources/AppLib/Settings/SettingsRootView.swift` | General / Appearance / Notifications / Integrations / Usage / About 六分区设置 UI；沿用 About 卡片的深色表面、activity 强调色和半透明描边；General 支持 Preferred quota source、Progress mode、Left 填充方向、Window elapsed、Overlap 透明度和 Today's consumption；首选 Agent 无配额数据时自动回退另一方 |
 
 **Hook 安装**
 | 模块 | 文件 | 职责 |
