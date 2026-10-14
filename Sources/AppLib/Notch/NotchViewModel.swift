@@ -11,6 +11,13 @@ public final class NotchViewModel: ObservableObject {
     public var presentationStore: SessionStore { isDemoActive ? demoController.store : sessionStore }
     public var isDemoActive: Bool { demoController.isActive }
     public var canStartDemo: Bool { !sessionStore.sessions.values.contains { $0.needsAttention } }
+    @Published public var remoteHosts: [RemoteHostStatus] = []
+    public var hasActivityForVisibility: Bool {
+        !presentationStore.sessions.isEmpty || remoteHosts.contains { $0.keepsVisible }
+    }
+    public var hasLocalAttention: Bool {
+        sessionStore.sessions.values.contains { $0.source.isLocal && $0.needsAttention }
+    }
     @Published public var panelState: PanelState = .compact
     /// Drives the first-launch welcome overlay rendered by `NotchRootView`
     /// and `SimulatedNotchFullView`. Toggled by `AppDelegate.maybeShowWelcome()`.
@@ -86,6 +93,7 @@ public final class NotchViewModel: ObservableObject {
             return working > 1 ? "\(working) working" : "working"
         case .waiting:
             let waiting = presentationStore.sessions.values.filter { $0.pendingPermission != nil }.count
+            if waiting == 0 { return "needs remote attention" }
             return waiting > 1 ? "\(waiting) awaiting" : "awaiting approval"
         }
     }
@@ -132,7 +140,7 @@ public final class NotchViewModel: ObservableObject {
     /// Click handler: jump to the terminal tab for this session.
     /// Runs on a background task so subprocess + AppleScript calls don't block the UI.
     public func activateTerminal(for session: SessionInfo) {
-        guard session.source != .demo else { return }
+        guard session.source.isLocal else { return }
         let cachedPid = session.claudePid
         let transcriptPath = session.transcriptPath
         let cwd = session.cwd

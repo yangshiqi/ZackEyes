@@ -49,6 +49,18 @@ struct NotchExpandedView: View {
                     .font(.system(size: 10))
                     .foregroundColor(.white.opacity(0.5))
             }
+            if !viewModel.remoteHosts.isEmpty && !viewModel.isDemoActive {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        ForEach(viewModel.remoteHosts) { status in
+                            Text("\(status.host.name) · \(status.label)")
+                                .font(.system(size: 10))
+                                .foregroundStyle(status.phase == .failed ? AppColors.attention.color : .white.opacity(0.7))
+                                .padding(6).background(.white.opacity(0.05), in: Capsule())
+                        }
+                    }
+                }
+            }
             if viewModel.presentationStore.sessions.isEmpty {
                 emptyState
             } else {
@@ -161,11 +173,15 @@ struct NotchExpandedView: View {
         // inside another Button — nested buttons make the outer action fire
         // when a child button is clicked, which would jump the terminal on
         // every Allow/Deny click.
+        if session.source == .remote {
+            RemoteSessionCard(session: session, now: tick)
+        } else {
         sessionCardContent(session, theme: theme, title: title)
             .contentShape(Rectangle())
             .onTapGesture {
                 viewModel.activateTerminal(for: session)
             }
+        }
     }
 
     @ViewBuilder

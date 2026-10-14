@@ -1,14 +1,17 @@
 // swift-tools-version: 6.0
 import PackageDescription
 
-let package = Package(
-    name: "ZackEyes",
-    platforms: [.macOS(.v14)],
-    products: [
-        .executable(name: "ZackEyes", targets: ["ZackEyes"]),
-        .executable(name: "bridge", targets: ["Bridge"]),
-    ],
-    targets: [
+var remoteProducts: [Product] = [.executable(name: "zackeyes-stream", targets: ["RemoteStream"])]
+var remoteTargets: [Target] = [
+    .target(name: "RemoteCore", path: "Sources/RemoteCore"),
+    .executableTarget(name: "RemoteStream", dependencies: ["RemoteCore"], path: "Sources/RemoteStream"),
+    .testTarget(name: "RemoteCoreTests", dependencies: ["RemoteCore"], path: "Tests/RemoteCoreTests"),
+]
+#if !os(Linux)
+    remoteProducts += [
+        .executable(name: "ZackEyes", targets: ["ZackEyes"]), .executable(name: "bridge", targets: ["Bridge"]),
+    ]
+    remoteTargets += [
         // --- Libraries (testable) ---
         .target(
             name: "Shared",
@@ -21,7 +24,7 @@ let package = Package(
         ),
         .target(
             name: "AppLib",
-            dependencies: ["Shared"],
+            dependencies: ["Shared", "RemoteCore"],
             path: "Sources/AppLib",
             linkerSettings: [
                 .linkedFramework("AppKit"),
@@ -55,5 +58,13 @@ let package = Package(
             dependencies: ["AppLib"],
             path: "Tests/AppLibTests"
         ),
+
     ]
+#endif
+
+let package = Package(
+    name: "ZackEyes",
+    platforms: [.macOS(.v14)],
+    products: remoteProducts,
+    targets: remoteTargets
 )

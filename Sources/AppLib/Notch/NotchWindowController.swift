@@ -127,7 +127,7 @@ public final class NotchWindowController {
         switch visibility {
         case .always:     return true
         case .hidden:     return false
-        case .whenActive: return !viewModel.presentationStore.sessions.isEmpty
+        case .whenActive: return viewModel.hasActivityForVisibility
         }
     }
 

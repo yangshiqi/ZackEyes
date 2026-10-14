@@ -8,6 +8,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     case notifications = "Notifications"
     case integrations = "Integrations"
     case usage = "Usage"
+    case remote = "Remote Hosts"
     case about = "About"
 
     var id: Self { self }
@@ -19,6 +20,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .notifications: return "bell"
         case .integrations: return "point.3.connected.trianglepath.dotted"
         case .usage: return "chart.bar.xaxis"
+        case .remote: return "network"
         case .about: return "info.circle"
         }
     }
@@ -35,6 +37,7 @@ struct SettingsRootView: View {
     let quitApplication: () -> Void
 
     let usageLedger: UsageLedgerService
+    let remoteHosts: RemoteHostManager
 
     @State private var selection: SettingsSection = .general
 
@@ -136,6 +139,7 @@ struct SettingsRootView: View {
                 case .integrations: integrationSettings
                 case .usage:
                     UsageLedgerView(ledger: usageLedger)
+                case .remote: RemoteHostsView(manager: remoteHosts)
                 case .about: aboutSettings
                 }
             }

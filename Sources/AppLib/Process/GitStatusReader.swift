@@ -51,7 +51,7 @@ public enum GitStatusReader {
         var seen: Set<String> = []
         var out: [String] = []
         for session in sessions {
-            guard let cwd = session.cwd, !cwd.isEmpty else { continue }
+            guard session.source.isLocal, let cwd = session.cwd, !cwd.isEmpty else { continue }
             guard seen.insert(cwd).inserted else { continue }
             out.append(cwd)
         }

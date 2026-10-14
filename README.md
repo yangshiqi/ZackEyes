@@ -126,6 +126,28 @@ echo '{"hook_event_name":"Stop","session_id":"test","cwd":"/tmp","last_assistant
   $(swift build --show-bin-path)/bridge --event Stop --agent codex
 ```
 
+### SSH remote observation (development build)
+
+Add up to eight named SSH aliases or `user@hostname` destinations in **Settings → Remote Hosts**. ZackEyes keeps one foreground SSH stream per enabled host, reconnects after a drop, and shows connection status and host identity alongside observed Claude/Codex sessions. Remote questions and approvals must be handled in the remote terminal; the cards have no local approval or terminal-jump actions.
+
+Build on the remote Linux or macOS machine using Swift 6, then install the headless executable:
+
+```bash
+swift build -c release --product zackeyes-stream
+mkdir -p ~/.local/bin
+install -m 755 .build/release/zackeyes-stream ~/.local/bin/zackeyes
+```
+
+Before adding a host, verify key authentication and its host key yourself. A custom port, identity or jump host can be defined in your existing SSH alias. Then test the stream:
+
+```bash
+ssh your-host '~/.local/bin/zackeyes --stream'
+```
+
+The stream emits metadata-only JSON snapshots every five seconds: project/path, model, tool name, observed state and last activity. It sends no prompts, replies, tool arguments, permissions or credentials. Recent transcripts (Claude 8h / Codex 30m) are observations, not proof that a remote process is running. There is no remote daemon, application listening port or hook installation; closing SSH ends the stream. Missing or unsupported remote binaries, untrusted keys and authentication failures appear as host errors.
+
+The Mac uses the system SSH client with public-key authentication, strict host-key checking and no password prompts or automatic trust updates. Hosts are stored only in `~/.zackeyes/remote-hosts.json`; ZackEyes does not change SSH or agent configuration. Remote sessions do not enter the local usage ledger, journal or quota readings. When Active remains reachable for connecting/error hosts even without local sessions; Hidden suppresses remote-driven expansion. This feature is in the development build and is not yet in the published download.
+
 ### Local usage history (development build)
 
 Open **Settings → Usage** for 7/30/90-day token and estimated agent-hour charts, per-agent totals, cache hit rate, project/model/tool rankings and an hourly activity heatmap. The local append-only ledger survives transcript removal and app restarts. It reads available Claude/Codex transcripts and stores only counts, bounded project/model/tool names, hashed identities and timing metadata under `~/.zackeyes/usage/`; no prompts, replies or tool arguments are stored or uploaded.
