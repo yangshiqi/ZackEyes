@@ -70,12 +70,12 @@ struct SimulatedNotchView: View {
         if let urgent = eta?.pillUrgentLabel {
             urgentETAChip(urgent)
         } else {
-            percentageChip(label: "5h", usedPct: fivePct)
+            percentageChip(label: "5h", usedPct: fivePct, lastUpdated: snap.quotaLastUpdated(for: agent))
         }
         Text("·")
             .font(.system(size: 12))
             .foregroundColor(.white.opacity(0.3))
-        percentageChip(label: "7d", usedPct: sevenPct)
+        percentageChip(label: "7d", usedPct: sevenPct, lastUpdated: snap.quotaLastUpdated(for: agent))
     }
 
     @ViewBuilder
@@ -88,12 +88,12 @@ struct SimulatedNotchView: View {
     }
 
     @ViewBuilder
-    private func percentageChip(label: String, usedPct: Double?) -> some View {
+    private func percentageChip(label: String, usedPct: Double?, lastUpdated: Date?) -> some View {
         HStack(spacing: 3) {
             Text(label)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundColor(.white.opacity(0.55))
-            Text(progressString(usedPct: usedPct))
+            QuotaReadingText(text: progressString(usedPct: usedPct), lastUpdated: usedPct == nil ? nil : lastUpdated)
                 .font(.system(size: 13, weight: .medium, design: .monospaced))
                 .foregroundColor(quotaColor(usedPct: usedPct))
         }
@@ -139,6 +139,7 @@ struct SimulatedNotchView: View {
             label: "5h",
             usedPct: fivePct,
             resetsAt: fiveResets,
+            lastUpdated: snap.quotaLastUpdated(for: agent),
             eta: (agent == .codex) ? snap.codexFiveHourETA : snap.fiveHourETA
         )
 
@@ -149,7 +150,8 @@ struct SimulatedNotchView: View {
         usageStat(
             label: "7d",
             usedPct: sevenPct,
-            resetsAt: sevenResets
+            resetsAt: sevenResets,
+            lastUpdated: snap.quotaLastUpdated(for: agent)
         )
 
         Spacer(minLength: 4)
@@ -165,13 +167,13 @@ struct SimulatedNotchView: View {
     }
 
     @ViewBuilder
-    private func usageStat(label: String, usedPct: Double?, resetsAt: Date?,
+    private func usageStat(label: String, usedPct: Double?, resetsAt: Date?, lastUpdated: Date?,
                            eta: CapETA? = nil) -> some View {
         HStack(spacing: 4) {
             Text(label)
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundColor(.white.opacity(0.55))
-            Text(progressString(usedPct: usedPct))
+            QuotaReadingText(text: progressString(usedPct: usedPct), lastUpdated: usedPct == nil ? nil : lastUpdated)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundColor(quotaColor(usedPct: usedPct))
             // #86/#108 — show the ETA badge AND the reset countdown; they don't
