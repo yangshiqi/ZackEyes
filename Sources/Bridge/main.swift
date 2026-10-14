@@ -11,8 +11,8 @@ import Shared
 // unreachable (the app isn't running) is an expected state, not a bug
 // to surface.
 //
-// The only path that writes to stdout is PermissionRequest success,
-// where Claude Code expects a JSON response. If that socket round-trip
+// Successful PermissionRequest and opt-in PreToolUse(AskUserQuestion)
+// responses write JSON to stdout. If that socket round-trip
 // fails, we still exit 0 with empty stdout — Claude Code treats the
 // missing response as "no hook preference" and falls back to its own
 // default permission prompt.
@@ -191,12 +191,35 @@ case "StatusLine":
     exit(0)
 
 case "PreToolUse":
-    // Always fire-and-forget. Earlier builds blocked on AskUserQuestion
-    // and answered via the popup, which silenced CC's native terminal
-    // UI — issue user feedback (Path 2): both surfaces should show, and
-    // operating either side dismisses the other. The popup now drives
-    // CC's own AskUQ UI by injecting keystrokes (see KeystrokeInjector
-    // in AppLib), so the bridge no longer needs to block here.
+    // AskUserQuestion blocks so the app can answer from the notch (#260).
+    // The app either sends a PreToolUseHookResponse (answers → CC skips its
+    // terminal UI) or closes without writing (.deferToTerminal: toggle off,
+    // timeout, or "Answer in terminal" → CC falls back to its native UI).
+    // Nil (app not running, EOF, timeout) also exits 0 silently → native UI.
+    if (jsonObject["tool_name"] as? String) == "AskUserQuestion" {
+        guard let responseData = client.sendAndWaitForResponse(data: payloadData, timeoutSeconds: 600) else {
+            exit(0)
+        }
+        // Validate the reply shape before handing it to Claude Code: only a
+        // well-formed PreToolUseHookResponse is forwarded; anything else
+        // fails open to CC's native prompt rather than passing garbage.
+        guard (try? JSONDecoder().decode(PreToolUseHookResponse.self, from: responseData)) != nil else {
+            exit(0)
+        }
+        // Raw write(2), not FileHandle.write(_:): same SIGPIPE/EINTR
+        // rationale as the PermissionRequest branch above (#200).
+        responseData.withUnsafeBytes { raw in
+            var off = 0
+            while off < raw.count {
+                let n = write(STDOUT_FILENO, raw.baseAddress!.advanced(by: off), raw.count - off)
+                if n > 0 { off += n; continue }
+                if errno == EINTR { continue }
+                break
+            }
+        }
+        exit(0)
+    }
+    // All other tools: fire-and-forget observation only.
     _ = client.sendFireAndForget(data: payloadData)
     exit(0)
 

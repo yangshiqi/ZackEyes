@@ -16,6 +16,7 @@ final class SettingsViewModel: ObservableObject {
     @Published private(set) var theme: BuddyTheme
     @Published private(set) var notificationSound: String
     @Published private(set) var notifyWaitingForInput: Bool
+    @Published private(set) var answerQuestionsFromNotch: Bool
     @Published private(set) var notchOffsetX: CGFloat
     @Published private(set) var hookHealth: HookHealthReport
     /// nil until the user runs the pipeline test; `.some(nil)` while it runs.
@@ -57,6 +58,7 @@ final class SettingsViewModel: ObservableObject {
             ?? loadedTheme.defaultSoundFile
             ?? "none"
         notifyWaitingForInput = configStore.loadNotifyWaitingForInput()
+        answerQuestionsFromNotch = configStore.loadAnswerQuestionsFromNotch()
         notchOffsetX = configStore.loadNotchOffsetX()
         hookHealth = hookHealthProvider()
     }
@@ -139,6 +141,12 @@ final class SettingsViewModel: ObservableObject {
         guard enabled != notifyWaitingForInput else { return }
         configStore.saveNotifyWaitingForInput(enabled)
         notifyWaitingForInput = enabled
+    }
+
+    func setAnswerQuestionsFromNotch(_ enabled: Bool) {
+        guard enabled != answerQuestionsFromNotch else { return }
+        configStore.saveAnswerQuestionsFromNotch(enabled)
+        answerQuestionsFromNotch = enabled
     }
 
     func refreshHotkey() {

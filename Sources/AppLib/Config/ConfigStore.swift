@@ -293,6 +293,38 @@ public final class ConfigStore: Sendable {
         persist(data)
     }
 
+    /// Load whether AskUserQuestion choices may be answered from the notch.
+    /// Defaults to `false` — the terminal stays the default surface (#260).
+    public func loadAnswerQuestionsFromNotch() -> Bool {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+            return false
+        }
+        return wrapper.answerQuestionsFromNotch ?? false
+    }
+
+    /// Save the answer-from-notch preference. Same defensive contract as
+    /// `saveNotifyWaitingForInput` (skip on parse failure; preserve other keys).
+    public func saveAnswerQuestionsFromNotch(_ enabled: Bool) {
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: directory) {
+            try? fm.createDirectory(atPath: directory, withIntermediateDirectories: true)
+        }
+        var wrapper: ConfigWrapper
+        if fm.fileExists(atPath: configPath) {
+            guard let data = fm.contents(atPath: configPath),
+                  let existing = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+                return
+            }
+            wrapper = existing
+        } else {
+            wrapper = ConfigWrapper(hotkey: .default)
+        }
+        wrapper.answerQuestionsFromNotch = enabled
+        guard let data = try? Self.makeEncoder().encode(wrapper) else { return }
+        persist(data)
+    }
+
     /// Save the hotkey config atomically. Preserves other keys.
     /// Creates directory if needed.
     public func save(_ config: HotKeyConfig) {
@@ -379,4 +411,5 @@ private struct ConfigWrapper: Codable {
     var leftProgressDirection: String?  // nil = leftToRight (Left-mode fill anchor)
     var timeOverlayOpacity: Double?     // nil = 0.4 (elapsed overlay opacity)
     var notifyWaitingForInput: Bool?    // nil = true (default — chime/notify when an agent blocks waiting on the user, #169)
+    var answerQuestionsFromNotch: Bool? // nil = false (default — answer AskUserQuestion in the terminal, #260)
 }

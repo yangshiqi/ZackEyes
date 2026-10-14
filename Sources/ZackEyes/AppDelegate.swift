@@ -784,34 +784,58 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             maybeNotifyWaiting(event: event, sessionId: sid, kind: .permission)
 
         case "PreToolUse" where event.toolName == "AskUserQuestion":
-            // Path 2: the bridge already fired-and-forgot, so there's no
-            // socket responder. CC is showing its native terminal UI right
-            // now; the popup is a parallel surface that drives that UI via
-            // keystroke injection (see SessionStore.submitAskUQAnswer +
-            // KeystrokeInjector). The PostToolUse(AskUQ) branch below
-            // closes the popup if the user answered in the terminal first.
+            // The bridge now blocks on PreToolUse + AskUserQuestion (#260):
+            // `responder` releases it. Deferring closes the connection
+            // without answering → CC falls back to its native terminal UI.
             guard let sid = event.sessionId else {
                 EventTrace.shared.note(.dropped("no session_id"))
                 NSLog("ZackEyes: PreToolUse AskUQ missing session_id")
+                responder?(.deferToTerminal)
                 return
             }
             let toolInput = event.toolInput?.mapValues { $0.value } ?? [:]
-            let pending = PendingPermission(
-                toolName: event.toolName ?? "AskUserQuestion",
+            let answerFromNotch = ConfigStore().loadAnswerQuestionsFromNotch()
+            let candidate = PendingPermission(
+                id: permissionId ?? UUID(),
+                toolName: "AskUserQuestion",
                 toolInput: toolInput,
                 cwd: event.cwd,
-                responder: { _ in }   // no-op — see comment above
+                responder: responder ?? { _ in },
+                answerableFromNotch: answerFromNotch && responder != nil,
+                toolUseId: event.toolUseId
             )
-            NSLog("ZackEyes: PreToolUse AskUQ for tool=AskUserQuestion")
+            let pending: PendingPermission
+            if candidate.answerableFromNotch {
+                // Only complete, unambiguous choices keep the bridge waiting.
+                pending = candidate
+                NSLog("ZackEyes: PreToolUse AskUQ (answer-from-notch) sid=%@",
+                      String(sid.prefix(8)))
+            } else {
+                // Toggle OFF or unsupported input: release the bridge so CC
+                // shows its native terminal UI — the pre-#260 behavior. The
+                // popup stays a notice with the "answer in terminal" CTA.
+                responder?(.deferToTerminal)
+                pending = PendingPermission(
+                    toolName: event.toolName ?? "AskUserQuestion",
+                    toolInput: toolInput,
+                    cwd: event.cwd,
+                    responder: { _ in },   // no-op — bridge already released
+                    toolUseId: event.toolUseId
+                )
+                NSLog("ZackEyes: PreToolUse AskUQ (notice-only) sid=%@",
+                      String(sid.prefix(8)))
+            }
             // sessionStore.handleEvent (in the default branch) is what
             // normally captures bridgePpid into claudePid. AskUQ skips the
-            // default branch, so apply the same field-stamping inline so
-            // KeystrokeInjector knows which terminal to activate.
+            // default branch, so apply the same field-stamping inline.
             EventTrace.shared.note(.prompted)
             sessionStore.handleEvent(event)
             sessionStore.handlePermissionRequest(
                 sessionId: sid, permission: pending, agent: event.agent
             )
+            if pending.answerableFromNotch {
+                sessionStore.startAskUQTimeout(sessionId: sid, requestId: pending.id)
+            }
             forceUiExpand()
             maybeNotifyWaiting(event: event, sessionId: sid, kind: .question)
 

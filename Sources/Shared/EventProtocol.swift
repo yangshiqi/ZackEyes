@@ -356,26 +356,21 @@ extension BridgeEvent {
     /// True when this event needs the bridge to wait for an app-side response
     /// (the connection stays open instead of fire-and-forget).
     ///
-    /// AskUserQuestion is non-blocking on both PreToolUse and the
-    /// PermissionRequest companion event. The popup is now a notice-only
-    /// surface — it shows the question text and a "Click to answer in
-    /// terminal" CTA, and tapping the session card jumps to the right
-    /// terminal tab; the user answers in CC's native terminal AskUQ UI.
-    /// Two reasons to keep AskUQ off the blocking path:
+    /// AskUserQuestion blocks on PreToolUse so the app can answer from the
+    /// notch (#260): the bridge waits, and the app either sends
+    /// `PreToolUseHookResponse.askUQAnswers` or `.deferToTerminal` (timeout /
+    /// "Answer in terminal" / toggle off → CC falls back to its native UI).
     ///
-    /// 1. Auto-allowing the PermissionRequest would short-circuit CC's
-    ///    terminal UI and cause it to return an empty answer immediately,
-    ///    firing PostToolUse and clearing the popup before the user can
-    ///    read or click the CTA.
-    /// 2. Treating it as blocking on the app side puts the SocketServer
-    ///    into a poll loop; when the bridge fire-and-forgets and closes
-    ///    the connection, POLLHUP triggers `abandonPermission`, which
-    ///    clears the popup mid-render.
+    /// The PermissionRequest companion event for AskUserQuestion stays
+    /// non-blocking: auto-allowing it would short-circuit CC's terminal UI
+    /// and cause it to return an empty answer immediately, firing PostToolUse
+    /// and clearing the popup before the user can interact.
     ///
     /// Regular PermissionRequest still blocks because Allow/Deny answers
     /// travel back through the socket.
     public var requiresBlockingResponse: Bool {
-        bridgeEvent == "PermissionRequest" && toolName != "AskUserQuestion"
+        (bridgeEvent == "PermissionRequest" && toolName != "AskUserQuestion")
+            || (bridgeEvent == "PreToolUse" && toolName == "AskUserQuestion")
     }
 }
 
@@ -384,14 +379,29 @@ extension BridgeEvent {
 /// Sum type for any response the app sends back to a blocking bridge call.
 /// `PermissionRequest` and `PreToolUse + AskUserQuestion` use structurally
 /// different JSON shapes; this enum keeps them straight at the call sites.
+///
+/// `.deferToTerminal` closes the bridge connection *without* writing a
+/// response. The bridge sees EOF, exits 0 with empty stdout, and Claude Code
+/// falls back to its native UI — used for "Answer in terminal" and the
+/// answer-timeout path (#260). It never reaches `encoded()`: the socket
+/// server's responder short-circuits it before encoding.
 public enum BridgeResponse: Sendable {
     case permission(PermissionResponse)
     case preToolUse(PreToolUseHookResponse)
+    case deferToTerminal
 
     public func encoded() throws -> Data {
         switch self {
         case .permission(let r): return try JSONEncoder().encode(r)
         case .preToolUse(let r): return try JSONEncoder().encode(r)
+        case .deferToTerminal:
+            throw BridgeResponseError.deferHasNoEncoding
         }
     }
+}
+
+/// `BridgeResponse.encoded()` is only valid for responses that carry a
+/// payload. See `deferToTerminal` above.
+public enum BridgeResponseError: Error {
+    case deferHasNoEncoding
 }

@@ -170,12 +170,23 @@ import Foundation
     let post = BridgeEvent(bridgeEvent: "PostToolUse", toolName: "AskUserQuestion")
     let start = BridgeEvent(bridgeEvent: "SessionStart")
     #expect(perm.requiresBlockingResponse == true)
-    // Path 2: AskUQ no longer blocks — bridge fires-and-forgets so CC's
-    // own terminal AskUQ UI runs in parallel with the popup.
-    #expect(askUQ.requiresBlockingResponse == false)
+    // #260: PreToolUse + AskUserQuestion blocks so the app can answer from
+    // the notch (or defer back to CC's terminal UI). The PermissionRequest
+    // companion event stays non-blocking (see
+    // requiresBlockingResponse_askUQPermissionRequestDoesNotBlock).
+    #expect(askUQ.requiresBlockingResponse == true)
     #expect(preBash.requiresBlockingResponse == false)
     #expect(post.requiresBlockingResponse == false)
     #expect(start.requiresBlockingResponse == false)
+}
+
+@Test func bridgeResponse_deferToTerminalHasNoEncoding() {
+    // deferToTerminal is a control signal, not a payload: the socket
+    // server's responder short-circuits it (close without writing) before
+    // encoding. Encoding it is a programmer error.
+    #expect(throws: BridgeResponseError.self) {
+        try BridgeResponse.deferToTerminal.encoded()
+    }
 }
 
 // MARK: - AgentKind / agent field

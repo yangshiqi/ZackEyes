@@ -427,4 +427,30 @@ final class ConfigStoreTests: XCTestCase {
             .attributesOfItem(atPath: tmpDir.appendingPathComponent("config.json").path)[.posixPermissions] as? Int
         XCTAssertEqual(mode, 0o600)
     }
+
+    // MARK: - Answer questions from the notch (#260)
+
+    func testAnswerQuestionsFromNotchDefaultsToFalse() {
+        let store = ConfigStore(directory: tmpDir.path)
+        XCTAssertEqual(store.loadAnswerQuestionsFromNotch(), false,
+                       "terminal stays the default surface")
+    }
+
+    func testAnswerQuestionsFromNotchRoundTrip() {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveAnswerQuestionsFromNotch(true)
+        XCTAssertEqual(store.loadAnswerQuestionsFromNotch(), true)
+        store.saveAnswerQuestionsFromNotch(false)
+        XCTAssertEqual(store.loadAnswerQuestionsFromNotch(), false)
+    }
+
+    func testAnswerQuestionsFromNotchPreservesOtherKeys() throws {
+        let store = ConfigStore(directory: tmpDir.path)
+        store.saveNotifyWaitingForInput(false)
+        store.saveAnswerQuestionsFromNotch(true)
+        XCTAssertEqual(store.loadNotifyWaitingForInput(), false)
+        XCTAssertEqual(store.loadAnswerQuestionsFromNotch(), true)
+        let raw = try String(contentsOf: tmpDir.appendingPathComponent("config.json"), encoding: .utf8)
+        XCTAssertTrue(raw.contains("answerQuestionsFromNotch"))
+    }
 }

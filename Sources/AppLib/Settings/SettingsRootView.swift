@@ -336,6 +336,14 @@ struct SettingsRootView: View {
                 ))
                 .labelsHidden()
             }
+            settingRow("Answer questions from the notch") {
+                Toggle("", isOn: binding(
+                    viewModel.answerQuestionsFromNotch,
+                    viewModel.setAnswerQuestionsFromNotch
+                ))
+                .labelsHidden()
+            }
+            .help("When on, AskUserQuestion choices can be answered directly in the notch. Unanswered questions fall back to the terminal after 2 minutes.")
         }
     }
 
