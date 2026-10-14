@@ -254,6 +254,26 @@ actor UsageArchiveDatabase {
             String(data: row[0], encoding: .utf8).flatMap(Double.init).map { Date(timeIntervalSince1970: $0) }
         }
     }
+    /// Only populated historical days need delayed corrections; empty bootstrap reports are not history coverage.
+    func historicalCoverage() throws -> [DateInterval] {
+        try openDatabase()
+        let rows = try query(
+            "SELECT DISTINCT start,end FROM archives WHERE json_extract(body,'$.hasHistory')=1 ORDER BY start")
+        var intervals: [DateInterval] = []
+        for row in rows {
+            guard let start = String(data: row[0], encoding: .utf8).flatMap(Double.init),
+                let end = String(data: row[1], encoding: .utf8).flatMap(Double.init)
+            else { continue }
+            let interval = DateInterval(
+                start: Date(timeIntervalSince1970: start), end: Date(timeIntervalSince1970: end))
+            if let last = intervals.last, last.end >= interval.start {
+                intervals[intervals.count - 1] = DateInterval(start: last.start, end: max(last.end, interval.end))
+            } else {
+                intervals.append(interval)
+            }
+        }
+        return intervals
+    }
     func firstDate() throws -> Date? {
         try openDatabase()
         return try query("SELECT MIN(date) FROM observations").first?.first.flatMap {

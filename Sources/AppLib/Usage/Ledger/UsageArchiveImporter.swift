@@ -48,22 +48,33 @@ actor UsageArchiveImporter {
             let data = try handle.read(upToCount: Int(min(262_144, size - position))) ?? Data()
             guard !data.isEmpty else { throw CocoaError(.fileReadUnknown) }
             var lines: [Data] = []
-            for byte in data {
-                position += 1
-                if byte == 10 {
-                    if !skipping && !pending.isEmpty { lines.append(pending) }
-                    pending.removeAll(keepingCapacity: true)
-                    skipping = false
-                    offset = position
-                } else if skipping {
-                    offset = position
-                } else {
-                    pending.append(byte)
-                    if pending.count > 1_048_576 {
-                        pending.removeAll(keepingCapacity: false)
-                        skipping = true
+            data.withUnsafeBytes { bytes in
+                guard let base = bytes.baseAddress else { return }
+                var index = 0
+                while index < bytes.count {
+                    let newline = memchr(base.advanced(by: index), 10, bytes.count - index)
+                    let end = newline.map { base.distance(to: UnsafeRawPointer($0)) } ?? bytes.count
+                    let length = end - index
+                    position += UInt64(length)
+                    if !skipping {
+                        if pending.count + length > 1_048_576 {
+                            pending.removeAll(keepingCapacity: false)
+                            skipping = true
+                            rejected += 1
+                        } else if length > 0 {
+                            pending.append(base.advanced(by: index).assumingMemoryBound(to: UInt8.self), count: length)
+                        }
+                    }
+                    if skipping { offset = position }
+                    if newline != nil {
+                        position += 1
+                        if !skipping && !pending.isEmpty { lines.append(pending) }
+                        pending = Data()
+                        skipping = false
                         offset = position
-                        rejected += 1
+                        index = end + 1
+                    } else {
+                        index = end
                     }
                 }
             }
@@ -145,6 +156,7 @@ actor UsageArchiveImporter {
         saved.size = size
         saved.modified = modified
         saved.finished = false
+        let historicalCoverage = cutoff == nil ? [] : try await database.historicalCoverage()
         var oversizedCount = 0
         let reader = try Reader(handle: handle, size: size, offset: saved.offset, skipping: saved.skipping)
         while let lines = try reader.next() {
@@ -183,7 +195,11 @@ actor UsageArchiveImporter {
             }
             var kept: [UsageLedgerRecord] = []
             for record in records {
-                if let cutoff, record.date < cutoff && (record.end ?? record.date) < cutoff {
+                if let cutoff, !saved.fullCoverage, record.date < cutoff && (record.end ?? record.date) < cutoff,
+                    !historicalCoverage.contains(where: {
+                        $0.start <= (record.end ?? record.date) && $0.end > record.date
+                    })
+                {
                     if record.kind == .counter,
                         saved.baseline.map({
                             record.date > $0.date

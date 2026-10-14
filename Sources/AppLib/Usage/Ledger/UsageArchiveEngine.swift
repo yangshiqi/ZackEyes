@@ -113,6 +113,8 @@ actor UsageArchiveEngine {
         else if previous == nil {
             first = calendar.date(byAdding: .day, value: -90, to: today)!
         }
+        // Counts outside the UI horizon remain indexed; do not build an unbounded number of daily blobs.
+        first = max(first, calendar.date(byAdding: .day, value: -90, to: today)!)
         var dates = Set(try await database.dirtyDays(calendar: calendar).filter { $0 < today })
         var cursor = calendar.startOfDay(for: first)
         while cursor < today {

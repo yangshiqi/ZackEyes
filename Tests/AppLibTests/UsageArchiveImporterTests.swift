@@ -162,3 +162,40 @@ extension UsageArchiveImporterTests {
         #expect(records.filter { $0.kind == .tokens }.reduce(0) { $0 + $1.tokens } == 100)
     }
 }
+
+extension UsageArchiveImporterTests {
+    @Test func delayedOldRevisionsUpdateArchivedDaysWithoutReimportingOtherOldHistory() async throws {
+        let root = try UsageLedgerStorageTests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("source.jsonl")
+        let oldDate = UsageLedgerTests.start.addingTimeInterval(-86400 * 10)
+        let first =
+            UsageLedgerTests.claude(
+                -86400 * 10, type: "assistant",
+                message: ["id": "old", "usage": ["input_tokens": 100, "output_tokens": 0]]) + "\n"
+        try Data(first.utf8).write(to: file)
+        let db = UsageArchiveDatabase(url: root.appendingPathComponent("archive.sqlite"))
+        let imported = UsageLedgerParser.parse(
+            text: first, agent: .claude, sourceID: UsageLedgerRecord.identity(file.path))
+        try await db.apply(records: imported)
+        try await db.archive(day: oldDate, calendar: UsageLedgerTests.utc)
+        let importer = UsageArchiveImporter(database: db, throttle: false)
+        _ = try await importer.importFile(
+            file, agent: .claude, cutoff: UsageLedgerTests.start.addingTimeInterval(-86400 * 3))
+        let revision =
+            UsageLedgerTests.claude(
+                -86400 * 10, type: "assistant",
+                message: ["id": "old", "usage": ["input_tokens": 150, "output_tokens": 0]]) + "\n"
+        let handle = try FileHandle(forWritingTo: file)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(revision.utf8))
+        try handle.close()
+        _ = try await importer.importFile(
+            file, agent: .claude, cutoff: UsageLedgerTests.start.addingTimeInterval(-86400 * 3))
+        #expect(
+            try await db.dirtyDays(calendar: UsageLedgerTests.utc).contains(
+                UsageLedgerTests.utc.startOfDay(for: oldDate)))
+        let records = try await db.records(start: oldDate.addingTimeInterval(-1), end: oldDate.addingTimeInterval(1))
+        #expect(records.first { $0.kind == .tokens }?.input == 150)
+    }
+}
