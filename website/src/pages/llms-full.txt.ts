@@ -1,4 +1,5 @@
 import {
+  appVersion,
   releaseName,
   downloadUrl,
   issuesUrl,
@@ -70,11 +71,13 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - Included in v0.9.7: Claude Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5 compatibility, PR #258: https://github.com/yangshiqi/ZackEyes/pull/258. Observed effort/model changes, actual fast-response pricing, 5-minute/1-hour cache writes, and separate tool/API failure handling. Child completion does not notify parent completion.
 - Effort requires live CLI metadata; a Claude Code 2.1.295 probe supplied it on Stop after the reply. Startup model recovery does not invent effort. Daily totals use API list-price estimates, not subscription invoices; unknown pricing remains unpriced. Codex estimates may lack request metadata or earlier history; Claude session-card cost uses the CLI-reported total. Compatibility notes: https://zackeyes.vercel.app/docs#model-compatibility
 
+## Development builds (merged, not yet released)
+The published download remains v${appVersion}. Master/source builds also include opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. These are not yet in the published download. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
+
 ## Roadmap
-- Daily work journal.
-- More agent support.
-- Local logs controls.
-- Roadmap page: https://zackeyes.vercel.app/roadmap
+- Finish setup, scheduling and delivery for the daily work journal; its local pipeline already exists in development.
+- Explore more agent support and local logs controls.
+- Completed development work and future plans: https://zackeyes.vercel.app/roadmap
 
 ## Direct answers
 - What is ZackEyes? A macOS notch command center for Claude Code and Codex CLI.

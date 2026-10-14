@@ -266,6 +266,12 @@ describe('Astro site contract', () => {
     // Shipped in v0.9.6 (ports #81+#76, git #77, subagents #40+#79,
     // compaction #37, jump diagnostics #42) — removed from the roadmap.
     assert.doesNotMatch(page, /Process and session insight/);
+    assert.match(page, /Implemented in development/);
+    assert.match(page, /not yet in the published/);
+    for (const feature of ['Answer from the notch', 'SSH remote observation', 'Demo fleet', 'Local usage history', 'Stale quota readings']) {
+      assert.ok(page.includes(feature), `missing completed development feature: ${feature}`);
+    }
+    assert.match(page, /Finish setup, scheduling and delivery/);
     assert.match(page, /Daily work journal/);
     assert.doesNotMatch(page, /title: 'Codex GPT-6 compatibility'/);
     assert.doesNotMatch(page, /title: 'Claude model and protocol compatibility'/);
@@ -479,6 +485,12 @@ describe('Astro site contract', () => {
     assert.match(llmsFull, /custom notification sounds/);
     assert.match(llmsFull, /context window usage/);
     assert.match(llmsFull, /Unix socket/);
+    for (const endpoint of [llms, llmsFull]) {
+      assert.match(endpoint, /Development builds \(merged, not yet released\)/);
+      assert.match(endpoint, /not yet in the published download/);
+      assert.match(endpoint, /Remote questions stay in the remote terminal/);
+      assert.match(endpoint, /v\$\{appVersion\}/);
+    }
     assert.match(llmsFull, /Roadmap/);
     assert.match(llmsFull, /Direct answers/);
   });

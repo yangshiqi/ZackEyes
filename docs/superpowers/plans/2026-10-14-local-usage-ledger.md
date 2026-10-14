@@ -83,8 +83,8 @@ Picker("Period", selection: rangeBinding) {
 - [x] Run full `swift build`, `swift test`, `make app`, strict deep codesign and `git diff --check`; inspect exit statuses and totals.
 - [x] Use an isolated CFFIXED_USER_HOME with seeded Claude/Codex fixtures to exercise actual Settings Usage, all ranges, populated/empty/error paths, restart and source deletion; inspect persisted JSONL for content leakage and actual-user config hashes for changes.
 - [x] Apply code-review skill with independent Spec and Standards agents against base `5f389ec`; fix concrete findings with regression coverage and repeat affected checks.
-- [ ] Update developer-build README/architecture and plan with actual results. Commit, push feature branch, create PR closing #263 using a body file, inspect checks and merge the exact tested full head.
-- [ ] Verify merged state and #263 closure, update #265 checkbox and memory, sync master. Continue #261 from its separately approved spec; final roadmap/site reconciliation follows both features.
+- [x] Update developer-build README/architecture and plan with actual results. Commit, push feature branch, create PR closing #263 using a body file, inspect checks and merge the exact tested full head.
+- [x] Verify merged state and #263 closure, update #265 checkbox and memory, sync master. Continue #261 from its separately approved spec; final roadmap/site reconciliation follows both features.
 
 ## Verification record
 
@@ -94,3 +94,5 @@ Picker("Period", selection: rangeBinding) {
 - Independent final specification and standards rechecks found no remaining blockers. No release/version bump. SSH spec remains separate from this PR.
 
 Final suite: 1,014 tests pass (876 Swift Testing + 138 XCTest), including the explicit overnight/concurrent-session fixture. Production sources match the native-tested signed app.
+
+Implementation merged in PR #269. Final documentation and roadmap reconciliation is tracked in the subsequent #265 completion PR; all feature verification above predates its merge. No release was published.

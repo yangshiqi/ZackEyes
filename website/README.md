@@ -4,7 +4,7 @@ Public website for ZackEyes, a macOS notch command center for Claude Code and Co
 
 ## Stack
 
-- Astro 5 static site generation
+- Astro 7 static site generation
 - Tailwind CSS v4 through `@tailwindcss/vite`
 - TypeScript with Astro strict config
 - React 19 dependencies reserved for future Astro islands
@@ -131,3 +131,8 @@ pnpm build
 The current direction is immersive CSS 3D for the hero, kinetic typography for scroll narrative, and restrained glassmorphism for product UI surfaces. The homepage intentionally ships as static HTML/CSS with one inline script for the canvas background and scroll progress, avoiding generated client JavaScript bundles until a real interactive island is needed.
 
 Logo source: `https://www.logosymbol.com/letter/letter-z-logo-design-with-arrow`. The source is published as CC0 by LogoSymbol; the site uses a ZackEyes-themed recolor in `public/logo-symbol.svg` and `public/icon.svg`.
+
+
+## Release and development boundaries
+
+`release.mjs` remains the source of truth for the published download. The roadmap separately lists the five completed #265 features as development-only: supported Claude question answers, SSH remote observation, demo mode, local usage history and stale quota hints. Keep docs, comparisons, privacy and both LLM endpoints explicit about that distinction until a release includes them. Do not add a changelog release entry or change download metadata for a master-only merge.

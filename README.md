@@ -126,6 +126,10 @@ echo '{"hook_event_name":"Stop","session_id":"test","cwd":"/tmp","last_assistant
   $(swift build --show-bin-path)/bridge --event Stop --agent codex
 ```
 
+### Completed development work (#265)
+
+All five items are merged into master and await a release: opt-in supported Claude question answers with timeout/terminal fallback (#260, PR #266), SSH remote observation (#261, PR #270), demo mode (#262, PR #267), local usage history (#263, PR #269) and stale quota hints (#264, PR #268). The published download remains v0.9.7; this work does not bump the version or publish a release. See the [roadmap](https://zackeyes.vercel.app/roadmap) for the release/development distinction.
+
 ### SSH remote observation (development build)
 
 Add up to eight named SSH aliases or `user@hostname` destinations in **Settings → Remote Hosts**. ZackEyes keeps one foreground SSH stream per enabled host, reconnects after a drop, and shows connection status and host identity alongside observed Claude/Codex sessions. Remote questions and approvals must be handled in the remote terminal; the cards have no local approval or terminal-jump actions.
@@ -173,6 +177,8 @@ If ZackEyes is already running, use its menu toggle. Demo mode is part of the de
 
 ```
 Sources/
+├── RemoteCore/                   # Portable metadata protocol and observer
+├── RemoteStream/                 # Headless zackeyes-stream executable
 ├── Shared/                       # Codable types shared by app and bridge
 ├── BridgeLib/                    # Bridge logic (testable)
 ├── Bridge/                       # CLI entry point
@@ -186,6 +192,7 @@ Sources/
 │   ├── MenuBar/
 │   ├── HotKey/
 │   ├── Notifications/
+│   ├── Remote/                   # SSH host configuration, transport, manager and UI
 │   ├── Process/                  # ProcessTreeInspector (ports), GitStatusReader
 │   ├── Terminal/
 │   ├── Update/                   # UpdateChecker (GitHub version detection)
@@ -193,16 +200,17 @@ Sources/
 └── ZackEyes/                     # NSApplication entry point + AppDelegate
 
 Tests/
+├── RemoteCoreTests/
 ├── SharedTests/
 ├── BridgeLibTests/
 └── AppLibTests/
 
-website/                              # Product site at zackeyes.vercel.app (Astro 5, static)
+website/                              # Product site at zackeyes.vercel.app (Astro 7, static)
 ```
 
 ## Website
 
-The product landing page at [zackeyes.vercel.app](https://zackeyes.vercel.app) lives in [`website/`](./website). It's an Astro 5 static site that consumes release metadata from [`website/src/lib/release.mjs`](./website/src/lib/release.mjs), kept in sync by `make release` via [`Scripts/bump-website-release.sh`](./Scripts/bump-website-release.sh). See [`website/README.md`](./website/README.md) for local dev and deploy notes.
+The product landing page at [zackeyes.vercel.app](https://zackeyes.vercel.app) lives in [`website/`](./website). It's an Astro 7 static site that consumes release metadata from [`website/src/lib/release.mjs`](./website/src/lib/release.mjs), kept in sync by `make release` via [`Scripts/bump-website-release.sh`](./Scripts/bump-website-release.sh). See [`website/README.md`](./website/README.md) for local dev and deploy notes.
 
 ## Documentation
 
@@ -216,9 +224,9 @@ The product landing page at [zackeyes.vercel.app](https://zackeyes.vercel.app) l
 
 A few similar tools, so you can pick the right one:
 
-- [Vibe Island](https://vibeisland.app) — the paid original ($19.99 one-time): 25+ agents, 20+ terminals, SSH remote monitoring. Pick it if you run many agents or need remote sessions. [Full comparison](https://zackeyes.vercel.app/vs-vibe-island)
+- [Vibe Island](https://vibeisland.app) — the paid original ($19.99 one-time): 25+ agents, 20+ terminals, SSH remote monitoring. Its published build offers broader agent and remote coverage; ZackEyes SSH observation is currently available in development builds. [Full comparison](https://zackeyes.vercel.app/vs-vibe-island)
 - [open-vibe-island](https://github.com/Octane0411/open-vibe-island) — free and open source (GPL v3): 10+ agents, broad terminal coverage. Pick it if you need Cursor / Gemini CLI / OpenCode and don't mind copyleft. [Full comparison](https://zackeyes.vercel.app/vs-open-vibe-island)
-- [Hallmonitor](https://github.com/hiteshbandhu/hallmonitor) — free and MIT like ZackEyes, with SSH multi-machine monitoring and a terminal dashboard. Pick it if you monitor remote boxes. [Full comparison](https://zackeyes.vercel.app/vs-hallmonitor)
+- [Hallmonitor](https://github.com/hiteshbandhu/hallmonitor) — free and MIT like ZackEyes, with SSH multi-machine monitoring and a terminal dashboard. Its published build includes remote monitoring; ZackEyes development builds now add read-only SSH observation and opt-in supported Claude question answers. [Full comparison](https://zackeyes.vercel.app/vs-hallmonitor)
 
 ZackEyes is the pick when your workflow is Claude Code + Codex CLI and you want per-session USD cost tracking, themes with matching sounds, and a permissive MIT licence — free forever.
 

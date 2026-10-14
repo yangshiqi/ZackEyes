@@ -404,10 +404,12 @@ Source code lives in **`yangshiqi/ZackEyes` (private)**; release artifacts (DMG)
 
 ```
 ccisland/
-├── Package.swift               # SPM manifest (5 targets + 3 test targets)
+├── Package.swift               # SPM manifest (7 production targets + 4 test targets on macOS; remote-only on Linux)
 ├── Makefile                    # .app bundle 组装 + ad-hoc 签名
 ├── Resources/Info.plist        # LSUIElement, NSSupportsAutomaticTermination=false
 ├── Sources/
+│   ├── RemoteCore/             # Portable metadata protocol + observer
+│   ├── RemoteStream/           # Headless zackeyes-stream executable
 │   ├── Shared/                 # BridgeEvent, PermissionResponse, AnyCodable
 │   ├── BridgeLib/              # SocketClient
 │   ├── Bridge/                 # Bridge CLI 入口
@@ -422,6 +424,7 @@ ccisland/
 │   │   ├── Settings/           # 统一非模态设置窗口
 │   │   ├── HotKey/             # HotKeyManager（可配置快捷键）
 │   │   ├── Notifications/      # NotificationManager
+│   │   ├── Remote/            # SSH hosts, owned transport, manager and read-only UI
 │   │   ├── Process/            # ProcessTreeInspector (向下进程树 + LISTEN 端口), GitStatusReader
 │   │   ├── Journal/            # #214 每日日志: Collector→Distiller→Sanitizer→Renderer, ProcessAgentRunner
 │   │   ├── Terminal/           # TerminalLocator (tab 跳转), JumpDiagnostics (失败归因)
@@ -429,6 +432,7 @@ ccisland/
 │   │   └── Usage/              # UsageTracker (5h/7d 限额)
 │   └── ZackEyes/               # main.swift + AppDelegate
 └── Tests/
+    ├── RemoteCoreTests/
     ├── SharedTests/
     ├── BridgeLibTests/
     └── AppLibTests/

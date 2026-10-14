@@ -130,9 +130,17 @@ const docsStructuredData = [
             <li><strong>Clone the source.</strong> <code>git clone https://github.com/yangshiqi/ZackEyes.git</code></li>
             <li><strong>Need Xcode Command Line Tools.</strong> <code>xcode-select --install</code> if you haven't already; the build uses Swift 6 from the system toolchain.</li>
             <li><strong>Build the app.</strong> <code>cd ZackEyes && make app</code> produces a debug bundle. <code>make app-release</code> builds the universal release bundle. <code>make dmg</code> wraps it into a drag-to-Applications DMG.</li>
-            <li><strong>Run the tests.</strong> <code>swift test</code> exercises the bridge, hook installer, socket types, and notch logic in &lt; 2s.</li>
+            <li><strong>Run the tests.</strong> <code>swift test</code> exercises the bridge, hook installer, socket types, remote observation and notch logic.</li>
             <li><strong>Contribute.</strong> Pick a <a href={`${sourceUrl}/contribute`} rel="noopener">good first issue</a>, open a PR. See <a href={sourceUrl} rel="noopener">the repo README</a> for the workflow.</li>
           </ol>
+        </div>
+      </section>
+
+      <section class="policy-band" aria-labelledby="development-builds">
+        <div class="policy-shell">
+          <h2 class="section-title" id="development-builds">Development builds.</h2>
+          <p class="section-copy">Master includes opt-in supported Claude question answers, SSH remote observation, demo sessions, local usage history and stale quota hints. These are not yet in the published v{appVersion} download. See the <a href="/roadmap">roadmap</a> and repository README for source-build setup.</p>
+          <p class="section-copy">Remote observation requires Swift 6 on the remote Linux/macOS host: build <code>swift build -c release --product zackeyes-stream</code> and install the result as <code>~/.local/bin/zackeyes</code>. Verify key authentication and the host key in your terminal, then add the SSH alias in Settings → Remote Hosts. Remote approvals and questions remain in the remote terminal.</p>
         </div>
       </section>
 

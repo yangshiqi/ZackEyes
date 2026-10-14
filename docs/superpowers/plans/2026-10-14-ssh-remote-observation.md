@@ -81,8 +81,8 @@ store.replaceRemoteSessions(host:host,snapshot:snapshot)
 - [x] Add a Remote Hosts Settings section with add/edit/remove/toggle, status/error, setup guidance and validation. Expanded shared content shows status chips for empty/error hosts, host labels on cards and terminal-only remote question copy, with no Allow/Deny/answer controls.
 - [x] Native isolated-home checks cover host editing/error/empty states and both surface rendering paths. Real SSH tests use generated local keys/sshd/config and the actual stream executable; assert reconnect after drop and no owned process after removal/shutdown. Actual user SSH/agent files stay unchanged.
 - [x] Run Mac `swift build`, full `swift test`, `make app`, strict codesign and diff checks; run Linux core tests/product build/CLI smoke. Use independent Spec and Standards reviews against base10a8b70, fix findings and rerun affected verification.
-- [ ] Commit/push, create PR closing261 with exact validation/limits, inspect checks, merge expected full tested head, verify closed issue and update265.
-- [ ] Final separate documentation/roadmap PR reconciles265/92, README/architecture, website roadmap/LLM pages and both implementation-plan completion records. Run website build/tests. Do not publish a release or claim these master-only features are in the current download.
+- [x] Commit/push, create PR closing261 with exact validation/limits, inspect checks, merge expected full tested head, verify closed issue and update265.
+- [x] Prepare final separate documentation/roadmap PR reconciling265/92, README/architecture, website roadmap/LLM pages and both implementation-plan completion records. Run website build/tests. Do not publish a release or claim these master-only features are in the current download.
 
 
 ## Verification results (2026-10-14)
@@ -93,3 +93,5 @@ store.replaceRemoteSessions(host:host,snapshot:snapshot)
 - Regression tests cover capped/reset backoff, protocol/heartbeat failures, a 200KB stderr flood, config FIFO/size rejection and shutdown reaping a child that ignores TERM. The initial real-SSH test exposed macOS FileHandle pipe batching; POSIX reads fixed it. Independent review exposed the quit teardown gap; deferred NSApplication termination and awaited shutdown fixed it.
 - Native actual Settings probe passed add/error/edit/disable/remove with an isolated home. Production simulated panel and production real-notch root hosted in its nonactivating panel both rendered remote host/status/cards, terminal-only attention and no approval controls, without activation. This machine has no physical notch, so physical notch placement itself was not manually exercised; its geometry was unchanged.
 - Independent Spec and Standards reviews found no remaining concrete blockers after fixes. Local evidence logs: `/tmp/zackeyes-261-final-tests.log`, `-linux-core.log`, `-native-results.log`, `-settings-results.log`, `-app.log`.
+
+Implementation merged in PR #270. Final documentation and roadmap reconciliation is tracked in the subsequent #265 completion PR; all feature verification above predates its merge. No release was published.
