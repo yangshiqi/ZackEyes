@@ -80,7 +80,6 @@ actor UsageArchiveDatabase {
                     "CREATE TABLE observations(id TEXT PRIMARY KEY, session TEXT NOT NULL, kind TEXT NOT NULL, date REAL NOT NULL, end REAL, body BLOB NOT NULL)"
                 )
                 try execute("CREATE INDEX observation_day ON observations(date)")
-                try execute("CREATE INDEX observation_interval ON observations(end) WHERE end IS NOT NULL")
                 try execute("CREATE INDEX observation_session ON observations(session,kind,date)")
                 try execute("CREATE TABLE sources(id TEXT PRIMARY KEY, body BLOB NOT NULL)")
                 try execute(
@@ -90,6 +89,10 @@ actor UsageArchiveDatabase {
                 try execute("PRAGMA user_version=1")
                 try execute("COMMIT")
             }
+            // Include the start boundary in the index so future intervals can be rejected without loading bodies.
+            try execute(
+                "CREATE INDEX IF NOT EXISTS observation_interval_window ON observations(end,date) WHERE end IS NOT NULL"
+            )
             _ = try query("PRAGMA journal_mode=WAL")
             try execute("PRAGMA synchronous=FULL")
             try execute("PRAGMA cache_size=-8192")
@@ -215,7 +218,7 @@ actor UsageArchiveDatabase {
     func records(start: Date, end: Date) throws -> [UsageLedgerRecord] {
         try openDatabase()
         var rows = try query(
-            "SELECT body FROM observations WHERE date>=? AND date<? UNION ALL SELECT body FROM observations WHERE end IS NOT NULL AND end>? AND date<?",
+            "SELECT body FROM observations WHERE date>=? AND date<? UNION ALL SELECT body FROM observations INDEXED BY observation_interval_window WHERE end IS NOT NULL AND end>? AND date<?",
             [
                 .number(start.timeIntervalSince1970), .number(end.timeIntervalSince1970),
                 .number(start.timeIntervalSince1970), .number(start.timeIntervalSince1970),
