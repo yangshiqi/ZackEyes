@@ -150,7 +150,9 @@ public final class UsageLedgerService: ObservableObject {
             }
         }
     }
-    private func publish(_ value: UsageArchiveEngine.Progress, token: Int) {
-        if token == generation { progress = value }
+    private func publish(_ value: UsageArchiveEngine.Progress, token: Int) async {
+        guard token == generation else { return }
+        progress = value
+        if value.archivesUpdated { await refresh() }
     }
 }

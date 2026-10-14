@@ -51,3 +51,46 @@ extension UsageArchiveEngineTests {
         #expect(try await engine.isDue(now: now, calendar: changed, startup: true))
     }
 }
+
+extension UsageArchiveEngineTests {
+    @Test func firstFilePublishesPartialArchivesBeforeRemainingSettlement() async throws {
+        let root = try UsageLedgerStorageTests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("claude")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        for i in 0..<2 {
+            let file = source.appendingPathComponent("\(i).jsonl")
+            let text =
+                UsageLedgerTests.claude(
+                    0, type: "assistant", message: ["id": "\(i)", "usage": ["input_tokens": 100, "output_tokens": 0]])
+                + "\n"
+            try Data(text.utf8).write(to: file)
+        }
+        let db = UsageArchiveDatabase(url: root.appendingPathComponent("archive.sqlite"))
+        let engine = UsageArchiveEngine(
+            database: db, claudeRoot: source, codexRoot: root.appendingPathComponent("none"),
+            legacyURL: root.appendingPathComponent("none"), throttle: false)
+        let task = Task {
+            try await engine.run(
+                mode: .automatic, now: UsageLedgerTests.start.addingTimeInterval(86400), calendar: UsageLedgerTests.utc,
+                force: true
+            ) { progress in
+                if progress.archivesUpdated {
+                    let partial = try? await db.summary(
+                        days: 7, now: UsageLedgerTests.start.addingTimeInterval(86400), calendar: UsageLedgerTests.utc)
+                    #expect(partial?.totalTokens == 100)
+                    withUnsafeCurrentTask { $0?.cancel() }
+                }
+            }
+        }
+        do {
+            _ = try await task.value
+            Issue.record("Expected cancellation after partial archive")
+        } catch is CancellationError {}
+        #expect(try await engine.lastSettlement(calendar: UsageLedgerTests.utc) == nil)
+        #expect(
+            try await db.summary(
+                days: 7, now: UsageLedgerTests.start.addingTimeInterval(86400), calendar: UsageLedgerTests.utc
+            ).totalTokens == 100)
+    }
+}

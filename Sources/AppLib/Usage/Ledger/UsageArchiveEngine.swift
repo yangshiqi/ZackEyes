@@ -9,6 +9,7 @@ actor UsageArchiveEngine {
         var completed = 0
         var total = 0
         var bytes = 0
+        var archivesUpdated = false
     }
     struct Outcome: Sendable {
         var issues: [String] = []
@@ -82,6 +83,7 @@ actor UsageArchiveEngine {
         } else {
             let discovered = try discover(since: mode == .automatic ? cutoff : nil)
             outcome.issues += discovered.issues
+            var lastPartial = Date.distantPast
             for (index, candidate) in discovered.files.enumerated() {
                 try Task.checkCancellation()
                 let phase = mode == .automatic ? "Settling completed days" : "Importing older transcripts"
@@ -102,6 +104,23 @@ actor UsageArchiveEngine {
                     outcome.issues.append(
                         "A \(candidate.agent.rawValue) transcript could not be imported; saved counts remain available."
                     )
+                }
+                if mode == .automatic && (index == 0 || Date().timeIntervalSince(lastPartial) >= 30) {
+                    var partialDays = Set(try await database.dirtyDays(calendar: calendar).filter { $0 < today })
+                    for offset in 1...3 {
+                        if let day = calendar.date(byAdding: .day, value: -offset, to: today) {
+                            partialDays.insert(day)
+                        }
+                    }
+                    for day in partialDays.sorted() {
+                        try Task.checkCancellation()
+                        try await database.archive(day: day, calendar: calendar)
+                    }
+                    await onProgress(
+                        Progress(
+                            phase: "Settling completed days", completed: index + 1,
+                            total: discovered.files.count, archivesUpdated: true))
+                    lastPartial = Date()
                 }
             }
         }
