@@ -92,3 +92,28 @@ struct UsageIncrementalParserTests {
             separator: "\n") + "\n"
     }
 }
+
+extension UsageIncrementalParserTests {
+    @Test func pendingToolStateIsBoundedAndWarnsWithoutDroppingCallCounts() throws {
+        let rows: [[String: Any]] = (0..<300).map { i in
+            [
+                "type": "assistant", "timestamp": "2026-10-13T10:00:00Z", "sessionId": "raw",
+                "message": [
+                    "content": [
+                        ["type": "tool_use", "id": "tool-\(i)", "name": "Bash", "input": ["command": "PRIVATE"]]
+                    ]
+                ],
+            ]
+        }
+        var state = UsageLedgerParser.seed(
+            objects: rows, agent: .claude, sourceID: UsageLedgerRecord.identity("source"))
+        var issues = 0
+        let records = UsageLedgerParser.consume(objects: rows, state: &state, onIssue: { issues += 1 })
+        #expect(state.pending.count == 256)
+        #expect(state.truncatedTools && issues == 44)
+        #expect(records.filter { $0.kind == .tool }.count == 300)
+        let saved = try JSONEncoder().encode(state)
+        #expect(saved.count < 2_097_152)
+        #expect(!String(decoding: saved, as: UTF8.self).contains("PRIVATE"))
+    }
+}

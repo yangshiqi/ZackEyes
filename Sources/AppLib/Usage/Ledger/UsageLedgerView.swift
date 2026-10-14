@@ -21,32 +21,50 @@ struct UsageLedgerView: View {
                 .frame(width: 240)
                 Spacer()
                 if ledger.isLoading { ProgressView().controlSize(.small) }
-                Button("Refresh") { Task { await ledger.refresh() } }.disabled(ledger.isLoading)
+                Button("Refresh") { Task { await ledger.refresh() } }
+                Button("Update now") { ledger.updateNow() }.disabled(ledger.isLoading || ledger.isPaused)
             }
             if ledger.isLoading {
                 Text(
-                    ledger.totalFiles > 0
-                        ? "Importing local history: \(ledger.completedFiles) of \(ledger.totalFiles) transcripts"
-                        : "Reading local history…"
+                    ledger.progress.total > 0
+                        ? "\(ledger.progress.phase): \(ledger.progress.completed) of \(ledger.progress.total) · \(ByteCountFormatter.string(fromByteCount: Int64(ledger.progress.bytes), countStyle: .file))"
+                        : ledger.progress.phase
                 )
                 .font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
             }
-            Text("Local history · counts only · no telemetry")
+            HStack {
+                Button("Import saved history") { ledger.importLegacy() }.disabled(ledger.isLoading || ledger.isPaused)
+                Button("Import older transcripts") { ledger.importHistory() }.disabled(
+                    ledger.isLoading || ledger.isPaused)
+                if ledger.isLoading && !ledger.isPaused {
+                    Button("Pause") { Task { await ledger.pause() } }
+                }
+                if ledger.isPaused { Button("Resume") { ledger.resume() }.disabled(ledger.isLoading) }
+            }.controlSize(.small)
+            if ledger.isPaused {
+                Text("Background statistics paused. Saved daily archives remain available.").font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Text("Through yesterday · Today is not settled · Local counts only")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(
+                "Automatic setup covers the last three completed days. Import earlier history to extend coverage; saved counts survive source removal."
+            )
+            .font(.system(size: 11)).foregroundStyle(.secondary)
             if let error = ledger.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle")
                     .font(.system(size: 12)).foregroundStyle(AppColors.attention.color)
                     .textSelection(.enabled)
             }
-            if let date = ledger.lastSuccessfulScan {
-                Text("Last successful scan: \(date.formatted(date:.abbreviated,time:.shortened))")
+            if let date = ledger.settledThrough {
+                Text("Settled through: \(date.formatted(date:.abbreviated,time:.omitted))")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
             if !ledger.isLoading && !ledger.summary.hasHistory {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("No local history yet").font(.headline)
                     Text(
-                        "Available Claude and Codex transcripts are collected automatically. Removed transcripts cannot be backfilled; previously recorded counts remain in your ledger."
+                        "Recent completed days are settled in the background at 03:00, with catch-up after sleep or restart. Import saved history or older transcripts to add earlier days. Removed transcripts cannot be backfilled; saved counts are preserved."
                     )
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 }

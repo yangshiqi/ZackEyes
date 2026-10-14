@@ -5,55 +5,48 @@ public final class UsageLedgerService: ObservableObject {
     @Published private(set) var summary = UsageLedgerSummary()
     @Published private(set) var days = 30
     @Published private(set) var isLoading = false
+    @Published private(set) var isPaused = false
     @Published private(set) var errorMessage: String?
-    @Published private(set) var lastSuccessfulScan: Date?
-
-    private let store: UsageLedgerStore
-    @Published private(set) var completedFiles = 0
-    @Published private(set) var totalFiles = 0
-
-    private typealias Batch = @Sendable (UsageLedgerCollector.Scan) async throws -> Void
-    private let collect: @Sendable (@escaping Batch) async throws -> UsageLedgerCollector.Scan
+    @Published private(set) var settledThrough: Date?
+    @Published private(set) var progress = UsageArchiveEngine.Progress(phase: "")
+    private let database: UsageArchiveDatabase
+    private let engine: UsageArchiveEngine
     private let now: @Sendable () -> Date
-    private let calendar: Calendar
+    private let calendar: @Sendable () -> Calendar
     private var loop: Task<Void, Never>?
+    private var job: Task<Void, Never>?
     private var generation = 0
+    private var refreshGeneration = 0
+    private var mode: UsageArchiveEngine.Mode = .automatic
 
     public convenience init(
         claudeRoot: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/projects"),
         codexRoot: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.codex/sessions"),
         ledgerURL: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.zackeyes/usage/history-v1.jsonl")
     ) {
-        let collector = UsageLedgerCollector(claudeRoot: claudeRoot, codexRoot: codexRoot)
-        self.init(store: UsageLedgerStore(url: ledgerURL), collectBatches: { try await collector.scan(onBatch: $0) })
+        let database = UsageArchiveDatabase(
+            url: ledgerURL.deletingLastPathComponent().appendingPathComponent("archive-v1.sqlite"))
+        let engine = UsageArchiveEngine(
+            database: database, claudeRoot: claudeRoot, codexRoot: codexRoot, legacyURL: ledgerURL)
+        self.init(database: database, engine: engine)
     }
-
-    convenience init(
-        store: UsageLedgerStore, collect: @escaping @Sendable () async throws -> UsageLedgerCollector.Scan,
-        now: @escaping @Sendable () -> Date = { Date() }, calendar: Calendar = .current
-    ) {
-        self.init(store: store, collectBatches: { _ in try await collect() }, now: now, calendar: calendar)
-    }
-
     init(
-        store: UsageLedgerStore,
-        collectBatches:
-            @escaping @Sendable (@escaping @Sendable (UsageLedgerCollector.Scan) async throws -> Void) async throws ->
-            UsageLedgerCollector.Scan,
-        now: @escaping @Sendable () -> Date = { Date() }, calendar: Calendar = .current
+        database: UsageArchiveDatabase, engine: UsageArchiveEngine,
+        now: @escaping @Sendable () -> Date = { Date() }, calendar: @escaping @Sendable () -> Calendar = { .current }
     ) {
-        self.store = store
-        self.collect = collectBatches
+        self.database = database
+        self.engine = engine
         self.now = now
         self.calendar = calendar
     }
-
     public func start() {
-        stop()
+        guard loop == nil else { return }
         loop = Task { [weak self] in
+            await self?.refresh()
+            await self?.tick(startup: true)
             while !Task.isCancelled {
-                await self?.refresh()
                 try? await Task.sleep(for: .seconds(60))
+                if !Task.isCancelled { await self?.tick() }
             }
         }
     }
@@ -61,63 +54,101 @@ public final class UsageLedgerService: ObservableObject {
         generation += 1
         loop?.cancel()
         loop = nil
+        job?.cancel()
+        job = nil
         isLoading = false
+    }
+    func tick(startup: Bool = false) async {
+        guard !isLoading else { return }
+        let token = generation
+        do {
+            isPaused = try await database.metadata("paused") == Data([1])
+            if let pending = try await engine.pendingMode(), pending != .automatic {
+                mode = pending
+                isPaused = true
+            }
+            guard !isPaused else { return }
+            let due = try await engine.isDue(now: now(), calendar: calendar(), startup: startup)
+            guard token == generation, !Task.isCancelled else { return }
+            if due { begin(.automatic) } else { await refresh() }
+        } catch { errorMessage = error.localizedDescription }
     }
     func setDays(_ value: Int) async {
         guard [7, 30, 90].contains(value) else { return }
         days = value
-        if isLoading {
-            do { try await publishSummary(token: generation) } catch is CancellationError {} catch {
-                errorMessage = error.localizedDescription
-            }
-        } else {
-            await refresh()
-        }
+        await refresh()
     }
+    /// UI refreshes read only daily blobs, including while an import is running.
     func refresh() async {
-        guard !isLoading else { return }
+        refreshGeneration += 1
+        let refreshToken = refreshGeneration
         let token = generation
-        isLoading = true
-        defer { if token == generation { isLoading = false } }
         do {
-            // Persisted history remains usable while a cold scan/backfill runs.
-            try await publishSummary(token: token)
-            completedFiles = 0
-            totalFiles = 0
-            let scan = try await collect { [weak self] batch in
-                try await self?.accept(batch, token: token)
+            var selected = days
+            var zone = calendar()
+            var report = try await database.summary(days: selected, now: now(), calendar: zone)
+            while selected != days || UsageArchiveDatabase.zone(zone) != UsageArchiveDatabase.zone(calendar()) {
+                selected = days
+                zone = calendar()
+                report = try await database.summary(days: selected, now: now(), calendar: zone)
             }
-            try await accept(scan, token: token)
-            if errorMessage == nil { lastSuccessfulScan = now() }
-        } catch is CancellationError {
-            // A dismissed Settings task or shutdown must not publish stale state.
-        } catch {
-            guard token == generation else { return }
-            errorMessage = error.localizedDescription
-        }
+            let last = try await engine.lastSettlement(calendar: zone)
+            guard token == generation, refreshToken == refreshGeneration, !Task.isCancelled, selected == days,
+                UsageArchiveDatabase.zone(zone) == UsageArchiveDatabase.zone(calendar())
+            else { return }
+            summary = report
+            settledThrough = last.flatMap { zone.date(byAdding: .day, value: -1, to: $0) }
+        } catch is CancellationError {} catch { if token == generation { errorMessage = error.localizedDescription } }
     }
-    private func accept(_ scan: UsageLedgerCollector.Scan, token: Int) async throws {
-        try Task.checkCancellation()
-        guard token == generation else { throw CancellationError() }
-        if !scan.records.isEmpty, try await store.upsert(scan.records) {
-            try await publishSummary(token: token)
-        }
-        let issues = scan.issues + (await store.warnings)
-        guard token == generation else { throw CancellationError() }
-        completedFiles = scan.scannedFiles
-        totalFiles = scan.totalFiles
-        errorMessage = issues.isEmpty ? nil : issues.joined(separator: "\n")
+    func updateNow() { begin(.automatic) }
+    func importLegacy() { begin(.legacy) }
+    func importHistory() { begin(.history) }
+    func pause() async {
+        isPaused = true
+        job?.cancel()
+        do { try await database.setMetadata("paused", Data([1])) } catch { errorMessage = error.localizedDescription }
     }
-    private func publishSummary(token: Int) async throws {
-        var selected = days
-        var report = try await store.summary(days: selected, now: now(), calendar: calendar)
-        while selected != days {
-            selected = days
-            report = try await store.summary(days: selected, now: now(), calendar: calendar)
-        }
-        try Task.checkCancellation()
-        guard token == generation else { throw CancellationError() }
-        summary = report
-    }
+    func resume() { begin(mode) }
+    func waitForJob() async { await job?.value }
 
+    private func begin(_ next: UsageArchiveEngine.Mode) {
+        guard job == nil else { return }
+        mode = next
+        isPaused = false
+        isLoading = true
+        errorMessage = nil
+        progress = .init(phase: "Preparing background statistics")
+        let token = generation
+        let date = now()
+        let zone = calendar()
+        job = Task(priority: .background) { [weak self] in
+            guard let self else { return }
+            defer {
+                if token == self.generation {
+                    self.job = nil
+                    self.isLoading = false
+                }
+            }
+            do {
+                try Task.checkCancellation()
+                try await self.database.setMetadata("paused", Data())
+                let outcome = try await self.engine.run(mode: next, now: date, calendar: zone, force: true) {
+                    [weak self] progress in
+                    await self?.publish(progress, token: token)
+                }
+                try Task.checkCancellation()
+                guard token == self.generation else { return }
+                await self.refresh()
+                self.errorMessage = outcome.issues.isEmpty ? nil : outcome.issues.joined(separator: "\n")
+            } catch is CancellationError {} catch {
+                if token == self.generation {
+                    self.errorMessage = error.localizedDescription
+                    self.isPaused = true
+                }
+            }
+        }
+    }
+    private func publish(_ value: UsageArchiveEngine.Progress, token: Int) {
+        if token == generation { progress = value }
+    }
 }

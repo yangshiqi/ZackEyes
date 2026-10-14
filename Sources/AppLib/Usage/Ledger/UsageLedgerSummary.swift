@@ -32,7 +32,10 @@ struct UsageLedgerSummary: Codable, Sendable {
     var cacheInput = 0
     var cacheReused = 0
 
-    static func make(records: [UsageLedgerRecord], days count: Int, now: Date, calendar: Calendar, rankLimit: Int = 10, start: Date? = nil) -> Self {
+    static func make(
+        records: [UsageLedgerRecord], days count: Int, now: Date, calendar: Calendar, rankLimit: Int = 10,
+        start: Date? = nil
+    ) -> Self {
         let today = calendar.startOfDay(for: now)
         let count = max(1, min(90, count))
         let dates = (0..<count).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }
