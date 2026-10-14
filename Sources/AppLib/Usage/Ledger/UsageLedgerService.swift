@@ -9,7 +9,11 @@ public final class UsageLedgerService: ObservableObject {
     @Published private(set) var lastSuccessfulScan: Date?
 
     private let store: UsageLedgerStore
-    private let collect: @Sendable () async throws -> UsageLedgerCollector.Scan
+    @Published private(set) var completedFiles = 0
+    @Published private(set) var totalFiles = 0
+
+    private typealias Batch = @Sendable (UsageLedgerCollector.Scan) async throws -> Void
+    private let collect: @Sendable (@escaping Batch) async throws -> UsageLedgerCollector.Scan
     private let now: @Sendable () -> Date
     private let calendar: Calendar
     private var loop: Task<Void, Never>?
@@ -21,15 +25,25 @@ public final class UsageLedgerService: ObservableObject {
         ledgerURL: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.zackeyes/usage/history-v1.jsonl")
     ) {
         let collector = UsageLedgerCollector(claudeRoot: claudeRoot, codexRoot: codexRoot)
-        self.init(store: UsageLedgerStore(url: ledgerURL), collect: { try await collector.scan() })
+        self.init(store: UsageLedgerStore(url: ledgerURL), collectBatches: { try await collector.scan(onBatch: $0) })
     }
 
-    init(
+    convenience init(
         store: UsageLedgerStore, collect: @escaping @Sendable () async throws -> UsageLedgerCollector.Scan,
         now: @escaping @Sendable () -> Date = { Date() }, calendar: Calendar = .current
     ) {
+        self.init(store: store, collectBatches: { _ in try await collect() }, now: now, calendar: calendar)
+    }
+
+    init(
+        store: UsageLedgerStore,
+        collectBatches:
+            @escaping @Sendable (@escaping @Sendable (UsageLedgerCollector.Scan) async throws -> Void) async throws ->
+            UsageLedgerCollector.Scan,
+        now: @escaping @Sendable () -> Date = { Date() }, calendar: Calendar = .current
+    ) {
         self.store = store
-        self.collect = collect
+        self.collect = collectBatches
         self.now = now
         self.calendar = calendar
     }
@@ -52,7 +66,13 @@ public final class UsageLedgerService: ObservableObject {
     func setDays(_ value: Int) async {
         guard [7, 30, 90].contains(value) else { return }
         days = value
-        await refresh()
+        if isLoading {
+            do { try await publishSummary(token: generation) } catch is CancellationError {} catch {
+                errorMessage = error.localizedDescription
+            }
+        } else {
+            await refresh()
+        }
     }
     func refresh() async {
         guard !isLoading else { return }
@@ -60,23 +80,15 @@ public final class UsageLedgerService: ObservableObject {
         isLoading = true
         defer { if token == generation { isLoading = false } }
         do {
-            let scan = try await collect()
-            try Task.checkCancellation()
-            guard token == generation else { return }
-            try await store.upsert(scan.records)
-            let issues = scan.issues + (await store.warnings)
-            var selected = days
-            var report = try await store.summary(days: selected, now: now(), calendar: calendar)
-            // A range change while the scan awaited must publish that new range.
-            while selected != days {
-                selected = days
-                report = try await store.summary(days: selected, now: now(), calendar: calendar)
+            // Persisted history remains usable while a cold scan/backfill runs.
+            try await publishSummary(token: token)
+            completedFiles = 0
+            totalFiles = 0
+            let scan = try await collect { [weak self] batch in
+                try await self?.accept(batch, token: token)
             }
-            try Task.checkCancellation()
-            guard token == generation else { return }
-            summary = report
-            errorMessage = issues.isEmpty ? nil : issues.joined(separator: "\n")
-            if issues.isEmpty { lastSuccessfulScan = now() }
+            try await accept(scan, token: token)
+            if errorMessage == nil { lastSuccessfulScan = now() }
         } catch is CancellationError {
             // A dismissed Settings task or shutdown must not publish stale state.
         } catch {
@@ -84,4 +96,28 @@ public final class UsageLedgerService: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+    private func accept(_ scan: UsageLedgerCollector.Scan, token: Int) async throws {
+        try Task.checkCancellation()
+        guard token == generation else { throw CancellationError() }
+        if !scan.records.isEmpty, try await store.upsert(scan.records) {
+            try await publishSummary(token: token)
+        }
+        let issues = scan.issues + (await store.warnings)
+        guard token == generation else { throw CancellationError() }
+        completedFiles = scan.scannedFiles
+        totalFiles = scan.totalFiles
+        errorMessage = issues.isEmpty ? nil : issues.joined(separator: "\n")
+    }
+    private func publishSummary(token: Int) async throws {
+        var selected = days
+        var report = try await store.summary(days: selected, now: now(), calendar: calendar)
+        while selected != days {
+            selected = days
+            report = try await store.summary(days: selected, now: now(), calendar: calendar)
+        }
+        try Task.checkCancellation()
+        guard token == generation else { throw CancellationError() }
+        summary = report
+    }
+
 }

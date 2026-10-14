@@ -34,14 +34,51 @@ struct UsageLedgerStorageTests {
             id: "record", session: "session", agent: .claude, project: "Project", model: "model", date: at,
             kind: .tokens, input: tokens)
     }
+    @Test func newestFilePublishesDurablyBeforeOlderBackfillAndCachedScanHasNoNewBatches() async throws {
+        let root = try folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let claude = root.appendingPathComponent("claude")
+        try FileManager.default.createDirectory(at: claude, withIntermediateDirectories: true)
+        for (name, offset) in [("older", 0.0), ("newest", 10.0)] {
+            let stamp = ISO8601DateFormatter().string(from: UsageLedgerTests.start.addingTimeInterval(offset))
+            let obj: [String: Any] = [
+                "type": "assistant", "sessionId": name, "timestamp": stamp,
+                "cwd": "/work/\(name)", "message": ["id": name, "usage": ["input_tokens": 100, "output_tokens": 10]],
+            ]
+            let file = claude.appendingPathComponent(name + ".jsonl")
+            try JSONSerialization.data(withJSONObject: obj).write(to: file)
+            try FileManager.default.setAttributes(
+                [.modificationDate: UsageLedgerTests.start.addingTimeInterval(offset)], ofItemAtPath: file.path)
+        }
+        let collector = UsageLedgerCollector(claudeRoot: claude, codexRoot: root.appendingPathComponent("codex"))
+        let store = UsageLedgerStore(url: root.appendingPathComponent("ledger.jsonl"))
+        do {
+            _ = try await collector.scan { scan in
+                guard !scan.records.isEmpty else { return }
+                #expect(scan.scannedFiles == 1 && scan.totalFiles == 2)
+                #expect(scan.records.allSatisfy { $0.project == "newest" })
+                try await store.upsert(scan.records)
+                throw CancellationError()
+            }
+            Issue.record("Expected cancellation at the first batch")
+        } catch is CancellationError {}
+        let saved = try await store.summary(
+            days: 7, now: UsageLedgerTests.start.addingTimeInterval(3600), calendar: UsageLedgerTests.utc)
+        #expect(saved.totalTokens == 110)
+        _ = try await collector.scan()
+        let gate = LedgerBatchCounter()
+        let cached = try await collector.scan { scan in await gate.add(scan.records.count) }
+        #expect(cached.parsedFiles == 0)
+        #expect(await gate.count == 0)
+    }
     @Test func repeatedRestartedAndRevisedWritesRemainAppendOnly() async throws {
         let root = try folder()
         defer { try? FileManager.default.removeItem(at: root) }
         let url = root.appendingPathComponent("usage/history.jsonl")
         let store = UsageLedgerStore(url: url)
-        try await store.upsert([record()])
+        #expect(try await store.upsert([record()]))
         let original = try Data(contentsOf: url)
-        try await store.upsert([record()])
+        #expect(try await !store.upsert([record()]))
         #expect(try Data(contentsOf: url) == original)
         try await store.upsert([record(150, at: UsageLedgerTests.start.addingTimeInterval(1))])
         #expect(try Data(contentsOf: url).starts(with: original))
@@ -166,4 +203,9 @@ struct UsageLedgerStorageTests {
             ).totalTokens == 100)
     }
 
+}
+
+private actor LedgerBatchCounter {
+    var count = 0
+    func add(_ value: Int) { count += value }
 }

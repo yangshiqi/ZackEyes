@@ -32,7 +32,8 @@ actor UsageLedgerStore {
         return UsageLedgerSummary.make(records: Array(records.values), days: days, now: now, calendar: calendar)
     }
 
-    func upsert(_ observations: [UsageLedgerRecord]) throws {
+    @discardableResult
+    func upsert(_ observations: [UsageLedgerRecord]) throws -> Bool {
         try load()
         var changed: [String: UsageLedgerRecord] = [:]
         for observation in observations {
@@ -40,7 +41,7 @@ actor UsageLedgerStore {
             let old = changed[observation.id] ?? records[observation.id]
             if old.map({ observation.supersedes($0) }) ?? true { changed[observation.id] = observation }
         }
-        guard !changed.isEmpty else { return }
+        guard !changed.isEmpty else { return false }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
         var data = Data()
@@ -73,6 +74,7 @@ actor UsageLedgerStore {
         }
         records.merge(changed) { _, new in new }
         needsNewline = false
+        return true
     }
 
     private func load() throws {
@@ -93,19 +95,25 @@ actor UsageLedgerStore {
         guard data.count <= 512 * 1024 * 1024 else { throw Failure.unsafeFile }
         var decoded: [String: UsageLedgerRecord] = [:]
         var rejected = 0
+        let decoder = JSONDecoder()
         for line in data.split(separator: 10) {
-            guard line.count <= 1_048_576,
-                let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any]
-            else {
-                rejected += 1
-                continue
+            try Task.checkCancellation()
+            let record: UsageLedgerRecord? = try autoreleasepool {
+                guard line.count <= 1_048_576,
+                    let object = (try? JSONSerialization.jsonObject(with: Data(line))) as? [String: Any]
+                else {
+                    rejected += 1
+                    return nil
+                }
+                if let version = object["version"] as? Int, version != 1 { throw Failure.unsupportedVersion }
+                guard let record = try? decoder.decode(UsageLedgerRecord.self, from: Data(line)), record.isValid
+                else {
+                    rejected += 1
+                    return nil
+                }
+                return record
             }
-            if let version = object["version"] as? Int, version != 1 { throw Failure.unsupportedVersion }
-            guard let record = try? JSONDecoder().decode(UsageLedgerRecord.self, from: Data(line)), record.isValid
-            else {
-                rejected += 1
-                continue
-            }
+            guard let record else { continue }
             if decoded[record.id].map({ record.supersedes($0) }) ?? true { decoded[record.id] = record }
         }
         warnings =
