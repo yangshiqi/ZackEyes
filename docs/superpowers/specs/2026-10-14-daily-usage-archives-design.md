@@ -1,0 +1,29 @@
+# Daily usage settlement and archives
+
+Approved direction: the user accepted daily settlement of yesterday, incremental processing, daily aggregates, three-day correction, startup catch-up and optional/pauseable older-history import ("继续"). Implementation choices below make that approved direction concrete; no release is implied.
+
+## Behavior
+
+Settings Usage reads only small daily archives, never raw transcripts or the old history JSONL. Its 7/30/90-day ranges cover completed local calendar days through yesterday; today is explicitly unsettled. Existing live Today/quota rows keep their independent behavior. Refresh reloads archives; Update now explicitly corrects recent completed days. Normal startup loads archives and only starts settlement if yesterday is not settled. Subsequent settlement runs at/after local 03:00 while the app is running. Sleep/quit is handled by next-start/wake catch-up, not a daemon or launch agent. A completed day is not resettled on every launch/minute.
+
+Automatic initial coverage is the last three completed days. When prior settlement exists, catch up missing days since it, correcting the most recent three days. Older archive days touched by delayed/long-running intervals are also rebuilt. Recent-source discovery includes files modified since the earliest required day, including currently open transcripts spanning midnight. Older history requires an explicit import action. Jobs are single-flight, background priority, cooperatively throttled, pauseable and resume from durable checkpoints. Closing the app cancels work without losing committed chunks.
+
+## Storage
+
+Use system SQLite3 (available in the macOS SDK, no third-party package) under private `~/.zackeyes/usage/archive-v1.sqlite`. A single actor owns an indexed counts-only observation table, hashed source checkpoints, daily archive blobs, and completion metadata. SQLite WAL/FULL transactions atomically commit a bounded observation chunk with its parser state and byte offset. The memory page cache is limited; source content is never loaded as a whole or retained. Daily UI reads decode only selected archives.
+
+Store rows keep the existing observation IDs/revision ordering so copied Claude messages and Codex cumulative counters still deduplicate globally. Daily queries fetch only that day's tokens/tools/overlapping intervals plus the preceding Codex counter for each participating session. Daily archives preserve complete project/model/tool counts and cache numerator/denominator, allowing accurate multi-day ranks and weighted cache rates. Work union, question-wait subtraction, concurrent agent-hours, local midnight and DST semantics are retained.
+
+Database/directories/sidecars require owned regular files and 0600/0700, no symlink traversal. Unsupported schemas refuse writes. Prepared statements and transactions provide bounded I/O; errors leave the previous archives and checkpoints intact. No agent/SSH config is touched; source files are never changed or removed. Stored parser state contains hashed session/tool identities, bounded project/model/tool labels and counts/timestamps only, never prompt/reply/tool input or raw paths/IDs.
+
+## Incremental parsing
+
+Refactor the existing parser into a resumable metadata-only state machine, preserving the existing full-text fixture API. Seed identity/project metadata from a bounded set of initial complete rows; normal Claude/Codex metadata is at the beginning. Persist the hashed identity, model, pending tools, turn/activity boundaries, cumulative-counter context and valid-row index. Keep incomplete lines at their original byte position, rereading them only after growth; discard oversized rows without an unbounded buffer. Unchanged files read zero transcript bytes across restarts. Append resumes at the last committed newline; replacement, truncation or changed prefix/checkpoint boundary resets that source safely and deduplicates existing observations. Transaction failure or cancellation cannot advance an offset beyond durable counts.
+
+## Legacy and import
+
+Preserve `history-v1.jsonl` unchanged. An explicit Import existing history action streams its count records into SQLite in bounded, resumable transactions and rebuilds daily archives; it never loads the 250MB+ file into memory. Unsupported legacy versions stop the import without changing the legacy file. A separate Import older transcripts action streams all available transcript files through the same incremental pipeline; pause/resume and dedup apply. Existing archives remain visible while either import runs. No automatic multi-GB migration/backfill on opening Settings.
+
+## Verification
+
+TDD: incremental-vs-full parser equivalence across restarts, tool/question/task/counter boundaries, incomplete/oversized rows and privacy; SQLite duplicate/revision/predecessor queries, transactional checkpoint rollback, private-file/schema guards, midnight/DST and multi-day aggregate ranks/cache rates; unchanged-source zero-byte reads, append/replacement/truncation, bounded legacy import and restart; daily 03:00, missed-day catch-up, three-day correction, timezone change, no-work startup/view refresh and pause/resume; native Settings controls and archive-only reads. Full build/tests/app/signing, independent Spec/Standards review, actual large-history measurements and source/config preservation. Then PR/merge and README/architecture updates, without release metadata changes.
