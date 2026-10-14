@@ -169,7 +169,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // preferences are hosted by the shared Settings window.
         let statusMenu = StatusBarMenu(
             updateChecker: uc, downloader: dl,
-            journalTrigger: JournalManualTrigger())
+            journalTrigger: JournalManualTrigger(), demoViewModel: viewModel)
         mb.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
         self.statusBarMenu = statusMenu
 
@@ -226,6 +226,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             simulatedNotch = sn
 
             mb.onIconClick = { [weak sn] in sn?.toggleFull() }
+        }
+
+        viewModel.onDemoChanged = { [weak self] active in
+            guard let self else { return }
+            if active {
+                self.forceUiExpand()
+            } else {
+                if self.viewModel.canStartDemo { self.forceUiCompact() }
+                self.windowController?.applyVisibility(ConfigStore().loadNotchVisibility())
+                self.simulatedNotch?.applyVisibility(ConfigStore().loadNotchVisibility())
+                self.lastHadSessionsForVisibility = !self.sessionStore.sessions.isEmpty
+                if !self.viewModel.canStartDemo { self.forceUiExpand() }
+            }
         }
 
         // Local design-review entry point: launching the executable with
@@ -436,7 +449,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 8. First-launch welcome — per-version one-shot. Runs last so the
         //    notch controllers are already created and reachable via
         //    forceUiExpand().
-        maybeShowWelcome()
+        if CommandLine.arguments.contains("--demo") {
+            viewModel.startDemo()
+        } else {
+            maybeShowWelcome()
+        }
     }
 
     /// Discover the agent PID for each detected session and write OSC2 tab
@@ -689,6 +706,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        viewModel?.stopDemo()
         livenessSweepTimer?.invalidate()
         updateChecker?.stop()
         pricingStore?.stop()
@@ -1038,7 +1056,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             // cursor actually moves out of the panel, so without this the
             // panel would sit expanded forever if the user isn't moving
             // their mouse at app launch.
-            self.forceUiCompact()
+            if !self.viewModel.isDemoActive { self.forceUiCompact() }
             WelcomeTrigger.markShown(defaults: .standard, currentVersion: currentVersion)
         }
     }

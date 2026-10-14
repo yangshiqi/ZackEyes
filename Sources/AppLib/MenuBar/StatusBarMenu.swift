@@ -9,12 +9,14 @@ public final class StatusBarMenu: NSObject {
     private let downloader: UpdateDownloader
     private let journalTrigger: JournalManualTrigger
     private var aboutWindow: AboutWindow?
+    private weak var demoViewModel: NotchViewModel?
 
     public init(updateChecker: UpdateChecker, downloader: UpdateDownloader,
-                journalTrigger: JournalManualTrigger) {
+                journalTrigger: JournalManualTrigger, demoViewModel: NotchViewModel? = nil) {
         self.updateChecker = updateChecker
         self.downloader = downloader
         self.journalTrigger = journalTrigger
+        self.demoViewModel = demoViewModel
         super.init()
     }
 
@@ -41,6 +43,16 @@ public final class StatusBarMenu: NSObject {
         )
         settings.target = self
         menu.addItem(settings)
+
+        if let demoViewModel {
+            let enabled = demoViewModel.isDemoActive || demoViewModel.canStartDemo
+            let demo = NSMenuItem(title: "Demo mode",
+                action: enabled ? #selector(demoClicked(_:)) : nil, keyEquivalent: "")
+            demo.target = enabled ? self : nil
+            demo.state = demoViewModel.isDemoActive ? .on : .off
+            demo.isEnabled = enabled
+            menu.addItem(demo)
+        }
 
         let about = NSMenuItem(
             title: "About ZackEyes",
@@ -79,6 +91,12 @@ public final class StatusBarMenu: NSObject {
 
     @objc private func settingsClicked(_ sender: Any?) {
         NotificationCenter.default.post(name: .settingsWindowRequested, object: nil)
+    }
+
+    @objc private func demoClicked(_ sender: Any?) {
+        guard let demoViewModel else { return }
+        if demoViewModel.isDemoActive { demoViewModel.stopDemo() }
+        else { demoViewModel.startDemo() }
     }
 
     @objc private func journalClicked(_ sender: Any?) {

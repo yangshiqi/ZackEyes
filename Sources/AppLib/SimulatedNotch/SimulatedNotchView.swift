@@ -16,6 +16,11 @@ struct SimulatedNotchView: View {
     var body: some View {
         HStack(spacing: 10) {
             statusIcon
+            if viewModel.isDemoActive {
+                Text("DEMO")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(AppColors.attention.color)
+            }
 
             if isExpanded {
                 expandedContent
@@ -45,7 +50,7 @@ struct SimulatedNotchView: View {
     private var statusIcon: some View {
         CompactStatusIcon(
             attention: CompactAttention.make(
-                from: Array(viewModel.sessionStore.sessions.values)
+                from: Array(viewModel.presentationStore.sessions.values)
             ),
             aggregateState: viewModel.aggregateState,
             workingColor: AppColors.activity.color
@@ -149,8 +154,8 @@ struct SimulatedNotchView: View {
 
         Spacer(minLength: 4)
 
-        if viewModel.sessionStore.sessions.count > 0 {
-            Text("\(viewModel.sessionStore.sessions.count)")
+        if viewModel.presentationStore.sessions.count > 0 {
+            Text("\(viewModel.presentationStore.sessions.count)")
                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
             Image(systemName: "bubble.left.fill")

@@ -127,7 +127,7 @@ public final class NotchWindowController {
         switch visibility {
         case .always:     return true
         case .hidden:     return false
-        case .whenActive: return !viewModel.sessionStore.sessions.isEmpty
+        case .whenActive: return !viewModel.presentationStore.sessions.isEmpty
         }
     }
 
@@ -334,7 +334,7 @@ public final class NotchWindowController {
 
     private var stickyOpen: Bool {
         isCommandMenuOpen
-            || viewModel.sessionStore.sessions.values.contains { $0.pendingPermission != nil }
+            || viewModel.presentationStore.sessions.values.contains { $0.pendingPermission != nil }
     }
 
     private func showCommandMenu(from view: NSView) {
