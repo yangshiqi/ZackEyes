@@ -6,27 +6,66 @@ import Shared
 @MainActor
 public final class NotchViewModel: ObservableObject {
     public let sessionStore: SessionStore
+    public let demoController: DemoSessionController
+    public var onDemoChanged: ((Bool) -> Void)?
+    public var presentationStore: SessionStore { isDemoActive ? demoController.store : sessionStore }
+    public var isDemoActive: Bool { demoController.isActive }
+    public var canStartDemo: Bool { !sessionStore.sessions.values.contains { $0.needsAttention } }
     @Published public var panelState: PanelState = .compact
     /// Drives the first-launch welcome overlay rendered by `NotchRootView`
     /// and `SimulatedNotchFullView`. Toggled by `AppDelegate.maybeShowWelcome()`.
     @Published public var welcomeVisible: Bool = false
-    private var cancellable: AnyCancellable?
+    private var cancellables = Set<AnyCancellable>()
 
-    public init(sessionStore: SessionStore) {
+    public init(sessionStore: SessionStore, demoController: DemoSessionController = DemoSessionController()) {
         self.sessionStore = sessionStore
+        self.demoController = demoController
         // Forward SessionStore changes to trigger SwiftUI re-renders.
         // Nested ObservableObjects don't propagate automatically.
-        cancellable = sessionStore.objectWillChange.sink { [weak self] _ in
+        sessionStore.objectWillChange.sink { [weak self] _ in
             self?.objectWillChange.send()
-        }
+            // objectWillChange precedes mutation; inspect the new live state
+            // on the next main-actor turn before deciding to interrupt demo.
+            Task { @MainActor [weak self] in
+                guard let self, self.isDemoActive, !self.canStartDemo else { return }
+                self.stopDemo()
+            }
+        }.store(in: &cancellables)
+        demoController.store.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }.store(in: &cancellables)
+        demoController.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }.store(in: &cancellables)
+    }
+
+    @discardableResult
+    public func startDemo() -> Bool {
+        guard canStartDemo else { return false }
+        guard !isDemoActive else { return true }
+        welcomeVisible = false
+        demoController.start()
+        onDemoChanged?(true)
+        return true
+    }
+
+    public func stopDemo() {
+        guard isDemoActive else { return }
+        demoController.stop()
+        onDemoChanged?(false)
+    }
+
+    private func actionStore(sessionId: String) -> SessionStore {
+        if demoController.store.sessions[sessionId]?.source == .demo { return demoController.store }
+        return sessionStore
     }
 
     public var aggregateState: SessionState {
-        sessionStore.aggregateState
+        presentationStore.aggregateState
     }
 
     public var primarySession: SessionInfo? {
-        sessionStore.primarySession
+        presentationStore.primarySession
     }
 
     public var statusColor: Color {
@@ -38,15 +77,15 @@ public final class NotchViewModel: ObservableObject {
     }
 
     public var statusText: String {
-        let count = sessionStore.sessions.count
+        let count = presentationStore.sessions.count
         switch aggregateState {
         case .idle, .stopped:
             return count == 0 ? "no sessions" : (count == 1 ? "idle" : "\(count) idle")
         case .working:
-            let working = sessionStore.sessions.values.filter { $0.state == .working }.count
+            let working = presentationStore.sessions.values.filter { $0.state == .working }.count
             return working > 1 ? "\(working) working" : "working"
         case .waiting:
-            let waiting = sessionStore.sessions.values.filter { $0.pendingPermission != nil }.count
+            let waiting = presentationStore.sessions.values.filter { $0.pendingPermission != nil }.count
             return waiting > 1 ? "\(waiting) awaiting" : "awaiting approval"
         }
     }
@@ -57,17 +96,17 @@ public final class NotchViewModel: ObservableObject {
     /// resolving "whatever is current" would answer the wrong one (#199).
     /// A stale id resolves nothing.
     public func approve(sessionId: String, requestId: UUID) {
-        sessionStore.resolvePermission(sessionId: sessionId, requestId: requestId, allow: true)
+        actionStore(sessionId: sessionId).resolvePermission(sessionId: sessionId, requestId: requestId, allow: true)
     }
 
     public func deny(sessionId: String, requestId: UUID) {
-        sessionStore.resolvePermission(sessionId: sessionId, requestId: requestId, allow: false)
+        actionStore(sessionId: sessionId).resolvePermission(sessionId: sessionId, requestId: requestId, allow: false)
     }
 
     /// "Allow Always": approve now and auto-allow this tool for the rest of the
     /// session (see `SessionStore.allowAlways`).
     public func approveAlways(sessionId: String, requestId: UUID) {
-        sessionStore.allowAlways(sessionId: sessionId, requestId: requestId)
+        actionStore(sessionId: sessionId).allowAlways(sessionId: sessionId, requestId: requestId)
     }
 
     /// Answer an AskUserQuestion from the notch (#260). Returns false when
@@ -75,6 +114,7 @@ public final class NotchViewModel: ObservableObject {
     /// the terminal.
     @discardableResult
     public func submitAskUQAnswer(sessionId: String, requestId: UUID, answers: [String: String]) -> Bool {
+        let sessionStore = actionStore(sessionId: sessionId)
         let submitted = sessionStore.submitAskUQAnswer(sessionId: sessionId, requestId: requestId, answers: answers)
         if !submitted {
             sessionStore.deferAskUQToTerminal(sessionId: sessionId, requestId: requestId)
@@ -85,13 +125,14 @@ public final class NotchViewModel: ObservableObject {
     /// "Answer in terminal" escape hatch (#260): release the bridge so CC
     /// shows its native UI, then jump to the terminal tab.
     public func deferAskUQToTerminal(for session: SessionInfo, requestId: UUID) {
-        sessionStore.deferAskUQToTerminal(sessionId: session.id, requestId: requestId)
+        actionStore(sessionId: session.id).deferAskUQToTerminal(sessionId: session.id, requestId: requestId)
         activateTerminal(for: session)
     }
 
     /// Click handler: jump to the terminal tab for this session.
     /// Runs on a background task so subprocess + AppleScript calls don't block the UI.
     public func activateTerminal(for session: SessionInfo) {
+        guard session.source != .demo else { return }
         let cachedPid = session.claudePid
         let transcriptPath = session.transcriptPath
         let cwd = session.cwd

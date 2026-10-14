@@ -115,6 +115,11 @@ struct NotchCompactView: View {
     var body: some View {
         HStack(spacing: 6) {
             statusIcon
+            if viewModel.isDemoActive {
+                Text("DEMO")
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(AppColors.attention.color)
+            }
             leftContent
             // Reserve the hardware-notch footprint: an explicit fixed-width gap
             // (NOT a Spacer — under `.fixedSize` a Spacer collapses toward zero,
@@ -141,7 +146,7 @@ struct NotchCompactView: View {
     private var statusIcon: some View {
         CompactStatusIcon(
             attention: CompactAttention.make(
-                from: Array(viewModel.sessionStore.sessions.values)
+                from: Array(viewModel.presentationStore.sessions.values)
             ),
             aggregateState: viewModel.aggregateState,
             workingColor: viewModel.statusColor

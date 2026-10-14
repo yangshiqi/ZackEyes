@@ -35,7 +35,10 @@ struct SocketServerAskUQTests {
 
         """.utf8)
         let response = await Task.detached {
-            BridgeSocketClient(path: path).sendAndWaitForResponse(data: payload, timeoutSeconds: 2)
+            // The full suite shares MainActor with process/AppKit tests that
+            // can occupy it for several seconds. This tests the wire shape,
+            // not timeout behavior, so leave time for the handler to run.
+            BridgeSocketClient(path: path).sendAndWaitForResponse(data: payload, timeoutSeconds: 10)
         }.value
         #expect(receivedId.value != nil)
         #expect(abandoned.value == nil)

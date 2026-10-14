@@ -437,7 +437,7 @@ public final class SimulatedNotchController {
     /// this holds, the panel must stay open — neither hover-out nor an
     /// outside click should collapse it.
     private var hasPendingPermission: Bool {
-        viewModel.sessionStore.sessions.values.contains { $0.pendingPermission != nil }
+        viewModel.presentationStore.sessions.values.contains { $0.pendingPermission != nil }
     }
 
     /// A pending permission keeps hover-driven collapse from hiding the
@@ -670,7 +670,7 @@ public final class SimulatedNotchController {
         switch visibility {
         case .always:     return true
         case .hidden:     return false
-        case .whenActive: return !viewModel.sessionStore.sessions.isEmpty
+        case .whenActive: return !viewModel.presentationStore.sessions.isEmpty
         }
     }
 

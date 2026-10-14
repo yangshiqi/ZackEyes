@@ -30,7 +30,7 @@ struct AskUQAnswerBlock: View {
                 Image(systemName: "bubble.left.and.bubble.right.fill")
                     .font(.system(size: 11))
                     .foregroundColor(AppColors.activity.color)
-                Text("Claude's Question")
+                Text(session.source == .demo ? "Sample question" : "Claude's Question")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(AppColors.activity.color)
             }
@@ -66,7 +66,7 @@ struct AskUQAnswerBlock: View {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.up.right.square.fill")
                             .font(.system(size: 12, weight: .semibold))
-                        Text("Answer in terminal")
+                        Text(session.source == .demo ? "Skip question" : "Answer in terminal")
                             .font(.system(size: 12, weight: .semibold))
                     }
                     .foregroundColor(.white.opacity(0.85))
@@ -81,7 +81,9 @@ struct AskUQAnswerBlock: View {
             }
             .padding(.top, 4)
 
-            Text("Unanswered questions return to the terminal after 2 minutes.")
+            Text(session.source == .demo
+                 ? "Sample choice — no agent is waiting."
+                 : "Unanswered questions return to the terminal after 2 minutes.")
                 .font(.system(size: 9))
                 .foregroundColor(.white.opacity(0.4))
         }

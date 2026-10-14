@@ -24,7 +24,7 @@ struct NotchExpandedView: View {
     var body: some View {
         let theme = currentTheme
         let sections = SessionListPresentation.sections(
-            from: viewModel.sessionStore.orderedSessions
+            from: viewModel.presentationStore.orderedSessions
         )
         let shouldAutoExpandRecent = SessionListPresentation.shouldAutoExpandRecent(in: sections)
         let visibleSessions = sections.flatMap { section in
@@ -34,7 +34,22 @@ struct NotchExpandedView: View {
             in: visibleSessions
         )
         VStack(alignment: .leading, spacing: 12) {
-            if viewModel.sessionStore.sessions.isEmpty {
+            if viewModel.isDemoActive {
+                HStack {
+                    Text("Demo sessions")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(AppColors.attention.color)
+                    Spacer()
+                    Button("Exit demo") { viewModel.stopDemo() }
+                        .font(.system(size: 11, weight: .semibold))
+                        .buttonStyle(.plain)
+                        .foregroundColor(.white)
+                }
+                Text("Sample sessions · account quota readings")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            if viewModel.presentationStore.sessions.isEmpty {
                 emptyState
             } else {
                 VStack(alignment: .leading, spacing: 14) {
@@ -204,6 +219,11 @@ struct NotchExpandedView: View {
                     }
 
                     AgentBadge(agent: session.agent, subagentLabel: session.subagentLabel)
+                    if session.source == .demo {
+                        Text("DEMO")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(AppColors.attention.color)
+                    }
 
                     if let risk = session.permissionRisk {
                         PermissionBadge(risk: risk)
@@ -665,7 +685,7 @@ struct NotchExpandedView: View {
 
     @ViewBuilder
     private func permissionApprovalButtons(sessionId: String, requestId: UUID, isPrimary: Bool) -> some View {
-        let toolName = viewModel.sessionStore.sessions[sessionId]?.pendingPermission?.toolName
+        let toolName = viewModel.presentationStore.sessions[sessionId]?.pendingPermission?.toolName
         let highRisk = toolName.map(SessionStore.isHighRisk) ?? false
         HStack(spacing: 8) {
             denyButton(sessionId: sessionId, requestId: requestId, isPrimary: isPrimary)

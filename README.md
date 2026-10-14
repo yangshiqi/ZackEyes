@@ -111,7 +111,7 @@ These invariants are enforced by both code review and tests:
 
 ```bash
 swift build                  # debug build
-swift test                   # 102 swift-testing + 16 XCTest
+swift test                   # full Swift Testing + XCTest suite
 make app                     # debug build + assemble .app bundle
 make app-release             # release build + bundle
 make run                     # build + open
@@ -125,6 +125,19 @@ echo '{"hook_event_name":"SessionStart","session_id":"test","cwd":"/tmp"}' | \
 echo '{"hook_event_name":"Stop","session_id":"test","cwd":"/tmp","last_assistant_message":"done"}' | \
   $(swift build --show-bin-path)/bridge --event Stop --agent codex
 ```
+
+### Demo mode (development build)
+
+Choose **Demo mode** in the menu-bar or notch gear menu to explore a sample Claude/Codex fleet. Working, needs-you and idle sessions cycle every six seconds; sample approvals and questions are interactive. DEMO labels distinguish the sample sessions, while account quota readings retain their normal data source. Real questions, approvals or errors return the panel to the live session view automatically.
+
+Click **Exit demo** or toggle the menu item to return to your current real sessions. The mode lasts only for the current app run. For a new local app process:
+
+```bash
+make app
+.build/ZackEyes.app/Contents/MacOS/ZackEyes --demo
+```
+
+If ZackEyes is already running, use its menu toggle. Demo mode is part of the development build and is not yet in the published download.
 
 ## Project layout
 

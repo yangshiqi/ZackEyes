@@ -45,7 +45,7 @@ public class MenuBarFallback: NSObject {
         // fires *before* the change applies, so the receive(on:) hop
         // through the runloop ensures refreshIcon sees the new value.
         iconCancellable = Publishers.Merge(
-            viewModel.sessionStore.objectWillChange,
+            viewModel.objectWillChange,
             usageTracker.objectWillChange
         )
         .receive(on: RunLoop.main)
@@ -72,7 +72,7 @@ public class MenuBarFallback: NSObject {
         // Liveness state isn't reflected here; the icon spends its compact
         // shape-and-color vocabulary on the more durable rate-limit warning.
         let presentation = MenuBarIconColor.presentation(
-            primaryAgent: viewModel.sessionStore.primarySession?.agent,
+            primaryAgent: viewModel.primarySession?.agent,
             snapshot: usageTracker.snapshot
         )
         let config = NSImage.SymbolConfiguration(paletteColors: [presentation.tint])
