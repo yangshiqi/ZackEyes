@@ -13,6 +13,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var simulatedNotch: SimulatedNotchController?
     private var usageTracker: UsageTracker!
     private var usageLedger: UsageLedgerService?
+    private var remoteHosts: RemoteHostManager?
+    private var remoteAttentionIDs: Set<String> = []
 
     /// Last blocked-waiting alert time per session, for the #169 per-session
     /// cooldown (see `maybeNotifyWaiting`).
@@ -55,7 +57,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationManager.shared.requestAuthorization()
         NotificationManager.shared.onSessionTap = { [weak self] sessionId in
             guard let session = self?.sessionStore.sessions[sessionId],
-                  let pid = session.claudePid else { return }
+                  session.source.isLocal, let pid = session.claudePid else { return }
             _ = TerminalLocator.activateTerminal(containingPid: pid, cwd: session.cwd)
         }
         NotificationManager.shared.onUpdateTap = { [weak self] _ in
@@ -162,11 +164,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         mb.setup()
         menuBarFallback = mb
 
+        let remoteManager = RemoteHostManager(sessionStore: sessionStore)
+        remoteHosts = remoteManager
         let settingsWindow = SettingsWindowController(
             usageTracker: usageTracker,
             updateChecker: uc,
             downloader: dl,
-            usageLedger: ledger
+            usageLedger: ledger,
+            remoteHosts: remoteManager
         )
         settingsWindowController = settingsWindow
 
@@ -238,11 +243,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if active {
                 self.forceUiExpand()
             } else {
-                if self.viewModel.canStartDemo { self.forceUiCompact() }
+                let hiddenRemoteAttention = ConfigStore().loadNotchVisibility() == .hidden && !self.viewModel.hasLocalAttention
+                if self.viewModel.canStartDemo || hiddenRemoteAttention { self.forceUiCompact() }
                 self.windowController?.applyVisibility(ConfigStore().loadNotchVisibility())
                 self.simulatedNotch?.applyVisibility(ConfigStore().loadNotchVisibility())
-                self.lastHadSessionsForVisibility = !self.sessionStore.sessions.isEmpty
-                if !self.viewModel.canStartDemo { self.forceUiExpand() }
+                self.lastHadSessionsForVisibility = self.viewModel.hasActivityForVisibility
+                if !self.viewModel.canStartDemo && !hiddenRemoteAttention { self.forceUiExpand() }
             }
         }
 
@@ -325,7 +331,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // Boundary check first so the no-change common case (every
                 // event-field mutation fires objectWillChange) skips the
                 // config disk read entirely.
-                let hasSessions = !self.sessionStore.sessions.isEmpty
+                let hasSessions = self.viewModel.hasActivityForVisibility
                 guard hasSessions != self.lastHadSessionsForVisibility else { return }
                 guard ConfigStore().loadNotchVisibility() == .whenActive else { return }
                 self.lastHadSessionsForVisibility = hasSessions
@@ -333,6 +339,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.simulatedNotch?.applyVisibility(.whenActive)
             }
             .store(in: &cancellables)
+
+        remoteManager.onChange = { [weak self, weak remoteManager] in
+            guard let self, let remoteManager else { return }
+            self.viewModel.remoteHosts = remoteManager.statuses
+            let attention = Set(self.sessionStore.sessions.values.filter {
+                $0.source == .remote && ($0.state == .waiting || $0.errorMessage != nil)
+            }.map(\.id))
+            let arrived = !attention.subtracting(self.remoteAttentionIDs).isEmpty
+            self.remoteAttentionIDs = attention
+            if arrived {
+                if self.viewModel.isDemoActive { self.viewModel.stopDemo() }
+                else if ConfigStore().loadNotchVisibility() != .hidden { self.forceUiExpand() }
+            }
+            if ConfigStore().loadNotchVisibility() == .whenActive {
+                self.lastHadSessionsForVisibility = self.viewModel.hasActivityForVisibility
+                self.windowController?.applyVisibility(.whenActive)
+                self.simulatedNotch?.applyVisibility(.whenActive)
+            }
+        }
+        remoteManager.start()
 
         // 5. Hook Installer (silent, best-effort) — same path as the Hook
         //    Status window's Repair button.
@@ -524,13 +550,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // disappear at the next sweep tick instead of lingering for the
         // legacy 15-min idle window.
         let claudeCandidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
-            guard s.agent == .claude else { return nil }
+            guard s.source.isLocal, s.agent == .claude else { return nil }
             guard let cwd = s.cwd, s.pendingPermission == nil else { return nil }
             return LivenessFilter.PruneCandidate(
                 id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt, pid: s.claudePidFromHook ? s.claudePid : nil)
         }
         let codexCandidates: [LivenessFilter.PruneCandidate] = sessionStore.sessions.values.compactMap { s in
-            guard s.agent == .codex else { return nil }
+            guard s.source.isLocal, s.agent == .codex else { return nil }
             guard let cwd = s.cwd, s.pendingPermission == nil else { return nil }
             return LivenessFilter.PruneCandidate(
                 id: s.id, cwd: cwd, lastActiveAt: s.lastActiveAt, pid: s.claudePidFromHook ? s.claudePid : nil)
@@ -544,7 +570,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let codexIdleCutoff = Date().addingTimeInterval(-15 * 60)
         let staleNoCwdCodexIds = Set(
             sessionStore.sessions.values
-                .filter { $0.agent == .codex
+                .filter { $0.source.isLocal && $0.agent == .codex
                        && $0.cwd == nil
                        && $0.pendingPermission == nil
                        && $0.lastActiveAt < codexIdleCutoff }
@@ -710,12 +736,22 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let remoteHosts else { return .terminateNow }
+        Task { @MainActor in
+            await remoteHosts.shutdown()
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         viewModel?.stopDemo()
         livenessSweepTimer?.invalidate()
         updateChecker?.stop()
         pricingStore?.stop()
         usageLedger?.stop()
+        remoteHosts?.stop()
         hotKeyManager?.unregister()
         socketServer?.stop()
         windowController?.teardown()

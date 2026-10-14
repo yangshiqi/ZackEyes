@@ -1,5 +1,6 @@
 import Foundation
 import Shared
+import RemoteCore
 
 /// Per-session state (one per Claude Code session).
 public struct TaskItem: Identifiable, Sendable {
@@ -141,6 +142,9 @@ public struct SessionInfo: Identifiable {
     public var lastActiveAt: Date
     public var toolCallCount: Int
     public var source: SessionSource = .live
+    public var remoteHostID: UUID?
+    public var remoteHostName: String?
+    public var remoteObservedState: RemoteSessionState?
     public var tasks: [TaskItem] = []
     public var claudePid: Int?   // PID of the claude/codex process (from bridge ppid)
     /// Whether `claudePid` came from a hook (`_bridge_ppid`, the agent that
@@ -348,6 +352,8 @@ public struct SessionInfo: Identifiable {
 public enum SessionSource: Sendable {
     case live        // tracked via hooks (real-time)
     case detected    // discovered by scanning ~/.claude/projects/ (read-only)
+    case remote      // read-only SSH metadata; no local capabilities
+    public var isLocal: Bool { self == .live || self == .detected }
     case demo        // in-memory samples, never part of live ingestion
 }
 
@@ -435,7 +441,7 @@ public final class SessionStore: ObservableObject {
 
     /// Aggregated state for menu bar icon.
     public var aggregateState: SessionState {
-        if sessions.values.contains(where: { $0.pendingPermission != nil }) {
+        if sessions.values.contains(where: { $0.pendingPermission != nil || ($0.source == .remote && $0.state == .waiting) }) {
             return .waiting
         }
         if sessions.values.contains(where: { $0.state == .working }) {
@@ -1521,7 +1527,7 @@ public final class SessionStore: ObservableObject {
     public static func portScanRoots(_ sessions: [SessionInfo]) -> [String: Int32] {
         var roots: [String: Int32] = [:]
         for session in sessions {
-            guard session.claudePidFromHook, let pid = session.claudePid, pid > 0
+            guard session.source.isLocal, session.claudePidFromHook, let pid = session.claudePid, pid > 0
             else { continue }
             roots[session.id] = Int32(pid)
         }

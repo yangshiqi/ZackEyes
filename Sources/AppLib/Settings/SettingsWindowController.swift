@@ -9,6 +9,7 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let downloader: UpdateDownloader
     private let usageTracker: UsageTracker
     private let usageLedger: UsageLedgerService
+    private let remoteHosts: RemoteHostManager
 
     private var hotkeyWindow: HotkeyRecorderWindow?
     private var diagnosticsWindow: DiagnosticsWindow?
@@ -18,10 +19,12 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
         usageTracker: UsageTracker,
         updateChecker: UpdateChecker,
         downloader: UpdateDownloader,
-        usageLedger: UsageLedgerService
+        usageLedger: UsageLedgerService,
+        remoteHosts: RemoteHostManager
     ) {
         self.usageTracker = usageTracker
         self.usageLedger = usageLedger
+        self.remoteHosts = remoteHosts
         self.updateChecker = updateChecker
         self.downloader = downloader
         super.init()
@@ -53,7 +56,8 @@ public final class SettingsWindowController: NSObject, NSWindowDelegate {
             exportDiagnostics: { [weak self] in self?.showDiagnostics() },
             uninstallIntegrations: { [weak self] in self?.showUninstall() },
             quitApplication: { NSApp.terminate(nil) },
-            usageLedger: usageLedger
+            usageLedger: usageLedger,
+            remoteHosts: remoteHosts
         )
 
         let size = NSSize(width: 720, height: 520)
