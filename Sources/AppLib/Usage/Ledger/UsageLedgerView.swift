@@ -23,6 +23,14 @@ struct UsageLedgerView: View {
                 if ledger.isLoading { ProgressView().controlSize(.small) }
                 Button("Refresh") { Task { await ledger.refresh() } }.disabled(ledger.isLoading)
             }
+            if ledger.isLoading {
+                Text(
+                    ledger.totalFiles > 0
+                        ? "Importing local history: \(ledger.completedFiles) of \(ledger.totalFiles) transcripts"
+                        : "Reading local history…"
+                )
+                .font(.system(size: 11)).foregroundStyle(.secondary).monospacedDigit()
+            }
             Text("Local history · counts only · no telemetry")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             if let error = ledger.errorMessage {

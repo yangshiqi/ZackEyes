@@ -52,7 +52,7 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 
 `UsageLedgerCollector` actor 只递归两种 agent 的 transcript roots，使用 inode/mtime/size 缓存；NOFOLLOW、regular-file 检查和有上限的 fd 读取阻止链接替换及无界增长。`UsageLedgerStore` actor 将版本化计数记录追加到 `~/.zackeyes/usage/history-v1.jsonl`，目录/文件要求 owner-only 0700/0600；写完 fsync 后才更新内存状态，短写失败强制重载并分隔残行。最新有效观测覆盖旧修订，重启与源文件删除不丢既有历史；未知版本拒绝写入，坏行警告后跳过。
 
-`UsageLedgerSummary` 按当前本地 Calendar 生成 7/30/90 日、每 agent 的 token/工时桶与小时热图。工时合并同 session 的任务/工具区间、扣除已知问题等待，缺边界时只估计短活动间隙（最多 5 min，超过 30 min 的未配对空闲间隙不推断），不把开着的终端时长当工作时长；并发 session 可累加 agent-hours。`UsageLedgerService` 通过独立 60s 循环和 Settings 手动刷新调度，取消/generation 隔离过期回调，报告不完整扫描/保存失败。Settings 的 Usage 页面复用同一个 service，展示分 agent 汇总、双图、缓存命中率、三类排行和热图。数据不经 Bridge、quota cache、journal、通知或模型网络；demo/SSH 会话不是采集来源。
+`UsageLedgerSummary` 按当前本地 Calendar 生成 7/30/90 日、每 agent 的 token/工时桶与小时热图。工时合并同 session 的任务/工具区间、扣除已知问题等待，缺边界时只估计短活动间隙（最多 5 min，超过 30 min 的未配对空闲间隙不推断），不把开着的终端时长当工作时长；并发 session 可累加 agent-hours。`UsageLedgerService` 通过独立 60s 循环和 Settings 手动刷新调度，取消/generation 隔离过期回调，报告不完整扫描/保存失败。冷启动先展示已保存统计；transcript 按 mtime 从新到旧回填，首文件及后续有界批次先落盘再刷新 UI，并显示导入进度。缓存命中不重复发送记录，无变更 upsert 不重新聚合；逐文件/逐账本行的 autoreleasepool 避免长任务累积 Foundation 临时对象。Settings 的 Usage 页面复用同一个 service，展示分 agent 汇总、双图、缓存命中率、三类排行和热图。数据不经 Bridge、quota cache、journal、通知或模型网络；demo/SSH 会话不是采集来源。
 
 ### Demo 会话展示（#262）
 
