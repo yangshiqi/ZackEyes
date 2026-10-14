@@ -126,6 +126,14 @@ echo '{"hook_event_name":"Stop","session_id":"test","cwd":"/tmp","last_assistant
   $(swift build --show-bin-path)/bridge --event Stop --agent codex
 ```
 
+### Local usage history (development build)
+
+Open **Settings → Usage** for 7/30/90-day token and estimated agent-hour charts, per-agent totals, cache hit rate, project/model/tool rankings and an hourly activity heatmap. The local append-only ledger survives transcript removal and app restarts. It reads available Claude/Codex transcripts and stores only counts, bounded project/model/tool names, hashed identities and timing metadata under `~/.zackeyes/usage/`; no prompts, replies or tool arguments are stored or uploaded.
+
+Tokens exclude cache reads; cache hit rate compares reused input against all input. Hours merge recorded task/tool intervals and subtract known question waits. Missing boundaries use activity gaps capped at five minutes; long idle gaps and unclosed activity are not stretched to the scan time. Unobserved approval waits may still be included, so hours are estimates, not billing or time tracking. Parallel sessions add agent-hours. Dates and heatmap hours follow your current local timezone. Unavailable/deleted source history cannot be backfilled; the page reports incomplete scans or storage errors.
+
+History directories/files must be private (`0700`/`0600`); broad permissions, symlinks and unsupported history formats are rejected without replacing the file. Damaged JSONL rows are reported and skipped so later valid observations remain readable. This feature is in the development build and is not yet in the published download.
+
 ### Demo mode (development build)
 
 Choose **Demo mode** in the menu-bar or notch gear menu to explore a sample Claude/Codex fleet. Working, needs-you and idle sessions cycle every six seconds; sample approvals and questions are interactive. DEMO labels distinguish the sample sessions, while account quota readings retain their normal data source. Real questions, approvals or errors return the panel to the live session view automatically.

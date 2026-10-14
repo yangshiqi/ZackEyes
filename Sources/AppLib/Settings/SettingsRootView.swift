@@ -7,6 +7,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
     case appearance = "Appearance"
     case notifications = "Notifications"
     case integrations = "Integrations"
+    case usage = "Usage"
     case about = "About"
 
     var id: Self { self }
@@ -17,6 +18,7 @@ private enum SettingsSection: String, CaseIterable, Identifiable {
         case .appearance: return "paintpalette"
         case .notifications: return "bell"
         case .integrations: return "point.3.connected.trianglepath.dotted"
+        case .usage: return "chart.bar.xaxis"
         case .about: return "info.circle"
         }
     }
@@ -31,6 +33,8 @@ struct SettingsRootView: View {
     let exportDiagnostics: () -> Void
     let uninstallIntegrations: () -> Void
     let quitApplication: () -> Void
+
+    let usageLedger: UsageLedgerService
 
     @State private var selection: SettingsSection = .general
 
@@ -130,6 +134,8 @@ struct SettingsRootView: View {
                 case .appearance: appearanceSettings
                 case .notifications: notificationSettings
                 case .integrations: integrationSettings
+                case .usage:
+                    UsageLedgerView(ledger: usageLedger)
                 case .about: aboutSettings
                 }
             }
