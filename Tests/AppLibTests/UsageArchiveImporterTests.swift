@@ -133,3 +133,32 @@ extension UsageArchiveImporterTests {
         #expect(try Data(contentsOf: file) == bytes + Data("{\"version\":999}\n".utf8))
     }
 }
+
+extension UsageArchiveImporterTests {
+    @Test func legacyAndTranscriptWithoutMessageIDKeepSameIdentity() async throws {
+        let root = try UsageLedgerStorageTests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let file = root.appendingPathComponent("source.jsonl")
+        let text =
+            UsageLedgerTests.claude(
+                0, type: "assistant", message: ["usage": ["input_tokens": 100, "output_tokens": 0]]) + "\n"
+        try Data(text.utf8).write(to: file)
+        let legacyRecords = UsageLedgerParser.parse(
+            text: text, agent: .claude, sourceID: UsageLedgerRecord.identity(file.standardizedFileURL.path))
+        let legacy = root.appendingPathComponent("legacy.jsonl")
+        var bytes = Data()
+        for record in legacyRecords {
+            bytes.append(try JSONEncoder().encode(record))
+            bytes.append(10)
+        }
+        try bytes.write(to: legacy)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: legacy.path)
+        let db = UsageArchiveDatabase(url: root.appendingPathComponent("archive.sqlite"))
+        let importer = UsageArchiveImporter(database: db, throttle: false)
+        _ = try await importer.importFile(legacy, agent: .claude, cutoff: nil, legacy: true)
+        _ = try await importer.importFile(file, agent: .claude, cutoff: nil)
+        let records = try await db.records(
+            start: UsageLedgerTests.start, end: UsageLedgerTests.start.addingTimeInterval(10))
+        #expect(records.filter { $0.kind == .tokens }.reduce(0) { $0 + $1.tokens } == 100)
+    }
+}

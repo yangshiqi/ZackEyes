@@ -65,3 +65,24 @@ extension UsageLedgerServiceTests {
         }
     }
 }
+
+extension UsageLedgerServiceTests {
+    @Test func missingOptionalLegacyImportDoesNotBlockNormalSettlement() async throws {
+        let root = try UsageLedgerStorageTests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let db = UsageArchiveDatabase(url: root.appendingPathComponent("archive.sqlite"))
+        let engine = UsageArchiveEngine(
+            database: db, claudeRoot: root.appendingPathComponent("claude"),
+            codexRoot: root.appendingPathComponent("codex"), legacyURL: root.appendingPathComponent("missing"),
+            throttle: false)
+        let service = UsageLedgerService(database: db, engine: engine)
+        service.importLegacy()
+        await service.waitForJob()
+        #expect(service.errorMessage != nil)
+        #expect(!service.isPaused)
+        #expect(try await engine.pendingMode() == nil)
+        service.updateNow()
+        await service.waitForJob()
+        #expect(service.errorMessage == nil && service.settledThrough != nil)
+    }
+}

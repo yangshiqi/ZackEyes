@@ -34,9 +34,10 @@ struct UsageLedgerSummary: Codable, Sendable {
 
     static func make(
         records: [UsageLedgerRecord], days count: Int, now: Date, calendar: Calendar, rankLimit: Int = 10,
-        start: Date? = nil
+        start: Date? = nil, exclusiveEnd: Date? = nil
     ) -> Self {
         let today = calendar.startOfDay(for: now)
+        let upper = exclusiveEnd ?? now
         let count = max(1, min(90, count))
         let dates = (0..<count).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }
         guard let cutoff = start ?? dates.first else { return Self() }
@@ -62,13 +63,15 @@ struct UsageLedgerSummary: Codable, Sendable {
         var agents: [String: AgentKind] = [:]
         for record in normalizedTokens(Array(latest.values)) {
             let session = "\(record.agent.rawValue):\(record.session)"
-            if let end = record.end, end > cutoff, record.date < now {
-                let interval = DateInterval(start: max(cutoff, record.date), end: min(now, end))
+            if let end = record.end, end > cutoff, record.date < upper {
+                let interval = DateInterval(start: max(cutoff, record.date), end: min(upper, end))
                 if record.kind == .work { work[session, default: []].append(interval) }
                 if record.kind == .wait { waits[session, default: []].append(interval) }
                 agents[session] = record.agent
             }
-            guard record.date >= cutoff && record.date <= now else { continue }
+            guard record.date >= cutoff, exclusiveEnd.map({ record.date < $0 }) ?? (record.date <= now) else {
+                continue
+            }
             report.hasHistory = true
             if record.kind == .tokens {
                 report.totalTokens += record.tokens

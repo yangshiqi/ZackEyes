@@ -238,8 +238,8 @@ actor UsageArchiveDatabase {
         let start = calendar.startOfDay(for: day)
         guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return }
         let report = UsageLedgerSummary.make(
-            records: try records(start: start, end: end), days: 1, now: end.addingTimeInterval(-0.000001),
-            calendar: calendar, rankLimit: Int.max, start: start)
+            records: try records(start: start, end: end), days: 1, now: end.addingTimeInterval(-1),
+            calendar: calendar, rankLimit: Int.max, start: start, exclusiveEnd: end)
         try execute(
             "INSERT OR REPLACE INTO archives VALUES(?,?,?,0,?)",
             [

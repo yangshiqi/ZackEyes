@@ -17,6 +17,9 @@ struct UsageArchiveEngineTests {
             mode: .automatic, now: today.addingTimeInterval(3600), calendar: UsageLedgerTests.utc, startup: true)
         #expect(
             try await !engine.isDue(now: today.addingTimeInterval(7200), calendar: UsageLedgerTests.utc, startup: true))
+        var shifted = UsageLedgerTests.utc
+        shifted.timeZone = TimeZone(secondsFromGMT: 3600)!
+        #expect(try await engine.isDue(now: today.addingTimeInterval(3600), calendar: shifted))
         #expect(try await !engine.isDue(now: today.addingTimeInterval(86400 + 7200), calendar: UsageLedgerTests.utc))
         #expect(try await engine.isDue(now: today.addingTimeInterval(86400 + 10800), calendar: UsageLedgerTests.utc))
         #expect(

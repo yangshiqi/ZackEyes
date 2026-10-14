@@ -169,3 +169,22 @@ private func createFutureDatabase(_ url: URL) throws {
     #expect(sqlite3_exec(db, "PRAGMA user_version=999", nil, nil, nil) == SQLITE_OK)
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
 }
+
+extension UsageArchiveDatabaseTests {
+    @Test func midnightBoundaryIncludesFinalFractionAndExcludesNextDay() async throws {
+        let root = try UsageLedgerStorageTests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let db = UsageArchiveDatabase(url: root.appendingPathComponent("archive.sqlite"))
+        let day = UsageLedgerTests.utc.startOfDay(for: UsageLedgerTests.start)
+        let end = UsageLedgerTests.utc.date(byAdding: .day, value: 1, to: day)!
+        var before = UsageLedgerStorageTests().record(10, at: end.addingTimeInterval(-0.0000005))
+        before.id = "before"
+        var next = before
+        next.id = "next"
+        next.date = end
+        next.input = 100
+        try await db.apply(records: [before, next])
+        try await db.archive(day: day, calendar: UsageLedgerTests.utc)
+        #expect(try await db.summary(days: 7, now: end, calendar: UsageLedgerTests.utc).totalTokens == 10)
+    }
+}

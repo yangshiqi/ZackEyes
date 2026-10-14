@@ -141,9 +141,11 @@ public final class UsageLedgerService: ObservableObject {
                 await self.refresh()
                 self.errorMessage = outcome.issues.isEmpty ? nil : outcome.issues.joined(separator: "\n")
             } catch is CancellationError {} catch {
-                if token == self.generation {
+                if token == self.generation && !Task.isCancelled {
                     self.errorMessage = error.localizedDescription
-                    self.isPaused = true
+                    // Optional import failures must not block normal daily settlement.
+                    try? await self.database.setMetadata("pending", Data())
+                    self.isPaused = false
                 }
             }
         }
