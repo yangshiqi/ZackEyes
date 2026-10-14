@@ -1,20 +1,20 @@
 import Foundation
 import Shared
 
-struct UsageLedgerSummary: Sendable {
-    struct Day: Identifiable, Sendable {
+struct UsageLedgerSummary: Codable, Sendable {
+    struct Day: Identifiable, Codable, Sendable {
         var date: Date
         var agent: AgentKind
         var tokens = 0
         var activeSeconds = 0.0
         var id: String { "\(date.timeIntervalSince1970):\(agent.rawValue)" }
     }
-    struct Rank: Identifiable, Sendable {
+    struct Rank: Identifiable, Codable, Sendable {
         var name: String
         var value: Int
         var id: String { name }
     }
-    struct Hour: Identifiable, Sendable {
+    struct Hour: Identifiable, Codable, Sendable {
         var day: Date
         var hour: Int
         var seconds = 0.0
@@ -29,12 +29,14 @@ struct UsageLedgerSummary: Sendable {
     var activeSeconds = 0.0
     var cacheHitRate: Double?
     var hasHistory = false
+    var cacheInput = 0
+    var cacheReused = 0
 
-    static func make(records: [UsageLedgerRecord], days count: Int, now: Date, calendar: Calendar) -> Self {
+    static func make(records: [UsageLedgerRecord], days count: Int, now: Date, calendar: Calendar, rankLimit: Int = 10, start: Date? = nil) -> Self {
         let today = calendar.startOfDay(for: now)
         let count = max(1, min(90, count))
         let dates = (0..<count).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }
-        guard let cutoff = dates.first else { return Self() }
+        guard let cutoff = start ?? dates.first else { return Self() }
         var report = Self()
         report.days = dates.flatMap { day in [AgentKind.claude, .codex].map { Day(date: day, agent: $0) } }
         report.heatmap = dates.flatMap { day in (0..<24).map { Hour(day: day, hour: $0) } }
@@ -98,6 +100,8 @@ struct UsageLedgerSummary: Sendable {
                 }
             }
         }
+        report.cacheInput = input + cached + writes
+        report.cacheReused = cached
         if input + cached + writes > 0 { report.cacheHitRate = Double(cached) / Double(input + cached + writes) }
         func ranked(_ counts: [String: Int]) -> [Rank] {
             let values: [Rank] = counts.compactMap { name, value in
@@ -106,7 +110,7 @@ struct UsageLedgerSummary: Sendable {
             let sorted = values.sorted { left, right in
                 left.value == right.value ? left.name < right.name : left.value > right.value
             }
-            return Array(sorted.prefix(10))
+            return Array(sorted.prefix(rankLimit))
         }
         report.projects = ranked(projects)
         report.models = ranked(models)
