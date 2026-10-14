@@ -72,6 +72,16 @@ enum UsageLedgerParser {
                 wait: ["AskUserQuestion", "request_user_input"].contains(name.components(separatedBy: ".").last ?? name)
             )
         }
+        func isQuestion(_ name: String) -> Bool {
+            ["AskUserQuestion", "request_user_input"].contains(name.components(separatedBy: ".").last ?? name)
+        }
+        func closeQuestions(at: Date) {
+            let questions = pendingTools.filter { isQuestion($0.value.1) }
+            for (id, value) in questions {
+                interval(value.0, at, wait: true)
+                pendingTools.removeValue(forKey: id)
+            }
+        }
         for (index, obj) in objects.enumerated() {
             if index.isMultiple(of: 256), Task.isCancelled { return [] }
             let type = obj["type"] as? String
@@ -102,7 +112,17 @@ enum UsageLedgerParser {
                         message["content"] as? String
                         ?? blocks.filter { $0["type"] as? String == "text" }.compactMap { $0["text"] as? String }
                         .joined()
-                    if content.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("<") { continue }
+                    let injectedTags = [
+                        "<local-command-caveat>", "<local-command-stdout>", "<command-name>", "<command-message>",
+                        "<system-reminder>", "<task-notification>", "<tool_use_error>",
+                    ]
+                    let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if obj["isMeta"] as? Bool == true || obj["isCompactSummary"] as? Bool == true
+                        || injectedTags.contains(where: trimmed.hasPrefix)
+                    {
+                        continue
+                    }
+                    closeQuestions(at: at)
                 }
                 activity(at, startsTurn: isUserTurn)
                 if isUserTurn { turnStart = at }
@@ -130,6 +150,7 @@ enum UsageLedgerParser {
                     }
                 }
                 if ["end_turn", "stop_sequence"].contains(message["stop_reason"] as? String ?? "") {
+                    closeQuestions(at: at)
                     if let start = turnStart { interval(start, at) }
                     turnStart = nil
                     previousActivity = nil
@@ -164,13 +185,16 @@ enum UsageLedgerParser {
                         read: current["cached_input_tokens", default: 0],
                         write: current["cache_write_input_tokens", default: 0])
                 } else if kind == "task_started" {
+                    closeQuestions(at: at)
                     activity(at, startsTurn: true)
                     turnStart = at
                 } else if ["task_complete", "task_aborted"].contains(kind) {
+                    closeQuestions(at: at)
                     if let start = turnStart { interval(start, at) }
                     turnStart = nil
                     previousActivity = nil
                 } else if ["user_message", "agent_message"].contains(kind) {
+                    if kind == "user_message" { closeQuestions(at: at) }
                     activity(at, startsTurn: kind == "user_message")
                 }
             } else if type == "response_item" {

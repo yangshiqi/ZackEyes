@@ -243,4 +243,47 @@ struct UsageLedgerTests {
                 .activeSeconds == 0)
     }
 
+    @Test func xmlUserTasksAreGenuineWork() {
+        let user = Self.claude(0, type: "user", message: ["content": "<requirements>Build this feature</requirements>"])
+        let answer = Self.claude(600, type: "assistant", message: ["content": "done", "stop_reason": "end_turn"])
+        #expect(
+            Self.report(UsageLedgerParser.parse(text: user + "\n" + answer, agent: .claude, sourceID: "x"))
+                .activeSeconds == 600)
+    }
+    @Test func abortedQuestionWaitClosesAtTurnBoundary() {
+        func event(_ t: Double, _ kind: String) -> String {
+            Self.line(["type": "event_msg", "timestamp": Self.stamp(t), "payload": ["type": kind]])
+        }
+        let question = Self.line([
+            "type": "response_item", "timestamp": Self.stamp(10),
+            "payload": ["type": "function_call", "call_id": "q", "name": "functions.request_user_input"],
+        ])
+        let records = UsageLedgerParser.parse(
+            text: [event(0, "task_started"), question, event(600, "task_aborted")].joined(separator: "\n"),
+            agent: .codex, sourceID: "x")
+        #expect(Self.report(records).activeSeconds == 10)
+    }
+
+    @Test func overnightGapsStayUnknownAndParallelSessionsAddHours() {
+        let night = [
+            Self.claude(0, type: "assistant", message: ["content": "one"]),
+            Self.claude(12 * 3600, type: "assistant", message: ["content": "two"]),
+        ].joined(separator: "\n")
+        let records = UsageLedgerParser.parse(text: night, agent: .claude, sourceID: "x")
+        #expect(
+            UsageLedgerSummary.make(
+                records: records, days: 7, now: Self.start.addingTimeInterval(13 * 3600), calendar: Self.utc
+            ).activeSeconds == 0)
+        let one = UsageLedgerRecord(
+            id: "first", session: "one", agent: .claude, project: "Project", model: "model", date: Self.start,
+            kind: .work, end: Self.start.addingTimeInterval(600))
+        let two = UsageLedgerRecord(
+            id: "second", session: "two", agent: .codex, project: "Project", model: "model", date: Self.start,
+            kind: .work, end: Self.start.addingTimeInterval(600))
+        let parallel = Self.report([one, two])
+        #expect(parallel.activeSeconds == 1200)
+        #expect(parallel.days.filter { $0.agent == .claude }.reduce(0) { $0 + $1.activeSeconds } == 600)
+        #expect(parallel.days.filter { $0.agent == .codex }.reduce(0) { $0 + $1.activeSeconds } == 600)
+    }
+
 }
