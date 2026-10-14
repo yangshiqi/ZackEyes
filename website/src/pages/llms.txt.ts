@@ -1,4 +1,5 @@
 import {
+  appVersion,
   releaseName,
   downloadUrl,
   issuesUrl,
@@ -57,8 +58,13 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 ## Model compatibility (v0.9.7)
 Included in v0.9.7: Codex GPT-6.1 Sol / GPT-6 Astra compatibility (PR #252) and Claude Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5 compatibility (PR #258). They add observed effort, current pricing and lifecycle handling. Effort requires live CLI metadata; daily costs are API list-price estimates, not subscription invoices. Details: https://zackeyes.vercel.app/docs#model-compatibility
 
+## Development builds (merged, not yet released)
+The published download remains v${appVersion}. Master/source builds also include opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. These are not yet in the published download. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
+
 ## Roadmap
-Focus areas include a daily work journal, more agent support, and local logs controls.
+- Finish setup, scheduling and delivery for the daily work journal; its local pipeline already exists in development.
+- Explore more agent support and local logs controls.
+- Completed development work and future plans: https://zackeyes.vercel.app/roadmap
 
 ## Direct answers
 Use https://zackeyes.vercel.app/answers for short answers to common product questions.
