@@ -169,7 +169,8 @@ struct NotchCompactView: View {
             // Always-on 5h chip (issue #64) — the working/waiting state is shown
             // by the status icon, and the detailed status text lives in the
             // hover-expanded panel, so the quota chip stays visible at all times.
-            usageChip(label: "5h", usedPct: snapshot.fiveHourUsedPct(for: agent))
+            usageChip(label: "5h", usedPct: snapshot.fiveHourUsedPct(for: agent),
+                      lastUpdated: snapshot.quotaLastUpdated(for: agent))
         }
     }
 
@@ -192,18 +193,19 @@ struct NotchCompactView: View {
         let agent = snapshot.displayAgent(preferred: usageTracker.compactAgent)
         // Always-on 7d chip (issue #64) — kept visible in every state so the
         // island persistently shows both quota windows.
-        usageChip(label: "7d", usedPct: snapshot.sevenDayUsedPct(for: agent))
+        usageChip(label: "7d", usedPct: snapshot.sevenDayUsedPct(for: agent),
+                  lastUpdated: snapshot.quotaLastUpdated(for: agent))
     }
 
     // MARK: - Usage chip
 
     @ViewBuilder
-    private func usageChip(label: String, usedPct: Double?) -> some View {
+    private func usageChip(label: String, usedPct: Double?, lastUpdated: Date?) -> some View {
         HStack(spacing: 3) {
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
                 .foregroundColor(.white.opacity(0.55))
-            Text(progressString(usedPct))
+            QuotaReadingText(text: progressString(usedPct), lastUpdated: usedPct == nil ? nil : lastUpdated)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(quotaColor(usedPct))
         }

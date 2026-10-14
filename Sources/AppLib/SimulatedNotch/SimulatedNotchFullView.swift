@@ -204,11 +204,11 @@ struct SimulatedNotchFullView: View {
                     .font(.system(size: 9, weight: .bold))
                     .foregroundColor(accent)
                 if cell.isExhausted {
-                    Text("limit")
+                    QuotaReadingText(text: "limit", lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(Color.usageLimitRed)
                 } else if hasData {
-                    Text(presentation.explicitLabel)
+                    QuotaReadingText(text: presentation.explicitLabel, lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(color)
                 } else {
@@ -319,11 +319,11 @@ struct SimulatedNotchFullView: View {
                     .clipShape(Capsule())
 
                 if cell.isExhausted {
-                    Text("limit reached")
+                    QuotaReadingText(text: "limit reached", lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(Color.usageLimitRed)
                 } else if hasData {
-                    Text(presentation.explicitLabel)
+                    QuotaReadingText(text: presentation.explicitLabel, lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(color)
                 } else {

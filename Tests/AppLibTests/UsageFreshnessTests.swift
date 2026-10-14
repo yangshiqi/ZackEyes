@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+import Shared
 @testable import AppLib
 
 /// #45 (staleness slice) — pins the freshness age string + stale threshold so an
@@ -29,5 +30,33 @@ struct UsageFreshnessTests {
     @Test func ageClampsNegativeToJustNow() {
         // A lastUpdated slightly in the future (clock skew) must not underflow.
         #expect(UsageFreshness.ageString(now: Self.t0, lastUpdated: Self.t0.addingTimeInterval(5)) == "just now")
+    }
+}
+
+struct QuotaReadingPresentationTests {
+    let now = Date(timeIntervalSince1970: 1_700_000_000)
+
+    @Test func prefixesOnlyStaleReadingsAndExplainsAge() {
+        let fresh = QuotaReadingPresentation(text: "42%", lastUpdated: now.addingTimeInterval(-899), now: now)
+        #expect(fresh.text == "42%")
+        let stale = QuotaReadingPresentation(text: "42%", lastUpdated: now.addingTimeInterval(-900), now: now)
+        #expect(stale.text == "~42%")
+        #expect(stale.help == "last updated 15m ago")
+        #expect(QuotaReadingPresentation(text: "limit reached", lastUpdated: now.addingTimeInterval(-1200), now: now).text == "~limit reached")
+    }
+
+    @Test func missingAndFutureDatesStayHonest() {
+        let unknown = QuotaReadingPresentation(text: "42%", lastUpdated: nil, now: now)
+        #expect(unknown.text == "42%")
+        #expect(unknown.help == "last update unavailable")
+        #expect(QuotaReadingPresentation(text: "42%", lastUpdated: now.addingTimeInterval(60), now: now).text == "42%")
+    }
+
+    @Test func eachAgentKeepsItsOwnFreshness() {
+        var snapshot = UsageTracker.Snapshot.empty
+        snapshot.lastUpdated = now.addingTimeInterval(-1800)
+        snapshot.codexLastUpdated = now
+        #expect(QuotaReadingPresentation(text: "20% left", lastUpdated: snapshot.quotaLastUpdated(for: .claude), now: now).text == "~20% left")
+        #expect(QuotaReadingPresentation(text: "80% used", lastUpdated: snapshot.quotaLastUpdated(for: .codex), now: now).text == "80% used")
     }
 }

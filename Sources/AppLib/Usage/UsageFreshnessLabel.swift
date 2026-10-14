@@ -1,4 +1,5 @@
 import SwiftUI
+import Shared
 
 /// #45 (staleness slice) — pure age/stale logic for usage data freshness,
 /// kept separate from the view so it's unit-testable with an injected `now`.
@@ -48,5 +49,41 @@ public struct UsageFreshnessLabel: View {
         .foregroundColor(stale
             ? AppColors.attention.color
             : .white.opacity(0.35))
+    }
+}
+
+/// A reading's age belongs to its source agent, independent of the selected
+/// Used/Left presentation. Missing values are rendered by callers as before.
+struct QuotaReadingPresentation {
+    let text: String
+    let help: String
+
+    init(text: String, lastUpdated: Date?, now: Date) {
+        let stale = lastUpdated.map { UsageFreshness.isStale(now: now, lastUpdated: $0) } ?? false
+        self.text = (stale ? "~" : "") + text
+        self.help = lastUpdated.map { "last updated " + UsageFreshness.ageString(now: now, lastUpdated: $0) }
+            ?? "last update unavailable"
+    }
+}
+
+extension UsageTracker.Snapshot {
+    func quotaLastUpdated(for agent: AgentKind) -> Date? {
+        agent == .codex ? codexLastUpdated : lastUpdated
+    }
+}
+
+/// The clock keeps a pinned reading honest even without incoming agent events.
+/// Typography and quota color are inherited from the surrounding surface.
+struct QuotaReadingText: View {
+    let text: String
+    let lastUpdated: Date?
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            let reading = QuotaReadingPresentation(text: text, lastUpdated: lastUpdated, now: context.date)
+            Text(reading.text)
+                .help(reading.help)
+                .accessibilityHint(reading.help)
+        }
     }
 }

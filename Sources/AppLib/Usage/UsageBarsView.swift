@@ -29,11 +29,12 @@ struct UsageBarsView<Trailing: View>: View {
         let sevenReset = agent == .codex ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
         VStack(spacing: 8) {
             usageBar(label: "5h", usedPct: fivePct,
+                     lastUpdated: snap.quotaLastUpdated(for: agent),
                      resetsAt: fiveReset, windowDuration: TimeWindowProgress.fiveHours,
                      eta: fiveETA) {
                 trailing
             }
-            usageBar(label: "7d", usedPct: sevenPct, resetsAt: sevenReset,
+            usageBar(label: "7d", usedPct: sevenPct, lastUpdated: snap.quotaLastUpdated(for: agent), resetsAt: sevenReset,
                      windowDuration: TimeWindowProgress.sevenDays) {
                 EmptyView()
             }
@@ -57,6 +58,7 @@ struct UsageBarsView<Trailing: View>: View {
     private func usageBar<T: View>(
         label: String,
         usedPct: Double?,
+        lastUpdated: Date?,
         resetsAt: Date?,
         windowDuration: TimeInterval,
         eta: CapETA? = nil,
@@ -79,7 +81,7 @@ struct UsageBarsView<Trailing: View>: View {
                     .frame(width: 22, alignment: .leading)
 
                 if hasData {
-                    Text(presentation.explicitLabel)
+                    QuotaReadingText(text: presentation.explicitLabel, lastUpdated: lastUpdated)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundColor(color)
                 } else {
