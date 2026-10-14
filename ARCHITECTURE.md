@@ -50,9 +50,13 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 
 `UsageLedgerParser` 从 Claude/Codex transcript 提取计数、项目/模型/工具名称及时间区间，不保留 prompt、回复、工具参数、完整路径或原始 session/message id；标识在进入持久化 DTO 前做 SHA256。Claude 完整 usage 按消息身份及源时间去重，旧副本/部分 usage 不覆盖新统计；Codex 持久化累计观测，跨文件合并同一 session 后再差分，避免部分副本的不同前驱产生重复 token。重置计数开启新累计段。
 
-`UsageLedgerCollector` actor 只递归两种 agent 的 transcript roots，使用 inode/mtime/size 缓存；NOFOLLOW、regular-file 检查和有上限的 fd 读取阻止链接替换及无界增长。`UsageLedgerStore` actor 将版本化计数记录追加到 `~/.zackeyes/usage/history-v1.jsonl`，目录/文件要求 owner-only 0700/0600；写完 fsync 后才更新内存状态，短写失败强制重载并分隔残行。最新有效观测覆盖旧修订，重启与源文件删除不丢既有历史；未知版本拒绝写入，坏行警告后跳过。
+`UsageArchiveImporter` 分块读取 transcript；inode/device/mtime/size 指纹、前缀/提交边界哈希及持久化 parser state 支持断点续读，未变化文件重启后读取 0 字节正文。每批最多读取 256 KiB，单行上限 1 MiB，未完成尾行留在原偏移，超长行有界丢弃；初始身份元数据发现最多 32 行/约 2 MiB。pending tool 只保存哈希键且最多 256 个，超限保留近期调用并警告估算不完整。自动模式只保存目标日期观测、已有非空历史归档的修正和此前最后一个 Codex 累计基线；手动补历史会重绕曾跳过旧日期的来源。源日志从不修改。
 
-`UsageLedgerSummary` 按当前本地 Calendar 生成 7/30/90 日、每 agent 的 token/工时桶与小时热图。工时合并同 session 的任务/工具区间、扣除已知问题等待，缺边界时只估计短活动间隙（最多 5 min，超过 30 min 的未配对空闲间隙不推断），不把开着的终端时长当工作时长；并发 session 可累加 agent-hours。`UsageLedgerService` 通过独立 60s 循环和 Settings 手动刷新调度，取消/generation 隔离过期回调，报告不完整扫描/保存失败。冷启动先展示已保存统计；transcript 按 mtime 从新到旧回填，首文件及后续有界批次先落盘再刷新 UI，并显示导入进度。缓存命中不重复发送记录，无变更 upsert 不重新聚合；逐文件/逐账本行的 autoreleasepool 避免长任务累积 Foundation 临时对象。Settings 的 Usage 页面复用同一个 service，展示分 agent 汇总、双图、缓存命中率、三类排行和热图。数据不经 Bridge、quota cache、journal、通知或模型网络；demo/SSH 会话不是采集来源。
+`UsageArchiveDatabase` actor 使用系统 SQLite3，私有 `~/.zackeyes/usage/archive-v1.sqlite`（目录 0700、主文件与 sidecar 0600），WAL/FULL、8 MiB 页面缓存。计数观测与来源 cursor/parser state 在同一事务提交；日期/session/区间索引支持按日查询，包括跨日工作/等待区间及同 timestamp 的全部 Codex 前驱。修订同时使旧/新日期及后继累计观测的日期失效，适用于所有时区归档。未知 schema、链接或公开权限文件拒绝写入。旧 `history-v1.jsonl` 保留不动，只有 Settings 显式导入时才分块迁移；旧 Collector/Store 保留作兼容测试，生产 service 不实例化其全历史缓存。
+
+`UsageArchiveEngine` 单任务、后台优先级并在批次间让出/节流。应用运行时本地 03:00 后结算前一天，启动时补算；初始自动范围是最近三个完整日，此后补齐漏掉日期并修正最近三日及已失效旧归档。60s 调度只检查完成元数据，不因打开 Settings、切换周期或已完成日的再次启动而扫描日志。时区/Calendar 隔离归档，切换时从磁盘计数重建匹配日期，不混合旧时区桶。手动导入旧账本/更早 transcript 可暂停、重启后续传；取消只保留已提交批次，可选导入失败不阻塞正常日结。
+
+`UsageLedgerSummary` 保留区间合并、问题等待扣除、缺边界时的短活动间隙估算（最多 5 min，超过 30 min 不推断）及并发 agent-hours；按完整本地日处理午夜/DST。导入保留所有可用磁盘计数，但新建日汇总限定于可见的最近 90 日，避免异常早期时间戳触发无界补档。每日归档保留完整排行和缓存分子/分母，7/30/90 日合并后才截取前十及计算加权命中率。`UsageLedgerService`/Settings 只读取小归档；统计截至昨天，今天明确未结算，现有 live Today/quota 不变。刷新发布使用独立序号和生命周期 generation 隔离过期回调。数据不经 Bridge、quota cache、journal、通知或模型网络；demo/SSH 会话不是采集来源。
 
 ### Demo 会话展示（#262）
 
