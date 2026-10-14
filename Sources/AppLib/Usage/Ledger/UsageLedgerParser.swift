@@ -16,6 +16,29 @@ enum UsageLedgerParser {
             }
             return object
         }
+        var state = seed(objects: objects, agent: agent, sourceID: sourceID)
+        return consume(objects: objects, state: &state, onIssue: onIssue)
+    }
+
+    struct State: Codable, Sendable {
+        struct Pending: Codable, Sendable {
+            var date: Date
+            var name: String
+        }
+        var agent: AgentKind
+        var sourceID: String
+        var session: String
+        var project: String
+        var model: String
+        var pending: [String: Pending] = [:]
+        var turnStart: Date?
+        var previousActivity: Date?
+        var previousTotals: [String: Int] = [:]
+        var rowIndex = 0
+        var truncatedTools = false
+    }
+
+    static func seed(objects: [[String: Any]], agent: AgentKind, sourceID: String) -> State {
         let meta = objects.first { $0["type"] as? String == "session_meta" }?["payload"] as? [String: Any]
         let rawSession =
             (meta?["id"] as? String) ?? objects.compactMap { ($0["sessionId"] ?? $0["session_id"]) as? String }.first
@@ -24,15 +47,35 @@ enum UsageLedgerParser {
         let session = UsageLedgerRecord.identity("\(agent.rawValue):\(rawSession):\(subagent)")
         let cwd = (meta?["cwd"] as? String) ?? objects.compactMap { $0["cwd"] as? String }.first
         let project = UsageLedgerRecord.label(cwd.flatMap { JournalCollector.projectName(fromCwd: $0) })
-        var model = UsageLedgerRecord.label(meta?["model"] as? String)
+        let model = UsageLedgerRecord.label(meta?["model"] as? String)
+        return State(agent: agent, sourceID: sourceID, session: session, project: project, model: model)
+    }
+
+    static func consume(objects: [[String: Any]], state: inout State, onIssue: (() -> Void)? = nil)
+        -> [UsageLedgerRecord]
+    {
+        let agent = state.agent
+        let sourceID = state.sourceID
+        let session = state.session
+        let project = state.project
+        var model = state.model
         var out: [String: UsageLedgerRecord] = [:]
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let plainISO = ISO8601DateFormatter()
-        var pendingTools: [String: (Date, String)] = [:]
-        var turnStart: Date?
-        var previousActivity: Date?
-        var previousTotals: [String: Int] = [:]
+        var pendingTools = state.pending.mapValues { ($0.date, $0.name) }
+        var turnStart = state.turnStart
+        var previousActivity = state.previousActivity
+        var truncatedTools = state.truncatedTools
+        var previousTotals = state.previousTotals
+        defer {
+            state.truncatedTools = truncatedTools
+            state.model = model
+            state.pending = pendingTools.mapValues { State.Pending(date: $0.0, name: $0.1) }
+            state.turnStart = turnStart
+            state.previousActivity = previousActivity
+            state.previousTotals = previousTotals
+        }
 
         func emit(
             _ kind: UsageLedgerRecord.Kind, key: String, at: Date, end: Date? = nil,
@@ -63,10 +106,18 @@ enum UsageLedgerParser {
         func toolStart(id: String, name: String, at: Date) {
             let name = UsageLedgerRecord.label(name)
             emit(.tool, key: "\(session):tool:\(id)", at: at, tool: name)
-            pendingTools[id] = (at, name)
+            let key = UsageLedgerRecord.identity(id)
+            if pendingTools[key] == nil, pendingTools.count >= 256,
+                let oldest = pendingTools.min(by: { $0.value.0 < $1.value.0 })?.key
+            {
+                pendingTools.removeValue(forKey: oldest)
+                truncatedTools = true
+                onIssue?()
+            }
+            pendingTools[key] = (at, name)
         }
         func toolEnd(id: String, at: Date) {
-            guard let (start, name) = pendingTools.removeValue(forKey: id) else { return }
+            guard let (start, name) = pendingTools.removeValue(forKey: UsageLedgerRecord.identity(id)) else { return }
             interval(
                 start, at,
                 wait: ["AskUserQuestion", "request_user_input"].contains(name.components(separatedBy: ".").last ?? name)
@@ -82,7 +133,9 @@ enum UsageLedgerParser {
                 pendingTools.removeValue(forKey: id)
             }
         }
-        for (index, obj) in objects.enumerated() {
+        for obj in objects {
+            let index = state.rowIndex
+            state.rowIndex += 1
             if index.isMultiple(of: 256), Task.isCancelled { return [] }
             let type = obj["type"] as? String
             let payload = obj["payload"] as? [String: Any] ?? [:]
