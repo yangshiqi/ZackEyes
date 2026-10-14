@@ -212,6 +212,8 @@ actor UsageArchiveImporter {
                     kept.append(record)
                 }
             }
+            // Publish a new-day counter only alongside its known preceding baseline.
+            if kept.contains(where: { $0.kind == .counter }), let baseline = saved.baseline { kept.append(baseline) }
             saved.offset = reader.offset
             saved.skipping = reader.skipping
             saved.boundary = try digest(at: saved.offset - min(saved.offset, 128), count: Int(min(saved.offset, 128)))

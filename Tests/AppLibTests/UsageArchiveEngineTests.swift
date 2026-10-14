@@ -64,7 +64,9 @@ extension UsageArchiveEngineTests {
                 UsageLedgerTests.claude(
                     0, type: "assistant", message: ["id": "\(i)", "usage": ["input_tokens": 100, "output_tokens": 0]])
                 + "\n"
-            try Data(text.utf8).write(to: file)
+            let padding =
+                UsageLedgerTests.line(["type": "progress", "padding": String(repeating: "x", count: 800_000)]) + "\n"
+            try Data((text + padding).utf8).write(to: file)
         }
         let db = UsageArchiveDatabase(url: root.appendingPathComponent("archive.sqlite"))
         let engine = UsageArchiveEngine(
@@ -87,6 +89,13 @@ extension UsageArchiveEngineTests {
             _ = try await task.value
             Issue.record("Expected cancellation after partial archive")
         } catch is CancellationError {}
+        let checkpoints = try await [
+            db.checkpoint(source: UsageLedgerRecord.identity(source.appendingPathComponent("0.jsonl").path)),
+            db.checkpoint(source: UsageLedgerRecord.identity(source.appendingPathComponent("1.jsonl").path)),
+        ]
+        let saved = try #require(checkpoints.compactMap { $0 }.first)
+        let cursor = try #require(JSONSerialization.jsonObject(with: saved) as? [String: Any])
+        #expect(cursor["finished"] as? Bool == false)
         #expect(try await engine.lastSettlement(calendar: UsageLedgerTests.utc) == nil)
         #expect(
             try await db.summary(

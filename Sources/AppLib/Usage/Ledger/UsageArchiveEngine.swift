@@ -21,6 +21,7 @@ actor UsageArchiveEngine {
     private let codexRoot: URL
     private let legacyURL: URL
     private var busy = false
+    private var lastPartialPublication = Date.distantPast
     private var lastAttempt: [String: Date] = [:]
     init(database: UsageArchiveDatabase, claudeRoot: URL, codexRoot: URL, legacyURL: URL, throttle: Bool = true) {
         self.database = database
@@ -63,6 +64,7 @@ actor UsageArchiveEngine {
         }
         guard !busy else { return Outcome() }
         busy = true
+        lastPartialPublication = .distantPast
         defer { busy = false }
         if mode == .automatic { lastAttempt[UsageArchiveDatabase.zone(calendar)] = now }
         try await database.setMetadata("pending", JSONEncoder().encode(mode))
@@ -83,7 +85,6 @@ actor UsageArchiveEngine {
         } else {
             let discovered = try discover(since: mode == .automatic ? cutoff : nil)
             outcome.issues += discovered.issues
-            var lastPartial = Date.distantPast
             for (index, candidate) in discovered.files.enumerated() {
                 try Task.checkCancellation()
                 let phase = mode == .automatic ? "Settling completed days" : "Importing older transcripts"
@@ -92,8 +93,12 @@ actor UsageArchiveEngine {
                     let result = try await importer.importFile(
                         candidate.url, agent: candidate.agent, cutoff: mode == .automatic ? cutoff : nil
                     ) { bytes in
-                        await onProgress(
-                            Progress(phase: phase, completed: index, total: discovered.files.count, bytes: bytes))
+                        let value = Progress(
+                            phase: phase, completed: index, total: discovered.files.count, bytes: bytes)
+                        await onProgress(value)
+                        if mode == .automatic {
+                            await self.publishPartial(value, today: today, calendar: calendar, onProgress: onProgress)
+                        }
                     }
                     outcome.bytesRead += result.bytesRead
                     if result.rejected > 0 {
@@ -104,23 +109,6 @@ actor UsageArchiveEngine {
                     outcome.issues.append(
                         "A \(candidate.agent.rawValue) transcript could not be imported; saved counts remain available."
                     )
-                }
-                if mode == .automatic && (index == 0 || Date().timeIntervalSince(lastPartial) >= 30) {
-                    var partialDays = Set(try await database.dirtyDays(calendar: calendar).filter { $0 < today })
-                    for offset in 1...3 {
-                        if let day = calendar.date(byAdding: .day, value: -offset, to: today) {
-                            partialDays.insert(day)
-                        }
-                    }
-                    for day in partialDays.sorted() {
-                        try Task.checkCancellation()
-                        try await database.archive(day: day, calendar: calendar)
-                    }
-                    await onProgress(
-                        Progress(
-                            phase: "Settling completed days", completed: index + 1,
-                            total: discovered.files.count, archivesUpdated: true))
-                    lastPartial = Date()
                 }
             }
         }
@@ -157,6 +145,28 @@ actor UsageArchiveEngine {
         }
         try await database.setMetadata("pending", Data())
         return outcome
+    }
+    private func publishPartial(
+        _ progress: Progress, today: Date, calendar: Calendar,
+        onProgress: @Sendable (Progress) async -> Void
+    ) async {
+        guard Date().timeIntervalSince(lastPartialPublication) >= 30 else { return }
+        lastPartialPublication = Date()
+        do {
+            var dates = Set(try await database.dirtyDays(calendar: calendar).filter { $0 < today })
+            for offset in 1...3 {
+                if let day = calendar.date(byAdding: .day, value: -offset, to: today) { dates.insert(day) }
+            }
+            for day in dates.sorted() {
+                try Task.checkCancellation()
+                try await database.archive(day: day, calendar: calendar)
+            }
+            var updated = progress
+            updated.archivesUpdated = true
+            await onProgress(updated)
+        } catch {
+            // The final settlement retries/reports storage failures. Committed source chunks remain resumable.
+        }
     }
     private struct Candidate {
         var url: URL
