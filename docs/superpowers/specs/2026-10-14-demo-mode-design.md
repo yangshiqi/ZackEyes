@@ -1,6 +1,6 @@
 # Demo mode with a synthetic fleet (#262)
 
-Status: approved by the user on 2026-10-14; implementation in progress.
+Status: approved, implemented and locally verified on 2026-10-14. See the implementation plan for validation; not merged or released.
 
 Origin: [#262](https://github.com/yangshiqi/ZackEyes/issues/262), under [tracking issue #265](https://github.com/yangshiqi/ZackEyes/issues/265). #262 explicitly asks that demo mode be built first. #260 is implemented and merged in PR #266.
 

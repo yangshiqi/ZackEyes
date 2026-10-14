@@ -46,6 +46,16 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 
 ## 核心数据流
 
+### Demo 会话展示（#262）
+
+`DemoSessionController` 拥有独立的内存 `SessionStore`，每 6 秒轮换四个 Claude/Codex 示例项目，展示 working / needs-you / idle、工具、任务、模型/effort、context 和示例费用。样本来源为 `.demo`，不经 Bridge 或 AppDelegate 事件路由，不进入真实会话、通知、日志或用量缓存。
+
+`NotchViewModel.sessionStore` 仍是 AppDelegate 接收 socket、扫描器和 tailer 数据的真实 store；`presentationStore` 在 Demo 开启时选择样本 store。两种刘海、列表分组、状态文字和面板展示判定读取 presentationStore；菜单栏监听 view model 转发的变化，避免订阅停留在旧数据源。全局额度继续使用账户数据，横幅与每张卡片、compact pill 明确显示 DEMO。
+
+共享菜单的 `Demo mode` 和新进程的 `--demo` 可启动演示；横幅 `Exit demo` 或菜单可退出。状态不持久化。真实 pending / waiting / error 阻止启动，并在运行中自动退出演示，展开真实待处理内容。退出取消循环任务、丢弃样本并重新应用当前可见性设置；旧回调通过取消状态和 generation 校验不能恢复已退出的样本。
+
+操作按实际 store 成员及 `.demo` 来源分流；示例授权/问答只修改样本请求。示例卡片的终端动作在进入进程查找、AppleScript、OSC 标题写入之前返回。真实 ingestion 和配额后台更新一直继续，退出后显示最新真实状态。真实待处理内容存在时，Demo 菜单项同时清除 action/target，以免 AppKit 的自动验证重新启用入口。
+
 ### 权限审批流（双向，同步）
 
 ```
