@@ -1,13 +1,32 @@
+import Darwin
 import Foundation
 import Shared
 import Testing
 
 @testable import AppLib
 
+private final class FailingLedgerAppend: @unchecked Sendable {
+    let lock = NSLock()
+    var first = true
+    func append(_ fd: Int32, _ data: Data) throws {
+        lock.lock()
+        let fail = first
+        first = false
+        lock.unlock()
+        let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+        if fail {
+            try handle.write(contentsOf: Data(data.prefix(20)))
+            throw CocoaError(.fileWriteOutOfSpace)
+        }
+        try handle.write(contentsOf: data)
+    }
+}
+
 struct UsageLedgerStorageTests {
     func folder() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: url, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         return url
     }
     func record(_ tokens: Int = 100, at: Date = UsageLedgerTests.start) -> UsageLedgerRecord {
@@ -44,6 +63,7 @@ struct UsageLedgerStorageTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let url = root.appendingPathComponent("ledger.jsonl")
         try Data("{\"version\":1,\"id\":\"interrupted".utf8).write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
         let store = UsageLedgerStore(url: url)
         try await store.upsert([record()])
         let reloaded = UsageLedgerStore(url: url)
@@ -110,6 +130,40 @@ struct UsageLedgerStorageTests {
             .scan()
         #expect(scan.records.filter { $0.kind == .tokens }.isEmpty)
         #expect(!scan.issues.isEmpty)
+    }
+
+    @Test func existingPublicDirectoryAndFileAreRejectedOnRead() async throws {
+        let root = try folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("ledger.jsonl")
+        try JSONEncoder().encode(record()).write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: root.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: url.path)
+        await #expect(throws: (any Error).self) {
+            _ = try await UsageLedgerStore(url: url).summary(
+                days: 7, now: UsageLedgerTests.start, calendar: UsageLedgerTests.utc)
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: root.path)
+        await #expect(throws: (any Error).self) {
+            _ = try await UsageLedgerStore(url: url).summary(
+                days: 7, now: UsageLedgerTests.start, calendar: UsageLedgerTests.utc)
+        }
+    }
+
+    @Test func sameInstanceRetryAfterShortWriteSeparatesDamagedTail() async throws {
+        let root = try folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("ledger.jsonl")
+        let failure = FailingLedgerAppend()
+        let store = UsageLedgerStore(url: url, appendBytes: { fd, data in try failure.append(fd, data) })
+        await #expect(throws: (any Error).self) { try await store.upsert([record()]) }
+        try await store.upsert([record()])
+        let restored = UsageLedgerStore(url: url)
+        #expect(
+            try await restored.summary(
+                days: 7, now: UsageLedgerTests.start.addingTimeInterval(1), calendar: UsageLedgerTests.utc
+            ).totalTokens == 100)
     }
 
 }
