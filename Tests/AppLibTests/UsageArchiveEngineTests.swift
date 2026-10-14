@@ -103,3 +103,57 @@ extension UsageArchiveEngineTests {
             ).totalTokens == 100)
     }
 }
+
+extension UsageArchiveEngineTests {
+    @Test func partialNewDayCounterIncludesItsPreWindowBaseline() async throws {
+        let root = try UsageLedgerStorageTests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("codex")
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        let rows: [[String: Any]] = [
+            ["type": "session_meta", "payload": ["id": "session", "cwd": "/work/Project"]],
+            [
+                "type": "event_msg", "timestamp": UsageLedgerTests.stamp(-86400 * 10),
+                "payload": [
+                    "type": "token_count",
+                    "info": [
+                        "total_token_usage": ["input_tokens": 100, "output_tokens": 10, "cached_input_tokens": 20]
+                    ],
+                ],
+            ],
+            [
+                "type": "event_msg", "timestamp": UsageLedgerTests.stamp(0),
+                "payload": [
+                    "type": "token_count",
+                    "info": [
+                        "total_token_usage": ["input_tokens": 150, "output_tokens": 30, "cached_input_tokens": 40]
+                    ],
+                ],
+            ],
+            ["type": "progress", "padding": String(repeating: "x", count: 800_000)],
+        ]
+        let text = rows.map(UsageLedgerTests.line).joined(separator: "\n") + "\n"
+        try Data(text.utf8).write(to: source.appendingPathComponent("source.jsonl"))
+        let db = UsageArchiveDatabase(url: root.appendingPathComponent("archive.sqlite"))
+        let engine = UsageArchiveEngine(
+            database: db, claudeRoot: root.appendingPathComponent("none"), codexRoot: source,
+            legacyURL: root.appendingPathComponent("none"), throttle: false)
+        let task = Task {
+            try await engine.run(
+                mode: .automatic, now: UsageLedgerTests.start.addingTimeInterval(86400), calendar: UsageLedgerTests.utc,
+                force: true
+            ) { progress in
+                if progress.archivesUpdated {
+                    let partial = try? await db.summary(
+                        days: 7, now: UsageLedgerTests.start.addingTimeInterval(86400), calendar: UsageLedgerTests.utc)
+                    #expect(partial?.totalTokens == 50)
+                    withUnsafeCurrentTask { $0?.cancel() }
+                }
+            }
+        }
+        do {
+            _ = try await task.value
+            Issue.record("Expected cancellation after partial archive")
+        } catch is CancellationError {}
+    }
+}
