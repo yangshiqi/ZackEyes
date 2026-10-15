@@ -34,7 +34,7 @@ The homepage currently uses no React island and no generated client JavaScript b
 - The canonical production origin is `https://zackeyes.vercel.app` — the live Vercel deployment. The originally planned custom apex domain was never registered (see issue #192). If a custom domain is purchased later, update `astro.config.mjs`, `public/robots.txt`, the LLM text endpoints, and the origin pinned in `tests/site-contract.test.mjs`.
 - Latest public release: `https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.10.1/ZackEyes-0.10.1.dmg`.
 - DMG size: 6.4 MB.
-- SHA256: `be4da1469b7cbcca28c0a4deda53a64719141cdf4ff8cbc66da361c38f384ead`.
+- SHA256: `472270fcb28d30515d2b4791b9112a31d6b1056f7d999afdecedda0a19dcd12d`.
 - Issues and feature requests: `https://github.com/yangshiqi/ZackEyes-release/issues`.
 - Release metadata is centralised in [`src/lib/release.mjs`](src/lib/release.mjs); update that file on each release and every page + test will pick up the new values.
 - `make release` in the ccisland repo triggers the [`bump-version`](.github/workflows/bump-version.yml) workflow here via `gh workflow run`, which rewrites `src/lib/release.mjs` with the new DMG metadata and opens a PR. The PR is intentionally not auto-merged so a changelog entry can be added by hand on the same branch.

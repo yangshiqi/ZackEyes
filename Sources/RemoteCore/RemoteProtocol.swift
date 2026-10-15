@@ -10,10 +10,16 @@ public struct RemoteSessionSnapshot: Codable, Equatable, Sendable {
     public var cwd: String?
     public var model: String?
     public var tool: String?
+    public var approvalPolicy: String?
+    public var sandboxType: String?
+    public var permissionMode: String?
+    public var reasoningEffort: String?
     public var lastActivity: Date
     public init(
         id: String, agent: RemoteAgent, state: RemoteSessionState, cwd: String? = nil,
-        model: String? = nil, tool: String? = nil, lastActivity: Date
+        model: String? = nil, tool: String? = nil, lastActivity: Date,
+        approvalPolicy: String? = nil, sandboxType: String? = nil, permissionMode: String? = nil,
+        reasoningEffort: String? = nil
     ) {
         self.id = id
         self.agent = agent
@@ -21,6 +27,10 @@ public struct RemoteSessionSnapshot: Codable, Equatable, Sendable {
         self.cwd = cwd
         self.model = model
         self.tool = tool
+        self.approvalPolicy = approvalPolicy
+        self.sandboxType = sandboxType
+        self.permissionMode = permissionMode
+        self.reasoningEffort = reasoningEffort
         self.lastActivity = lastActivity
     }
     public var projectName: String {
@@ -86,6 +96,8 @@ public enum RemoteFrameCodec {
         for session in snapshot.sessions {
             guard !session.id.isEmpty, validString(session.id, bytes: 128), validString(session.cwd, bytes: 2048),
                 validString(session.model, bytes: 128), validString(session.tool, bytes: 128),
+                validString(session.approvalPolicy, bytes: 128), validString(session.sandboxType, bytes: 128),
+                validString(session.permissionMode, bytes: 128), validString(session.reasoningEffort, bytes: 32),
                 validDate(session.lastActivity),
                 session.lastActivity <= snapshot.observedAt.addingTimeInterval(300),
                 identities.insert("\(session.agent.rawValue):\(session.id)").inserted

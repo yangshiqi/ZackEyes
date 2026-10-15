@@ -16,7 +16,9 @@ case "$(uname -s)" in
         platform=linux
         triple=x86_64-swift-linux-musl
         if [ "$arch" = arm64 ]; then triple=aarch64-swift-linux-musl; fi
-        swift_args=(--swift-sdk "$triple")
+        # Keep the self-contained runtime, but omit DWARF and link-time symbol
+        # tables. Runtime reflection metadata is retained by the ELF linker.
+        swift_args=(--swift-sdk "$triple" -Xlinker --strip-all)
         ;;
     *) exit 1 ;;
 esac
@@ -28,6 +30,10 @@ if [ "$platform" = linux ]; then
     # A glibc or Swift dynamic dependency would make the package unusable on a clean host.
     if readelf -l "$binary" | grep -q INTERP; then echo 'ERROR: helper is not fully static' >&2; exit 1; fi
     if readelf -d "$binary" | grep -q NEEDED; then echo 'ERROR: helper has shared-library dependencies' >&2; exit 1; fi
+    if readelf -SW "$binary" | grep -E '\.(debug[^[:space:]]*|zdebug[^[:space:]]*|gnu_debug[^[:space:]]*|symtab|strtab)[[:space:]]' >/dev/null; then
+        echo 'ERROR: Linux helper still contains debug or link-time symbol sections' >&2
+        exit 1
+    fi
 else
     codesign --force --sign - "$binary"
     codesign --verify --strict "$binary"
