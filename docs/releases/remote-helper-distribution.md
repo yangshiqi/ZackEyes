@@ -14,7 +14,7 @@ Scripts/fetch-remote-assets.sh X.Y.Z FULL_SOURCE_SHA .build/remote-assets-X.Y.Z
 
 This dispatches the workflow on the pushed current branch, waits for its exact run, downloads the aggregate artifact and verifies it again. All four platforms must pass before the DMG or helper assets can be uploaded. The existing release upload now includes the verified helper directory. A failed build leaves the public release untouched. Delete or move an incomplete local helper output directory before retrying; stale files are never silently reused.
 
-For a backfill of an existing release, dispatch `remote-helpers.yml` with the existing version and source tag (for example `version=0.10.0`, `source_ref=v0.10.0`), download the `remote-helpers` artifact, verify it against the resolved tag SHA and upload the six new assets to the existing distribution release. Do not replace its DMG, tags or existing checksums. Record the workflow run and helper source SHA in the release notes. Never publish partial platform sets.
+For a backfill of an existing release, dispatch `remote-helpers.yml` with the existing version and source commit (use the original tag when it builds on every platform; v0.10.0 needs the musl import compatibility fix in this distribution change), download the `remote-helpers` artifact, verify it against the resolved helper source SHA and upload the six new assets to the existing distribution release. Do not replace its DMG, tags or existing checksums. Record the workflow run and helper source SHA in the release notes. Never publish partial platform sets.
 
 ## User installation
 
