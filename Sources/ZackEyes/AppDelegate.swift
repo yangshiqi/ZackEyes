@@ -179,7 +179,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // preferences are hosted by the shared Settings window.
         let statusMenu = StatusBarMenu(
             updateChecker: uc, downloader: dl,
-            journalTrigger: JournalManualTrigger(), demoViewModel: viewModel)
+            demoViewModel: viewModel)
         mb.menuBuilder = { [weak statusMenu] in statusMenu?.build() ?? NSMenu() }
         self.statusBarMenu = statusMenu
 
