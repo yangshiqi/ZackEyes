@@ -1,0 +1,105 @@
+name: Remote helpers
+run-name: Remote helpers ${{ inputs.version || 'validation' }} from ${{ inputs.source_ref || github.sha }}
+on:
+  pull_request:
+    paths: ['Sources/RemoteCore/**', 'Sources/RemoteStream/**', 'Sources/AppLib/Remote/**', 'Package.swift', 'Scripts/*remote*', 'Tests/Distribution/**', '.github/workflows/remote-helpers.yml']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Package version X.Y.Z'
+        required: true
+        type: string
+      source_ref:
+        description: 'Exact source commit or existing version tag; empty uses workflow commit'
+        required: false
+        type: string
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-x86_64
+          - runner: ubuntu-24.04-arm
+            platform: linux-arm64
+          - runner: macos-15-intel
+            platform: macos-x86_64
+          - runner: macos-15
+            platform: macos-arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 25
+    env:
+      VERSION: ${{ inputs.version || '0.0.0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          path: helper-source
+      - name: Installer regression tests
+        run: python3 -m unittest discover -s Tests/Distribution -v
+      - name: Build and smoke-test macOS helper
+        if: runner.os == 'macOS'
+        env:
+          REMOTE_SOURCE_DIR: ${{ github.workspace }}/helper-source
+        run: bash Scripts/build-remote-helper.sh "$VERSION" "$PWD/dist-remote"
+      - name: Build and smoke-test fully static Linux helper
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm -v "$PWD:/workspace" -w /workspace \
+            -e VERSION -e REMOTE_SOURCE_DIR=/workspace/helper-source swift:6.0.3-jammy bash -euc '
+              swift sdk install https://download.swift.org/swift-6.0.3-release/static-sdk/swift-6.0.3-RELEASE/swift-6.0.3-RELEASE_static-linux-0.0.1.artifactbundle.tar.gz --checksum 67f765e0030e661a7450f7e4877cfe008db4f57f177d5a08a6e26fd661cdd0bd
+              swift test --package-path helper-source --filter RemoteCoreTests
+              bash Scripts/build-remote-helper.sh "$VERSION" /workspace/dist-remote
+            '
+      - name: Run Linux package on a clean host without Swift
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm -v "$PWD/dist-remote:/packages:ro" alpine:3.20 sh -euc '
+            mkdir /tmp/helper
+            tar -xzf /packages/*.tar.gz -C /tmp/helper
+            /tmp/helper/zackeyes --help
+            /tmp/helper/zackeyes --stream > /tmp/frame &
+            helper_pid=$!
+            sleep 1
+            kill "$helper_pid"
+            wait "$helper_pid"
+            test -s /tmp/frame
+          '
+      - uses: actions/upload-artifact@v4
+        with:
+          name: remote-${{ matrix.platform }}
+          path: dist-remote/*.tar.gz
+          if-no-files-found: error
+          retention-days: 14
+  bundle:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      VERSION: ${{ inputs.version || '0.0.0' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          path: helper-source
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: remote-*
+          merge-multiple: true
+          path: dist-remote
+      - name: Verify complete release bundle
+        run: |
+          cp Scripts/install-remote.sh dist-remote/
+          (cd dist-remote && sha256sum *.tar.gz install-remote.sh > SHA256SUMS)
+          python3 Scripts/verify-remote-assets.py "$VERSION" "$(git -C helper-source rev-parse HEAD)" dist-remote
+      - uses: actions/upload-artifact@v4
+        with:
+          name: remote-helpers
+          path: dist-remote/*
+          if-no-files-found: error
+          retention-days: 14

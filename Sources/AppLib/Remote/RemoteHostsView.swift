@@ -7,6 +7,8 @@ struct RemoteHostsView: View {
     @State private var destination = ""
     @State private var error: String?
     var body: some View {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.10.0"
+        let installCommand = "curl -fsSL https://github.com/yangshiqi/ZackEyes-release/releases/download/v\(version)/install-remote.sh | sh -s -- \(version)"
         VStack(alignment: .leading, spacing: 16) {
             Text("Observe Claude and Codex on your SSH hosts. Requests must be handled in the remote terminal.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
@@ -68,9 +70,13 @@ struct RemoteHostsView: View {
             Divider()
             Text("Setup").font(.headline)
             Text(
-                "Install the headless binary at ~/.local/bin/zackeyes on the remote host. First verify key authentication and trust the host key from your terminal. ZackEyes never opens password prompts or changes your SSH configuration."
+                "Run this command on the remote host as the user running Claude/Codex. It downloads the matching prebuilt helper, verifies SHA256 and installs ~/.local/bin/zackeyes. No Swift, Git or sudo required. Supports Linux and macOS 14+, x86_64 and arm64."
             )
             .font(.system(size: 12)).foregroundStyle(.secondary)
+            Text(installCommand)
+                .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+            Text("Then verify key authentication and trust the host key in your terminal. ZackEyes never opens password prompts or changes your SSH configuration.")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
             Text("ssh your-host '~/.local/bin/zackeyes --stream'")
                 .font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
             Text(

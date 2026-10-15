@@ -34,3 +34,7 @@ export const issuesUrl = 'https://github.com/yangshiqi/ZackEyes-release/issues';
 export const sourceUrl = 'https://github.com/yangshiqi/ZackEyes';
 export const contributeUrl = `${sourceUrl}/contribute`;
 export const licenseUrl = `${sourceUrl}/blob/master/LICENSE`;
+
+// The helper installer and all four platform packages ship beside the DMG.
+export const remoteInstallerUrl = `https://github.com/yangshiqi/ZackEyes-release/releases/download/v${appVersion}/install-remote.sh`;
+export const remoteInstallCommand = `curl -fsSL ${remoteInstallerUrl} | sh -s -- ${appVersion}`;

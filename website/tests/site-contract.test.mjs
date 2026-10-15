@@ -34,6 +34,14 @@ function read(path) {
 }
 
 describe('Astro site contract', () => {
+  it('offers version-matched prebuilt remote helpers without requiring Swift', () => {
+    const docs = read('src/pages/docs.astro');
+    assert.match(docs, /remoteInstallCommand/);
+    assert.match(docs, /No Swift or Git installation/);
+    assert.doesNotMatch(docs, /Remote observation requires Swift 6|must be built separately with Swift/);
+    assert.match(read('src/lib/release.mjs'), /export const remoteInstallCommand/);
+  });
+
   it('uses the reference Astro static stack', () => {
     assert.equal(existsSync(join(root, 'astro.config.mjs')), true);
     assert.equal(existsSync(join(root, 'src/pages/index.astro')), true);

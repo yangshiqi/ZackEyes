@@ -134,13 +134,13 @@ v0.10.0 includes all five items: opt-in supported Claude question answers with t
 
 Add up to eight named SSH aliases or `user@hostname` destinations in **Settings → Remote Hosts**. ZackEyes keeps one foreground SSH stream per enabled host, reconnects after a drop, and shows connection status and host identity alongside observed Claude/Codex sessions. Remote questions and approvals must be handled in the remote terminal; the cards have no local approval or terminal-jump actions.
 
-Build on the remote Linux or macOS machine using Swift 6, then install the headless executable:
+Install the prebuilt helper on the remote host, as the user that runs Claude/Codex. No Swift, Git or sudo is needed:
 
-```bash
-swift build -c release --product zackeyes-stream
-mkdir -p ~/.local/bin
-install -m 755 .build/release/zackeyes-stream ~/.local/bin/zackeyes
+```sh
+curl -fsSL https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.10.0/install-remote.sh | sh -s -- 0.10.0
 ```
+
+The installer selects Linux/macOS and x86_64/arm64, verifies SHA256, checks the executable and atomically installs `~/.local/bin/zackeyes`. Failed downloads or validation preserve the old helper. Linux packages are fully static; macOS requires 14+. All four packages and `SHA256SUMS` are attached to the matching distribution release. Re-run the matching version’s command when updating the app. Developer build and release details: [remote helper distribution](docs/releases/remote-helper-distribution.md).
 
 Before adding a host, verify key authentication and its host key yourself. A custom port, identity or jump host can be defined in your existing SSH alias. Then test the stream:
 

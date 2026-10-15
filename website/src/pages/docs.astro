@@ -4,7 +4,7 @@ import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import InstallSecurityNote from '../components/InstallSecurityNote.astro';
-import { appVersion, downloadUrl, issuesUrl, sourceUrl } from '../lib/release.mjs';
+import { appVersion, downloadUrl, issuesUrl, sourceUrl, remoteInstallCommand } from '../lib/release.mjs';
 
 const description = 'Install and remove ZackEyes on macOS 14+, understand local pricing, and configure SSH observation, question answers and daily Usage archives.';
 const docsStructuredData = [
@@ -159,9 +159,10 @@ const docsStructuredData = [
           <h3 id="usage-history">Read and extend Usage history.</h3>
           <p class="section-copy">The Today row is live token/cost information; Settings → Usage is a separate archive of completed days, not a historical billing report. Automatic setup covers the last three completed days. Import older transcripts extends available history; Import saved history migrates the old ledger without changing it. Pause and Resume preserve committed progress across restarts. Parallel sessions add agent-hours, so a day may exceed 24 estimated hours. Deleted source history cannot be reconstructed, and invalid/oversized observations may leave estimates incomplete.</p>
           <p class="section-copy">Daily work journal is still under development for v{journalVersion}. Its public generation menu is hidden; setup, publishing and scheduling are unfinished and excluded from the v{featureVersion} release.</p>
-          <p class="section-copy">Remote observation requires Swift 6 on the remote Linux/macOS host: build <code>swift build -c release --product zackeyes-stream</code> and install the result as <code>~/.local/bin/zackeyes</code>. Verify key authentication and the host key in your terminal, then add the SSH alias in Settings → Remote Hosts. Remote approvals and questions remain in the remote terminal.</p>
+          <p class="section-copy">Install the version-matched remote helper on your Linux or macOS host, under the same account that runs Claude/Codex. No Swift or Git installation is required. The installer selects x86_64 or arm64, verifies SHA256 and installs to <code>~/.local/bin/zackeyes</code>. Linux packages are fully static; macOS requires 14 or later.</p>
+          <p class="section-copy"><code>{remoteInstallCommand}</code></p>
           <h3 id="ssh-troubleshooting">Connect and troubleshoot SSH hosts.</h3>
-          <p class="section-copy">Use Settings → Remote Hosts → Add Host with a name and existing SSH alias or user@hostname. Configure custom ports, identity files or jump hosts in your own SSH configuration. ZackEyes does not edit it. Before enabling the host, verify <code>ssh your-host</code> in a terminal, then verify <code>ssh your-host '~/.local/bin/zackeyes --stream'</code>. The helper must be built separately with Swift 6 and installed on that host.</p>
+          <p class="section-copy">Use Settings → Remote Hosts → Add Host with a name and existing SSH alias or user@hostname. Configure custom ports, identity files or jump hosts in your own SSH configuration. ZackEyes does not edit it. Before enabling the host, verify <code>ssh your-host</code> in a terminal, then verify <code>ssh your-host '~/.local/bin/zackeyes --stream'</code>. Run the installer above on that host first. Remote approvals and questions remain in the remote terminal.</p>
           <p class="section-copy">Authentication or host-key errors must be resolved in the terminal; ZackEyes does not show password prompts or accept unknown host keys. A missing helper requires installing the stream binary; an unsupported stream requires updating the helper. Connection status appears beside each host. Remote cards are metadata observations, not proof of a running process, and have no local approval or terminal-jump actions.</p>
           <figure class="feature-screenshot">
             <a href="/screenshots/remote-hosts.webp" aria-label="View SSH host setup screenshot at full size"><img src="/screenshots/remote-hosts.webp" alt="Remote Hosts settings showing two disabled example SSH aliases and the remote helper setup command." width="1800" height="1960" loading="lazy" decoding="async" /></a>

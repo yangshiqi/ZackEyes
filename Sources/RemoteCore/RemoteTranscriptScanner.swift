@@ -1,6 +1,8 @@
 import Foundation
 
-#if os(Linux)
+#if canImport(Musl)
+    import Musl
+#elseif os(Linux)
     import Glibc
 #else
     import Darwin
