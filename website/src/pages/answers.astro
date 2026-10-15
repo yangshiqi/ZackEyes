@@ -1,11 +1,11 @@
 ---
-import { candidateVersion, journalVersion } from '../lib/product-plans.mjs';
+import { featureVersion, journalVersion } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { appVersion, releaseName, downloadUrl, issuesUrl } from '../lib/release.mjs';
 
-const description = 'Answers about ZackEyes releases, installation, local costs, candidate Usage history, SSH observation, notch questions and privacy.';
+const description = 'Answers about ZackEyes releases, installation, local costs, Usage history, SSH observation, notch questions and privacy.';
 const answers = [
   {
     question: 'What is ZackEyes?',
@@ -47,13 +47,13 @@ const answers = [
   },
   {
     question: 'How is Usage history different from Today?',
-    answer: `The published v${appVersion} Today row shows live token and API-price cost estimates. The unreleased v${candidateVersion} Settings → Usage archives complete local days through yesterday, with tokens, estimated agent-hours and cache statistics. It is not a historical subscription bill.`,
+    answer: `The published v${appVersion} Today row shows live token and API-price cost estimates. Since v${featureVersion}, Settings → Usage archives complete local days through yesterday, with tokens, estimated agent-hours and cache statistics. It is not a historical subscription bill.`,
     href: '/docs#usage-history',
     linkLabel: 'Read the Usage guide'
   },
   {
     question: 'Why does Usage history cover only three days at first?',
-    answer: `The v${candidateVersion} candidate initially settles the last three completed days after 03:00 or at startup. Import older transcripts adds earlier available history; Import saved history migrates the previous ledger. Pause and Resume preserve committed progress across restarts. Deleted transcripts cannot be backfilled.`
+    answer: `Usage history initially settles the last three completed days after 03:00 or at startup. Import older transcripts adds earlier available history; Import saved history migrates the previous ledger. Pause and Resume preserve committed progress across restarts. Deleted transcripts cannot be backfilled.`
   },
   {
     question: 'Why can a day show more than 24 agent-hours?',
@@ -61,13 +61,13 @@ const answers = [
   },
   {
     question: 'Can I answer questions or monitor SSH hosts?',
-    answer: `In the unreleased v${candidateVersion} candidate, enable Settings → Notifications → Answer questions from the notch for supported Claude choices. It is off by default and falls back after two minutes. SSH observation supports up to eight hosts with a separately installed helper; remote requests remain in the remote terminal.`,
+    answer: `Since v${featureVersion}, enable Settings → Notifications → Answer questions from the notch for supported Claude choices. It is off by default and falls back after two minutes. SSH observation supports up to eight hosts with a separately installed helper; remote requests remain in the remote terminal.`,
     href: '/docs#notch-answers',
     linkLabel: 'Set up question answers and SSH'
   },
   {
     question: 'Is the daily work journal available?',
-    answer: `No. Journal setup, publishing and scheduling are unfinished and planned for v${journalVersion}. Its public generation action is hidden and it is excluded from the v${candidateVersion} candidate.`
+    answer: `No. Journal setup, publishing and scheduling are unfinished and planned for v${journalVersion}. Its public generation action is hidden and it is excluded from the v${featureVersion} release.`
   },
   {
     question: 'Where do I report ZackEyes issues?',

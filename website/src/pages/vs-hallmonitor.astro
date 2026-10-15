@@ -36,7 +36,7 @@ const rows = [
   },
   {
     label: 'Permission prompts',
-    zack: 'Published release: terminal answers; development builds: opt-in supported Claude question answers with fallback',
+    zack: 'Opt-in supported Claude question answers with a timeout and terminal fallback',
     rival: 'Surfaced with the waiting reason; agent questions can be answered directly from the notch'
   },
   {
@@ -61,7 +61,7 @@ const rows = [
   },
   {
     label: 'Remote sessions',
-    zack: 'Published release: local only; development builds: read-only SSH observation',
+    zack: 'Read-only SSH observation; remote requests stay in the remote terminal',
     rival: 'Multi-machine monitoring over SSH'
   },
   {
@@ -85,17 +85,17 @@ const faqs = [
   {
     question: 'Is there a free alternative to Hallmonitor?',
     answer:
-      'Yes. ZackEyes is a free, MIT-licensed macOS notch panel for AI coding agents, same as Hallmonitor. Both track Claude Code and Codex CLI sessions and surface permission prompts. Hallmonitor includes SSH monitoring and a terminal dashboard. The published ZackEyes download focuses on local sessions, USD cost tracking and themes; its development builds also add read-only SSH observation and opt-in supported Claude question answers.'
+      'Yes. ZackEyes is a free, MIT-licensed macOS notch panel for AI coding agents, same as Hallmonitor. Both track Claude Code and Codex CLI sessions and surface permission prompts. Hallmonitor includes SSH monitoring and a terminal dashboard. ZackEyes combines read-only SSH observation and opt-in supported Claude question answers with local USD cost tracking, private Usage archives and themes.'
   },
   {
     question: 'What is the difference between ZackEyes and Hallmonitor?',
     answer:
-      'Both are free and MIT licensed, both cover Claude Code and Codex CLI in the notch and menu bar, and both jump you to the right terminal. Hallmonitor answers agent questions directly from the notch and watches sessions on remote machines over SSH. The published ZackEyes download converts tokens to USD with daily totals and a 7-day sparkline, plus themes and sounds. Development builds also add read-only SSH observation and opt-in supported Claude question answers; remote requests remain terminal-only.'
+      'Both are free and MIT licensed, both cover Claude Code and Codex CLI in the notch and menu bar, and both jump you to the right terminal. Hallmonitor answers agent questions directly from the notch and watches sessions on remote machines over SSH. The published ZackEyes download converts tokens to USD with daily totals and a 7-day sparkline, plus themes and sounds. ZackEyes also includes read-only SSH observation and opt-in supported Claude question answers; remote requests remain terminal-only.'
   },
   {
     question: 'Which one should I use?',
     answer:
-      'For the published ZackEyes download, Hallmonitor offers SSH monitoring, direct question answers and a terminal dashboard. ZackEyes development builds also include read-only SSH observation and opt-in supported Claude question answers, but no TUI. Use ZackEyes if you want per-session USD cost tracking, themes and sounds, or you run on an Intel Mac — ZackEyes ships a universal arm64/x86_64 build.'
+      'Both offer SSH monitoring and question answers, with ZackEyes limiting answers to supported local Claude choices after opt-in. Hallmonitor also has a terminal dashboard; ZackEyes has no TUI. Use ZackEyes if you want per-session USD cost tracking, themes and sounds, or you run on an Intel Mac — ZackEyes ships a universal arm64/x86_64 build.'
   },
   {
     question: 'Does Hallmonitor track token cost in USD?',
@@ -143,11 +143,10 @@ const faqStructuredData = {
             ZackEyes and Hallmonitor are the two closest free, open-source notch panels for AI
             coding agents: both are MIT licensed, both track Claude Code and Codex CLI sessions,
             and both surface permission prompts without pulling you out of flow. Hallmonitor adds
-            SSH multi-machine monitoring and a terminal dashboard. ZackEyes adds USD cost tracking
-            and themes.
+            a terminal dashboard alongside SSH monitoring. ZackEyes also supports SSH observation and adds USD cost tracking, private Usage archives and themes.
           </p>
           <p class="policy-lede muted-note">
-            Development builds now also include read-only SSH observation, opt-in supported Claude question answers, a demo fleet and local usage history. These are not yet in the published download. See the <a href="/roadmap">development roadmap</a>.
+            The published app includes read-only SSH observation, opt-in supported Claude question answers, Demo mode and daily local Usage archives. See the <a href="/docs#features-since-v010">feature guides</a> and <a href="/roadmap">future roadmap</a>.
           </p>
           <p class="policy-lede muted-note">
             Hallmonitor details were checked on {competitorCheckedOn} against
@@ -193,22 +192,21 @@ const faqStructuredData = {
           <h2 class="section-title" id="vs-pick-title">Which one fits.</h2>
           <div class="spec-grid">
             <article>
-              <span>Pick Hallmonitor</span>
-              <strong>You monitor agents on remote machines</strong>
+              <span>Remote monitoring</span>
+              <strong>Both can observe SSH hosts</strong>
               <p>
                 Hallmonitor watches sessions on multiple machines over SSH from one panel.
-                The published ZackEyes download sees the Mac it runs on; development builds also
-                support read-only SSH observation. See the roadmap before choosing a build.
+                ZackEyes also supports read-only SSH observation for up to eight hosts.
+                Remote permissions and questions stay in the remote terminal.
               </p>
             </article>
             <article>
-              <span>Pick Hallmonitor</span>
-              <strong>You want to answer from the notch</strong>
+              <span>Question answering</span>
+              <strong>Check each agent’s supported path</strong>
               <p>
                 Hallmonitor lets you answer an agent's question directly in the notch panel.
-                The published ZackEyes download hands questions back to the terminal. Development
-                builds add opt-in answers for supported Claude questions, with a timeout
-                and terminal fallback; remote questions still stay in the remote terminal.
+                ZackEyes offers opt-in answers for supported local Claude questions, with a two-minute
+                timeout and terminal fallback. Remote questions stay in the remote terminal.
               </p>
             </article>
             <article>

@@ -45,7 +45,7 @@ const rows = [
   },
   {
     label: 'Remote sessions',
-    zack: 'Published release: local only; development builds: read-only SSH observation',
+    zack: 'Read-only SSH observation; remote requests stay in the remote terminal',
     rival: 'SSH remote execution and monitoring'
   },
   {
@@ -74,7 +74,7 @@ const faqs = [
   {
     question: 'Which one should I use?',
     answer:
-      'Use Vibe Island for agents beyond Claude Code and Codex or broader terminal coverage. The published ZackEyes download is local-only; its development builds also include read-only SSH observation. Use ZackEyes if those two agents are your workflow, you want to audit the source, you have an Intel Mac, or you would rather not pay.'
+      'Use Vibe Island for agents beyond Claude Code and Codex or broader terminal coverage. ZackEyes includes read-only SSH observation; remote requests stay in the remote terminal. Use ZackEyes if those two agents are your workflow, you want to audit the source, you have an Intel Mac, or you would rather not pay.'
   },
   {
     question: 'Does ZackEyes support Cursor or Gemini CLI?',
@@ -125,7 +125,7 @@ const faqStructuredData = {
             in depth: Claude Code and Codex CLI.
           </p>
           <p class="policy-lede muted-note">
-            Development builds now also include read-only SSH observation, opt-in supported Claude question answers, a demo fleet and local usage history. These are not yet in the published download. See the <a href="/roadmap">development roadmap</a>.
+            The published app includes read-only SSH observation, opt-in supported Claude question answers, Demo mode and daily local Usage archives. See the <a href="/docs#features-since-v010">feature guides</a> and <a href="/roadmap">future roadmap</a>.
           </p>
           <p class="policy-lede muted-note">
             Vibe Island details were checked on {competitorCheckedOn} against
@@ -176,8 +176,7 @@ const faqStructuredData = {
               <p>
                 Vibe Island tracks 30 agents including Cursor, Gemini CLI, Copilot, Kimi and
                 DeepSeek, jumps to 20+ terminals, and monitors sessions over SSH. The published ZackEyes download focuses
-                on Claude Code and Codex CLI with nine terminals/editors. Its development builds
-                also support read-only SSH observation; broader agent support remains exploration.
+                on Claude Code and Codex CLI with nine terminals/editors. It also supports read-only SSH observation; broader agent support remains exploration.
               </p>
             </article>
             <article>

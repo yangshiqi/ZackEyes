@@ -254,7 +254,7 @@ describe('Astro site contract', () => {
     }
   });
 
-  it('shows native candidate feature screenshots with sample-data labels and full-size links', () => {
+  it('shows native feature screenshots with sample-data labels and full-size links', () => {
     const home = read('src/pages/index.astro');
     const docs = read('src/pages/docs.astro');
     for (const file of ['usage-history.webp', 'remote-hosts.webp', 'settings-general.webp', 'dual-agent-support.webp', 'sessions-attention.webp', 'notch-question.webp']) {
@@ -269,11 +269,11 @@ describe('Astro site contract', () => {
     }
     assert.match(home, /href=\{shot.src\}/);
     assert.match(home, /isolated sample data/);
-    assert.match(home, /candidate features are not yet in the published download/);
+    assert.match(home, /These features shipped in v\{featureVersion\}/);
     assert.match(docs, /disabled example hosts, with no connection attempted/);
   });
 
-  it('documents first launch, price refresh, removal and candidate controls accurately', () => {
+  it('documents first launch, price refresh, removal and feature controls accurately', () => {
     const install = read('src/components/InstallSecurityNote.astro');
     assert.match(install, /ad-hoc signed/);
     assert.match(install, /not Developer ID signed or notarized/);
@@ -302,9 +302,9 @@ describe('Astro site contract', () => {
     assert.match(rival, /30 agents/);
   });
 
-  it('keeps planned versions shared and distinct from published metadata', () => {
+  it('keeps feature and planned versions shared and distinct from published metadata', () => {
     const plans = read('src/lib/product-plans.mjs');
-    assert.match(plans, /export const candidateVersion/);
+    assert.match(plans, /export const featureVersion/);
     assert.match(plans, /export const journalVersion/);
     for (const file of ['index.astro', 'docs.astro', 'answers.astro', 'roadmap.astro', 'llms.txt.ts', 'llms-full.txt.ts']) {
       const page = read('src/pages/' + file);
@@ -325,14 +325,14 @@ describe('Astro site contract', () => {
     // Shipped in v0.9.6 (ports #81+#76, git #77, subagents #40+#79,
     // compaction #37, jump diagnostics #42) — removed from the roadmap.
     assert.doesNotMatch(page, /Process and session insight/);
-    assert.match(page, /Implemented in development/);
-    assert.match(page, /not yet in the published/);
+    assert.match(page, /Released in v\{featureVersion\}/);
+    assert.match(page, /included in the published download/);
     for (const feature of ['Answer from the notch', 'SSH remote observation', 'Demo fleet', 'Local usage history', 'Stale quota readings']) {
       assert.ok(page.includes(feature), `missing completed development feature: ${feature}`);
     }
     assert.match(page, /Finish setup, scheduling and delivery/);
     assert.match(page, /Daily work journal/);
-    assert.match(page, /v\$\{candidateVersion\} candidate/);
+    assert.match(page, /Released · v\$\{featureVersion\}/);
     assert.match(page, /v\$\{journalVersion\} · planned/);
     assert.match(page, /unfinished generation menu is hidden/);
     assert.match(page, /settled after 03:00/);
@@ -549,13 +549,13 @@ describe('Astro site contract', () => {
     assert.match(llmsFull, /context window usage/);
     assert.match(llmsFull, /Unix socket/);
     for (const endpoint of [llms, llmsFull]) {
-      assert.match(endpoint, /Development builds \(merged, not yet released\)/);
-      assert.match(endpoint, /not yet in the published download/);
+      assert.match(endpoint, /Features added in v\$\{featureVersion\}/);
+      assert.match(endpoint, /These features shipped in/);
       assert.match(endpoint, /Remote questions stay in the remote terminal/);
       assert.match(endpoint, /v\$\{appVersion\}/);
       assert.match(endpoint, /daily settlement runs after 03:00/);
       assert.match(endpoint, /public generation menu is hidden/);
-      assert.match(endpoint, /v\$\{candidateVersion\} release candidate/);
+      assert.match(endpoint, /v\$\{featureVersion\}/);
     }
     assert.match(llmsFull, /Roadmap/);
     assert.match(llmsFull, /Direct answers/);
