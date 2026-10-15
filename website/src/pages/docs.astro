@@ -139,7 +139,9 @@ const docsStructuredData = [
       <section class="policy-band" aria-labelledby="development-builds">
         <div class="policy-shell">
           <h2 class="section-title" id="development-builds">Development builds.</h2>
-          <p class="section-copy">Master includes opt-in supported Claude question answers, SSH remote observation, demo sessions, local usage history and stale quota hints. These are not yet in the published v{appVersion} download. See the <a href="/roadmap">roadmap</a> and repository README for source-build setup.</p>
+          <p class="section-copy">The v0.10.0 release candidate in master includes opt-in supported Claude question answers, SSH remote observation, demo sessions, local usage history and stale quota hints. These are not yet in the published v{appVersion} download. See the <a href="/roadmap">roadmap</a> and repository README for source-build setup.</p>
+          <p class="section-copy">Settings → Usage shows complete local days through yesterday. Hover a daily chart for its full date and per-agent values. Daily archives settle after 03:00 with startup catch-up; changing periods or refreshing reads the saved archives. Use Import saved history or Import older transcripts for earlier data, with Pause and Resume across restarts. Today/quota readings remain separate. Skipped source observations can leave estimates incomplete.</p>
+          <p class="section-copy">Daily work journal is still under development for v0.11.0. Its public generation menu is hidden; setup, publishing and scheduling are unfinished and excluded from the v0.10.0 candidate.</p>
           <p class="section-copy">Remote observation requires Swift 6 on the remote Linux/macOS host: build <code>swift build -c release --product zackeyes-stream</code> and install the result as <code>~/.local/bin/zackeyes</code>. Verify key authentication and the host key in your terminal, then add the SSH alias in Settings → Remote Hosts. Remote approvals and questions remain in the remote terminal.</p>
         </div>
       </section>

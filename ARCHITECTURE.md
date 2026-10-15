@@ -325,7 +325,7 @@ PricingStore.start()
 | `PricingStore` / `PricingTable` | `Sources/AppLib/Usage/PricingStore.swift`、`PricingTable.swift` | 模型→单价查询（`price(for:)`）。`PricingTable` 纯解析+查找（exact→去日期后缀→alias→nil，仅接受原始 model id）；`PricingStore` 按 `version` 在 bundled 快照 / 磁盘缓存 / 24h 远端拉取间择新，失败静默。无 UI。 |
 | `TodayConsumptionRow` | `Sources/AppLib/Usage/TodayConsumptionRow.swift` | #84 消费轴（与 5h/7d 配额轴分开）：full-view header 的 "Today" 行——今日 token + $ + 近 7 日 token sparkline + 每 agent 副行。纯静态格式化助手（humanize / cost / sparkline，`nonisolated`）+ 只读视图。数据来自 `UsageTracker.Snapshot.dailyUsage`（7 个本地日桶；Claude 侧 `computeSnapshot` 递归全 projects 树扫 transcript——含 `<session>/subagents/` 与 Workflow 工具的 `<session>/wf_*/` agent 文件，#116——并按 `(mtime,size)` per-file 缓存解析；Codex 侧缓存式 `scanCodexDailyTokens`；cost 在主 actor 用 `PricingStore` 折算）。嵌入 `UsageBarsView`（真刘海）与 `SimulatedNotchFullView.usageHeader`（模拟），`hasConsumption` 为空时隐藏；由齿轮菜单「Show today's consumption」开关控制（默认开，flag 在 `UsageTracker.showTodayConsumption`，持久化 `ConfigStore`，两个面板响应式）。**收起的 compact pill 始终只显示 5h/7d 配额，不显示消费**（产品决策）。 |
 
-**Journal（#214 每日工作日志，v0.10.0 · P1 = 本地管道）**
+**Journal（#214 每日工作日志，v0.11.0 规划 · P1 = 本地管道）**
 
 目前仍属开发中：保留本地管道和测试，应用启动及正式菜单不接入 `JournalManualTrigger`，完整功能就绪前不公开生成入口。
 | 模块 | 文件 | 职责 |

@@ -273,6 +273,10 @@ describe('Astro site contract', () => {
     }
     assert.match(page, /Finish setup, scheduling and delivery/);
     assert.match(page, /Daily work journal/);
+    assert.match(page, /v0\.10\.0 candidate/);
+    assert.match(page, /v0\.11\.0 · planned/);
+    assert.match(page, /unfinished generation menu is hidden/);
+    assert.match(page, /settled after 03:00/);
     assert.doesNotMatch(page, /title: 'Codex GPT-6 compatibility'/);
     assert.doesNotMatch(page, /title: 'Claude model and protocol compatibility'/);
     assert.match(page, /included in v0\.9\.7/);
@@ -490,6 +494,9 @@ describe('Astro site contract', () => {
       assert.match(endpoint, /not yet in the published download/);
       assert.match(endpoint, /Remote questions stay in the remote terminal/);
       assert.match(endpoint, /v\$\{appVersion\}/);
+      assert.match(endpoint, /daily settlement runs after 03:00/);
+      assert.match(endpoint, /public generation menu is hidden/);
+      assert.match(endpoint, /v0\.10\.0 release candidate/);
     }
     assert.match(llmsFull, /Roadmap/);
     assert.match(llmsFull, /Direct answers/);
