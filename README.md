@@ -126,9 +126,9 @@ echo '{"hook_event_name":"Stop","session_id":"test","cwd":"/tmp","last_assistant
   $(swift build --show-bin-path)/bridge --event Stop --agent codex
 ```
 
-### Completed development work (#265)
+### v0.10.0 release candidate (#265)
 
-All five items are merged into master and await a release: opt-in supported Claude question answers with timeout/terminal fallback (#260, PR #266), SSH remote observation (#261, PR #270), demo mode (#262, PR #267), local usage history (#263, PR #269) and stale quota hints (#264, PR #268). The published download remains v0.9.7; this work does not bump the version or publish a release. See the [roadmap](https://zackeyes.vercel.app/roadmap) for the release/development distinction.
+All five items are merged into master and await a release: opt-in supported Claude question answers with timeout/terminal fallback (#260, PR #266), SSH remote observation (#261, PR #270), demo mode (#262, PR #267), local usage history (#263, PR #269) and stale quota hints (#264, PR #268). These features, daily Usage archives and the final UI corrections are the v0.10.0 release candidate. The published download remains v0.9.7 until publication. See [release preparation](docs/releases/v0.10.0-preparation.md) and [English release notes](docs/releases/v0.10.0-notes.md). See the [roadmap](https://zackeyes.vercel.app/roadmap) for the release/development distinction.
 
 ### SSH remote observation (development build)
 
@@ -158,7 +158,7 @@ Open **Settings → Usage** for 7/30/90-day token and estimated agent-hour chart
 
 Settings reads daily archives, so refreshing or switching periods does not scan transcripts. **Update now** corrects completed days. **Import saved history** migrates the previous ledger without changing it; **Import older transcripts** adds earlier available history. Large first imports can take time; **Pause** and **Resume** keep committed progress, including across restarts. Counts survive source removal. The incremental database and archives stay under `~/.zackeyes/usage/`, with private permissions; only counts, bounded project/model/tool names, hashed identities and timing metadata are stored. No prompts, replies or tool arguments are stored or uploaded. Existing live Today/quota indicators are independent.
 
-Tokens exclude cache reads; cache hit rate compares reused input against all input. Hours merge recorded task/tool intervals and subtract known question waits. Missing boundaries use activity gaps capped at five minutes; long idle gaps and unclosed activity are not stretched to the scan time. Unobserved approval waits may still be included, so hours are estimates, not billing or time tracking. Parallel sessions add agent-hours. Dates and heatmap hours follow your current local timezone. Unavailable/deleted source history cannot be backfilled; the page reports incomplete scans or storage errors.
+Tokens exclude cache reads; cache hit rate compares reused input against all input. Hours merge recorded task/tool intervals and subtract known question waits. Missing boundaries use activity gaps capped at five minutes; long idle gaps and unclosed activity are not stretched to the scan time. Unobserved approval waits may still be included, so hours are estimates, not billing or time tracking. Parallel sessions add agent-hours. Hover either daily chart to see its full date, weekday and per-agent values. Dates and heatmap hours follow your current local timezone. Unavailable/deleted source history cannot be backfilled; the page reports incomplete scans or storage errors.
 
 History directories/files must be private (`0700`/`0600`); broad permissions, symlinks and unsupported history formats are rejected without replacing the file. Damaged JSONL rows are reported and skipped so later valid observations remain readable. This feature is in the development build and is not yet in the published download.
 
@@ -235,3 +235,7 @@ ZackEyes is the pick when your workflow is Claude Code + Codex CLI and you want 
 ## License
 
 MIT. Use it, fork it, ship a competing product. Just don't break Claude Code.
+
+### Daily work journal (planned for v0.11.0)
+
+The #214 local pipeline exists for development and testing, but setup, publishing and scheduling are unfinished. The public “Generate Today’s Journal” menu action has been removed. Journal generation is not included in the v0.10.0 candidate.

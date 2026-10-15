@@ -59,10 +59,10 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 Included in v0.9.7: Codex GPT-6.1 Sol / GPT-6 Astra compatibility (PR #252) and Claude Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5 compatibility (PR #258). They add observed effort, current pricing and lifecycle handling. Effort requires live CLI metadata; daily costs are API list-price estimates, not subscription invoices. Details: https://zackeyes.vercel.app/docs#model-compatibility
 
 ## Development builds (merged, not yet released)
-The published download remains v${appVersion}. Master/source builds also include opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. These are not yet in the published download. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
+The published download remains v${appVersion}. Master/source builds also include opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. They form the v0.10.0 release candidate and are not yet in the published download. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. Usage charts cover complete local days through yesterday, with full dates on hover. Background daily settlement runs after 03:00 with startup catch-up; older history requires explicit import with pause/resume. Settings reads saved daily archives without rescanning transcripts. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
 
 ## Roadmap
-- Finish setup, scheduling and delivery for the daily work journal; its local pipeline already exists in development.
+- v0.11.0 planned: finish setup, scheduling and delivery for the daily work journal. Its local pipeline exists in development, but the public generation menu is hidden and it is excluded from v0.10.0.
 - Explore more agent support and local logs controls.
 - Completed development work and future plans: https://zackeyes.vercel.app/roadmap
 
