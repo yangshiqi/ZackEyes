@@ -33,12 +33,28 @@ const screenshots = [
     height: 910
   },
   {
+    src: '/screenshots/usage-history.webp',
+    alt: 'ZackEyes Usage settings with seven completed days of sample Claude and Codex token and estimated agent-hour statistics.',
+    label: 'Usage history · v0.10.0 candidate',
+    title: 'Daily archives, per-agent totals and 7/30/90-day charts. Shown with isolated sample data; not yet in the published download.',
+    width: 1800,
+    height: 1960
+  },
+  {
+    src: '/screenshots/remote-hosts.webp',
+    alt: 'ZackEyes Remote Hosts settings with two disabled sample SSH aliases and headless helper setup instructions.',
+    label: 'SSH host setup · v0.10.0 candidate',
+    title: 'Configure read-only remote observation. Example hosts are disabled; approvals and questions stay in the remote terminal.',
+    width: 1800,
+    height: 1960
+  },
+  {
     src: '/screenshots/settings-general.webp',
     alt: 'ZackEyes Settings window, General tab, showing Preferred quota source, Progress mode, and Dynamic Island options.',
-    label: 'Settings',
+    label: 'Settings · v0.10.0 candidate',
     title: 'One Settings window for visibility, Preferred quota source, quota presentation, hotkey, and integrations.',
-    width: 1440,
-    height: 1104
+    width: 1800,
+    height: 1960
   },
   {
     src: '/screenshots/sessions-attention.webp',
@@ -204,21 +220,23 @@ const faqStructuredData = {
           <div class="section-eyebrow">Product screenshots</div>
           <h2 class="section-title" id="screenshots-title">Real agent state, not a dashboard fantasy.</h2>
           <p class="section-copy">
-            These are live ZackEyes surfaces — split Claude / Codex usage tracks, the terminal handoff, the unified Settings window, and attention-first session grouping in the same workflow.
+            Actual ZackEyes interfaces, including the v0.10.0 candidate’s Usage archives, SSH host setup and updated Settings. New captures use isolated sample data; candidate features are not yet in the published download. Select any image to view it at full size.
           </p>
 
           <div class="screenshot-showcase" aria-label="ZackEyes screenshots">
             {screenshots.map((shot) => (
               <figure class:list={['screenshot-tile', { 'is-wide': shot.variant === 'wide' }]}>
                 <div class="screenshot-frame">
-                  <img
-                    src={shot.src}
-                    alt={shot.alt}
-                    width={shot.width}
-                    height={shot.height}
-                    loading="lazy"
-                    decoding="async"
-                  />
+                  <a href={shot.src} aria-label={`View ${shot.label} screenshot at full size`}>
+                    <img
+                      src={shot.src}
+                      alt={shot.alt}
+                      width={shot.width}
+                      height={shot.height}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </a>
                 </div>
                 <figcaption>
                   <span>{shot.label}</span>

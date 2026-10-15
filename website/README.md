@@ -136,3 +136,7 @@ Logo source: `https://www.logosymbol.com/letter/letter-z-logo-design-with-arrow`
 ## Release and development boundaries
 
 `release.mjs` remains the source of truth for the published download. The roadmap separately lists the five completed #265 features as development-only: supported Claude question answers, SSH remote observation, demo mode, local usage history and stale quota hints. Keep docs, comparisons, privacy and both LLM endpoints explicit about that distinction until a release includes them. Do not add a changelog release entry or change download metadata for a master-only merge.
+
+### Product screenshots
+
+The homepage gallery and candidate section in `/docs` include `usage-history.webp` and `remote-hosts.webp`; `settings-general.webp` is refreshed for the candidate sidebar. These are actual native captures of source `7c83880` on 2026-10-15, using a disposable home and synthetic Claude/Codex count transcripts. Usage covers seven completed local days; example projects are Atlas and Harbor. SSH aliases `build-linux` and `studio-mac` are disabled; no connection was attempted. No user projects, prompts, host credentials or configuration were copied. Captures are WebP at 1800 × 1960 pixels; sample data and the unreleased v0.10.0 status are stated in captions. Full-size image links preserve readability on small screens. The published download metadata remains unchanged.
