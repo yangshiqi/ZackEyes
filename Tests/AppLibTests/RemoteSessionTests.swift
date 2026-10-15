@@ -5,6 +5,36 @@ import Testing
 @testable import AppLib
 
 @MainActor struct RemoteSessionTests {
+    @Test func remotePolicyUsesTheSameRiskClassificationAsLocalCodex() throws {
+        let frame = Data("""
+        {"version":1,"observed_at":"2026-10-15T08:00:00Z","truncated":false,"sessions":[
+          {"id":"yolo","agent":"codex","state":"working","last_activity":"2026-10-15T08:00:00Z",
+           "approval_policy":"never","sandbox_type":"danger-full-access","reasoning_effort":"high"}]}
+        """.utf8)
+        let store = SessionStore()
+        let host = RemoteHost(name: "Remote", destination: "remote")
+        try store.replaceRemoteSessions(host: host, snapshot: RemoteFrameCodec.decode(frame))
+        let session = try #require(store.sessions.values.first)
+        #expect(session.permissionRisk == .yolo)
+        #expect(session.reasoningEffort == "high")
+        #expect(session.pendingPermission == nil)
+        #expect(session.claudePid == nil)
+    }
+
+    @Test func oldAndPartialPoliciesNeverInventARiskBadge() throws {
+        let store = SessionStore()
+        let host = RemoteHost(name: "Remote", destination: "remote")
+        for policy in [
+            RemoteSessionSnapshot(id: "s", agent: .codex, state: .working, lastActivity: Date()),
+            RemoteSessionSnapshot(id: "s", agent: .codex, state: .working, lastActivity: Date(), approvalPolicy: "never"),
+            RemoteSessionSnapshot(id: "s", agent: .codex, state: .working, lastActivity: Date(),
+                                  approvalPolicy: "on-request", sandboxType: "workspace-write")
+        ] {
+            try store.replaceRemoteSessions(host: host, snapshot: RemoteSnapshot(observedAt: Date(), sessions: [policy]))
+            #expect(store.sessions.values.first?.permissionRisk == nil)
+        }
+    }
+
     @Test func replacementIsHostScopedAndCannotAcquireLocalCapabilities() throws {
         let store = SessionStore()
         store.sessions["same"] = SessionInfo(id: "same", cwd: "/local")

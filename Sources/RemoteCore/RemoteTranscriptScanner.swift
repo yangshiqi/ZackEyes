@@ -111,9 +111,14 @@ public struct RemoteTranscriptScanner: Sendable {
         for (index, text) in regions.enumerated() {
             if index > 0 {
                 // The omitted middle may contain completion/cancellation. Keep
-                // identity/model metadata, but never carry state across a gap.
+                // identity/model metadata, but never carry state or mutable
+                // policy/effort observations across a gap.
                 questions.removeAll()
                 session.state = .unknown
+                session.approvalPolicy = nil
+                session.sandboxType = nil
+                session.permissionMode = nil
+                session.reasoningEffort = nil
                 session.tool = nil
                 session.lastActivity = modified
                 sawActivity = false
@@ -131,7 +136,7 @@ public struct RemoteTranscriptScanner: Sendable {
                         session.cwd = clean(payload["cwd"] as? String, bytes: 2048) ?? session.cwd
                     }
                     if type == "turn_context" {
-                        session.model = clean(payload["model"] as? String, bytes: 128) ?? session.model
+                        updateCodexMetadata(payload, effortKey: "effort", session: &session)
                         session.cwd = clean(payload["cwd"] as? String, bytes: 2048) ?? session.cwd
                     }
                 }
@@ -141,6 +146,10 @@ public struct RemoteTranscriptScanner: Sendable {
                 else { continue }
                 var activity = false
                 if agent == .claude {
+                    if obj.keys.contains("permissionMode") || obj.keys.contains("permission_mode") {
+                        session.permissionMode = clean(
+                            (obj["permissionMode"] ?? obj["permission_mode"]) as? String, bytes: 128)
+                    }
                     let message = obj["message"] as? [String: Any] ?? [:]
                     if obj["isApiErrorMessage"] as? Bool == true {
                         session.state = .error
@@ -189,6 +198,9 @@ public struct RemoteTranscriptScanner: Sendable {
                     }
                 } else if type == "event_msg" {
                     switch payload["type"] as? String ?? "" {
+                    case "thread_settings_applied", "session_configured":
+                        let settings = payload["thread_settings"] as? [String: Any] ?? payload
+                        updateCodexMetadata(settings, effortKey: "reasoning_effort", session: &session)
                     case "task_started", "user_message":
                         session.state = .working
                         questions.removeAll()
@@ -225,6 +237,30 @@ public struct RemoteTranscriptScanner: Sendable {
         }
         return session
     }
+    private static func updateCodexMetadata(
+        _ payload: [String: Any], effortKey: String, session: inout RemoteSessionSnapshot
+    ) {
+        if let model = clean(payload["model"] as? String, bytes: 128) {
+            if model != session.model { session.reasoningEffort = nil }
+            session.model = model
+        }
+        if payload.keys.contains(effortKey) {
+            let effort = (payload[effortKey] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            session.reasoningEffort = effort.flatMap { value in
+                guard !value.isEmpty, value.utf8.count <= 32,
+                    value.unicodeScalars.allSatisfy({ CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_" })
+                else { return nil }
+                return value
+            }
+        }
+        if payload.keys.contains("approval_policy") {
+            session.approvalPolicy = clean(payload["approval_policy"] as? String, bytes: 128)
+        }
+        if payload.keys.contains("sandbox_policy") {
+            session.sandboxType = clean((payload["sandbox_policy"] as? [String: Any])?["type"] as? String, bytes: 128)
+        }
+    }
+
     /// Read two bounded regions, without following a swapped link or FIFO.
     private static func readMetadata(_ url: URL) throws -> [String]? {
         let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)

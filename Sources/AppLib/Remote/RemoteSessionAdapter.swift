@@ -26,6 +26,12 @@ extension SessionStore {
             session.lastActiveAt = remote.lastActivity
             session.currentToolName = remote.tool
             session.modelDisplayName = remote.model
+            session.reasoningEffort = remote.reasoningEffort
+            if remote.agent == .codex, let approval = remote.approvalPolicy, let sandbox = remote.sandboxType {
+                session.permissionRisk = PermissionRiskLevel.fromCodex(approvalPolicy: approval, sandboxType: sandbox)
+            } else if remote.agent == .claude, let mode = remote.permissionMode {
+                session.permissionRisk = PermissionRiskLevel.fromClaudeMode(mode)
+            }
             if remote.state == .error { session.errorMessage = "Remote agent reported an error" }
             updated[id] = session
         }

@@ -174,18 +174,18 @@ struct NotchExpandedView: View {
         // when a child button is clicked, which would jump the terminal on
         // every Allow/Deny click.
         if session.source == .remote {
-            RemoteSessionCard(session: session, now: tick)
+            sessionCardContent(session, theme: theme, title: title)
         } else {
-        sessionCardContent(session, theme: theme, title: title)
-            .contentShape(Rectangle())
-            .onTapGesture {
-                viewModel.activateTerminal(for: session)
-            }
+            sessionCardContent(session, theme: theme, title: title)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    viewModel.activateTerminal(for: session)
+                }
         }
     }
 
     @ViewBuilder
-    private func sessionCardContent(
+    func sessionCardContent(
         _ session: SessionInfo,
         theme: BuddyTheme,
         title: String
@@ -252,13 +252,20 @@ struct NotchExpandedView: View {
                 // Falls back to reading the Bridge's title cache, then buddy tagline.
                 Text(truncate(
                     session.lastUserPrompt
-                        ?? Self.readCachedPrompt(sessionId: session.id)
+                        ?? (session.source == .remote ? nil : Self.readCachedPrompt(sessionId: session.id))
                         ?? buddy.tagline,
                     length: 50
                 ))
                     .sessionCardTextStyle(.context)
                     .lineLimit(1)
                     .truncationMode(.tail)
+
+                if session.source == .remote {
+                    Text("\(session.remoteHostName ?? "Remote host") · \(session.remoteObservedState?.rawValue ?? "unknown") · observed")
+                        .sessionCardTextStyle(.context)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
 
                 // Metadata row: git state leads (actionable — "this session
                 // has uncommitted work"), buddy name is flavour and yields.
@@ -280,11 +287,11 @@ struct NotchExpandedView: View {
                                windowSize: session.contextWindowSize,
                                cost: session.totalCostUSD,
                                model: session.modelDisplayName, effort: session.reasoningEffort, estimated: session.agent == .codex)
-                } else if let effort = session.reasoningEffort {
-                    Text("\(session.modelDisplayName ?? "Effort") · \(effort)")
+                } else if session.modelDisplayName != nil || session.reasoningEffort != nil {
+                    Text([session.modelDisplayName, session.reasoningEffort].compactMap { $0 }.joined(separator: " · "))
                         .sessionCardTextStyle(.metadata)
                         .lineLimit(1)
-                        .help("Reasoning effort: \(effort)")
+                        .help(session.reasoningEffort.map { "Reasoning effort: \($0)" } ?? "Model")
                 }
 
                 // (User prompt now shown in Row 1.5 above)
@@ -338,7 +345,7 @@ struct NotchExpandedView: View {
                                 .progressViewStyle(.circular)
                                 .scaleEffect(0.4)
                                 .frame(width: 10, height: 10)
-                        } else {
+                        } else if session.source != .remote {
                             Image(systemName: session.currentToolFailure == nil ? "checkmark" : "xmark")
                                 .font(.system(size: 8, weight: .bold))
                                 .foregroundColor(session.currentToolFailure == nil ? .white.opacity(0.4) : .red)
@@ -368,6 +375,12 @@ struct NotchExpandedView: View {
                 // exists, it's resting".
                 if !session.tasks.isEmpty && !isResting(session) {
                     taskList(session.tasks)
+                }
+
+                if session.source == .remote && session.state == .waiting {
+                    Text("Needs attention in the remote terminal")
+                        .font(.system(size: 11))
+                        .foregroundColor(AppColors.attention.color)
                 }
 
                 // Permission request details + approval buttons (regular PermissionRequest only).

@@ -14,6 +14,107 @@ struct RemoteCoreTests {
                     lastActivity: now)
             ])
     }
+    @Test func codexObservationCarriesPolicyAndEffortMetadata() throws {
+        let r = try root()
+        defer { try? FileManager.default.removeItem(at: r) }
+        try write([
+            ["type": "turn_context", "timestamp": stamp(-2), "payload": [
+                "model": "gpt-test", "cwd": "/work/Project", "effort": "high",
+                "approval_policy": "never", "sandbox_policy": ["type": "danger-full-access"]]],
+            ["type": "event_msg", "timestamp": stamp(-1), "payload": ["type": "task_started"]]
+        ], to: r.appendingPathComponent("codex/session.jsonl"))
+        var scanner = RemoteTranscriptScanner(
+            claudeRoot: r.appendingPathComponent("claude"), codexRoot: r.appendingPathComponent("codex"))
+        let data = try RemoteFrameCodec.encode(scanner.snapshot(now: now))
+        let json = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let sessions = try #require(json["sessions"] as? [[String: Any]])
+        let session = try #require(sessions.first)
+        #expect(session["approval_policy"] as? String == "never")
+        #expect(session["sandbox_type"] as? String == "danger-full-access")
+        #expect(session["reasoning_effort"] as? String == "high")
+    }
+
+    @Test func optionalPolicyMetadataIsCompatibleAndBounded() throws {
+        let old = try RemoteFrameCodec.decode(RemoteFrameCodec.encode(fixture()))
+        #expect(old.sessions[0].approvalPolicy == nil)
+        #expect(old.sessions[0].reasoningEffort == nil)
+        var bad = fixture()
+        bad.sessions[0].approvalPolicy = String(repeating: "a", count: 129)
+        #expect(throws: (any Error).self) { try RemoteFrameCodec.encode(bad) }
+        bad = fixture()
+        bad.sessions[0].reasoningEffort = String(repeating: "a", count: 33)
+        #expect(throws: (any Error).self) { try RemoteFrameCodec.encode(bad) }
+    }
+
+    @Test func latestCodexMetadataClearsStaleEffortAndReplacesPolicy() throws {
+        let r = try root()
+        defer { try? FileManager.default.removeItem(at: r) }
+        let initial: [String: Any] = ["type": "turn_context", "timestamp": stamp(-2), "payload": [
+            "model": "first", "effort": "high", "approval_policy": "never",
+            "sandbox_policy": ["type": "danger-full-access"]]]
+        let cases: [([String: Any], String?, String)] = [
+            (["model": "first"], "high", "first"),
+            (["model": "first", "effort": NSNull()], nil, "first"),
+            (["model": "second"], nil, "second"),
+            (["model": "second", "effort": " Medium "], "medium", "second")
+        ]
+        for (payload, effort, model) in cases {
+            var payload = payload
+            payload["approval_policy"] = "on-request"
+            payload["sandbox_policy"] = ["type": "workspace-write"]
+            try write([initial, ["type": "turn_context", "timestamp": stamp(-1), "payload": payload]],
+                      to: r.appendingPathComponent("codex/session.jsonl"))
+            var scanner = RemoteTranscriptScanner(
+                claudeRoot: r.appendingPathComponent("claude"), codexRoot: r.appendingPathComponent("codex"))
+            let session = try #require(scanner.snapshot(now: now).sessions.first)
+            #expect(session.model == model)
+            #expect(session.reasoningEffort == effort)
+            #expect(session.approvalPolicy == "on-request")
+            #expect(session.sandboxType == "workspace-write")
+        }
+    }
+
+    @Test func omittedMiddleDoesNotClaimAnOldYoloPolicy() throws {
+        let r = try root()
+        defer { try? FileManager.default.removeItem(at: r) }
+        let objects: [[String: Any]] = [
+            ["type": "turn_context", "timestamp": stamp(-10), "payload": [
+                "model": "gpt-test", "effort": "high", "approval_policy": "never",
+                "sandbox_policy": ["type": "danger-full-access"]]],
+            ["type": "ignored", "padding": String(repeating: "x", count: 150_000)],
+            ["type": "event_msg", "timestamp": stamp(-1), "payload": ["type": "task_started"]]
+        ]
+        try write(objects, to: r.appendingPathComponent("codex/session.jsonl"))
+        var scanner = RemoteTranscriptScanner(
+            claudeRoot: r.appendingPathComponent("claude"), codexRoot: r.appendingPathComponent("codex"))
+        let session = try #require(scanner.snapshot(now: now).sessions.first)
+        #expect(session.model == "gpt-test")
+        #expect(session.approvalPolicy == nil)
+        #expect(session.sandboxType == nil)
+        #expect(session.reasoningEffort == nil)
+    }
+
+    @Test func claudePermissionAndCodexSettingsRemainObservedMetadata() throws {
+        let r = try root()
+        defer { try? FileManager.default.removeItem(at: r) }
+        try write([
+            ["type": "user", "timestamp": stamp(-1), "permissionMode": "bypassPermissions",
+             "message": ["content": "PRIVATE-PROMPT"]]
+        ], to: r.appendingPathComponent("claude/session.jsonl"))
+        try write([
+            ["type": "turn_context", "timestamp": stamp(-2), "payload": ["model": "first", "effort": "high"]],
+            ["type": "event_msg", "timestamp": stamp(-1), "payload": [
+                "type": "thread_settings_applied", "thread_settings": ["model": "second", "reasoning_effort": "medium"]]]
+        ], to: r.appendingPathComponent("codex/session.jsonl"))
+        var scanner = RemoteTranscriptScanner(
+            claudeRoot: r.appendingPathComponent("claude"), codexRoot: r.appendingPathComponent("codex"))
+        let snapshot = try scanner.snapshot(now: now)
+        #expect(snapshot.sessions.first { $0.agent == .claude }?.permissionMode == "bypassPermissions")
+        #expect(snapshot.sessions.first { $0.agent == .codex }?.model == "second")
+        #expect(snapshot.sessions.first { $0.agent == .codex }?.reasoningEffort == "medium")
+        #expect(!String(decoding: try RemoteFrameCodec.encode(snapshot), as: UTF8.self).contains("PRIVATE-PROMPT"))
+    }
+
     @Test func framingHandlesPartialAndMultipleSnapshots() throws {
         let first = fixture()
         let second = fixture(.idle)
