@@ -5,8 +5,7 @@ import Testing
 @Test func statusBarMenuBuildsTheApplicationCommands() {
     let menu = StatusBarMenu(
         updateChecker: UpdateChecker(checkInterval: 60),
-        downloader: UpdateDownloader(),
-        journalTrigger: JournalManualTrigger()
+        downloader: UpdateDownloader()
     ).build()
 
     let commandTitles = menu.items
@@ -15,6 +14,6 @@ import Testing
 
     #expect(commandTitles == [
         "Settings...", "About ZackEyes",
-        "Generate Today's Journal", "Quit ZackEyes",
+        "Quit ZackEyes",
     ])
 }

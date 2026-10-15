@@ -118,21 +118,7 @@ struct UsageLedgerView: View {
         }.frame(maxWidth: .infinity, alignment: .leading)
     }
     private func chart(title: String, hours: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 13, weight: .semibold))
-            Chart(ledger.summary.days) { day in
-                BarMark(
-                    x: .value("Day", day.date, unit: .day),
-                    y: .value(title, hours ? day.activeSeconds / 3600 : Double(day.tokens))
-                )
-                .foregroundStyle(by: .value("Agent", day.agent == .claude ? "Claude" : "Codex"))
-                .position(by: .value("Agent", day.agent.rawValue))
-            }
-            .chartForegroundStyleScale([
-                "Claude": AgentBadge.accentColor(for: .claude), "Codex": AgentBadge.accentColor(for: .codex),
-            ])
-            .frame(height: 150)
-        }
+        UsageDailyChart(title: title, hours: hours, days: ledger.summary.days)
     }
     private func ranking(_ title: String, items: [UsageLedgerSummary.Rank]) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -187,4 +173,76 @@ struct UsageLedgerView: View {
             }
         }
     }
+}
+
+/// Each chart owns its hover state so moving between charts cannot leave a stale date.
+private struct UsageDailyChart: View {
+        let title: String
+        let hours: Bool
+        let days: [UsageLedgerSummary.Day]
+        @State private var hoveredDate: Date?
+
+        private var hoveredDays: [UsageLedgerSummary.Day] {
+                guard let hoveredDate else { return [] }
+                return days.filter { Calendar.current.isDate($0.date, inSameDayAs: hoveredDate) }
+        }
+
+        var body: some View {
+                VStack(alignment: .leading, spacing: 10) {
+                        Text(title).font(.system(size: 13, weight: .semibold))
+                        Chart(days) { day in
+                                BarMark(
+                                        x: .value("Day", day.date, unit: .day),
+                                        y: .value(title, hours ? day.activeSeconds / 3600 : Double(day.tokens))
+                                )
+                                .foregroundStyle(by: .value("Agent", day.agent == .claude ? "Claude" : "Codex"))
+                                .position(by: .value("Agent", day.agent.rawValue))
+                        }
+                        .chartForegroundStyleScale([
+                                "Claude": AgentBadge.accentColor(for: .claude),
+                                "Codex": AgentBadge.accentColor(for: .codex),
+                        ])
+                        .chartOverlay { proxy in
+                                GeometryReader { geometry in
+                                        Color.clear.contentShape(Rectangle())
+                                                .onContinuousHover { phase in
+                                                        switch phase {
+                                                        case .active(let location):
+                                                                guard let plotFrame = proxy.plotFrame,
+                                                                        geometry[plotFrame].contains(location)
+                                                                else {
+                                                                        hoveredDate = nil
+                                                                        return
+                                                                }
+                                                                hoveredDate = proxy.value(
+                                                                        atX: location.x - geometry[plotFrame].minX, as: Date.self)
+                                                        case .ended:
+                                                                hoveredDate = nil
+                                                        }
+                                                }
+                                }
+                        }
+                        .overlay(alignment: .topTrailing) {
+                                if let day = hoveredDays.first {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                                Text(
+                                                        day.date.formatted(.dateTime.year().month(.twoDigits).day(.twoDigits).weekday(.wide))
+                                                )
+                                                .fontWeight(.semibold)
+                                                ForEach(hoveredDays) { value in
+                                                        Text(
+                                                                "\(value.agent == .claude ? "Claude" : "Codex"): \(hours ? String(format: "%.2f h (est.)", value.activeSeconds / 3600) : value.tokens.formatted() + " tokens")"
+                                                        )
+                                                }
+                                        }
+                                        .font(.system(size: 11)).monospacedDigit()
+                                        .padding(8)
+                                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                                        .allowsHitTesting(false)
+                                }
+                        }
+                        .frame(height: 150)
+                        .onChange(of: days.map(\.id)) { _, _ in hoveredDate = nil }
+                }
+        }
 }

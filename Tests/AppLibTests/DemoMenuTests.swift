@@ -7,7 +7,7 @@ import Shared
 struct DemoMenuTests {
     private func menu(_ viewModel: NotchViewModel) -> NSMenu {
         StatusBarMenu(updateChecker: UpdateChecker(checkInterval: 60), downloader: UpdateDownloader(),
-            journalTrigger: JournalManualTrigger(), demoViewModel: viewModel).build()
+            demoViewModel: viewModel).build()
     }
 
     @Test func menuReflectsActiveModeAndPermitsExit() throws {
@@ -38,7 +38,7 @@ struct DemoMenuTests {
         live.sessions["waiting"] = SessionInfo(id: "waiting", cwd: nil, state: .waiting)
         let viewModel = NotchViewModel(sessionStore: live)
         let builder = StatusBarMenu(updateChecker: UpdateChecker(checkInterval: 60), downloader: UpdateDownloader(),
-            journalTrigger: JournalManualTrigger(), demoViewModel: viewModel)
+            demoViewModel: viewModel)
         let menu = builder.build()
         menu.update()
         let item = try #require(menu.items.first { $0.title == "Demo mode" })

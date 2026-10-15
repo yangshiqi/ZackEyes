@@ -7,15 +7,13 @@ import AppKit
 public final class StatusBarMenu: NSObject {
     private let updateChecker: UpdateChecker
     private let downloader: UpdateDownloader
-    private let journalTrigger: JournalManualTrigger
     private var aboutWindow: AboutWindow?
     private weak var demoViewModel: NotchViewModel?
 
     public init(updateChecker: UpdateChecker, downloader: UpdateDownloader,
-                journalTrigger: JournalManualTrigger, demoViewModel: NotchViewModel? = nil) {
+                demoViewModel: NotchViewModel? = nil) {
         self.updateChecker = updateChecker
         self.downloader = downloader
-        self.journalTrigger = journalTrigger
         self.demoViewModel = demoViewModel
         super.init()
     }
@@ -64,21 +62,6 @@ public final class StatusBarMenu: NSObject {
 
         menu.addItem(.separator())
 
-        // #214 P1 — manual trigger; the nightly scheduler is P3. The menu is
-        // rebuilt on every open, so the label tracks the trigger's state.
-        let (journalTitle, journalEnabled) =
-            JournalManualTrigger.menuLabel(for: journalTrigger.state)
-        let journal = NSMenuItem(
-            title: journalTitle,
-            action: journalEnabled ? #selector(journalClicked(_:)) : nil,
-            keyEquivalent: ""
-        )
-        journal.target = journalEnabled ? self : nil
-        journal.isEnabled = journalEnabled
-        menu.addItem(journal)
-
-        menu.addItem(.separator())
-
         let quit = NSMenuItem(
             title: "Quit ZackEyes",
             action: #selector(NSApplication.terminate(_:)),
@@ -97,10 +80,6 @@ public final class StatusBarMenu: NSObject {
         guard let demoViewModel else { return }
         if demoViewModel.isDemoActive { demoViewModel.stopDemo() }
         else { demoViewModel.startDemo() }
-    }
-
-    @objc private func journalClicked(_ sender: Any?) {
-        journalTrigger.generateToday()
     }
 
     @objc private func aboutClicked(_ sender: Any?) {
