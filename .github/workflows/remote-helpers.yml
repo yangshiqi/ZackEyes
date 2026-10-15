@@ -3,8 +3,6 @@ run-name: Remote helpers ${{ inputs.version || 'validation' }} from ${{ inputs.s
 on:
   pull_request:
     paths: ['Sources/RemoteCore/**', 'Sources/RemoteStream/**', 'Sources/AppLib/Remote/**', 'Package.swift', 'Scripts/*remote*', 'Tests/Distribution/**', '.github/workflows/remote-helpers.yml']
-  push:
-    branches: ['feat/remote-helper-distribution']
   workflow_dispatch:
     inputs:
       version:
@@ -57,6 +55,20 @@ jobs:
               swift test --package-path helper-source --filter RemoteCoreTests
               bash Scripts/build-remote-helper.sh "$VERSION" /workspace/dist-remote
             '
+      - name: Run Linux package on a clean host without Swift
+        if: runner.os == 'Linux'
+        run: |
+          docker run --rm -v "$PWD/dist-remote:/packages:ro" alpine:3.20 sh -euc '
+            mkdir /tmp/helper
+            tar -xzf /packages/*.tar.gz -C /tmp/helper
+            /tmp/helper/zackeyes --help
+            /tmp/helper/zackeyes --stream > /tmp/frame &
+            helper_pid=$!
+            sleep 1
+            kill "$helper_pid"
+            wait "$helper_pid"
+            test -s /tmp/frame
+          '
       - uses: actions/upload-artifact@v4
         with:
           name: remote-${{ matrix.platform }}

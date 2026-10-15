@@ -4,7 +4,7 @@ version=${1:?Usage: build-remote-helper.sh X.Y.Z OUTPUT_DIRECTORY}
 output=${2:?Output directory required}
 tools=$(cd "$(dirname "$0")" && pwd)
 source_dir=${REMOTE_SOURCE_DIR:-$(cd "$tools/.." && pwd)}
-source_sha=$(git -C "$source_dir" rev-parse HEAD)
+source_sha=$(git -c safe.directory="$source_dir" -C "$source_dir" rev-parse HEAD)
 case "$(uname -m)" in x86_64) arch=x86_64;; arm64|aarch64) arch=arm64;; *) exit 1;; esac
 case "$(uname -s)" in
     Darwin)
