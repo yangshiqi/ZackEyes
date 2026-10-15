@@ -137,7 +137,7 @@ Add up to eight named SSH aliases or `user@hostname` destinations in **Settings 
 Install the prebuilt helper on the remote host, as the user that runs Claude/Codex. No Swift, Git or sudo is needed:
 
 ```sh
-curl -fsSL https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.10.0/install-remote.sh | sh -s -- 0.10.0
+curl -fsSL https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.10.1/install-remote.sh | sh -s -- 0.10.1
 ```
 
 The installer selects Linux/macOS and x86_64/arm64, verifies SHA256, checks the executable and atomically installs `~/.local/bin/zackeyes`. Failed downloads or validation preserve the old helper. Linux packages are fully static; macOS requires 14+. All four packages and `SHA256SUMS` are attached to the matching distribution release. Re-run the matching version’s command when updating the app. Developer build and release details: [remote helper distribution](docs/releases/remote-helper-distribution.md).
