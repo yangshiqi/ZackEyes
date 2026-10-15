@@ -254,6 +254,25 @@ describe('Astro site contract', () => {
     }
   });
 
+  it('shows native candidate feature screenshots with sample-data labels and full-size links', () => {
+    const home = read('src/pages/index.astro');
+    const docs = read('src/pages/docs.astro');
+    for (const file of ['usage-history.webp', 'remote-hosts.webp', 'settings-general.webp']) {
+      const asset = join(root, 'public/screenshots', file);
+      assert.ok(existsSync(asset), `missing native screenshot: ${file}`);
+      assert.ok(statSync(asset).size < 200_000, `screenshot exceeds 200 KB: ${file}`);
+      assert.ok(home.includes(`/screenshots/${file}`));
+    }
+    for (const file of ['usage-history.webp', 'remote-hosts.webp']) {
+      assert.ok(docs.includes(`href="/screenshots/${file}"`));
+      assert.ok(docs.includes(`src="/screenshots/${file}"`));
+    }
+    assert.match(home, /href=\{shot.src\}/);
+    assert.match(home, /isolated sample data/);
+    assert.match(home, /candidate features are not yet in the published download/);
+    assert.match(docs, /disabled example hosts, with no connection attempted/);
+  });
+
   it('publishes a product roadmap', () => {
     assert.equal(existsSync(join(root, 'src/pages/roadmap.astro')), true);
 
