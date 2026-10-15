@@ -67,6 +67,31 @@ cp "$FIXTURES/${url##*/}" "$output"
         self.assertIn('Usage:', subprocess.check_output([str(p), '--help'], text=True))
         self.assertEqual(list(self.prefix.iterdir()), [p])
 
+    def test_selects_all_supported_platforms(self):
+        for system, machine, platform in [('Linux', 'aarch64', 'linux-arm64'), ('Darwin', 'x86_64', 'macos-x86_64'), ('Darwin', 'arm64', 'macos-arm64')]:
+            with self.subTest(platform=platform):
+                self.tool('uname', f'#!/bin/sh\ncase "$1" in -s) echo {system};; -m) echo {machine};; esac\n')
+                self.tool('sw_vers', '#!/bin/sh\necho 14.0\n')
+                self.asset = f'zackeyes-remote-0.10.0-{platform}.tar.gz'
+                self.package()
+                result = self.run_installer()
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(platform.replace('-', '/'), result.stdout)
+
+    def test_invalid_archive_preserves_existing_helper(self):
+        p = self.existing()
+        (self.downloads / self.asset).write_bytes(b'not a tar archive')
+        self.checksum()
+        self.assertNotEqual(self.run_installer().returncode, 0)
+        self.assertEqual(p.read_text(), 'previous working helper')
+
+    def test_duplicate_checksum_preserves_existing_helper(self):
+        p = self.existing()
+        checksums = self.downloads / 'SHA256SUMS'
+        checksums.write_text(checksums.read_text() * 2)
+        self.assertNotEqual(self.run_installer().returncode, 0)
+        self.assertEqual(p.read_text(), 'previous working helper')
+
     def test_checksum_failure_preserves_existing_helper(self):
         p = self.existing()
         (self.downloads / self.asset).write_bytes(b'corrupt download')
