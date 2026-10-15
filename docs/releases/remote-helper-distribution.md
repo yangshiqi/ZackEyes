@@ -1,6 +1,6 @@
 # Remote helper distribution
 
-The `Remote helpers` workflow builds Linux x86_64/arm64 and macOS x86_64/arm64 packages on native runners. Linux uses the checksum-pinned Swift 6.0.3 Static Linux SDK (musl); packages must have no ELF interpreter or dynamic dependencies. macOS targets 14+ and permits only system dynamic libraries. Each native runner executes `--help`, reads a protocol-v1 snapshot and verifies clean termination before packaging.
+The `Remote helpers` workflow builds Linux x86_64/arm64 and macOS x86_64/arm64 packages on native runners. Linux uses the checksum-pinned Swift 6.0.3 Static Linux SDK (musl); packages must have no ELF interpreter or dynamic dependencies. Linux release links use `--strip-all` to omit debug and link-time symbol tables while retaining the static Swift/Foundation runtime and runtime reflection metadata. The native build rejects remaining debug/symbol sections, then smoke-tests the final stripped executable before packaging. macOS targets 14+ and permits only system dynamic libraries. Each native runner executes `--help`, reads a protocol-v1 snapshot and verifies clean termination before packaging.
 
 Every `zackeyes-remote-X.Y.Z-PLATFORM.tar.gz` contains only `zackeyes` and `build-info.json` (version, architecture and full helper source SHA). The aggregate `remote-helpers` artifact adds `SHA256SUMS` and `install-remote.sh`. Verification rejects missing platforms, incorrect source/version/architecture and hash mismatches. The workflow has read-only repository permissions and never publishes from a pull request.
 
