@@ -1,5 +1,5 @@
 ---
-import { candidateVersion } from '../lib/product-plans.mjs';
+import { featureVersion } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
@@ -35,7 +35,11 @@ const downloadStructuredData = [
       'Daily and per-session token and cost tracking for Claude Code and Codex',
       'Offline model pricing conversion to USD (no API key required)',
       'Multiple themes',
-      'Real notch and simulated island display modes'
+      'Real notch and simulated island display modes',
+      'Read-only SSH observation for up to eight hosts',
+      'Daily local Usage archives with 7/30/90-day views',
+      'Opt-in supported Claude question answers with terminal fallback',
+      'Isolated Demo mode'
     ]
   },
   {
@@ -71,7 +75,7 @@ const downloadStructuredData = [
           <p class="policy-lede">
             {releaseName} is the current public macOS DMG. It supports macOS 14 or newer, Apple Silicon + Intel Macs, Claude Code, Codex CLI, daily token and cost tracking, multiple themes, terminal tab jump, and display modes for real notches or simulated Dynamic Island-style panels.
           </p>
-          <p class="section-copy">Looking for SSH hosts, historical Usage charts, Demo mode or opt-in question answers? Those are in the unreleased v{candidateVersion} candidate. This button downloads v{appVersion}; see the <a href="/roadmap">roadmap</a> for candidate availability.</p>
+          <p class="section-copy">Looking for SSH hosts, historical Usage charts, Demo mode or opt-in question answers? They shipped in v{featureVersion} and are included in this v{appVersion} download; see the <a href="/docs#features-since-v010">setup guides</a>.</p>
           <div class="hero-actions">
             <a class="button primary" href={downloadUrl}>Download {releaseName} <span aria-hidden="true">↓</span></a>
             <a class="button" href={releasesUrl}>All releases <span aria-hidden="true">↗</span></a>
@@ -129,6 +133,14 @@ const downloadStructuredData = [
             <article>
               <h3>Daily token and cost tracking</h3>
               <p>A Today row tracks token spend and USD cost for Claude and Codex with a 7-day sparkline. Model pricing is bundled for offline use and refreshed online from GitHub — no API key or cloud upload.</p>
+            </article>
+            <article>
+              <h3>Daily Usage archives</h3>
+              <p>Review tokens, estimated agent-hours, cache statistics and rankings for 7/30/90 completed days. Initial setup settles three days; earlier history is imported explicitly with pause/resume.</p>
+            </article>
+            <article>
+              <h3>SSH observation and notch answers</h3>
+              <p>Observe metadata from up to eight SSH hosts; remote requests stay in their terminal. Supported local Claude questions have opt-in notch answers with a two-minute fallback. Explore sample sessions with Demo mode.</p>
             </article>
             <article>
               <h3>Multiple themes</h3>

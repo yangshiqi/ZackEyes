@@ -1,5 +1,5 @@
 ---
-import { candidateVersion } from '../lib/product-plans.mjs';
+import { featureVersion } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
@@ -20,7 +20,7 @@ const screenshots = [
   {
     src: '/screenshots/dual-agent-support.webp',
     alt: 'Built-in Demo showing Claude and Codex sample session cards with model, effort and context metadata.',
-    label: 'Claude plus Codex · candidate Demo',
+    label: 'Claude plus Codex · Demo',
     title: 'Agent badges, model and context metadata distinguish sample Claude and Codex cards. Demo does not invent account quota readings.',
     width: 1040,
     height: 960
@@ -28,7 +28,7 @@ const screenshots = [
   {
     src: '/screenshots/notch-question.webp',
     alt: 'Built-in Demo showing a supported Claude question with Grid and List choices.',
-    label: 'Question choices · candidate Demo',
+    label: 'Question choices · Demo',
     title: 'Supported Claude questions can be answered with an opt-in setting. Unsupported and expired requests fall back to the terminal.',
     width: 1040,
     height: 960
@@ -36,15 +36,15 @@ const screenshots = [
   {
     src: '/screenshots/usage-history.webp',
     alt: 'ZackEyes Usage settings with seven completed days of sample Claude and Codex token and estimated agent-hour statistics.',
-    label: `Usage history · v${candidateVersion} candidate`,
-    title: 'Daily archives, per-agent totals and 7/30/90-day charts. Shown with isolated sample data; not yet in the published download.',
+    label: `Usage history · v${featureVersion}`,
+    title: 'Daily archives, per-agent totals and 7/30/90-day charts. Shown with isolated sample data; included in the published download.',
     width: 1800,
     height: 1960
   },
   {
     src: '/screenshots/remote-hosts.webp',
     alt: 'ZackEyes Remote Hosts settings with two disabled sample SSH aliases and headless helper setup instructions.',
-    label: `SSH host setup · v${candidateVersion} candidate`,
+    label: `SSH host setup · v${featureVersion}`,
     title: 'Configure read-only remote observation. Example hosts are disabled; approvals and questions stay in the remote terminal.',
     width: 1800,
     height: 1960
@@ -52,7 +52,7 @@ const screenshots = [
   {
     src: '/screenshots/settings-general.webp',
     alt: 'ZackEyes Settings window, General tab, showing Preferred quota source, Progress mode, and Dynamic Island options.',
-    label: `Settings · v${candidateVersion} candidate`,
+    label: `Settings · v${featureVersion}`,
     title: 'One Settings window for visibility, Preferred quota source, quota presentation, hotkey, and integrations.',
     width: 1800,
     height: 1960
@@ -60,7 +60,7 @@ const screenshots = [
   {
     src: '/screenshots/sessions-attention.webp',
     alt: 'Built-in Demo showing a sample Write permission in Needs You, with running sessions below.',
-    label: 'Attention-first · candidate Demo',
+    label: 'Attention-first · Demo',
     title: 'Sessions group into Needs You, Running, and Recent so whatever is waiting on you surfaces first.',
     width: 1040,
     height: 960
@@ -77,7 +77,7 @@ const faqItems = [
   },
   {
     question: 'Does ZackEyes collect my code or agent prompts?',
-    answer: 'ZackEyes processes local status on your Mac and does not upload prompts or replies for hosted analysis. It fetches update metadata and pricing from GitHub. Optional candidate SSH hosts send session metadata to your Mac; local Usage archives store counts and timing metadata, not conversation text.'
+    answer: 'ZackEyes processes local status on your Mac and does not upload prompts or replies for hosted analysis. It fetches update metadata and pricing from GitHub. Optional SSH hosts send session metadata to your Mac; local Usage archives store counts and timing metadata, not conversation text.'
   },
   {
     question: 'Where should I report bugs or feature requests?',
@@ -149,7 +149,7 @@ const faqStructuredData = {
               <a class="button primary" href={downloadUrl}>Download for macOS</a>
               <a class="button" href="#control">See the flow</a>
             </div>
-            <p class="section-note">Download: v{appVersion}. New feature screenshots show the unreleased v{candidateVersion} candidate — see the <a href="/roadmap">roadmap</a>.</p>
+            <p class="section-note">Download: v{appVersion}. New features shipped in v{featureVersion} — see the <a href="/roadmap">roadmap</a>.</p>
             <div class="compat-row" aria-label="Supported agents and features">
               <span class="chip">Claude Code</span>
               <span class="chip">Codex CLI</span>
@@ -222,7 +222,7 @@ const faqStructuredData = {
           <div class="section-eyebrow">Product screenshots</div>
           <h2 class="section-title" id="screenshots-title">Real agent state, not a dashboard fantasy.</h2>
           <p class="section-copy">
-            Actual ZackEyes interfaces, including the v{candidateVersion} candidate’s Usage archives, SSH host setup and updated Settings. All gallery captures now use isolated sample data or the built-in Demo; candidate features are not yet in the published download. Select any image to view it at full size.
+            Actual ZackEyes interfaces: local Usage archives, SSH host setup, supported question choices and session states. Gallery captures use isolated sample data or the built-in Demo. These features shipped in v{featureVersion}; select any image to view it at full size.
           </p>
 
           <div class="screenshot-showcase" aria-label="ZackEyes screenshots">
@@ -266,12 +266,12 @@ const faqStructuredData = {
             <article class="feature-card">
               <span class="feature-index">02</span>
               <h3>Permission prompts without context switching</h3>
-              <p>Approve or deny sensitive tool calls from the panel. Claude AskUserQuestion prompts surface in the island and can send you straight back to the terminal answer path.</p>
+              <p>Approve or deny sensitive tool calls from the panel. Supported Claude AskUserQuestion choices can be answered after opt-in; unsupported or expired questions return to the terminal.</p>
             </article>
             <article class="feature-card">
               <span class="feature-index">03</span>
               <h3>Rate limits where they matter</h3>
-              <p>See 5-hour and 7-day usage pressure before a turn fails at the worst possible time.</p>
+              <p>See 5-hour and 7-day usage pressure when available, with per-agent stale-reading markers and last-updated hints.</p>
             </article>
             <article class="feature-card">
               <span class="feature-index">04</span>
@@ -306,7 +306,7 @@ const faqStructuredData = {
             <article class="feature-card">
               <span class="feature-index">10</span>
               <h3>Daily token and cost tracking</h3>
-              <p>A Today row tracks token spend and USD cost across Claude and Codex, with a 7-day sparkline. Model pricing is bundled for offline use and refreshed online from GitHub — no API key, no cloud calculation.</p>
+              <p>A live Today row tracks tokens and estimated USD cost. Settings → Usage adds 7/30/90-day token and agent-hour archives through yesterday. Model pricing is bundled for offline use and refreshed online from GitHub — no API key, no cloud calculation.</p>
             </article>
             <article class="feature-card">
               <span class="feature-index">11</span>

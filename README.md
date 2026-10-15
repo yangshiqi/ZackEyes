@@ -17,7 +17,7 @@ A native macOS Dynamic Island for AI coding agents. Watches every active **Claud
 - **Two agents, one notch.** Tracks every Claude Code and Codex CLI session in the same UI by installing into both `~/.claude/settings.json` and `~/.codex/hooks.json` — no manual setup, no per-project config. Every session card carries a `[Claude]` / `[Codex]` badge so you always know which agent you're acting on.
 - **Permission approval in the notch.** When either agent wants to run a command, it pops out under the notch with the tool, command preview, and Allow/Deny buttons.
 - **AskUserQuestion answers in the notch** (Claude). Numbered option cards instead of typing answers in the terminal.
-- **Live usage limits** for both agents. 5h and 7d quota with progress bars and reset countdowns — Claude data comes from Claude Code's `statusLine` channel; Codex data comes from `event_msg.token_count.rate_limits` events in the rollout JSONL. Readings at least 15 minutes old gain a `~` prefix; hover over a reading for its last update age (development build). The expanded panel splits the bars left/right when both agents are active; Settings → General → "Preferred quota source" chooses which agent the always-visible pill favors when both are available.
+- **Live usage limits** for both agents. 5h and 7d quota with progress bars and reset countdowns — Claude data comes from Claude Code's `statusLine` channel; Codex data comes from `event_msg.token_count.rate_limits` events in the rollout JSONL. Readings at least 15 minutes old gain a `~` prefix; hover over a reading for its last update age (v0.10.0). The expanded panel splits the bars left/right when both agents are active; Settings → General → "Preferred quota source" chooses which agent the always-visible pill favors when both are available.
 - **Jump to the right terminal tab**: click a session and ZackEyes activates the exact iTerm2 / Terminal.app / Ghostty / Warp / Kitty / Alacritty / VS Code / Cursor tab where that agent is running. When nothing matches, the card says why (`no window`, `grant access`) instead of failing silently.
 - **Ports, branch, and dirty state on the card.** Each session shows the lowest `LISTEN` port opened anywhere in its process subtree (`:3000 +2` when there are more) alongside its git branch and uncommitted count (`⑂ main ●3`). Ports come from pure kernel syscalls — no `lsof`, no subprocess, ~3ms for every session at once.
 - **Subagents in flight** (Claude): the card shows what a dispatched subagent is actually doing (`Locate the theme color sourc…`), not just that one is running.
@@ -126,11 +126,11 @@ echo '{"hook_event_name":"Stop","session_id":"test","cwd":"/tmp","last_assistant
   $(swift build --show-bin-path)/bridge --event Stop --agent codex
 ```
 
-### v0.10.0 release candidate (#265)
+### v0.10.0 — released features (#265)
 
-All five items are merged into master and await a release: opt-in supported Claude question answers with timeout/terminal fallback (#260, PR #266), SSH remote observation (#261, PR #270), demo mode (#262, PR #267), local usage history (#263, PR #269) and stale quota hints (#264, PR #268). These features, daily Usage archives and the final UI corrections are the v0.10.0 release candidate. The published download remains v0.9.7 until publication. See [release preparation](docs/releases/v0.10.0-preparation.md) and [English release notes](docs/releases/v0.10.0-notes.md). See the [roadmap](https://zackeyes.vercel.app/roadmap) for the release/development distinction.
+v0.10.0 includes all five items: opt-in supported Claude question answers with timeout/terminal fallback (#260, PR #266), SSH remote observation (#261, PR #270), demo mode (#262, PR #267), local usage history (#263, PR #269) and stale quota hints (#264, PR #268). These features, daily Usage archives and the final UI corrections are included in the v0.10.0 release. See [release preparation](docs/releases/v0.10.0-preparation.md) and [English release notes](docs/releases/v0.10.0-notes.md). See the [roadmap](https://zackeyes.vercel.app/roadmap) for the current release and future plans.
 
-### SSH remote observation (development build)
+### SSH remote observation (v0.10.0)
 
 Add up to eight named SSH aliases or `user@hostname` destinations in **Settings → Remote Hosts**. ZackEyes keeps one foreground SSH stream per enabled host, reconnects after a drop, and shows connection status and host identity alongside observed Claude/Codex sessions. Remote questions and approvals must be handled in the remote terminal; the cards have no local approval or terminal-jump actions.
 
@@ -150,9 +150,9 @@ ssh your-host '~/.local/bin/zackeyes --stream'
 
 The stream emits metadata-only JSON snapshots every five seconds: project/path, model, tool name, observed state and last activity. It sends no prompts, replies, tool arguments, permissions or credentials. Recent transcripts (Claude 8h / Codex 30m) are observations, not proof that a remote process is running. There is no remote daemon, application listening port or hook installation; closing SSH ends the stream. Missing or unsupported remote binaries, untrusted keys and authentication failures appear as host errors.
 
-The Mac uses the system SSH client with public-key authentication, strict host-key checking and no password prompts or automatic trust updates. Hosts are stored only in `~/.zackeyes/remote-hosts.json`; ZackEyes does not change SSH or agent configuration. Remote sessions do not enter the local usage ledger, journal or quota readings. When Active remains reachable for connecting/error hosts even without local sessions; Hidden suppresses remote-driven expansion. This feature is in the development build and is not yet in the published download.
+The Mac uses the system SSH client with public-key authentication, strict host-key checking and no password prompts or automatic trust updates. Hosts are stored only in `~/.zackeyes/remote-hosts.json`; ZackEyes does not change SSH or agent configuration. Remote sessions do not enter the local usage ledger, journal or quota readings. When Active remains reachable for connecting/error hosts even without local sessions; Hidden suppresses remote-driven expansion. This feature is included in v0.10.0.
 
-### Local usage history (development build)
+### Local usage history (v0.10.0)
 
 Open **Settings → Usage** for 7/30/90-day token and estimated agent-hour charts, per-agent totals, cache hit rate, project/model/tool rankings and an hourly activity heatmap. Charts cover complete local days **through yesterday**; today is unsettled. While the app is running, background settlement starts at or after 03:00; startup catches up after sleep or time offline. Initial automatic coverage is the last three completed days, with recent-day corrections thereafter.
 
@@ -160,9 +160,9 @@ Settings reads daily archives, so refreshing or switching periods does not scan 
 
 Tokens exclude cache reads; cache hit rate compares reused input against all input. Hours merge recorded task/tool intervals and subtract known question waits. Missing boundaries use activity gaps capped at five minutes; long idle gaps and unclosed activity are not stretched to the scan time. Unobserved approval waits may still be included, so hours are estimates, not billing or time tracking. Parallel sessions add agent-hours. Hover either daily chart to see its full date, weekday and per-agent values. Dates and heatmap hours follow your current local timezone. Unavailable/deleted source history cannot be backfilled; the page reports incomplete scans or storage errors.
 
-History directories/files must be private (`0700`/`0600`); broad permissions, symlinks and unsupported history formats are rejected without replacing the file. Damaged JSONL rows are reported and skipped so later valid observations remain readable. This feature is in the development build and is not yet in the published download.
+History directories/files must be private (`0700`/`0600`); broad permissions, symlinks and unsupported history formats are rejected without replacing the file. Damaged JSONL rows are reported and skipped so later valid observations remain readable. This feature is included in v0.10.0.
 
-### Demo mode (development build)
+### Demo mode (v0.10.0)
 
 Choose **Demo mode** in the menu-bar or notch gear menu to explore a sample Claude/Codex fleet. Working, needs-you and idle sessions cycle every six seconds; sample approvals and questions are interactive. DEMO labels distinguish the sample sessions, while account quota readings retain their normal data source. Real questions, approvals or errors return the panel to the live session view automatically.
 
@@ -173,7 +173,7 @@ make app
 .build/ZackEyes.app/Contents/MacOS/ZackEyes --demo
 ```
 
-If ZackEyes is already running, use its menu toggle. Demo mode is part of the development build and is not yet in the published download.
+If ZackEyes is already running, use its menu toggle. Demo mode is included in v0.10.0.
 
 ## Project layout
 
@@ -226,9 +226,9 @@ The product landing page at [zackeyes.vercel.app](https://zackeyes.vercel.app) l
 
 A few similar tools, so you can pick the right one:
 
-- [Vibe Island](https://vibeisland.app) — the paid original ($19.99 one-time): 25+ agents, 20+ terminals, SSH remote monitoring. Its published build offers broader agent and remote coverage; ZackEyes SSH observation is currently available in development builds. [Full comparison](https://zackeyes.vercel.app/vs-vibe-island)
+- [Vibe Island](https://vibeisland.app) — the paid original ($19.99 one-time): 30 agents, 20+ terminals, SSH remote monitoring. It offers broader agent coverage; ZackEyes includes read-only SSH observation. [Full comparison](https://zackeyes.vercel.app/vs-vibe-island)
 - [open-vibe-island](https://github.com/Octane0411/open-vibe-island) — free and open source (GPL v3): 10+ agents, broad terminal coverage. Pick it if you need Cursor / Gemini CLI / OpenCode and don't mind copyleft. [Full comparison](https://zackeyes.vercel.app/vs-open-vibe-island)
-- [Hallmonitor](https://github.com/hiteshbandhu/hallmonitor) — free and MIT like ZackEyes, with SSH multi-machine monitoring and a terminal dashboard. Its published build includes remote monitoring; ZackEyes development builds now add read-only SSH observation and opt-in supported Claude question answers. [Full comparison](https://zackeyes.vercel.app/vs-hallmonitor)
+- [Hallmonitor](https://github.com/hiteshbandhu/hallmonitor) — free and MIT like ZackEyes, with SSH multi-machine monitoring and a terminal dashboard. Both include remote monitoring; ZackEyes also includes opt-in supported Claude question answers, local Usage archives and USD cost tracking. [Full comparison](https://zackeyes.vercel.app/vs-hallmonitor)
 
 ZackEyes is the pick when your workflow is Claude Code + Codex CLI and you want per-session USD cost tracking, themes with matching sounds, and a permissive MIT licence — free forever.
 
@@ -238,4 +238,4 @@ MIT. Use it, fork it, ship a competing product. Just don't break Claude Code.
 
 ### Daily work journal (planned for v0.11.0)
 
-The #214 local pipeline exists for development and testing, but setup, publishing and scheduling are unfinished. The public “Generate Today’s Journal” menu action has been removed. Journal generation is not included in the v0.10.0 candidate.
+The #214 local pipeline exists for development and testing, but setup, publishing and scheduling are unfinished. The public “Generate Today’s Journal” menu action has been removed. Journal generation is not included in v0.10.0.

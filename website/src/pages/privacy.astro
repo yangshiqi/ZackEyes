@@ -75,8 +75,8 @@ const privacyStructuredData = {
               <p>ZackEyes checks GitHub release metadata and downloads installer assets. Its pricing table is bundled for offline calculation, then checked online from the public GitHub pricing.json at startup and every 24 hours. These requests fetch public data; they do not upload prompts or replies.</p>
             </article>
             <article>
-              <h3>Development-build SSH and history</h3>
-              <p>Not yet in the published download: enabling a remote host opens a key-authenticated SSH connection to the host you choose. Project/path, agent, model, tool name, state and last-activity metadata travel from that host to your Mac; prompts, replies and tool arguments do not. The separate local usage archive stores counts, bounded names, hashed identities, resumable import state and timing metadata under ~/.zackeyes/usage/ on your Mac. SSH destinations are saved in ~/.zackeyes/remote-hosts.json; credentials are handled by your existing system SSH setup. Neither feature uploads this data to ZackEyes servers.</p>
+              <h3>SSH observation and local history</h3>
+              <p>Enabling a remote host opens a key-authenticated SSH connection to the host you choose. Project/path, agent, model, tool name, state and last-activity metadata travel from that host to your Mac; prompts, replies and tool arguments do not. The separate local usage archive stores counts, bounded names, hashed identities, resumable import state and timing metadata under ~/.zackeyes/usage/ on your Mac. SSH destinations are saved in ~/.zackeyes/remote-hosts.json; credentials are handled by your existing system SSH setup. Neither feature uploads this data to ZackEyes servers.</p>
             </article>
             <article>
               <h3>GitHub Releases</h3>

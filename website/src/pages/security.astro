@@ -1,11 +1,11 @@
 ---
-import { candidateVersion } from '../lib/product-plans.mjs';
+import { featureVersion } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { appVersion, issuesUrl, sourceUrl } from '../lib/release.mjs';
 
-const description = 'ZackEyes safety model for local hooks, quiet bridge failures, optional candidate SSH observation and private Usage archives.';
+const description = 'ZackEyes safety model for local hooks, quiet bridge failures, optional SSH observation and private Usage archives.';
 const securityStructuredData = {
   '@type': 'TechArticle',
   '@id': 'https://zackeyes.vercel.app/security#model',
@@ -100,10 +100,10 @@ const securityStructuredData = {
         </div>
       </section>
 
-      <section class="policy-band" aria-labelledby="candidate-boundaries-title">
+      <section class="policy-band" aria-labelledby="remote-boundaries-title">
         <div class="policy-shell">
-          <h2 class="section-title" id="candidate-boundaries-title">Candidate SSH and archive boundaries.</h2>
-          <p class="section-copy">These boundaries apply to the unreleased v{candidateVersion} candidate. The published download version remains v{appVersion}.</p>
+          <h2 class="section-title" id="remote-boundaries-title">SSH and archive boundaries.</h2>
+          <p class="section-copy">These features shipped in v{featureVersion}; the current published download is v{appVersion}.</p>
           <div class="policy-list">
             <article><h3>SSH observation</h3><p>The system SSH client uses public-key authentication and strict host-key checking. ZackEyes does not accept unknown hosts automatically, show password prompts, or change SSH configuration. Remote metadata includes project paths, agent/model, tool names, state and last activity; prompts, replies and tool arguments are excluded. Remote cards cannot approve requests or jump to a local terminal.</p></article>
             <article><h3>Private Usage archives</h3><p>Local counts and resumable import state use a private SQLite database under ~/.zackeyes/usage/ with directory mode 0700 and file/sidecar mode 0600. Unsafe permissions, symlinks and unsupported storage formats are rejected. Source transcripts and the previous saved ledger are not modified; removed source history cannot be recreated without saved counts.</p></article>
