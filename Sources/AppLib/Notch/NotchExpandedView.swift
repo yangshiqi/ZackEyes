@@ -219,8 +219,7 @@ struct NotchExpandedView: View {
                 // Project identity leads; agent/risk/time remain scan metadata.
                 HStack(spacing: 6) {
                     Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
+                        .sessionCardTextStyle(.title)
                         .lineLimit(1)
                         .truncationMode(.middle)
 
@@ -246,8 +245,7 @@ struct NotchExpandedView: View {
                     }
 
                     Text(elapsedString(since: session.lastActiveAt))
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.5))
+                        .sessionCardTextStyle(.timestamp)
                 }
 
                 // Row 1.5: session context — user prompt (identifies the session)
@@ -258,8 +256,7 @@ struct NotchExpandedView: View {
                         ?? buddy.tagline,
                     length: 50
                 ))
-                    .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(.white.opacity(0.6))
+                    .sessionCardTextStyle(.context)
                     .lineLimit(1)
                     .truncationMode(.tail)
 
@@ -285,8 +282,7 @@ struct NotchExpandedView: View {
                                model: session.modelDisplayName, effort: session.reasoningEffort, estimated: session.agent == .codex)
                 } else if let effort = session.reasoningEffort {
                     Text("\(session.modelDisplayName ?? "Effort") · \(effort)")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.white.opacity(0.5))
+                        .sessionCardTextStyle(.metadata)
                         .lineLimit(1)
                         .help("Reasoning effort: \(effort)")
                 }
@@ -349,10 +345,7 @@ struct NotchExpandedView: View {
                                 .help(session.currentToolFailure ?? "Tool completed")
                         }
                         Text(tool)
-                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                            .foregroundColor(session.isToolRunning
-                                ? AppColors.activity.color
-                                : .white.opacity(0.55))
+                            .sessionCardTextStyle(.tool(isRunning: session.isToolRunning))
                         if let input = toolInputShortPreview(session.currentToolInput) {
                             Text(input)
                                 .font(.system(size: 10, design: .monospaced))
@@ -429,8 +422,7 @@ struct NotchExpandedView: View {
                 if let model = model {
                     Text(effort.map { "\(model) · \($0)" } ?? model)
                         .help(effort.map { "Reasoning effort: \($0)" } ?? model)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.white.opacity(0.5))
+                        .sessionCardTextStyle(.metadata)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 0)

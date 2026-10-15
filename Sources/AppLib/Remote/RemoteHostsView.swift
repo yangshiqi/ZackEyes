@@ -167,24 +167,24 @@ struct RemoteSessionCard: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Image(systemName: "network")
-                Text(session.displayName).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                Text(session.displayName).sessionCardTextStyle(.title).lineLimit(1)
                 Spacer()
                 AgentBadge(agent: session.agent)
             }
             Text(
                 "\(session.remoteHostName ?? "Remote host") · \(session.remoteObservedState?.rawValue ?? "unknown") · observed"
             )
-            .font(.system(size: 11)).foregroundStyle(.secondary)
+            .sessionCardTextStyle(.context)
             if let model = session.modelDisplayName {
-                Text(model).font(.system(size: 10)).foregroundStyle(.secondary)
+                Text(model).sessionCardTextStyle(.metadata)
             }
             if let tool = session.currentToolName {
-                Text(tool).font(.system(size: 11, design: .monospaced)).lineLimit(1)
+                Text(tool).sessionCardTextStyle(.tool(isRunning: session.isToolRunning)).lineLimit(1)
             }
             Text(
                 "Last activity \(max(0, Int(now.timeIntervalSince(session.lastActiveAt) / 60)))m ago"
             )
-            .font(.system(size: 10)).foregroundStyle(.secondary)
+            .sessionCardTextStyle(.timestamp)
             if session.state == .waiting {
                 Text("Needs attention in the remote terminal")
                     .font(.system(size: 11)).foregroundStyle(AppColors.attention.color)
@@ -193,6 +193,7 @@ struct RemoteSessionCard: View {
                 Text(error).font(.system(size: 11)).foregroundStyle(AppColors.critical.color)
             }
         }
+        .foregroundColor(.white)
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
         .background(.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
     }
