@@ -1,10 +1,11 @@
 ---
+import { candidateVersion, journalVersion } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
-import { releaseName, downloadUrl, issuesUrl } from '../lib/release.mjs';
+import { appVersion, releaseName, downloadUrl, issuesUrl } from '../lib/release.mjs';
 
-const description = 'Direct answers about ZackEyes for AI search, including what it is, privacy posture, Codex CLI support, install steps, and issue reporting.';
+const description = 'Answers about ZackEyes releases, installation, local costs, candidate Usage history, SSH observation, notch questions and privacy.';
 const answers = [
   {
     question: 'What is ZackEyes?',
@@ -20,11 +21,7 @@ const answers = [
   },
   {
     question: 'Does ZackEyes track cost and token usage?',
-    answer: 'Yes. ZackEyes shows per-session token count and cost for both Claude Code and Codex, plus a Today row with a 7-day spending sparkline. Model pricing is bundled and refreshed offline, so tokens convert to USD locally without uploading data or requiring an API key.'
-  },
-  {
-    question: 'Does ZackEyes support multiple themes?',
-    answer: 'Yes. ZackEyes supports Rock Legends, F1 2026, AI Moguls, and Crayon Shin-chan themes, with theme-specific buddy names and custom notification sounds.'
+    answer: 'Yes. ZackEyes shows per-session token count and cost for both Claude Code and Codex, plus a Today row with a 7-day spending sparkline. Model pricing is bundled for offline use and refreshed online from GitHub, so tokens convert to USD locally without uploading data or requiring an API key.'
   },
   {
     question: 'Does ZackEyes support themes and notification sounds?',
@@ -36,15 +33,41 @@ const answers = [
   },
   {
     question: 'How do I install ZackEyes?',
-    answer: `Download the latest DMG from GitHub Releases, open it, drag ZackEyes into Applications, then launch the app. The current public installer is ${releaseName}.`
+    answer: `Download the latest DMG from GitHub Releases, open it, drag ZackEyes into Applications, then follow the installer README for first launch: the app is ad-hoc signed and not notarized. The current public installer is ${releaseName}.`,
+    href: '/docs#install-title',
+    linkLabel: 'Installation and first launch'
   },
   {
     question: 'How does ZackEyes compare to Vibe Island?',
-    answer: 'Both are macOS notch panels for AI coding agents. Vibe Island is a paid app ($19.99 one-time) covering 26 agents, 20+ terminals, and SSH sessions. ZackEyes is free and MIT open source, runs on Intel as well as Apple Silicon, and covers Claude Code and Codex CLI in depth. See the full comparison at https://zackeyes.vercel.app/vs-vibe-island.'
+    answer: 'Both are macOS notch panels for AI coding agents. Vibe Island is a paid app ($19.99 one-time) covering 30 agents (vendor checked October 15, 2026), 20+ terminals, and SSH sessions. ZackEyes is free and MIT open source, runs on Intel as well as Apple Silicon, and covers Claude Code and Codex CLI in depth. See the full comparison at https://zackeyes.vercel.app/vs-vibe-island.'
   },
   {
     question: 'Is there a free and open-source alternative for tracking AI coding agents in the macOS notch?',
     answer: 'Yes. ZackEyes is free, MIT licensed, and runs locally with no accounts or telemetry. It tracks Claude Code and Codex CLI sessions, approves permission prompts from the notch, and computes token cost locally from a bundled pricing table.'
+  },
+  {
+    question: 'How is Usage history different from Today?',
+    answer: `The published v${appVersion} Today row shows live token and API-price cost estimates. The unreleased v${candidateVersion} Settings → Usage archives complete local days through yesterday, with tokens, estimated agent-hours and cache statistics. It is not a historical subscription bill.`,
+    href: '/docs#usage-history',
+    linkLabel: 'Read the Usage guide'
+  },
+  {
+    question: 'Why does Usage history cover only three days at first?',
+    answer: `The v${candidateVersion} candidate initially settles the last three completed days after 03:00 or at startup. Import older transcripts adds earlier available history; Import saved history migrates the previous ledger. Pause and Resume preserve committed progress across restarts. Deleted transcripts cannot be backfilled.`
+  },
+  {
+    question: 'Why can a day show more than 24 agent-hours?',
+    answer: 'Concurrent sessions add agent-hours. Two sessions working for an hour count as two agent-hours. Timing is estimated from observed intervals, not a measurement of human working time; skipped source observations can leave it incomplete.'
+  },
+  {
+    question: 'Can I answer questions or monitor SSH hosts?',
+    answer: `In the unreleased v${candidateVersion} candidate, enable Settings → Notifications → Answer questions from the notch for supported Claude choices. It is off by default and falls back after two minutes. SSH observation supports up to eight hosts with a separately installed helper; remote requests remain in the remote terminal.`,
+    href: '/docs#notch-answers',
+    linkLabel: 'Set up question answers and SSH'
+  },
+  {
+    question: 'Is the daily work journal available?',
+    answer: `No. Journal setup, publishing and scheduling are unfinished and planned for v${journalVersion}. Its public generation action is hidden and it is excluded from the v${candidateVersion} candidate.`
   },
   {
     question: 'Where do I report ZackEyes issues?',
@@ -95,6 +118,7 @@ const answersStructuredData = {
               <details class="faq-item" open>
                 <summary>{item.question}</summary>
                 <p>{item.answer}</p>
+                {item.href && <p><a href={item.href}>{item.linkLabel}</a></p>}
               </details>
             ))}
           </div>

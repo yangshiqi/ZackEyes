@@ -72,11 +72,11 @@ const privacyStructuredData = {
           <div class="policy-list">
             <article>
               <h3>Network requests</h3>
-              <p>ZackEyes uses GitHub Releases for installer downloads and update metadata. The app can check the latest release endpoint and download the DMG directly.</p>
+              <p>ZackEyes checks GitHub release metadata and downloads installer assets. Its pricing table is bundled for offline calculation, then checked online from the public GitHub pricing.json at startup and every 24 hours. These requests fetch public data; they do not upload prompts or replies.</p>
             </article>
             <article>
               <h3>Development-build SSH and history</h3>
-              <p>Not yet in the published download: enabling a remote host opens a key-authenticated SSH connection to the host you choose. Project/path, agent, model, tool name, state and last-activity metadata travel from that host to your Mac; prompts, replies and tool arguments do not. The separate local usage ledger stores counts, bounded names, hashed identities and timing metadata on your Mac. Neither feature uploads this data to ZackEyes servers.</p>
+              <p>Not yet in the published download: enabling a remote host opens a key-authenticated SSH connection to the host you choose. Project/path, agent, model, tool name, state and last-activity metadata travel from that host to your Mac; prompts, replies and tool arguments do not. The separate local usage archive stores counts, bounded names, hashed identities, resumable import state and timing metadata under ~/.zackeyes/usage/ on your Mac. SSH destinations are saved in ~/.zackeyes/remote-hosts.json; credentials are handled by your existing system SSH setup. Neither feature uploads this data to ZackEyes servers.</p>
             </article>
             <article>
               <h3>GitHub Releases</h3>
@@ -96,7 +96,7 @@ const privacyStructuredData = {
             </article>
             <article>
               <h3>Delete local data</h3>
-              <p>Quit ZackEyes, delete the app from Applications, remove ZackEyes-managed hook entries containing `zackeyes`, and remove `~/.zackeyes` if you want to clear local ZackEyes settings.</p>
+              <p>First use Settings → Integrations → Uninstall Integrations… while the app is installed, then quit and remove it. Keep ~/.zackeyes to retain local data, or copy it before deletion: removing it erases Usage history, SSH host configuration, settings and existing journal files. See the <a href="/docs#uninstall-title">uninstall guide</a>.</p>
             </article>
           </div>
         </div>

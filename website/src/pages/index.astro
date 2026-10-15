@@ -1,4 +1,5 @@
 ---
+import { candidateVersion } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
@@ -18,24 +19,24 @@ const description = 'ZackEyes turns the MacBook notch into a live command center
 const screenshots = [
   {
     src: '/screenshots/dual-agent-support.webp',
-    alt: 'ZackEyes panel showing Claude Code and Codex CLI sessions together with separate usage tracks.',
-    label: 'Claude plus Codex',
-    title: 'Split usage tracks and badges keep Claude Code and Codex CLI sessions separate.',
-    width: 1008,
-    height: 854
+    alt: 'Built-in Demo showing Claude and Codex sample session cards with model, effort and context metadata.',
+    label: 'Claude plus Codex · candidate Demo',
+    title: 'Agent badges, model and context metadata distinguish sample Claude and Codex cards. Demo does not invent account quota readings.',
+    width: 1040,
+    height: 960
   },
   {
-    src: '/screenshots/terminal-confirmation.webp',
-    alt: 'ZackEyes AskUserQuestion prompt with a button that sends the user back to answer in terminal.',
-    label: 'Terminal handoff',
-    title: 'AskUserQuestion moments show the prompt and send you back to the terminal when needed.',
-    width: 1004,
-    height: 910
+    src: '/screenshots/notch-question.webp',
+    alt: 'Built-in Demo showing a supported Claude question with Grid and List choices.',
+    label: 'Question choices · candidate Demo',
+    title: 'Supported Claude questions can be answered with an opt-in setting. Unsupported and expired requests fall back to the terminal.',
+    width: 1040,
+    height: 960
   },
   {
     src: '/screenshots/usage-history.webp',
     alt: 'ZackEyes Usage settings with seven completed days of sample Claude and Codex token and estimated agent-hour statistics.',
-    label: 'Usage history · v0.10.0 candidate',
+    label: `Usage history · v${candidateVersion} candidate`,
     title: 'Daily archives, per-agent totals and 7/30/90-day charts. Shown with isolated sample data; not yet in the published download.',
     width: 1800,
     height: 1960
@@ -43,7 +44,7 @@ const screenshots = [
   {
     src: '/screenshots/remote-hosts.webp',
     alt: 'ZackEyes Remote Hosts settings with two disabled sample SSH aliases and headless helper setup instructions.',
-    label: 'SSH host setup · v0.10.0 candidate',
+    label: `SSH host setup · v${candidateVersion} candidate`,
     title: 'Configure read-only remote observation. Example hosts are disabled; approvals and questions stay in the remote terminal.',
     width: 1800,
     height: 1960
@@ -51,24 +52,24 @@ const screenshots = [
   {
     src: '/screenshots/settings-general.webp',
     alt: 'ZackEyes Settings window, General tab, showing Preferred quota source, Progress mode, and Dynamic Island options.',
-    label: 'Settings · v0.10.0 candidate',
+    label: `Settings · v${candidateVersion} candidate`,
     title: 'One Settings window for visibility, Preferred quota source, quota presentation, hotkey, and integrations.',
     width: 1800,
     height: 1960
   },
   {
     src: '/screenshots/sessions-attention.webp',
-    alt: 'ZackEyes expanded panel grouping sessions into Running and Recent above 5h and 7d quota bars.',
-    label: 'Attention-first',
+    alt: 'Built-in Demo showing a sample Write permission in Needs You, with running sessions below.',
+    label: 'Attention-first · candidate Demo',
     title: 'Sessions group into Needs You, Running, and Recent so whatever is waiting on you surfaces first.',
-    width: 1020,
-    height: 926
+    width: 1040,
+    height: 960
   }
 ];
 const faqItems = [
   {
     question: 'Which macOS versions does ZackEyes support?',
-    answer: 'ZackEyes is built for modern macOS desktop workflows and distributed as a DMG installer. If you hit a version-specific issue, report your macOS version and Mac model in GitHub Issues.'
+    answer: 'ZackEyes requires macOS 14 (Sonoma) or newer. The public DMG contains a universal build for Apple Silicon and Intel Macs.'
   },
   {
     question: 'Does ZackEyes work with Claude Code and Codex CLI?',
@@ -76,7 +77,7 @@ const faqItems = [
   },
   {
     question: 'Does ZackEyes collect my code or agent prompts?',
-    answer: 'ZackEyes is local-first by default. The website download flow uses GitHub Releases, and feedback goes through GitHub Issues, but the app does not need an account to show local agent status.'
+    answer: 'ZackEyes processes local status on your Mac and does not upload prompts or replies for hosted analysis. It fetches update metadata and pricing from GitHub. Optional candidate SSH hosts send session metadata to your Mac; local Usage archives store counts and timing metadata, not conversation text.'
   },
   {
     question: 'Where should I report bugs or feature requests?',
@@ -88,7 +89,7 @@ const faqItems = [
   },
   {
     question: 'Does ZackEyes work with external displays?',
-    answer: 'ZackEyes is built for the macOS top-edge workflow. If behavior differs across built-in and external displays, file a GitHub Issue with the display setup and macOS version.'
+    answer: 'The simulated island anchors to the primary display, including an external display configured as primary. If positioning differs on your setup, report the display arrangement and macOS version.'
   },
   {
     question: 'Does ZackEyes support multiple themes?',
@@ -148,6 +149,7 @@ const faqStructuredData = {
               <a class="button primary" href={downloadUrl}>Download for macOS</a>
               <a class="button" href="#control">See the flow</a>
             </div>
+            <p class="section-note">Download: v{appVersion}. New feature screenshots show the unreleased v{candidateVersion} candidate — see the <a href="/roadmap">roadmap</a>.</p>
             <div class="compat-row" aria-label="Supported agents and features">
               <span class="chip">Claude Code</span>
               <span class="chip">Codex CLI</span>
@@ -220,7 +222,7 @@ const faqStructuredData = {
           <div class="section-eyebrow">Product screenshots</div>
           <h2 class="section-title" id="screenshots-title">Real agent state, not a dashboard fantasy.</h2>
           <p class="section-copy">
-            Actual ZackEyes interfaces, including the v0.10.0 candidate’s Usage archives, SSH host setup and updated Settings. New captures use isolated sample data; candidate features are not yet in the published download. Select any image to view it at full size.
+            Actual ZackEyes interfaces, including the v{candidateVersion} candidate’s Usage archives, SSH host setup and updated Settings. All gallery captures now use isolated sample data or the built-in Demo; candidate features are not yet in the published download. Select any image to view it at full size.
           </p>
 
           <div class="screenshot-showcase" aria-label="ZackEyes screenshots">
@@ -304,7 +306,7 @@ const faqStructuredData = {
             <article class="feature-card">
               <span class="feature-index">10</span>
               <h3>Daily token and cost tracking</h3>
-              <p>A Today row tracks token spend and USD cost across Claude and Codex, with a 7-day sparkline. Model pricing is bundled and refreshed offline — no API key, no cloud calculation.</p>
+              <p>A Today row tracks token spend and USD cost across Claude and Codex, with a 7-day sparkline. Model pricing is bundled for offline use and refreshed online from GitHub — no API key, no cloud calculation.</p>
             </article>
             <article class="feature-card">
               <span class="feature-index">11</span>

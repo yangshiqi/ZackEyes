@@ -1,22 +1,23 @@
 ---
+import { candidateVersion, journalVersion } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { appVersion, issuesUrl } from '../lib/release.mjs';
 
-const description = 'ZackEyes roadmap: development-build SSH observation, daily usage archives and notch answers in the v0.10.0 candidate, plus future journal and agent plans.';
+const description = `ZackEyes roadmap: development-build SSH observation, daily usage archives and notch answers in the v${candidateVersion} candidate, plus future journal and agent plans.`;
 const developmentItems = [
-  { title: 'Answer from the notch', horizon: 'v0.10.0 candidate · unreleased', copy: 'Opt-in answers for supported Claude questions, with a timeout and terminal fallback. Disabled by default.' },
-  { title: 'SSH remote observation', horizon: 'v0.10.0 candidate · unreleased', copy: 'Read-only Claude/Codex session metadata from up to eight SSH hosts, with host status and reconnect. Remote requests stay in the remote terminal.' },
-  { title: 'Demo fleet', horizon: 'v0.10.0 candidate · unreleased', copy: 'Explore synthetic Claude/Codex sessions without sending sample actions to real agents. Real session attention returns the panel to live sessions.' },
-  { title: 'Local usage history', horizon: 'v0.10.0 candidate · unreleased', copy: 'Incremental daily archives through yesterday, settled after 03:00 with startup catch-up. Includes 7/30/90-day token and estimated agent-hour views, dated chart hover details, cache hit rate, rankings and an activity heatmap. Older history is imported explicitly with pause/resume. No prompts or tool arguments are stored.' },
-  { title: 'Stale quota readings', horizon: 'v0.10.0 candidate · unreleased', copy: 'Per-agent approximate markers and last-updated hints distinguish old quota readings from fresh observations.' }
+  { title: 'Answer from the notch', horizon: `v${candidateVersion} candidate · unreleased`, copy: 'Opt-in answers for supported Claude questions, with a timeout and terminal fallback. Disabled by default.' },
+  { title: 'SSH remote observation', horizon: `v${candidateVersion} candidate · unreleased`, copy: 'Read-only Claude/Codex session metadata from up to eight SSH hosts, with host status and reconnect. Remote requests stay in the remote terminal.' },
+  { title: 'Demo fleet', horizon: `v${candidateVersion} candidate · unreleased`, copy: 'Explore synthetic Claude/Codex sessions without sending sample actions to real agents. Real session attention returns the panel to live sessions.' },
+  { title: 'Local usage history', horizon: `v${candidateVersion} candidate · unreleased`, copy: 'Incremental daily archives through yesterday, settled after 03:00 with startup catch-up. Includes 7/30/90-day token and estimated agent-hour views, dated chart hover details, cache hit rate, rankings and an activity heatmap. Older history is imported explicitly with pause/resume. No prompts or tool arguments are stored.' },
+  { title: 'Stale quota readings', horizon: `v${candidateVersion} candidate · unreleased`, copy: 'Per-agent approximate markers and last-updated hints distinguish old quota readings from fresh observations.' }
 ];
 const roadmapItems = [
   {
     title: 'Daily work journal',
-    horizon: 'v0.11.0 · planned',
-    copy: 'Finish setup, scheduling and delivery around the existing local pipeline. Not included in v0.10.0; the unfinished generation menu is hidden. Distil each day of agent work into a dated summary plus a running lessons file, committed to a private GitHub repo you choose. Summarising runs on the agent CLI already installed on your Mac, so there is no API key and no new dependency.'
+    horizon: `v${journalVersion} · planned`,
+    copy: `Finish setup, scheduling and delivery around the existing local pipeline. Not included in v${candidateVersion}; the unfinished generation menu is hidden. Distil each day of agent work into a dated summary plus a running lessons file, committed to a private GitHub repo you choose. Summarising runs on the agent CLI already installed on your Mac, so there is no API key and no new dependency.`
   },
   {
     title: 'More agent support',
@@ -62,7 +63,7 @@ const roadmapStructuredData = {
             Development builds now include SSH observation, local usage history, opt-in notch answers, demo sessions and stale quota hints. Future work includes journal delivery, broader agent support and local logs controls.
           </p>
           <p class="policy-lede">
-            The current release is v{appVersion} — see the <a href="/changelog">changelog</a> for what has shipped. The v0.10.0 release candidate below is not yet in that download.
+            The current release is v{appVersion} — see the <a href="/changelog">changelog</a> for what has shipped. The v{candidateVersion} release candidate below is not yet in that download.
           </p>
           <div class="hero-actions">
             <a class="button primary" href={issuesUrl}>Request a feature <span aria-hidden="true">↗</span></a>
@@ -74,7 +75,7 @@ const roadmapStructuredData = {
       <section class="policy-band" aria-labelledby="development-items-title">
         <div class="policy-shell">
           <h2 class="section-title" id="development-items-title">Implemented in development.</h2>
-          <p class="section-copy">These features are merged into master and available when building from source. They are the v0.10.0 release candidate, not yet in the published v{appVersion} download; no release date is promised.</p>
+          <p class="section-copy">These features are merged into master and available when building from source. They are the v{candidateVersion} release candidate, not yet in the published v{appVersion} download; no release date is promised.</p>
           <div class="timeline-list">
             {developmentItems.map((item) => (
               <article class="timeline-item">
