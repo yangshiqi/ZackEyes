@@ -259,6 +259,8 @@ endif
 	  --head chore/release-v$(VERSION) \
 	  --title "Release v$(VERSION)" \
 	  --body "$${NOTES:-Release v$(VERSION)}"
+	@echo "=== Build and verify all remote helper packages ==="
+	./Scripts/fetch-remote-assets.sh "$(VERSION)" "$$(git rev-parse HEAD)" ".build/remote-assets-$(VERSION)"
 	@echo "=== Re-check master sync (origin/master must not have moved) ==="
 	@# Between the initial sync check at the top and this point, someone
 	@# could have landed a PR on master — making our release-branch's
@@ -273,7 +275,7 @@ endif
 	  exit 1; \
 	fi
 	@echo "=== Publish DMG to ZackEyes-release (BEFORE PR merge, so Vercel deploy never points at a 404) ==="
-	gh release create v$(VERSION) .build/ZackEyes-$(VERSION).dmg \
+	gh release create v$(VERSION) .build/ZackEyes-$(VERSION).dmg .build/remote-assets-$(VERSION)/* \
 	  --repo yangshiqi/ZackEyes-release \
 	  --target main \
 	  --title "v$(VERSION)" \
