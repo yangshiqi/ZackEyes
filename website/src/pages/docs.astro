@@ -1,10 +1,12 @@
 ---
+import { candidateVersion, journalVersion } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
+import InstallSecurityNote from '../components/InstallSecurityNote.astro';
 import { appVersion, downloadUrl, issuesUrl, sourceUrl } from '../lib/release.mjs';
 
-const description = 'Install, uninstall, update, and compatibility notes for ZackEyes on macOS 14 and newer, including Claude Code and Codex CLI workflows.';
+const description = 'Install and remove ZackEyes on macOS 14+, understand local pricing, and configure candidate SSH observation, question answers and daily Usage archives.';
 const docsStructuredData = [
   {
     '@type': 'TechArticle',
@@ -57,7 +59,7 @@ const docsStructuredData = [
           <div>
             <h2 class="section-title" id="install-title">Install.</h2>
             <p class="section-copy">
-              Use the public release channel for the latest signed installer asset and future update checks.
+              Use the public release channel for the latest installer asset and future update checks.
             </p>
           </div>
           <ol class="step-list">
@@ -67,6 +69,7 @@ const docsStructuredData = [
             <li><strong>Handle macOS security prompts.</strong> If macOS asks for confirmation on first launch, approve the app from System Settings and reopen it.</li>
             <li><strong>Review optional permissions.</strong> Accessibility permission enables terminal tab jump. Notifications permission enables macOS alerts for completed turns, rate limits, update availability, and errors.</li>
           </ol>
+          <InstallSecurityNote />
         </div>
       </section>
 
@@ -139,17 +142,30 @@ const docsStructuredData = [
       <section class="policy-band" aria-labelledby="development-builds">
         <div class="policy-shell">
           <h2 class="section-title" id="development-builds">Development builds.</h2>
-          <p class="section-copy">The v0.10.0 release candidate in master includes opt-in supported Claude question answers, SSH remote observation, demo sessions, local usage history and stale quota hints. These are not yet in the published v{appVersion} download. See the <a href="/roadmap">roadmap</a> and repository README for source-build setup.</p>
+          <p class="section-copy">The v{candidateVersion} release candidate in master includes opt-in supported Claude question answers, SSH remote observation, demo sessions, local usage history and stale quota hints. These are not yet in the published v{appVersion} download. See the <a href="/roadmap">roadmap</a> and repository README for source-build setup.</p>
           <p class="section-copy">Settings → Usage shows complete local days through yesterday. Hover a daily chart for its full date and per-agent values. Daily archives settle after 03:00 with startup catch-up; changing periods or refreshing reads the saved archives. Use Import saved history or Import older transcripts for earlier data, with Pause and Resume across restarts. Today/quota readings remain separate. Skipped source observations can leave estimates incomplete.</p>
           <figure class="feature-screenshot">
             <a href="/screenshots/usage-history.webp" aria-label="View Usage history screenshot at full size"><img src="/screenshots/usage-history.webp" alt="Usage settings showing seven completed local days of sample Claude and Codex counts and estimated agent-hours." width="1800" height="1960" loading="lazy" decoding="async" /></a>
-            <figcaption>Usage history · v0.10.0 candidate · isolated sample data. Select the image for full size.</figcaption>
+            <figcaption>Usage history · v{candidateVersion} candidate · isolated sample data. Select the image for full size.</figcaption>
           </figure>
-          <p class="section-copy">Daily work journal is still under development for v0.11.0. Its public generation menu is hidden; setup, publishing and scheduling are unfinished and excluded from the v0.10.0 candidate.</p>
+          <h3 id="notch-answers">Answer supported Claude questions.</h3>
+          <p class="section-copy">In the candidate build, enable Settings → Notifications → Answer questions from the notch (off by default). Select the supported choices and press Submit. Unanswered questions fall back to the terminal after two minutes; unsupported questions and remote requests remain in their terminal. Tool permission approvals and question answers are separate actions.</p>
+          <figure class="feature-screenshot">
+            <a href="/screenshots/notch-question.webp" aria-label="View sample notch question at full size"><img src="/screenshots/notch-question.webp" alt="Built-in Demo showing a sample Claude layout question with Grid and List choices." width="1040" height="960" loading="lazy" decoding="async" /></a>
+            <figcaption>Supported question choices in the candidate's built-in Demo. No real agent receives the answer.</figcaption>
+          </figure>
+          <h3 id="demo-mode">Explore Demo mode.</h3>
+          <p class="section-copy">Choose Demo mode from the menu-bar or notch gear menu. Synthetic Claude/Codex sessions cycle through working, waiting and idle states; sample approvals and questions are interactive. Exit demo returns to live sessions. Real questions, approvals or errors also return to the live view. DEMO badges identify sample cards; quota bars continue to use account readings and can show no data.</p>
+          <h3 id="usage-history">Read and extend Usage history.</h3>
+          <p class="section-copy">The Today row is live token/cost information; Settings → Usage is a separate archive of completed days, not a historical billing report. Automatic setup covers the last three completed days. Import older transcripts extends available history; Import saved history migrates the old ledger without changing it. Pause and Resume preserve committed progress across restarts. Parallel sessions add agent-hours, so a day may exceed 24 estimated hours. Deleted source history cannot be reconstructed, and invalid/oversized observations may leave estimates incomplete.</p>
+          <p class="section-copy">Daily work journal is still under development for v{journalVersion}. Its public generation menu is hidden; setup, publishing and scheduling are unfinished and excluded from the v{candidateVersion} candidate.</p>
           <p class="section-copy">Remote observation requires Swift 6 on the remote Linux/macOS host: build <code>swift build -c release --product zackeyes-stream</code> and install the result as <code>~/.local/bin/zackeyes</code>. Verify key authentication and the host key in your terminal, then add the SSH alias in Settings → Remote Hosts. Remote approvals and questions remain in the remote terminal.</p>
+          <h3 id="ssh-troubleshooting">Connect and troubleshoot SSH hosts.</h3>
+          <p class="section-copy">Use Settings → Remote Hosts → Add Host with a name and existing SSH alias or user@hostname. Configure custom ports, identity files or jump hosts in your own SSH configuration. ZackEyes does not edit it. Before enabling the host, verify <code>ssh your-host</code> in a terminal, then verify <code>ssh your-host '~/.local/bin/zackeyes --stream'</code>. The helper must be built separately with Swift 6 and installed on that host.</p>
+          <p class="section-copy">Authentication or host-key errors must be resolved in the terminal; ZackEyes does not show password prompts or accept unknown host keys. A missing helper requires installing the stream binary; an unsupported stream requires updating the helper. Connection status appears beside each host. Remote cards are metadata observations, not proof of a running process, and have no local approval or terminal-jump actions.</p>
           <figure class="feature-screenshot">
             <a href="/screenshots/remote-hosts.webp" aria-label="View SSH host setup screenshot at full size"><img src="/screenshots/remote-hosts.webp" alt="Remote Hosts settings showing two disabled example SSH aliases and the remote helper setup command." width="1800" height="1960" loading="lazy" decoding="async" /></a>
-            <figcaption>SSH host setup · v0.10.0 candidate · disabled example hosts, with no connection attempted.</figcaption>
+            <figcaption>SSH host setup · v{candidateVersion} candidate · disabled example hosts, with no connection attempted.</figcaption>
           </figure>
         </div>
       </section>
@@ -159,14 +175,13 @@ const docsStructuredData = [
           <div>
             <h2 class="section-title" id="uninstall-title">Uninstall ZackEyes.</h2>
             <p class="section-copy">
-              Remove the app bundle first. If you also want to clean local integration state, remove ZackEyes-managed hook entries and local settings.
+              Remove the agent integrations while the app is still installed, then quit and delete the app. Keep local data if you want to preserve Usage history for a reinstall.
             </p>
           </div>
           <ol class="step-list">
-            <li><strong>Quit ZackEyes.</strong> Use the menu bar item or Activity Monitor if the app is still running.</li>
-            <li><strong>Remove the app.</strong> Delete ZackEyes from `/Applications`.</li>
-            <li><strong>Review agent hooks.</strong> ZackEyes hook commands contain the literal string `zackeyes`, so they can be identified in `~/.claude/settings.json` and `~/.codex/hooks.json`.</li>
-            <li><strong>Delete local settings if needed.</strong> Remove `~/.zackeyes` only if you want to clear local ZackEyes configuration.</li>
+            <li><strong>Uninstall integrations.</strong> Open Settings → Integrations → Uninstall Integrations… and complete the removal before deleting the app. This removes ZackEyes-managed agent entries.</li>
+            <li><strong>Quit and remove ZackEyes.</strong> Quit from its menu and delete the app from Applications.</li>
+            <li><strong>Retain or delete local data.</strong> Removing <code>~/.zackeyes</code> deletes settings, saved Usage history, SSH host configuration and any existing local journal files. Copy that directory first if you want to retain them; a reinstall cannot reconstruct deleted history after its source transcripts are gone.</li>
           </ol>
         </div>
       </section>
@@ -178,7 +193,7 @@ const docsStructuredData = [
           <div class="faq-list">
             <details class="faq-item" open>
               <summary>macOS says ZackEyes cannot be opened</summary>
-              <p>Open System Settings, review the Security prompt for ZackEyes, allow the app, then launch it again from Applications.</p>
+              <p>The app is ad-hoc signed and not notarized. Use the verified official download and follow the first-launch command in the Install section or the installer README, then open it again from Applications.</p>
             </details>
             <details class="faq-item">
               <summary>Claude or Codex sessions do not appear</summary>
@@ -190,7 +205,7 @@ const docsStructuredData = [
             </details>
             <details class="faq-item">
               <summary>Reinstall hooks</summary>
-              <p>Quit ZackEyes, remove stale hook entries containing zackeyes from the Claude or Codex hook files if needed, then reopen ZackEyes and start a new agent session.</p>
+              <p>Open Settings → Integrations and choose Repair Hooks, then start a fresh agent session. The repair backs up hook files and preserves unrelated settings.</p>
             </details>
           </div>
         </div>

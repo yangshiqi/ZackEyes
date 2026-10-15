@@ -1,3 +1,4 @@
+import { candidateVersion, journalVersion } from '../lib/product-plans.mjs';
 import {
   appVersion,
   releaseName,
@@ -27,6 +28,7 @@ ZackEyes is a macOS notch command center for developers who run Claude Code, Cod
 - Uses native hooks and Unix socket bridge events so terminal workflows keep working when the app is closed.
 
 ## Compatibility
+- The DMG app is ad-hoc signed, not Developer ID signed or notarized. Verify the official checksum, install into Applications, and follow the installer README for first launch.
 - Current version: ${releaseName}.
 - Requires macOS 14 or newer.
 - Release builds target Apple Silicon and Intel Macs.
@@ -59,10 +61,10 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 Included in v0.9.7: Codex GPT-6.1 Sol / GPT-6 Astra compatibility (PR #252) and Claude Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5 compatibility (PR #258). They add observed effort, current pricing and lifecycle handling. Effort requires live CLI metadata; daily costs are API list-price estimates, not subscription invoices. Details: https://zackeyes.vercel.app/docs#model-compatibility
 
 ## Development builds (merged, not yet released)
-The published download remains v${appVersion}. Master/source builds also include opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. They form the v0.10.0 release candidate and are not yet in the published download. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. Usage charts cover complete local days through yesterday, with full dates on hover. Background daily settlement runs after 03:00 with startup catch-up; older history requires explicit import with pause/resume. Settings reads saved daily archives without rescanning transcripts. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
+The published download remains v${appVersion}. Master/source builds also include opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. They form the v${candidateVersion} release candidate and are not yet in the published download. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. Usage charts cover complete local days through yesterday, with full dates on hover. Background daily settlement runs after 03:00 with startup catch-up; older history requires explicit import with pause/resume. Settings reads saved daily archives without rescanning transcripts. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
 
 ## Roadmap
-- v0.11.0 planned: finish setup, scheduling and delivery for the daily work journal. Its local pipeline exists in development, but the public generation menu is hidden and it is excluded from v0.10.0.
+- v${journalVersion} planned: finish setup, scheduling and delivery for the daily work journal. Its local pipeline exists in development, but the public generation menu is hidden and it is excluded from v${candidateVersion}.
 - Explore more agent support and local logs controls.
 - Completed development work and future plans: https://zackeyes.vercel.app/roadmap
 
@@ -76,6 +78,7 @@ Use https://zackeyes.vercel.app/answers for short answers to common product ques
 - Good first issues and help-wanted: ${contributeUrl}
 
 ## Privacy
+The app fetches public GitHub update metadata and refreshes bundled model prices online at startup and every 24 hours. Cost conversion stays local; prompts and replies are not uploaded by these requests.
 ZackEyes is local-first by default. The website does not upload source code, agent prompts, terminal history, or local project files.
 `, {
     headers: {

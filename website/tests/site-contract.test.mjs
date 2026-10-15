@@ -257,13 +257,13 @@ describe('Astro site contract', () => {
   it('shows native candidate feature screenshots with sample-data labels and full-size links', () => {
     const home = read('src/pages/index.astro');
     const docs = read('src/pages/docs.astro');
-    for (const file of ['usage-history.webp', 'remote-hosts.webp', 'settings-general.webp']) {
+    for (const file of ['usage-history.webp', 'remote-hosts.webp', 'settings-general.webp', 'dual-agent-support.webp', 'sessions-attention.webp', 'notch-question.webp']) {
       const asset = join(root, 'public/screenshots', file);
       assert.ok(existsSync(asset), `missing native screenshot: ${file}`);
       assert.ok(statSync(asset).size < 200_000, `screenshot exceeds 200 KB: ${file}`);
       assert.ok(home.includes(`/screenshots/${file}`));
     }
-    for (const file of ['usage-history.webp', 'remote-hosts.webp']) {
+    for (const file of ['usage-history.webp', 'remote-hosts.webp', 'notch-question.webp']) {
       assert.ok(docs.includes(`href="/screenshots/${file}"`));
       assert.ok(docs.includes(`src="/screenshots/${file}"`));
     }
@@ -271,6 +271,46 @@ describe('Astro site contract', () => {
     assert.match(home, /isolated sample data/);
     assert.match(home, /candidate features are not yet in the published download/);
     assert.match(docs, /disabled example hosts, with no connection attempted/);
+  });
+
+  it('documents first launch, price refresh, removal and candidate controls accurately', () => {
+    const install = read('src/components/InstallSecurityNote.astro');
+    assert.match(install, /ad-hoc signed/);
+    assert.match(install, /not Developer ID signed or notarized/);
+    assert.match(install, /xattr -dr com.apple.quarantine \/Applications\/ZackEyes.app/);
+    const docs = read('src/pages/docs.astro');
+    const removal = docs.slice(docs.indexOf('id="uninstall-title"'));
+    assert.ok(removal.indexOf('Uninstall Integrations') < removal.indexOf('Quit and remove'));
+    assert.match(removal, /deletes settings, saved Usage history, SSH host configuration/);
+    assert.match(docs, /Settings → Notifications → Answer questions from the notch/);
+    assert.match(docs, /after two minutes/);
+    assert.match(docs, /day may exceed 24 estimated hours/);
+    const privacy = read('src/pages/privacy.astro');
+    assert.match(privacy, /startup and every 24 hours/);
+    for (const file of publicPagePaths) {
+      assert.doesNotMatch(read(file), /refreshed offline|26 agents|releases ship as a signed DMG/);
+    }
+    for (const file of ['src/pages/docs.astro', 'src/pages/download.astro']) {
+      assert.match(read(file), /<InstallSecurityNote \/>/);
+    }
+    const answers = read('src/pages/answers.astro');
+    assert.match(answers, /How is Usage history different from Today/);
+    assert.match(answers, /Is the daily work journal available/);
+    assert.doesNotMatch(answers, /question: 'Does ZackEyes support multiple themes/);
+    const rival = read('src/pages/vs-vibe-island.astro');
+    assert.match(rival, /competitorCheckedOn = '2026-10-15'/);
+    assert.match(rival, /30 agents/);
+  });
+
+  it('keeps planned versions shared and distinct from published metadata', () => {
+    const plans = read('src/lib/product-plans.mjs');
+    assert.match(plans, /export const candidateVersion/);
+    assert.match(plans, /export const journalVersion/);
+    for (const file of ['index.astro', 'docs.astro', 'answers.astro', 'roadmap.astro', 'llms.txt.ts', 'llms-full.txt.ts']) {
+      const page = read('src/pages/' + file);
+      assert.match(page, /from '\.\.\/lib\/product-plans.mjs'/);
+      assert.doesNotMatch(page, /v0\.10\.0|v0\.11\.0/);
+    }
   });
 
   it('publishes a product roadmap', () => {
@@ -292,8 +332,8 @@ describe('Astro site contract', () => {
     }
     assert.match(page, /Finish setup, scheduling and delivery/);
     assert.match(page, /Daily work journal/);
-    assert.match(page, /v0\.10\.0 candidate/);
-    assert.match(page, /v0\.11\.0 · planned/);
+    assert.match(page, /v\$\{candidateVersion\} candidate/);
+    assert.match(page, /v\$\{journalVersion\} · planned/);
     assert.match(page, /unfinished generation menu is hidden/);
     assert.match(page, /settled after 03:00/);
     assert.doesNotMatch(page, /title: 'Codex GPT-6 compatibility'/);
@@ -397,7 +437,7 @@ describe('Astro site contract', () => {
     assert.match(page, /zackeyes/);
     assert.match(page, /never read or write `~\/\.codex\/config\.toml`/);
     assert.match(page, /fail quietly/);
-    assert.match(page, /exits 0/);
+    assert.match(page, /exit(?:s)? 0/);
     assert.match(page, /TechArticle/);
   });
 
@@ -515,7 +555,7 @@ describe('Astro site contract', () => {
       assert.match(endpoint, /v\$\{appVersion\}/);
       assert.match(endpoint, /daily settlement runs after 03:00/);
       assert.match(endpoint, /public generation menu is hidden/);
-      assert.match(endpoint, /v0\.10\.0 release candidate/);
+      assert.match(endpoint, /v\$\{candidateVersion\} release candidate/);
     }
     assert.match(llmsFull, /Roadmap/);
     assert.match(llmsFull, /Direct answers/);

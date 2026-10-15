@@ -7,10 +7,10 @@ import { releaseName, downloadUrl, sourceUrl } from '../lib/release.mjs';
 const description =
   'ZackEyes vs Vibe Island: a factual comparison of two macOS notch panels for AI coding agents. Price, licence, agent coverage, terminal jump, Mac architecture, and which one fits which workflow.';
 
-// Competitor facts below were read from vibeisland.app on 2026-07-26 and are
+// Competitor facts below were read from vibeisland.app on 2026-10-15 and are
 // stated as-of that date. Keep the date honest when refreshing this page — a
 // stale claim about a competitor is worse than no comparison page at all.
-const competitorCheckedOn = '2026-07-26';
+const competitorCheckedOn = '2026-10-15';
 
 const rows = [
   {
@@ -26,7 +26,7 @@ const rows = [
   {
     label: 'Agents',
     zack: 'Claude Code, Codex CLI',
-    rival: '26 agents, including Claude Code, Codex, Cursor, Gemini CLI, Copilot, Kimi, DeepSeek'
+    rival: '30 agents, including Claude Code, Codex, Cursor, Gemini CLI, Copilot, Kimi, DeepSeek'
   },
   {
     label: 'Terminal jump',
@@ -69,7 +69,7 @@ const faqs = [
   {
     question: 'What is the difference between ZackEyes and Vibe Island?',
     answer:
-      'Both put AI coding agent status in the MacBook notch. Vibe Island covers 26 agents, 20+ terminals, and SSH remote sessions for $19.99. ZackEyes is free and open source, runs on Intel as well as Apple Silicon, and goes deep on two agents: Claude Code and Codex CLI.'
+      'Both put AI coding agent status in the MacBook notch. Vibe Island covers 30 agents, 20+ terminals, and SSH remote sessions for $19.99. ZackEyes is free and open source, runs on Intel as well as Apple Silicon, and goes deep on two agents: Claude Code and Codex CLI.'
   },
   {
     question: 'Which one should I use?',
@@ -84,7 +84,7 @@ const faqs = [
   {
     question: 'Is ZackEyes really free, or is there a paid tier?',
     answer:
-      'ZackEyes is entirely free with no paid tier, no accounts, and no upsell. The source is MIT licensed on GitHub, and releases ship as a signed DMG.'
+      'ZackEyes is entirely free with no paid tier, no accounts, and no upsell. The source is MIT licensed on GitHub, and releases ship as a DMG containing an ad-hoc signed app, without Developer ID notarization.'
   }
 ];
 
@@ -120,7 +120,7 @@ const faqStructuredData = {
           <h1 id="vs-title">ZackEyes vs Vibe Island.</h1>
           <p class="policy-lede">
             ZackEyes and Vibe Island both turn the MacBook notch into a control panel for AI coding
-            agents. Vibe Island is a paid app covering 26 agents, 20+ terminals, and SSH sessions.
+            agents. Vibe Island is a paid app covering 30 agents, 20+ terminals, and SSH sessions.
             ZackEyes is free and open source, runs on Intel and Apple Silicon, and covers two agents
             in depth: Claude Code and Codex CLI.
           </p>
@@ -174,7 +174,7 @@ const faqStructuredData = {
               <span>Pick Vibe Island</span>
               <strong>You run more than two agents</strong>
               <p>
-                Vibe Island tracks 26 agents including Cursor, Gemini CLI, Copilot, Kimi and
+                Vibe Island tracks 30 agents including Cursor, Gemini CLI, Copilot, Kimi and
                 DeepSeek, jumps to 20+ terminals, and monitors sessions over SSH. The published ZackEyes download focuses
                 on Claude Code and Codex CLI with nine terminals/editors. Its development builds
                 also support read-only SSH observation; broader agent support remains exploration.

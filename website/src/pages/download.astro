@@ -1,7 +1,9 @@
 ---
+import { candidateVersion } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
+import InstallSecurityNote from '../components/InstallSecurityNote.astro';
 import {
   appVersion,
   releaseName,
@@ -43,7 +45,8 @@ const downloadStructuredData = [
     step: [
       { '@type': 'HowToStep', name: 'Download the DMG', text: `Download ${releaseName} from the public GitHub release asset.` },
       { '@type': 'HowToStep', name: 'Verify the checksum', text: `Compare the downloaded DMG SHA256 with ${downloadSha256}.` },
-      { '@type': 'HowToStep', name: 'Install the app', text: 'Open the DMG, drag ZackEyes into Applications, and launch it on macOS 14 or newer.' }
+      { '@type': 'HowToStep', name: 'Install the app', text: 'Open the DMG and drag ZackEyes into Applications on macOS 14 or newer.' },
+      { '@type': 'HowToStep', name: 'First launch', text: 'The app is ad-hoc signed, not Developer ID notarized. Verify the checksum and follow the installer README before opening it.' }
     ]
   }
 ];
@@ -68,6 +71,7 @@ const downloadStructuredData = [
           <p class="policy-lede">
             {releaseName} is the current public macOS DMG. It supports macOS 14 or newer, Apple Silicon + Intel Macs, Claude Code, Codex CLI, daily token and cost tracking, multiple themes, terminal tab jump, and display modes for real notches or simulated Dynamic Island-style panels.
           </p>
+          <p class="section-copy">Looking for SSH hosts, historical Usage charts, Demo mode or opt-in question answers? Those are in the unreleased v{candidateVersion} candidate. This button downloads v{appVersion}; see the <a href="/roadmap">roadmap</a> for candidate availability.</p>
           <div class="hero-actions">
             <a class="button primary" href={downloadUrl}>Download {releaseName} <span aria-hidden="true">↓</span></a>
             <a class="button" href={releasesUrl}>All releases <span aria-hidden="true">↗</span></a>
@@ -124,7 +128,7 @@ const downloadStructuredData = [
             </article>
             <article>
               <h3>Daily token and cost tracking</h3>
-              <p>A Today row tracks token spend and USD cost for Claude and Codex with a 7-day sparkline. Model pricing is bundled and refreshed offline — no API key or cloud upload.</p>
+              <p>A Today row tracks token spend and USD cost for Claude and Codex with a 7-day sparkline. Model pricing is bundled for offline use and refreshed online from GitHub — no API key or cloud upload.</p>
             </article>
             <article>
               <h3>Multiple themes</h3>
@@ -156,6 +160,7 @@ const downloadStructuredData = [
             <li><strong>Move ZackEyes to Applications.</strong> Open the DMG and drag the app into `/Applications`.</li>
             <li><strong>Launch ZackEyes.</strong> Start a fresh Claude Code or Codex CLI session so the local hooks can surface events.</li>
           </ol>
+          <InstallSecurityNote />
         </div>
       </section>
     </main>

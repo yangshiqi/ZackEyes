@@ -1,3 +1,4 @@
+import { candidateVersion, journalVersion } from '../lib/product-plans.mjs';
 import {
   appVersion,
   releaseName,
@@ -40,8 +41,7 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 ## Install
 1. Download the current DMG from GitHub Releases.
 2. Open the DMG and drag ZackEyes into Applications.
-3. Launch ZackEyes and keep Claude Code or Codex CLI running in the normal terminal workflow.
-4. If macOS blocks first launch, approve ZackEyes in System Settings and reopen it.
+3. Verify the official checksum before first launch. The app is ad-hoc signed and not notarized. After verifying the checksum and trusting the official download, follow the installer README: xattr -dr com.apple.quarantine /Applications/ZackEyes.app. Then open it and start a fresh Claude Code or Codex CLI session.
 
 ## Download verification
 - Download page: https://zackeyes.vercel.app/download
@@ -49,22 +49,23 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - SHA256: ${downloadSha256}.
 
 ## Uninstall
-1. Quit ZackEyes.
-2. Delete ZackEyes from Applications.
-3. Review ~/.claude/settings.json and ~/.codex/hooks.json for hook commands containing "zackeyes".
-4. Remove ~/.zackeyes only if you want to clear local ZackEyes settings.
+First use Settings → Integrations → Uninstall Integrations… while the app is installed, then quit and delete the app. Keep ~/.zackeyes or copy it before deletion: removing it erases Usage history, SSH host configuration, settings and existing journal files.
+1. While ZackEyes is installed, use Settings → Integrations → Uninstall Integrations… .
+2. Quit ZackEyes and delete it from Applications.
+3. Keep ~/.zackeyes to retain data, or copy it before deletion; it includes Usage history and SSH host configuration.
 
 ## Compatibility
+- The DMG app is ad-hoc signed, not Developer ID signed or notarized. Verify the official checksum, install into Applications, and follow the installer README for first launch.
 - macOS requirement: macOS 14 or newer.
 - CPU architecture: Apple Silicon and Intel Macs.
 - Agents: Claude Code and/or Codex CLI. ZackEyes installs hooks for whichever CLI it finds and skips missing agents.
 - Codex caveat: Codex sessions launched before hooks are installed may still be detected through JSONL tailing, but full hook-driven behavior applies to new Codex threads.
 
 ## Troubleshooting
-- If macOS says ZackEyes cannot be opened, approve the app from System Settings and reopen it.
+- If macOS says ZackEyes cannot be opened, verify the official installer checksum and follow the first-launch instructions in its README.
 - If Claude or Codex sessions do not appear, confirm the CLI is installed and start a fresh agent session.
 - If permission requests do not show in the notch, confirm ZackEyes is running and the relevant hook file contains a zackeyes-managed command.
-- To reinstall hooks, remove stale hook entries containing zackeyes and reopen ZackEyes.
+- To reinstall hooks, use Settings → Integrations → Repair Hooks, then start a fresh agent session.
 
 ## Model compatibility (v0.9.7)
 - Included in v0.9.7: Codex GPT-6.1 Sol / GPT-6 Astra compatibility, PR #252: https://github.com/yangshiqi/ZackEyes/pull/252. Observed effort, request-aware service-tier/long-request estimates, concurrent tools, interruptions, subagents and compaction events. No native steering or second runtime; ZackEyes never reads or modifies Codex config.toml.
@@ -72,10 +73,10 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - Effort requires live CLI metadata; a Claude Code 2.1.295 probe supplied it on Stop after the reply. Startup model recovery does not invent effort. Daily totals use API list-price estimates, not subscription invoices; unknown pricing remains unpriced. Codex estimates may lack request metadata or earlier history; Claude session-card cost uses the CLI-reported total. Compatibility notes: https://zackeyes.vercel.app/docs#model-compatibility
 
 ## Development builds (merged, not yet released)
-The published download remains v${appVersion}. Master/source builds also include opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. They form the v0.10.0 release candidate and are not yet in the published download. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. Usage charts cover complete local days through yesterday, with full dates on hover. Background daily settlement runs after 03:00 with startup catch-up; older history requires explicit import with pause/resume. Settings reads saved daily archives without rescanning transcripts. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
+The published download remains v${appVersion}. Master/source builds also include opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. They form the v${candidateVersion} release candidate and are not yet in the published download. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. Usage charts cover complete local days through yesterday, with full dates on hover. Background daily settlement runs after 03:00 with startup catch-up; older history requires explicit import with pause/resume. Settings reads saved daily archives without rescanning transcripts. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
 
 ## Roadmap
-- v0.11.0 planned: finish setup, scheduling and delivery for the daily work journal. Its local pipeline exists in development, but the public generation menu is hidden and it is excluded from v0.10.0.
+- v${journalVersion} planned: finish setup, scheduling and delivery for the daily work journal. Its local pipeline exists in development, but the public generation menu is hidden and it is excluded from v${candidateVersion}.
 - Explore more agent support and local logs controls.
 - Completed development work and future plans: https://zackeyes.vercel.app/roadmap
 
@@ -96,7 +97,7 @@ Agent hook events enter a bridge process. The bridge sends normalized events ove
 - Hook writes are local and identifiable with the string zackeyes.
 - ZackEyes backs up ~/.claude/settings.json and ~/.codex/hooks.json before writing managed entries.
 - ZackEyes should never read or write ~/.codex/config.toml.
-- Controlled bridge failures fail quietly, write nothing to stdout, exits 0, and leave the agent terminal workflow in control.
+- Controlled bridge failures fail quietly, write nothing to stdout, exit 0, and leave the agent terminal workflow in control.
 
 ## Release and feedback
 - Latest macOS download: ${downloadUrl}
@@ -115,6 +116,7 @@ Agent hook events enter a bridge process. The bridge sends normalized events ove
 - Data posture: ZackEyes is local-first by default. It does not require an account to show local agent status.
 - Website privacy: the website does not upload source code, agent prompts, terminal history, or local project files.
 - Local files and settings: ZackEyes may use local configuration and agent hook files such as ~/.zackeyes, ~/.claude/settings.json, and ~/.codex/hooks.json.
+- Public price refresh: bundled prices work offline; the app fetches GitHub pricing.json at startup and every 24 hours without uploading conversation content.
 - Analytics: the current website does not add a third-party analytics script.
 - Public feedback: bugs, install issues, compatibility reports, and feature requests go through GitHub Issues.
 - Privacy page: https://zackeyes.vercel.app/privacy
