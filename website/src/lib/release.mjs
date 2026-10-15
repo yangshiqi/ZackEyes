@@ -12,11 +12,11 @@ export const releaseName = `ZackEyes ${appVersion}`;
 // `downloadSize` is in decimal MB (10^6 bytes), matching macOS Finder's
 // file-size display since 10.6; `downloadSizeLabel` and the bytes label
 // derive from it so the bump script only has to rewrite the primitives.
-export const downloadBytes = 6402345;
+export const downloadBytes = 6400056;
 export const downloadSize = '6.4 MB';
 export const downloadSizeLabel = `${downloadSize} DMG`;
 export const downloadBytesLabel = `${downloadBytes.toLocaleString('en-US')} bytes`;
-export const downloadSha256 = 'be4da1469b7cbcca28c0a4deda53a64719141cdf4ff8cbc66da361c38f384ead';
+export const downloadSha256 = '472270fcb28d30515d2b4791b9112a31d6b1056f7d999afdecedda0a19dcd12d';
 
 // URLs.
 //

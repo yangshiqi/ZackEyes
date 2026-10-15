@@ -14,20 +14,25 @@ const releases = [
         label: 'Added',
         items: [
           'A three-step SSH setup guide in Settings → Remote Hosts: install the remote helper, verify SSH from your Mac, then add the host.',
-          'Copy install command, version-matched helper downloads and a setup documentation link. Failed connections also link to troubleshooting.'
+          'Copy install command, version-matched helper downloads and a setup documentation link. Failed connections also link to troubleshooting.',
+          'Observed remote permission modes and Codex reasoning effort, including the same YOLO/AUTO badges as local cards when metadata is available.'
         ]
       },
       {
         label: 'Changed',
         items: [
           'Keep installation guidance visible before host configuration, with labeled host-name/address fields and explanations for SSH aliases, keys, ports and jump hosts.',
-          'Ship prebuilt Linux x86_64/arm64 and macOS Intel/Apple Silicon helpers, an installer and SHA256 checksums alongside this client release. No remote Swift, Git or sudo is required.'
+          'Ship prebuilt Linux x86_64/arm64 and macOS Intel/Apple Silicon helpers, an installer and SHA256 checksums alongside this client release. No remote Swift, Git or sudo is required.',
+          'Share the local avatar, header, agent/risk badges, model/effort and tool layout with read-only remote cards.',
+          'Strip Linux debug and link-time symbol tables while retaining the static runtime.',
+          'Refreshed v0.10.1 assets on October 15: existing users should replace the app, reinstall the matching helper and reconnect; the version remains 0.10.1.'
         ]
       },
       {
         label: 'Fixed',
         items: [
-          'Avoid guessing an installation command when a development build has a missing or malformed app version; offer the release downloads instead.'
+          'Avoid guessing an installation command when a development build has a missing or malformed app version; offer the release downloads instead.',
+          'Keep remote text readable on the dark panel in both system appearances, and preserve read-only host boundaries when sharing card content.'
         ]
       }
     ]
