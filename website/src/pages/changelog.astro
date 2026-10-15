@@ -7,6 +7,32 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.10.1',
+    date: 'Published October 15, 2026',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'A three-step SSH setup guide in Settings → Remote Hosts: install the remote helper, verify SSH from your Mac, then add the host.',
+          'Copy install command, version-matched helper downloads and a setup documentation link. Failed connections also link to troubleshooting.'
+        ]
+      },
+      {
+        label: 'Changed',
+        items: [
+          'Keep installation guidance visible before host configuration, with labeled host-name/address fields and explanations for SSH aliases, keys, ports and jump hosts.',
+          'Ship prebuilt Linux x86_64/arm64 and macOS Intel/Apple Silicon helpers, an installer and SHA256 checksums alongside this client release. No remote Swift, Git or sudo is required.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'Avoid guessing an installation command when a development build has a missing or malformed app version; offer the release downloads instead.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.10.0',
     date: 'Published October 15, 2026',
     highlights: [
