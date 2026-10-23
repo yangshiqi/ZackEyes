@@ -1,5 +1,5 @@
 ---
-import { featureVersion } from '../lib/product-plans.mjs';
+import { featureVersion, codexResetVersion, isCodexResetReleased } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
@@ -16,6 +16,7 @@ import {
 } from '../lib/release.mjs';
 
 const description = 'ZackEyes turns the MacBook notch into a live command center for Claude Code and Codex CLI sessions, approvals, tasks, rate limits, terminal tab jump, themes, and display modes.';
+const codexResetReleased = isCodexResetReleased(appVersion);
 const screenshots = [
   {
     src: '/screenshots/dual-agent-support.webp',
@@ -36,7 +37,7 @@ const screenshots = [
   {
     src: '/screenshots/codex-extra-reset.webp',
     alt: 'Sample Codex extra reset notices showing a scheduled time, local UTC offset, announcement time, and an announcement without an exact reset time.',
-    label: 'Codex extra resets · Preview',
+    label: codexResetReleased ? `Codex extra resets · v${codexResetVersion}` : 'Codex extra resets · Preview',
     title: 'Sample public announcements show the expected time when known and always show when the news was posted. They do not confirm your account balance.',
     width: 1040,
     height: 560,
@@ -86,7 +87,7 @@ const faqItems = [
   },
   {
     question: 'Does ZackEyes collect my code or agent prompts?',
-    answer: 'ZackEyes processes local status on your Mac and does not upload prompts or replies for hosted analysis. It fetches update metadata and pricing from GitHub. Optional SSH hosts send session metadata to your Mac; local Usage archives store counts and timing metadata, not conversation text.'
+    answer: `ZackEyes processes local status on your Mac and does not upload prompts or replies for hosted analysis. It fetches update metadata and pricing from GitHub.${codexResetReleased ? ' While a local Codex session is active, it can fetch public extra reset announcements without sending account or session data.' : ''} Optional SSH hosts send session metadata to your Mac; local Usage archives store counts and timing metadata, not conversation text.`
   },
   {
     question: 'Where should I report bugs or feature requests?',
@@ -231,7 +232,7 @@ const faqStructuredData = {
           <div class="section-eyebrow">Product screenshots</div>
           <h2 class="section-title" id="screenshots-title">Real agent state, not a dashboard fantasy.</h2>
           <p class="section-copy">
-            Actual ZackEyes interfaces: local Usage archives, SSH host setup, supported question choices and session states. Gallery captures use isolated sample data or the built-in Demo. The current download is v{appVersion}. The Codex reset image previews <a href="/docs#codex-extra-reset">a feature in review</a> and is not in that download. Select any image to view it at full size.
+            Actual ZackEyes interfaces: local Usage archives, SSH host setup, supported question choices and session states. Gallery captures use isolated sample data or the built-in Demo. The current download is v{appVersion}. {codexResetReleased ? `Codex extra reset notices are included since v${codexResetVersion}.` : `The Codex reset image is a preview of v${codexResetVersion}; this feature is not in the current download.`} Read <a href="/docs#codex-extra-reset">how public reset notices work</a>, or select an image to view it at full size.
           </p>
 
           <div class="screenshot-showcase" aria-label="ZackEyes screenshots">
@@ -324,7 +325,7 @@ const faqStructuredData = {
             </article>
             <article class="feature-card">
               <span class="feature-index">12</span>
-              <h3>Codex extra reset notices · preview</h3>
+              <h3>Codex extra reset notices{codexResetReleased ? '' : ' · preview'}</h3>
               <p>See a public extra reset announcement while Codex is active, including its post time and an expected time when one was given. Each exact time uses your Mac's time zone; your account limits remain separate.</p>
             </article>
           </div>

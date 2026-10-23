@@ -1,5 +1,5 @@
 ---
-import { featureVersion, journalVersion } from '../lib/product-plans.mjs';
+import { featureVersion, journalVersion, codexResetVersion, isCodexResetReleased } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
@@ -7,6 +7,7 @@ import InstallSecurityNote from '../components/InstallSecurityNote.astro';
 import { appVersion, downloadUrl, issuesUrl, sourceUrl, remoteInstallCommand } from '../lib/release.mjs';
 
 const description = 'Install and remove ZackEyes on macOS 14+, understand local pricing, and configure SSH observation, question answers and daily Usage archives.';
+const codexResetReleased = isCodexResetReleased(appVersion);
 const docsStructuredData = [
   {
     '@type': 'TechArticle',
@@ -124,12 +125,12 @@ const docsStructuredData = [
       <section class="policy-band" aria-labelledby="codex-extra-reset">
         <div class="policy-shell">
           <h2 class="section-title" id="codex-extra-reset">Public Codex extra resets.</h2>
-          <p class="section-copy">Feature preview for <a href="https://github.com/yangshiqi/ZackEyes/pull/288">PR #288</a>; this is not in the current v{appVersion} download. While a local Codex session is active, ZackEyes can check a public <a href="https://codexreset.ai/developers/">CodexReset announcement feed</a> for extra resets. The public announcement is separate from your account's 5-hour and 7-day limits; check Codex <code>/usage</code> to confirm your own balance.</p>
+          <p class="section-copy">{codexResetReleased ? `Available since v${codexResetVersion}.` : `Preview for v${codexResetVersion}; not in the current v${appVersion} download.`} See <a href="https://github.com/yangshiqi/ZackEyes/pull/288">PR #288</a>. While a local Codex session is active, ZackEyes can check a public <a href="https://codexreset.ai/developers/">CodexReset announcement feed</a> for extra resets. The public announcement is separate from your account's 5-hour and 7-day limits; check Codex <code>/usage</code> to confirm your own balance.</p>
           <p class="section-copy">The notice shows when the announcement was posted. If an exact reset time was published, it also shows that time and a countdown. Both times use this Mac's time zone and include the UTC offset, such as UTC+8. When the source gives only a day or no reset time, ZackEyes does not invent a clock time. The icon at the right of the title opens the original post.</p>
           <p class="section-copy">Settings → Notifications has separate switches for Codex extra reset announcements and system notifications. Both start enabled; fetching runs only while a local Codex session is active. The screenshot uses simulated announcements and does not show an account-specific reset.</p>
           <figure class="feature-screenshot">
             <a href="/screenshots/codex-extra-reset.webp" aria-label="View sample Codex extra reset notices at full size"><img src="/screenshots/codex-extra-reset.webp" alt="Two sample extra Codex reset notices: one with an expected local time and countdown, and one with no exact reset time; both show the announcement time and UTC offset." width="1040" height="560" loading="lazy" decoding="async" /></a>
-            <figcaption>Feature preview · simulated announcements in Asia/Shanghai (UTC+8); no account quota is shown.</figcaption>
+            <figcaption>{codexResetReleased ? 'Sample interface' : 'Feature preview'} · simulated announcements in Asia/Shanghai (UTC+8); no account quota is shown.</figcaption>
           </figure>
         </div>
       </section>
@@ -176,7 +177,6 @@ const docsStructuredData = [
           <p class="section-copy"><code>{remoteInstallCommand}</code></p>
           <h3 id="ssh-troubleshooting">Connect and troubleshoot SSH hosts.</h3>
           <p class="section-copy">In Settings → Remote Hosts, follow Install the remote helper → Verify SSH from this Mac → Add your SSH host. Copy install command copies the version-matched command; Download helper opens the matching release, and Setup guide opens these instructions. Add a name and existing SSH alias or user@hostname. Configure custom ports, identity files or jump hosts in your own SSH configuration. ZackEyes does not edit it. Before enabling the host, verify <code>ssh your-host</code> in a terminal, then verify <code>ssh your-host '~/.local/bin/zackeyes --stream'</code>. Run the installer above on that host first. Remote approvals and questions remain in the remote terminal.</p>
-          <p class="section-copy">The v{appVersion} packages were refreshed on October 15, 2026. If you already installed v{appVersion}, download and replace the Mac app again, rerun the matching helper installer and disable/re-enable the host. Version-based update checks do not announce this same-version refresh.</p>
           <p class="section-copy">Authentication or host-key errors must be resolved in the terminal; ZackEyes does not show password prompts or accept unknown host keys. A missing helper requires installing the stream binary; an unsupported stream requires updating the helper. Connection status appears beside each host. Remote cards use the same avatar, title, agent/risk badges, model/effort and tool presentation as local cards, with a host and observed-state label. YOLO/AUTO badges require observed policy metadata from the refreshed helper; older helpers still connect but cannot provide these fields. These are metadata observations, not proof of a running process, with no local approval or terminal-jump actions.</p>
           <figure class="feature-screenshot">
             <a href="/screenshots/remote-hosts.webp" aria-label="View SSH host setup screenshot at full size"><img src="/screenshots/remote-hosts.webp" alt="Remote Hosts settings showing two disabled example SSH aliases and the remote helper setup command." width="1800" height="1960" loading="lazy" decoding="async" /></a>

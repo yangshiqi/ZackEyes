@@ -1,4 +1,4 @@
-import { featureVersion, journalVersion } from '../lib/product-plans.mjs';
+import { featureVersion, journalVersion, codexResetVersion, isCodexResetReleased } from '../lib/product-plans.mjs';
 import {
   appVersion,
   releaseName,
@@ -11,6 +11,7 @@ import {
 } from '../lib/release.mjs';
 
 export function GET() {
+  const codexResetReleased = isCodexResetReleased(appVersion);
   return new Response(`# ZackEyes full context
 
 ZackEyes is a macOS utility that turns the MacBook notch into a compact command center for AI coding agents.
@@ -22,6 +23,7 @@ ZackEyes is not another chat surface. It is an awareness layer for developers wh
 - Session state at a glance: active Claude Code and Codex CLI sessions, current tasks, completion state, and waiting state.
 - Permission prompts without context switching: approve or deny sensitive tool calls from a compact panel.
 - Rate-limit awareness: expose 5-hour and 7-day usage pressure before a turn fails.
+- ${codexResetReleased ? `Codex extra resets (since v${codexResetVersion}): show public announcements while a local Codex session is active, with local expected and announcement times when known, an original-post link, and optional system notifications. Public notices do not confirm an individual account's balance.` : `Codex extra reset notices are previewed at https://zackeyes.vercel.app/docs#codex-extra-reset but are absent from the current download.`}
 - Multiple themes: adapt the notch panel to different desktop styles while keeping agent state readable. Theme choices include Rock Legends, F1 2026, AI Moguls, and Crayon Shin-chan, each with custom notification sounds.
 - Display modes: support the physical MacBook notch, simulated Dynamic Island-style panels on Macs without a notch, menu bar workflows, and external display setups.
 - terminal tab jump: click a session card to activate matching sessions in iTerm2, Terminal.app, Ghostty, Warp, WezTerm, Kitty, Alacritty, VS Code, and Cursor when Accessibility permission is granted.
@@ -73,7 +75,7 @@ First use Settings → Integrations → Uninstall Integrations… while the app 
 - Effort requires live CLI metadata; a Claude Code 2.1.295 probe supplied it on Stop after the reply. Startup model recovery does not invent effort. Daily totals use API list-price estimates, not subscription invoices; unknown pricing remains unpriced. Codex estimates may lack request metadata or earlier history; Claude session-card cost uses the CLI-reported total. Compatibility notes: https://zackeyes.vercel.app/docs#model-compatibility
 
 ## Features added in v${featureVersion}
-The published v${appVersion} download includes opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. These features shipped in v${featureVersion}. Prebuilt SSH helpers for Linux/macOS x86_64/arm64 ship with the release. The version-matched installer selects the platform and verifies SHA256; no remote Swift toolchain is required. Remote cards share the local avatar/header/model/tool presentation and show observed policy badges (including YOLO/AUTO) and effort when supplied by the refreshed helper. Linux helpers remain self-contained with debug/symbol tables stripped. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. The v${appVersion} assets were refreshed on October 15, 2026: users already on this version should replace the app, rerun the helper installer and toggle the host off/on; version checks do not announce a same-version refresh. Usage charts cover complete local days through yesterday, with full dates on hover. Background daily settlement runs after 03:00 with startup catch-up; older history requires explicit import with pause/resume. Settings reads saved daily archives without rescanning transcripts. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
+The published v${appVersion} download includes opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. These features shipped in v${featureVersion}. Prebuilt SSH helpers for Linux/macOS x86_64/arm64 ship with the release. The version-matched installer selects the platform and verifies SHA256; no remote Swift toolchain is required. Remote cards share the local avatar/header/model/tool presentation and show observed policy badges (including YOLO/AUTO) and effort when supplied by the refreshed helper. Linux helpers remain self-contained with debug/symbol tables stripped. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. Usage charts cover complete local days through yesterday, with full dates on hover. Background daily settlement runs after 03:00 with startup catch-up; older history requires explicit import with pause/resume. Settings reads saved daily archives without rescanning transcripts. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
 
 ## Roadmap
 - v${journalVersion} planned: finish setup, scheduling and delivery for the daily work journal. Its local pipeline exists in development, but the public generation menu is hidden and it is excluded from v${featureVersion}.
@@ -117,6 +119,7 @@ Agent hook events enter a bridge process. The bridge sends normalized events ove
 - Website privacy: the website does not upload source code, agent prompts, terminal history, or local project files.
 - Local files and settings: ZackEyes may use local configuration and agent hook files such as ~/.zackeyes, ~/.claude/settings.json, and ~/.codex/hooks.json.
 - Public price refresh: bundled prices work offline; the app fetches GitHub pricing.json at startup and every 24 hours without uploading conversation content.
+${codexResetReleased ? '- Codex reset feed: while local Codex is active, the public CodexReset endpoint is polled at most every five minutes; no account, prompt, or session data is sent.' : ''}
 - Analytics: the current website does not add a third-party analytics script.
 - Public feedback: bugs, install issues, compatibility reports, and feature requests go through GitHub Issues.
 - Privacy page: https://zackeyes.vercel.app/privacy
