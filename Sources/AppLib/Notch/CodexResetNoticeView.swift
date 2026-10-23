@@ -7,70 +7,58 @@ struct CodexResetNoticeView: View {
     let announcement: CodexResetAnnouncement
 
     private var title: String {
-        let what = announcement.kind == .banked ? "Banked reset" : "Extra Codex reset"
-        switch announcement.phase {
-        case .scheduled: return "\(what) announced"
-        case .announced: return "\(what) announcement"
-        case .reportedComplete: return "\(what) reported delivered"
-        }
+        announcement.kind == .banked ? "Banked reset" : "Extra Codex reset"
     }
 
     private func timing(at now: Date) -> String {
         if let delivered = announcement.reportedDeliveredAt {
-            return "Reported delivered \(delivered.formatted(date: .abbreviated, time: .shortened)) local"
+            return "Reported delivered \(delivered.formatted(date: .abbreviated, time: .shortened))"
         }
         if let expectedAt = announcement.expectedAt {
             let time = expectedAt.formatted(date: .abbreviated, time: .shortened)
             if let countdown = announcement.countdown(at: now) {
-                return "Expected \(time) local · \(countdown)"
+                return "Expected \(time) · \(countdown)"
             }
-            return "Expected \(time) local · time passed, check /usage"
+            return "Expected \(time) · time passed"
         }
         if let day = announcement.expectedDay {
-            if let window = announcement.expectedWindowText {
-                return "Expected \(day) · \(window) (source timing)"
-            }
-            return "Expected day: \(day) (source calendar date)"
+            return "Expected \(day) · time not specified"
         }
-        return "Announced \(announcement.announcedAt.formatted(date: .abbreviated, time: .shortened))"
+        return "Reset time not announced · posted \(announcement.announcedAt.formatted(date: .abbreviated, time: .shortened))"
+    }
+
+    private var details: String {
+        let posted = announcement.announcedAt.formatted(date: .abbreviated, time: .shortened)
+        let window = announcement.expectedWindowText.map { " Source timing: \($0)." } ?? ""
+        return "Public announcement via CodexReset. \(announcement.scope). Posted \(posted) local.\(window) Check Codex /usage for your account."
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 5) {
+        VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Image(systemName: "clock.arrow.circlepath")
                 Text(title).fontWeight(.semibold)
                 Spacer(minLength: 4)
+                Text("CodexReset")
+                    .foregroundStyle(.white.opacity(0.55))
                 Link(destination: announcement.sourceURL) {
                     Image(systemName: "arrow.up.right.square")
                 }
-                .help("Open original announcement")
+                .help("Open original announcement via CodexReset")
             }
             .font(.system(size: 11))
             .foregroundStyle(.white)
 
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 Text(timing(at: context.date))
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.8))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .lineLimit(1)
             }
-            if announcement.phase != .announced {
-                Text("Announced \(announcement.announcedAt.formatted(date: .abbreviated, time: .shortened)) local")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.white.opacity(0.65))
-            }
-            HStack(spacing: 3) {
-                Text("\(announcement.scope) · Public announcement via")
-                Link("CodexReset", destination: URL(string: "https://codexreset.ai/")!)
-            }
-            .font(.system(size: 9))
-            .foregroundStyle(.white.opacity(0.6))
-            Text("Check Codex /usage for your account. Updated \(announcement.providerUpdatedAt.formatted(date: .omitted, time: .shortened)).")
-                .font(.system(size: 9))
-                .foregroundStyle(.white.opacity(0.55))
         }
-        .padding(10)
+        .padding(9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10))
+        .help(details)
     }
 }
