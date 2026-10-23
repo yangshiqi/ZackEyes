@@ -27,9 +27,10 @@ public final class CodexResetTracker: ObservableObject {
     private var lastAttempt: Date?
     private var inFlight = false
     private var activeCodex = false
-    private var hasFetched = false
     private var generation = 0
-    private static let notifiedKey = "codexResetNotifiedAnnouncementsV1"
+    // V1 also stored notices suppressed on first fetch, so those keys were
+    // never evidence that a notification actually appeared.
+    private static let notifiedKey = "codexResetNotifiedAnnouncementsV2"
 
     public init(
         config: ConfigStore = ConfigStore(),
@@ -87,17 +88,9 @@ public final class CodexResetTracker: ObservableObject {
                   config.loadCodexResetAnnouncements() else { return }
             let notice = CodexResetFeed.latest(from: data, now: now())
             setAnnouncement(notice)
-            let isFirstFetch = !hasFetched
-            hasFetched = true
             guard let notice else { return }
             let key = notice.notificationKey(at: now())
             let previous = defaults.stringArray(forKey: Self.notifiedKey) ?? []
-            if isFirstFetch && notice.phase != .scheduled {
-                if !previous.contains(key) {
-                    defaults.set(Array((previous + [key]).suffix(100)), forKey: Self.notifiedKey)
-                }
-                return
-            }
             if CodexResetAlertPolicy.shouldNotify(
                 notice, activeCodex: self.activeCodex, enabled: true,
                 notificationsEnabled: config.loadCodexResetNotifications(),

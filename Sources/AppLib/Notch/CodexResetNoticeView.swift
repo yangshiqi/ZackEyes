@@ -55,6 +55,9 @@ struct CodexResetNoticeView: View {
                     .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1)
             }
+            Text("Announced \(announcement.announcedAt.formatted(date: .abbreviated, time: .shortened)) local")
+                .font(.system(size: 10))
+                .foregroundStyle(.white.opacity(0.65))
         }
         .padding(9)
         .frame(maxWidth: .infinity, alignment: .leading)

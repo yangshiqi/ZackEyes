@@ -69,7 +69,7 @@ struct CodexResetTrackerTests {
         #expect(notifications == 1)
     }
 
-    @Test func firstPollBaselinesExistingEventWithoutNotifying() async throws {
+    @Test func firstPollNotifiesARecentAnnouncement() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
         let config = ConfigStore(directory: directory.path)
@@ -77,6 +77,27 @@ struct CodexResetTrackerTests {
         let now = try #require(ISO8601DateFormatter().date(from: "2026-10-23T06:00:00Z"))
         let data = Data("""
         {"schema_version":1,"generated_at":"2026-10-23T05:55:00Z","scheduled":null,"events":[{"kind":"regular","scope":"all","url":"https://x.com/thsottiaux/status/456","announced_at":"2026-10-23T04:00:00Z","delivered_at":null,"seeded":false}]}
+        """.utf8)
+        defaults.set(["https://x.com/thsottiaux/status/456:announced"],
+            forKey: "codexResetNotifiedAnnouncementsV1")
+        var notifications = 0
+        let tracker = CodexResetTracker(config: config, defaults: defaults, now: { now }, fetch: { data })
+        tracker.onNotify = { _ in notifications += 1 }
+        await tracker.refresh(activeCodex: true)
+        #expect(tracker.announcement?.phase == .announced)
+        #expect(notifications == 1)
+        await tracker.refresh(activeCodex: true)
+        #expect(notifications == 1)
+    }
+
+    @Test func firstPollDoesNotNotifyAnOldAnnouncement() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let config = ConfigStore(directory: directory.path)
+        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-10-23T12:00:00Z"))
+        let data = Data("""
+        {"schema_version":1,"generated_at":"2026-10-23T11:55:00Z","scheduled":null,"events":[{"kind":"regular","scope":"all","url":"https://x.com/thsottiaux/status/456","announced_at":"2026-10-23T04:00:00Z","delivered_at":null,"seeded":false}]}
         """.utf8)
         var notifications = 0
         let tracker = CodexResetTracker(config: config, defaults: defaults, now: { now }, fetch: { data })

@@ -290,7 +290,7 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
                 content.body = "A public reset was announced. Check the original post and your /usage."
             }
         case .announced:
-            content.body = "A public reset was announced. Check /usage for your account."
+            content.body = "A public reset was announced; no exact reset time was given. Check /usage for your account."
         case .reportedComplete:
             if let delivered = announcement.reportedDeliveredAt {
                 content.body = "Delivery reported at \(delivered.formatted(date: .abbreviated, time: .shortened)) local. Check your /usage."
