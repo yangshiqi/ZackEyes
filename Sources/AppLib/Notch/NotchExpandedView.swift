@@ -61,6 +61,9 @@ struct NotchExpandedView: View {
                     }
                 }
             }
+            if !viewModel.isDemoActive, let announcement = viewModel.codexResetAnnouncement {
+                CodexResetNoticeView(announcement: announcement)
+            }
             if viewModel.presentationStore.sessions.isEmpty {
                 emptyState
             } else {

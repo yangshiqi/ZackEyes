@@ -40,6 +40,8 @@ struct SettingsViewModelTests {
         model.setLeftProgressDirection(.rightToLeft)
         model.setTimeOverlayOpacity(0.44)
         model.setNotifyWaitingForInput(false)
+        model.setCodexResetAnnouncements(false)
+        model.setCodexResetNotifications(true)
 
         #expect(store.loadNotchVisibility() == .whenActive)
         #expect(store.loadCompactAgent() == .codex)
@@ -54,6 +56,8 @@ struct SettingsViewModelTests {
         #expect(store.loadTimeOverlayOpacity() == 0.4)
         #expect(usage.timeOverlayOpacity == 0.4)
         #expect(store.loadNotifyWaitingForInput() == false)
+        #expect(store.loadCodexResetAnnouncements() == false)
+        #expect(store.loadCodexResetNotifications() == true)
     }
 
     @Test

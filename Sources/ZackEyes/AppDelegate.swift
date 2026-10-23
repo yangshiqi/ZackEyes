@@ -12,6 +12,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarFallback: MenuBarFallback?
     private var simulatedNotch: SimulatedNotchController?
     private var usageTracker: UsageTracker!
+    private var codexResetTracker: CodexResetTracker?
+    private var lastCodexResetActivity = false
     private var usageLedger: UsageLedgerService?
     private var remoteHosts: RemoteHostManager?
     private var remoteAttentionIDs: Set<String> = []
@@ -65,6 +67,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                   let dmgURL = self.updateChecker?.dmgURL,
                   let dl = self.updateDownloader else { return }
             Task { @MainActor in await dl.download(from: dmgURL) }
+        }
+        NotificationManager.shared.onCodexResetTap = { url in
+            NSWorkspace.shared.open(url)
         }
 
         // Accessibility is NOT prompted at startup. The focusByAccessibility
@@ -240,6 +245,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         viewModel.onDemoChanged = { [weak self] active in
             guard let self else { return }
+            Task { @MainActor in
+                await self.codexResetTracker?.refresh(activeCodex: self.hasActiveLocalCodex)
+            }
             if active {
                 self.forceUiExpand()
             } else {
@@ -339,6 +347,39 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self.simulatedNotch?.applyVisibility(.whenActive)
             }
             .store(in: &cancellables)
+
+        // Extra reset announcements are public news, independent of the
+        // account's 5h/7d quota. Activity transitions trigger a prompt fetch;
+        // the tracker then polls at most every five minutes while Codex runs.
+        let resetTracker = CodexResetTracker()
+        codexResetTracker = resetTracker
+        resetTracker.onChange = { [weak self] announcement in
+            self?.viewModel.codexResetAnnouncement = announcement
+        }
+        resetTracker.onNotify = { announcement in
+            NotificationManager.shared.notifyCodexReset(announcement)
+        }
+        resetTracker.start(activeCodex: { [weak self] in
+            self?.hasActiveLocalCodex ?? false
+        })
+        sessionStore.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                let active = self.hasActiveLocalCodex
+                guard active != self.lastCodexResetActivity else { return }
+                self.lastCodexResetActivity = active
+                Task { @MainActor in await self.codexResetTracker?.refresh(activeCodex: active) }
+            }
+            .store(in: &cancellables)
+        NotificationCenter.default.addObserver(
+            forName: .codexResetSettingsChanged, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                await self.codexResetTracker?.refresh(activeCodex: self.hasActiveLocalCodex)
+            }
+        }
 
         remoteManager.onChange = { [weak self, weak remoteManager] in
             guard let self, let remoteManager else { return }
@@ -747,6 +788,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         viewModel?.stopDemo()
+        codexResetTracker?.stop()
         livenessSweepTimer?.invalidate()
         updateChecker?.stop()
         pricingStore?.stop()
@@ -757,6 +799,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowController?.teardown()
         menuBarFallback?.teardown()
         simulatedNotch?.teardown()
+    }
+
+    private var hasActiveLocalCodex: Bool {
+        guard !viewModel.isDemoActive else { return false }
+        return CodexResetActivity.hasActiveLocalCodex(Array(sessionStore.sessions.values))
     }
 
     // MARK: - Event Routing

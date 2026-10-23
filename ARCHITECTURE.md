@@ -150,6 +150,12 @@ Claude Code 周期性触发 statusLine command（每隔几秒）
 
 ⚠️ 与其他 statusLine 工具冲突时，HookInstaller 会**保留对方的安装**，不强占。没有第三方 statusLine 时，可选的 `~/.zackeyes/bin/statusline-user` 可作为用户自定义显示脚本；ZackEyes mux 会把同一份 stdin 同时喂给后台 bridge 和该脚本，并只透出用户脚本的 stdout。
 
+### Codex 额外重置公告（#287）
+
+`CodexResetTracker` 独立于 `UsageTracker`：仅当本地 Codex 会话为 working/waiting 且设置允许时，最多每 5 分钟通过 `URLSession` 请求公开的 [CodexReset v1 JSON](https://codexreset.ai/developers/)；请求不携带会话、账户或认证信息。`CodexResetFeed` 只接受 schema v1、近期数据和链接到原始公开帖子的信息，分别处理 `scheduled` 与 `events`。有精确 `scheduled_for` 才展示本地时刻与倒计时；只有日期时不推断钟点。公告、公开报告的完成、重置卡与账户本身的 5h/7d `resets_at` 严格分离，不能据此宣称个人额度到账。
+
+最新公告由 `NotchViewModel` 发布，在共享的 `NotchExpandedView` 中显示，因此真刘海、模拟岛和菜单栏 fallback 使用同一卡片；Demo 不显示。系统通知另有独立开关（默认开），按原始 URL + 阶段去重并持久化最近 100 条；点击打开原帖。公告源不可用时保留短期新鲜的公告，过期后清除；关闭公告开关立刻清除且停止联网。
+
 ### Simulated Notch 状态机
 
 ```

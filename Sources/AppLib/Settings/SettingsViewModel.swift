@@ -16,6 +16,8 @@ final class SettingsViewModel: ObservableObject {
     @Published private(set) var theme: BuddyTheme
     @Published private(set) var notificationSound: String
     @Published private(set) var notifyWaitingForInput: Bool
+    @Published private(set) var codexResetAnnouncements: Bool
+    @Published private(set) var codexResetNotifications: Bool
     @Published private(set) var answerQuestionsFromNotch: Bool
     @Published private(set) var notchOffsetX: CGFloat
     @Published private(set) var hookHealth: HookHealthReport
@@ -58,6 +60,8 @@ final class SettingsViewModel: ObservableObject {
             ?? loadedTheme.defaultSoundFile
             ?? "none"
         notifyWaitingForInput = configStore.loadNotifyWaitingForInput()
+        codexResetAnnouncements = configStore.loadCodexResetAnnouncements()
+        codexResetNotifications = configStore.loadCodexResetNotifications()
         answerQuestionsFromNotch = configStore.loadAnswerQuestionsFromNotch()
         notchOffsetX = configStore.loadNotchOffsetX()
         hookHealth = hookHealthProvider()
@@ -143,6 +147,20 @@ final class SettingsViewModel: ObservableObject {
         notifyWaitingForInput = enabled
     }
 
+    func setCodexResetAnnouncements(_ enabled: Bool) {
+        guard enabled != codexResetAnnouncements else { return }
+        configStore.saveCodexResetAnnouncements(enabled)
+        codexResetAnnouncements = enabled
+        notificationCenter.post(name: .codexResetSettingsChanged, object: nil)
+    }
+
+    func setCodexResetNotifications(_ enabled: Bool) {
+        guard enabled != codexResetNotifications else { return }
+        configStore.saveCodexResetNotifications(enabled)
+        codexResetNotifications = enabled
+        notificationCenter.post(name: .codexResetSettingsChanged, object: nil)
+    }
+
     func setAnswerQuestionsFromNotch(_ enabled: Bool) {
         guard enabled != answerQuestionsFromNotch else { return }
         configStore.saveAnswerQuestionsFromNotch(enabled)
@@ -206,6 +224,7 @@ final class SettingsViewModel: ObservableObject {
 }
 
 public extension Notification.Name {
+    static let codexResetSettingsChanged = Notification.Name("codexResetSettingsChanged")
     static let settingsWindowRequested = Notification.Name("settingsWindowRequested")
     static let settingsAppearanceChanged = Notification.Name("settingsAppearanceChanged")
 }

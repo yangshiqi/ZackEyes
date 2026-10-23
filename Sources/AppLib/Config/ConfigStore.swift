@@ -293,6 +293,32 @@ public final class ConfigStore: Sendable {
         persist(data)
     }
 
+    /// Public Codex reset announcements are fetched only while a local Codex
+    /// session is active. The request carries no account or session data.
+    public func loadCodexResetAnnouncements() -> Bool {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+            return true
+        }
+        return wrapper.codexResetAnnouncements ?? true
+    }
+
+    public func saveCodexResetAnnouncements(_ enabled: Bool) {
+        updateConfig { $0.codexResetAnnouncements = enabled }
+    }
+
+    public func loadCodexResetNotifications() -> Bool {
+        guard let data = FileManager.default.contents(atPath: configPath),
+              let wrapper = try? JSONDecoder().decode(ConfigWrapper.self, from: data) else {
+            return true
+        }
+        return wrapper.codexResetNotifications ?? true
+    }
+
+    public func saveCodexResetNotifications(_ enabled: Bool) {
+        updateConfig { $0.codexResetNotifications = enabled }
+    }
+
     /// Load whether AskUserQuestion choices may be answered from the notch.
     /// Defaults to `false` — the terminal stays the default surface (#260).
     public func loadAnswerQuestionsFromNotch() -> Bool {
@@ -411,5 +437,7 @@ private struct ConfigWrapper: Codable {
     var leftProgressDirection: String?  // nil = leftToRight (Left-mode fill anchor)
     var timeOverlayOpacity: Double?     // nil = 0.4 (elapsed overlay opacity)
     var notifyWaitingForInput: Bool?    // nil = true (default — chime/notify when an agent blocks waiting on the user, #169)
+    var codexResetAnnouncements: Bool?   // nil = true (fetch public notices while local Codex is active)
+    var codexResetNotifications: Bool?   // nil = true (system banners while Codex is active)
     var answerQuestionsFromNotch: Bool? // nil = false (default — answer AskUserQuestion in the terminal, #260)
 }
