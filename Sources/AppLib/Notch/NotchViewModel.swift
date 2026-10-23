@@ -12,6 +12,7 @@ public final class NotchViewModel: ObservableObject {
     public var isDemoActive: Bool { demoController.isActive }
     public var canStartDemo: Bool { !sessionStore.sessions.values.contains { $0.needsAttention } }
     @Published public var remoteHosts: [RemoteHostStatus] = []
+    @Published public var codexResetAnnouncement: CodexResetAnnouncement?
     public var hasActivityForVisibility: Bool {
         !presentationStore.sessions.isEmpty || remoteHosts.contains { $0.keepsVisible }
     }

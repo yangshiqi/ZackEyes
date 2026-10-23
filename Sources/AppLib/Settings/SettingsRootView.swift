@@ -354,6 +354,22 @@ struct SettingsRootView: View {
                 .labelsHidden()
             }
             .help("When on, AskUserQuestion choices can be answered directly in the notch. Unanswered questions fall back to the terminal after 2 minutes.")
+            settingRow("Codex extra reset announcements") {
+                Toggle("", isOn: binding(
+                    viewModel.codexResetAnnouncements,
+                    viewModel.setCodexResetAnnouncements
+                ))
+                .labelsHidden()
+            }
+            .help("Checks a public CodexReset announcement feed every 5 minutes while a local Codex session is active. No account or session data is sent. Announcements do not confirm your account's balance.")
+            settingRow("Notify for Codex reset announcements") {
+                Toggle("", isOn: binding(
+                    viewModel.codexResetNotifications,
+                    viewModel.setCodexResetNotifications
+                ))
+                .labelsHidden()
+                .disabled(!viewModel.codexResetAnnouncements)
+            }
         }
     }
 

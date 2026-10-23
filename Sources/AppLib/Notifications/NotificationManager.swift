@@ -20,6 +20,7 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
 
     /// Called when the user taps an update notification. Payload is the release URL.
     public var onUpdateTap: ((URL) -> Void)?
+    public var onCodexResetTap: ((URL) -> Void)?
 
     /// Cache of loaded NSSound objects keyed by filename. Populated
     /// lazily when a theme's soundFile is first requested.
@@ -272,6 +273,40 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         UserDefaults.standard.set(version, forKey: "lastNotifiedVersion")
     }
 
+    /// Public reset announcement; the account's actual balance is still
+    /// verified in Codex /usage, never inferred from this notification.
+    public func notifyCodexReset(_ announcement: CodexResetAnnouncement) {
+        let content = UNMutableNotificationContent()
+        content.title = announcement.kind == .banked
+            ? "[Codex] Banked reset announcement"
+            : "[Codex] Extra reset announcement"
+        switch announcement.phase {
+        case .scheduled:
+            if let expected = announcement.expectedAt {
+                content.body = "Expected \(expected.formatted(date: .abbreviated, time: .shortened)) local time. Check /usage for your account."
+            } else if let day = announcement.expectedDay {
+                content.body = "Expected day: \(day). Check the original post and your /usage."
+            } else {
+                content.body = "A public reset was announced. Check the original post and your /usage."
+            }
+        case .announced:
+            content.body = "A public reset was announced. Check /usage for your account."
+        case .reportedComplete:
+            if let delivered = announcement.reportedDeliveredAt {
+                content.body = "Delivery reported at \(delivered.formatted(date: .abbreviated, time: .shortened)) local. Check your /usage."
+            } else {
+                content.body = "Delivery was reported publicly. Check /usage for your account."
+            }
+        }
+        content.sound = .default
+        content.userInfo = ["codexResetURL": announcement.sourceURL.absoluteString]
+        let request = UNNotificationRequest(
+            identifier: "codex-reset-\(announcement.notificationKey(at: Date()))",
+            content: content, trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
     // MARK: - Sanitize
 
     /// Clean up a prompt/detail string for notification display.
@@ -325,9 +360,12 @@ public final class NotificationManager: NSObject, UNUserNotificationCenterDelega
         let userInfo = response.notification.request.content.userInfo
         let sessionId = userInfo["sessionId"] as? String
         let releaseURLString = userInfo["releaseURL"] as? String
+        let codexResetURLString = userInfo["codexResetURL"] as? String
         completionHandler()
         Task { @MainActor [weak self] in
-            if let releaseURLString, let url = URL(string: releaseURLString) {
+            if let codexResetURLString, let url = URL(string: codexResetURLString) {
+                self?.onCodexResetTap?(url)
+            } else if let releaseURLString, let url = URL(string: releaseURLString) {
                 self?.onUpdateTap?(url)
             } else if let sessionId {
                 self?.onSessionTap?(sessionId)
