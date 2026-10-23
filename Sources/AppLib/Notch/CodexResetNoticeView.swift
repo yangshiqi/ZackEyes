@@ -1,5 +1,23 @@
 import SwiftUI
 
+enum CodexResetTimeText {
+    static func local(
+        _ date: Date,
+        timeZone: TimeZone = .autoupdatingCurrent,
+        locale: Locale = .autoupdatingCurrent
+    ) -> String {
+        let clock = date.formatted(
+            Date.FormatStyle(date: .abbreviated, time: .shortened, timeZone: timeZone)
+                .locale(locale)
+        )
+        let offset = timeZone.secondsFromGMT(for: date)
+        let hours = abs(offset) / 3600
+        let minutes = (abs(offset) % 3600) / 60
+        let minuteText = minutes == 0 ? "" : ":\(minutes < 10 ? "0" : "")\(minutes)"
+        return "\(clock) UTC\(offset >= 0 ? "+" : "-")\(hours)\(minuteText)"
+    }
+}
+
 /// Shared by the physical notch, simulated notch and menu-bar fallback.
 /// Kept outside the quota bars so a public announcement cannot look like an
 /// account-specific 5h/7d refresh reading.
@@ -12,10 +30,10 @@ struct CodexResetNoticeView: View {
 
     private func timing(at now: Date) -> String {
         if let delivered = announcement.reportedDeliveredAt {
-            return "Reported delivered \(delivered.formatted(date: .abbreviated, time: .shortened))"
+            return "Reported delivered \(CodexResetTimeText.local(delivered))"
         }
         if let expectedAt = announcement.expectedAt {
-            let time = expectedAt.formatted(date: .abbreviated, time: .shortened)
+            let time = CodexResetTimeText.local(expectedAt)
             if let countdown = announcement.countdown(at: now) {
                 return "Expected \(time) · \(countdown)"
             }
@@ -28,9 +46,9 @@ struct CodexResetNoticeView: View {
     }
 
     private var details: String {
-        let posted = announcement.announcedAt.formatted(date: .abbreviated, time: .shortened)
+        let posted = CodexResetTimeText.local(announcement.announcedAt)
         let window = announcement.expectedWindowText.map { " Source timing: \($0)." } ?? ""
-        return "Public announcement via CodexReset. \(announcement.scope). Posted \(posted) local.\(window) Check Codex /usage for your account."
+        return "Public announcement via CodexReset. \(announcement.scope). Posted \(posted).\(window) Check Codex /usage for your account."
     }
 
     var body: some View {
@@ -39,12 +57,10 @@ struct CodexResetNoticeView: View {
                 Image(systemName: "clock.arrow.circlepath")
                 Text(title).fontWeight(.semibold)
                 Spacer(minLength: 4)
-                Text("CodexReset")
-                    .foregroundStyle(.white.opacity(0.55))
                 Link(destination: announcement.sourceURL) {
                     Image(systemName: "arrow.up.right.square")
                 }
-                .help("Open original announcement via CodexReset")
+                .help("Open original announcement")
             }
             .font(.system(size: 11))
             .foregroundStyle(.white)
@@ -55,7 +71,7 @@ struct CodexResetNoticeView: View {
                     .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(1)
             }
-            Text("Announced \(announcement.announcedAt.formatted(date: .abbreviated, time: .shortened)) local")
+            Text("Announced \(CodexResetTimeText.local(announcement.announcedAt))")
                 .font(.system(size: 10))
                 .foregroundStyle(.white.opacity(0.65))
         }
