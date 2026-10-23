@@ -34,6 +34,15 @@ const screenshots = [
     height: 960
   },
   {
+    src: '/screenshots/codex-extra-reset.webp',
+    alt: 'Sample Codex extra reset notices showing a scheduled time, local UTC offset, announcement time, and an announcement without an exact reset time.',
+    label: 'Codex extra resets · Preview',
+    title: 'Sample public announcements show the expected time when known and always show when the news was posted. They do not confirm your account balance.',
+    width: 1040,
+    height: 560,
+    variant: 'wide'
+  },
+  {
     src: '/screenshots/usage-history.webp',
     alt: 'ZackEyes Usage settings with seven completed days of sample Claude and Codex token and estimated agent-hour statistics.',
     label: `Usage history · v${featureVersion}`,
@@ -222,7 +231,7 @@ const faqStructuredData = {
           <div class="section-eyebrow">Product screenshots</div>
           <h2 class="section-title" id="screenshots-title">Real agent state, not a dashboard fantasy.</h2>
           <p class="section-copy">
-            Actual ZackEyes interfaces: local Usage archives, SSH host setup, supported question choices and session states. Gallery captures use isolated sample data or the built-in Demo. These features shipped in v{featureVersion}; select any image to view it at full size.
+            Actual ZackEyes interfaces: local Usage archives, SSH host setup, supported question choices and session states. Gallery captures use isolated sample data or the built-in Demo. The current download is v{appVersion}. The Codex reset image previews <a href="/docs#codex-extra-reset">a feature in review</a> and is not in that download. Select any image to view it at full size.
           </p>
 
           <div class="screenshot-showcase" aria-label="ZackEyes screenshots">
@@ -312,6 +321,11 @@ const faqStructuredData = {
               <span class="feature-index">11</span>
               <h3>What each session is actually touching</h3>
               <p>Open ports, git branch, uncommitted file count, what a dispatched Claude subagent is working on, and whether the agent is compacting its context rather than stalling. Ports come from kernel syscalls, not lsof.</p>
+            </article>
+            <article class="feature-card">
+              <span class="feature-index">12</span>
+              <h3>Codex extra reset notices · preview</h3>
+              <p>See a public extra reset announcement while Codex is active, including its post time and an expected time when one was given. Each exact time uses your Mac's time zone; your account limits remain separate.</p>
             </article>
           </div>
         </div>

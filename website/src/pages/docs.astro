@@ -121,6 +121,19 @@ const docsStructuredData = [
         </div>
       </section>
 
+      <section class="policy-band" aria-labelledby="codex-extra-reset">
+        <div class="policy-shell">
+          <h2 class="section-title" id="codex-extra-reset">Public Codex extra resets.</h2>
+          <p class="section-copy">Feature preview for <a href="https://github.com/yangshiqi/ZackEyes/pull/288">PR #288</a>; this is not in the current v{appVersion} download. While a local Codex session is active, ZackEyes can check a public <a href="https://codexreset.ai/developers/">CodexReset announcement feed</a> for extra resets. The public announcement is separate from your account's 5-hour and 7-day limits; check Codex <code>/usage</code> to confirm your own balance.</p>
+          <p class="section-copy">The notice shows when the announcement was posted. If an exact reset time was published, it also shows that time and a countdown. Both times use this Mac's time zone and include the UTC offset, such as UTC+8. When the source gives only a day or no reset time, ZackEyes does not invent a clock time. The icon at the right of the title opens the original post.</p>
+          <p class="section-copy">Settings → Notifications has separate switches for Codex extra reset announcements and system notifications. Both start enabled; fetching runs only while a local Codex session is active. The screenshot uses simulated announcements and does not show an account-specific reset.</p>
+          <figure class="feature-screenshot">
+            <a href="/screenshots/codex-extra-reset.webp" aria-label="View sample Codex extra reset notices at full size"><img src="/screenshots/codex-extra-reset.webp" alt="Two sample extra Codex reset notices: one with an expected local time and countdown, and one with no exact reset time; both show the announcement time and UTC offset." width="1040" height="560" loading="lazy" decoding="async" /></a>
+            <figcaption>Feature preview · simulated announcements in Asia/Shanghai (UTC+8); no account quota is shown.</figcaption>
+          </figure>
+        </div>
+      </section>
+
       <section class="policy-band" aria-labelledby="source-title">
         <div class="policy-shell docs-layout">
           <div>

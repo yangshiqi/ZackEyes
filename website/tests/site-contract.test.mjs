@@ -265,20 +265,24 @@ describe('Astro site contract', () => {
   it('shows native feature screenshots with sample-data labels and full-size links', () => {
     const home = read('src/pages/index.astro');
     const docs = read('src/pages/docs.astro');
-    for (const file of ['usage-history.webp', 'remote-hosts.webp', 'settings-general.webp', 'dual-agent-support.webp', 'sessions-attention.webp', 'notch-question.webp']) {
+    for (const file of ['usage-history.webp', 'remote-hosts.webp', 'settings-general.webp', 'dual-agent-support.webp', 'sessions-attention.webp', 'notch-question.webp', 'codex-extra-reset.webp']) {
       const asset = join(root, 'public/screenshots', file);
       assert.ok(existsSync(asset), `missing native screenshot: ${file}`);
       assert.ok(statSync(asset).size < 200_000, `screenshot exceeds 200 KB: ${file}`);
       assert.ok(home.includes(`/screenshots/${file}`));
     }
-    for (const file of ['usage-history.webp', 'remote-hosts.webp', 'notch-question.webp']) {
+    for (const file of ['usage-history.webp', 'remote-hosts.webp', 'notch-question.webp', 'codex-extra-reset.webp']) {
       assert.ok(docs.includes(`href="/screenshots/${file}"`));
       assert.ok(docs.includes(`src="/screenshots/${file}"`));
     }
     assert.match(home, /href=\{shot.src\}/);
     assert.match(home, /isolated sample data/);
-    assert.match(home, /These features shipped in v\{featureVersion\}/);
+    assert.match(home, /The current download is v\{appVersion\}/);
     assert.match(docs, /disabled example hosts, with no connection attempted/);
+    assert.match(home, /Codex extra resets · Preview/);
+    assert.match(home, /not in that download/);
+    assert.match(docs, /Public Codex extra resets/);
+    assert.match(docs, /public announcement is separate from your account's 5-hour and 7-day limits/);
   });
 
   it('documents first launch, price refresh, removal and feature controls accurately', () => {
