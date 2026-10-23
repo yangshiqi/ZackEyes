@@ -24,7 +24,7 @@ struct CodexResetNoticeView: View {
         if let day = announcement.expectedDay {
             return "Expected \(day) · time not specified"
         }
-        return "Reset time not announced · posted \(announcement.announcedAt.formatted(date: .abbreviated, time: .shortened))"
+        return "Reset time not announced"
     }
 
     private var details: String {
