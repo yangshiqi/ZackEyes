@@ -1,4 +1,4 @@
-import { featureVersion, journalVersion } from '../lib/product-plans.mjs';
+import { featureVersion, journalVersion, codexResetVersion, isCodexResetReleased } from '../lib/product-plans.mjs';
 import {
   appVersion,
   releaseName,
@@ -11,6 +11,7 @@ import {
 } from '../lib/release.mjs';
 
 export function GET() {
+  const codexResetReleased = isCodexResetReleased(appVersion);
   return new Response(`# ZackEyes
 
 ZackEyes is a macOS notch command center for developers who run Claude Code, Codex CLI, or both.
@@ -25,6 +26,7 @@ ZackEyes is a macOS notch command center for developers who run Claude Code, Cod
 - Shows per-session LISTEN ports, git branch, and uncommitted file count on the session card; ports are read from kernel syscalls rather than lsof, so no subprocess is spawned.
 - Shows what a dispatched Claude subagent is working on, and marks context compaction while it runs and shortly after it finishes.
 - Tracks daily token spend and USD cost across Claude and Codex in a Today row with a 7-day sparkline; model pricing is bundled and computed locally, so no API key or cloud upload is needed.
+- ${codexResetReleased ? `Since v${codexResetVersion}, shows public Codex extra reset announcements while a local Codex session is active, with local expected and announcement times when known. These notices are separate from account quota readings.` : `A preview of Codex extra reset notices is documented at https://zackeyes.vercel.app/docs#codex-extra-reset; the current download does not include it.`}
 - Uses native hooks and Unix socket bridge events so terminal workflows keep working when the app is closed.
 
 ## Compatibility
@@ -61,7 +63,7 @@ Developers using AI coding agents on macOS, especially MacBook users who want pe
 Included in v0.9.7: Codex GPT-6.1 Sol / GPT-6 Astra compatibility (PR #252) and Claude Fable 5/5.1, Opus 5/5.5 and Sonnet 5/5.5 compatibility (PR #258). They add observed effort, current pricing and lifecycle handling. Effort requires live CLI metadata; daily costs are API list-price estimates, not subscription invoices. Details: https://zackeyes.vercel.app/docs#model-compatibility
 
 ## Features added in v${featureVersion}
-The published v${appVersion} download includes opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. These features shipped in v${featureVersion}. Prebuilt SSH helpers for Linux/macOS x86_64/arm64 ship with the release. The version-matched installer selects the platform and verifies SHA256; no remote Swift toolchain is required. Remote cards share the local avatar/header/model/tool presentation and show observed policy badges (including YOLO/AUTO) and effort when supplied by the refreshed helper. Linux helpers remain self-contained with debug/symbol tables stripped. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. The v${appVersion} assets were refreshed on October 15, 2026: users already on this version should replace the app, rerun the helper installer and toggle the host off/on; version checks do not announce a same-version refresh. Usage charts cover complete local days through yesterday, with full dates on hover. Background daily settlement runs after 03:00 with startup catch-up; older history requires explicit import with pause/resume. Settings reads saved daily archives without rescanning transcripts. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
+The published v${appVersion} download includes opt-in supported Claude question answers with timeout/terminal fallback, read-only SSH remote observation for up to eight hosts, a synthetic demo fleet, private local usage history (7/30/90 days) and per-agent stale quota hints. These features shipped in v${featureVersion}. Prebuilt SSH helpers for Linux/macOS x86_64/arm64 ship with the release. The version-matched installer selects the platform and verifies SHA256; no remote Swift toolchain is required. Remote cards share the local avatar/header/model/tool presentation and show observed policy badges (including YOLO/AUTO) and effort when supplied by the refreshed helper. Linux helpers remain self-contained with debug/symbol tables stripped. Remote questions stay in the remote terminal; SSH transmits session metadata, not prompts/replies/tool arguments. Usage charts cover complete local days through yesterday, with full dates on hover. Background daily settlement runs after 03:00 with startup catch-up; older history requires explicit import with pause/resume. Settings reads saved daily archives without rescanning transcripts. Local history stores counts, bounded names, hashed identities and timing metadata, not conversation text.
 
 ## Roadmap
 - v${journalVersion} planned: finish setup, scheduling and delivery for the daily work journal. Its local pipeline exists in development, but the public generation menu is hidden and it is excluded from v${featureVersion}.
@@ -78,7 +80,7 @@ Use https://zackeyes.vercel.app/answers for short answers to common product ques
 - Good first issues and help-wanted: ${contributeUrl}
 
 ## Privacy
-The app fetches public GitHub update metadata and refreshes bundled model prices online at startup and every 24 hours. Cost conversion stays local; prompts and replies are not uploaded by these requests.
+The app fetches public GitHub update metadata and refreshes bundled model prices online at startup and every 24 hours.${codexResetReleased ? ' While local Codex is active, the optional public CodexReset feed is checked at most every five minutes without sending account or session data.' : ''} Cost conversion stays local; prompts and replies are not uploaded by these requests.
 ZackEyes is local-first by default. The website does not upload source code, agent prompts, terminal history, or local project files.
 `, {
     headers: {

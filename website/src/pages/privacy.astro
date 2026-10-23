@@ -2,9 +2,11 @@
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
-import { issuesUrl } from '../lib/release.mjs';
+import { appVersion, issuesUrl } from '../lib/release.mjs';
+import { isCodexResetReleased } from '../lib/product-plans.mjs';
 
 const description = 'ZackEyes is local-first by default: no account is required, source code and agent prompts are not uploaded by the website, and feedback is handled through GitHub Issues.';
+const codexResetReleased = isCodexResetReleased(appVersion);
 const privacyStructuredData = {
   '@type': 'PrivacyPolicy',
   '@id': 'https://zackeyes.vercel.app/privacy#policy',
@@ -73,6 +75,7 @@ const privacyStructuredData = {
             <article>
               <h3>Network requests</h3>
               <p>ZackEyes checks GitHub release metadata and downloads installer assets. Its pricing table is bundled for offline calculation, then checked online from the public GitHub pricing.json at startup and every 24 hours. These requests fetch public data; they do not upload prompts or replies.</p>
+              {codexResetReleased && <p>While a local Codex session is active and the announcement setting is enabled, ZackEyes checks the public CodexReset feed at most every five minutes. The request carries no account credentials, session data, prompts, or local paths. The provider receives ordinary network request metadata.</p>}
             </article>
             <article>
               <h3>SSH observation and local history</h3>

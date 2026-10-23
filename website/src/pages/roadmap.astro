@@ -1,11 +1,12 @@
 ---
-import { featureVersion, journalVersion } from '../lib/product-plans.mjs';
+import { featureVersion, journalVersion, codexResetVersion, isCodexResetReleased } from '../lib/product-plans.mjs';
 import SiteFooter from '../components/SiteFooter.astro';
 import SiteHeader from '../components/SiteHeader.astro';
 import SiteLayout from '../layouts/SiteLayout.astro';
 import { appVersion, issuesUrl } from '../lib/release.mjs';
 
-const description = `ZackEyes roadmap: released SSH observation, daily usage archives and notch answers, plus future journal and agent plans.`;
+const codexResetReleased = isCodexResetReleased(appVersion);
+const description = `ZackEyes roadmap: released SSH observation, daily usage archives, notch answers${codexResetReleased ? ', and Codex extra reset notices' : ''}, plus future journal and agent plans.`;
 const releasedItems = [
   { title: 'Answer from the notch', horizon: `Released · v${featureVersion}`, copy: 'Opt-in answers for supported Claude questions, with a timeout and terminal fallback. Disabled by default.' },
   { title: 'SSH remote observation', horizon: `Released · v${featureVersion}`, copy: 'Read-only Claude/Codex session metadata from up to eight SSH hosts, with host status and reconnect. Remote requests stay in the remote terminal.' },
@@ -60,7 +61,7 @@ const roadmapStructuredData = {
           <div class="section-eyebrow">Product direction</div>
           <h1 id="roadmap-title">Roadmap.</h1>
           <p class="policy-lede">
-            Released features include SSH observation, local usage history, opt-in notch answers, demo sessions and stale quota hints. Future work includes journal delivery, broader agent support and local logs controls.
+            Released features include SSH observation, local usage history, opt-in notch answers, demo sessions, stale quota hints{codexResetReleased ? ', and public Codex extra reset notices' : ''}. Future work includes journal delivery, broader agent support and local logs controls.
           </p>
           <p class="policy-lede">
             The current release is v{appVersion} — see the <a href="/changelog">changelog</a> for what has shipped. The features below shipped in v{featureVersion}.
@@ -87,6 +88,15 @@ const roadmapStructuredData = {
           </div>
         </div>
       </section>
+
+      {codexResetReleased && (
+        <section class="policy-band" aria-labelledby="codex-reset-released-title">
+          <div class="policy-shell">
+            <h2 class="section-title" id="codex-reset-released-title">Released in v{codexResetVersion}.</h2>
+            <p class="section-copy">Public Codex extra reset announcements appear while a local Codex session is active. Exact expected and announcement times use the Mac's time zone; optional system notifications and the original-post link are separate from account quota readings. <a href="/docs#codex-extra-reset">See the sample screenshot and details</a>.</p>
+          </div>
+        </section>
+      )}
 
       <section class="policy-band" aria-labelledby="roadmap-items-title">
         <div class="policy-shell">

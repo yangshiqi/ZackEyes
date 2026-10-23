@@ -279,9 +279,12 @@ describe('Astro site contract', () => {
     assert.match(home, /isolated sample data/);
     assert.match(home, /The current download is v\{appVersion\}/);
     assert.match(docs, /disabled example hosts, with no connection attempted/);
+    assert.match(home, /isCodexResetReleased\(appVersion\)/);
     assert.match(home, /Codex extra resets · Preview/);
-    assert.match(home, /not in that download/);
+    assert.match(home, /Codex extra resets · v\$\{codexResetVersion\}/);
+    assert.match(home, /not in the current download/);
     assert.match(docs, /Public Codex extra resets/);
+    assert.match(docs, /Available since v\$\{codexResetVersion\}/);
     assert.match(docs, /public announcement is separate from your account's 5-hour and 7-day limits/);
   });
 
