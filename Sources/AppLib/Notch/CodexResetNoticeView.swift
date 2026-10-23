@@ -54,6 +54,11 @@ struct CodexResetNoticeView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(.white.opacity(0.8))
             }
+            if announcement.phase != .announced {
+                Text("Announced \(announcement.announcedAt.formatted(date: .abbreviated, time: .shortened)) local")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.white.opacity(0.65))
+            }
             HStack(spacing: 3) {
                 Text("\(announcement.scope) · Public announcement via")
                 Link("CodexReset", destination: URL(string: "https://codexreset.ai/")!)

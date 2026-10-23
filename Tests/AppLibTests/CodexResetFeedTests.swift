@@ -60,6 +60,38 @@ struct CodexResetFeedTests {
         #expect(notice.phase == .reportedComplete)
     }
 
+    @Test func reportedCompletionBeatsAnOlderScheduledNotice() throws {
+        let notice = try #require(CodexResetFeed.latest(from: fixture(
+            scheduled: """
+            {"certainty":"announced","day":"2026-10-23","scheduled_for":"2026-10-23T07:00:00Z","url":"https://x.com/thsottiaux/status/123","announced_at":"2026-10-23T02:00:00Z"}
+            """,
+            events: """
+            [{"kind":"regular","scope":"all","url":"https://x.com/thsottiaux/status/123","announced_at":"2026-10-23T02:00:00Z","delivered_at":"2026-10-23T05:30:00Z","seeded":false}]
+            """
+        ), now: now))
+        #expect(notice.phase == .reportedComplete)
+    }
+
+    @Test func lateCompletionCanNotifyButElapsedScheduleCannot() throws {
+        let later = ISO8601DateFormatter().date(from: "2026-10-23T12:00:00Z")!
+        let completed = try #require(CodexResetFeed.latest(from: fixture(
+            events: """
+            [{"kind":"regular","scope":"all","url":"https://x.com/thsottiaux/status/456","announced_at":"2026-10-23T02:00:00Z","delivered_at":"2026-10-23T11:50:00Z","seeded":false}]
+            """,
+            generatedAt: "2026-10-23T11:55:00Z"
+        ), now: later))
+        #expect(CodexResetAlertPolicy.shouldNotify(completed, activeCodex: true, enabled: true,
+            notificationsEnabled: true, lastKey: nil, now: later))
+
+        let elapsed = try #require(CodexResetFeed.latest(from: fixture(
+            scheduled: """
+            {"certainty":"announced","day":"2026-10-23","scheduled_for":"2026-10-23T05:30:00Z","url":"https://x.com/thsottiaux/status/789","announced_at":"2026-10-23T05:00:00Z"}
+            """
+        ), now: now))
+        #expect(!CodexResetAlertPolicy.shouldNotify(elapsed, activeCodex: true, enabled: true,
+            notificationsEnabled: true, lastKey: nil, now: now))
+    }
+
     @Test func staleOrUnsupportedRecordsAreIgnored() {
         #expect(CodexResetFeed.latest(from: fixture(generatedAt: "2026-10-22T00:00:00Z"), now: now) == nil)
         #expect(CodexResetFeed.latest(from: fixture(scheduled: """

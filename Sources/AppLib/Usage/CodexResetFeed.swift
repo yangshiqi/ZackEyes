@@ -75,6 +75,7 @@ public enum CodexResetFeed {
               payload.generated_at <= now.addingTimeInterval(300),
               now.timeIntervalSince(payload.generated_at) <= 6 * 3600 else { return nil }
 
+        var scheduledNotice: CodexResetAnnouncement?
         if let scheduled = payload.scheduled,
            scheduled.certainty == "announced",
            let url = allowedSourceURL(scheduled.url),
@@ -85,7 +86,7 @@ public enum CodexResetFeed {
            dayStart > now.addingTimeInterval(-86400),
            dayStart < now.addingTimeInterval(8 * 86400),
            scheduled.scheduled_for.map({ $0 > now.addingTimeInterval(-2 * 3600) }) ?? true {
-            return CodexResetAnnouncement(
+            scheduledNotice = CodexResetAnnouncement(
                 kind: .automatic, phase: .scheduled, sourceURL: url,
                 announcedAt: scheduled.announced_at,
                 expectedAt: scheduled.scheduled_for, expectedDay: day,
@@ -98,7 +99,7 @@ public enum CodexResetFeed {
             )
         }
 
-        return payload.events.compactMap { event -> (CodexResetAnnouncement, Date)? in
+        let latestEvent = payload.events.compactMap { event -> (CodexResetAnnouncement, Date)? in
             guard event.seeded != true,
                   let url = allowedSourceURL(event.url),
                   let announcedAt = event.announced_at,
@@ -122,7 +123,12 @@ public enum CodexResetFeed {
                 scope: scopeLabel(event.scope), providerUpdatedAt: payload.generated_at
             )
             return (notice, latestAt)
-        }.max(by: { $0.1 < $1.1 })?.0
+        }.max(by: { $0.1 < $1.1 })
+        if let scheduledNotice {
+            guard let latestEvent else { return scheduledNotice }
+            return latestEvent.1 > scheduledNotice.announcedAt ? latestEvent.0 : scheduledNotice
+        }
+        return latestEvent?.0
     }
 
     private static func validDay(_ raw: String?) -> String? {
@@ -159,8 +165,10 @@ public enum CodexResetAlertPolicy {
     ) -> Bool {
         guard activeCodex, enabled, notificationsEnabled,
               notice.notificationKey(at: now) != lastKey else { return false }
-        let isFresh = now.timeIntervalSince(notice.announcedAt) >= 0
-            && now.timeIntervalSince(notice.announcedAt) <= 6 * 3600
+        let reportedAt = notice.reportedDeliveredAt ?? notice.announcedAt
+        let isFresh = now.timeIntervalSince(reportedAt) >= 0
+            && now.timeIntervalSince(reportedAt) <= 6 * 3600
+            && (notice.phase != .scheduled || notice.expectedAt.map { $0 > now } ?? true)
         let isImminent = notice.phase == .scheduled
             && notice.expectedAt.map { $0 > now && $0.timeIntervalSince(now) <= 2 * 3600 } == true
         return isFresh || isImminent
