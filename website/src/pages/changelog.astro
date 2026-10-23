@@ -7,6 +7,25 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.10.2',
+    date: 'Published October 23, 2026',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Public Codex extra reset announcements while a local Codex session is active, with expected-time countdowns and original-post links.',
+          'Optional deduplicated system notifications for new announcements and reported completions.'
+        ]
+      },
+      {
+        label: 'Changed',
+        items: [
+          'Show announced and expected instants in the Mac local time zone with UTC offsets; keep public notices separate from account 5-hour and 7-day limits.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.10.1',
     date: 'Published October 15, 2026',
     highlights: [
