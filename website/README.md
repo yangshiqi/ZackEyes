@@ -28,8 +28,8 @@ The homepage currently uses no React island and no generated client JavaScript b
 
 ## Runtime Requirements
 
-- Node.js 20 or newer is recommended.
-- pnpm 10.28.2 is the pinned package manager, declared in `package.json`.
+- Use Node.js 24 LTS; `.node-version` pins the local baseline to 24.22.1. `package.json` selects Node 24 for Vercel builds. Astro 7.4.2 requires at least Node 22.23.4.
+- pnpm 10.34.8 is the pinned package manager, declared in `package.json`.
 - The production target must support static file hosting.
 - The canonical production origin is `https://zackeyes.vercel.app` — the live Vercel deployment. The originally planned custom apex domain was never registered (see issue #192). If a custom domain is purchased later, update `astro.config.mjs`, `public/robots.txt`, the LLM text endpoints, and the origin pinned in `tests/site-contract.test.mjs`.
 - Latest public release: `https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.10.2/ZackEyes-0.10.2.dmg`.
@@ -103,9 +103,11 @@ http://localhost:4321
 ## Verification
 
 ```bash
-pnpm test
 pnpm build
+pnpm test
 ```
+
+Build before testing: production-output checks read `dist/`. For a reproducible install, use `pnpm install --frozen-lockfile` with the pinned toolchain. Run `pnpm outdated` and `pnpm audit` when reviewing updates, and record unresolved advisories with their applicability. Dependabot checks `/website` weekly and groups npm dependency updates into one PR.
 
 ## Structure
 
