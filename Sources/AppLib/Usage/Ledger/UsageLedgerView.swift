@@ -24,6 +24,13 @@ struct UsageLedgerView: View {
                 Button("Refresh") { Task { await ledger.refresh() } }
                 Button("Update now") { ledger.updateNow() }.disabled(ledger.isLoading || ledger.isPaused)
             }
+            Toggle("Include cached reads", isOn: Binding(
+                get: { ledger.includeCacheReads },
+                set: { value in Task { await ledger.setIncludeCacheReads(value) } }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .help("Include reused input tokens in totals, daily charts, and project/model rankings.")
             if ledger.isLoading {
                 Text(
                     ledger.progress.total > 0
@@ -93,9 +100,13 @@ struct UsageLedgerView: View {
             ranking("Top tools · calls", items: ledger.summary.tools)
             heatmap
             Text(
-                "Only counts, project/model/tool names and timing metadata are kept in ~/.zackeyes/usage/. No prompts, replies or tool arguments are stored. Daily counts follow your current local timezone; cached reads are excluded from the token total."
+                "Only counts, project/model/tool names and timing metadata are kept in ~/.zackeyes/usage/. No prompts, replies or tool arguments are stored. Daily counts follow your current local timezone."
             )
             .font(.system(size: 11)).foregroundStyle(.secondary).textSelection(.enabled)
+            Text(ledger.includeCacheReads
+                ? "Token totals include cached reads."
+                : "Token totals exclude cached reads; cache writes are included.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
         }
         .task { await ledger.refresh() }
     }
