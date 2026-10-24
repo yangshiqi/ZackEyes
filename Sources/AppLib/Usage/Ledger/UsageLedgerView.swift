@@ -245,6 +245,10 @@ private struct UsageDailyChart: View {
                                                                 "\(value.agent == .claude ? "Claude" : "Codex"): \(hours ? String(format: "%.2f h (est.)", value.activeSeconds / 3600) : value.tokens.formatted() + " tokens")"
                                                         )
                                                 }
+                                                if !hours {
+                                                        Text("Total: \(hoveredDays.reduce(0) { $0 + $1.tokens }.formatted()) tokens")
+                                                                .fontWeight(.semibold)
+                                                }
                                         }
                                         .font(.system(size: 11)).monospacedDigit()
                                         .padding(8)
