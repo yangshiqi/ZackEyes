@@ -28,7 +28,7 @@ The homepage currently uses no React island and no generated client JavaScript b
 
 ## Runtime Requirements
 
-- Use Node.js 24 LTS; `.node-version` pins the local baseline to 24.20.0. `package.json` selects Node 24 for Vercel builds. Astro 7.4.2 requires at least Node 22.23.4.
+- Use Node.js 24 LTS; `.node-version` pins the local baseline to 24.22.1. `package.json` selects Node 24 for Vercel builds. Astro 7.4.2 requires at least Node 22.23.4.
 - pnpm 10.34.8 is the pinned package manager, declared in `package.json`.
 - The production target must support static file hosting.
 - The canonical production origin is `https://zackeyes.vercel.app` — the live Vercel deployment. The originally planned custom apex domain was never registered (see issue #192). If a custom domain is purchased later, update `astro.config.mjs`, `public/robots.txt`, the LLM text endpoints, and the origin pinned in `tests/site-contract.test.mjs`.
