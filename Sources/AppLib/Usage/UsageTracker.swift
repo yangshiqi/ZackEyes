@@ -281,6 +281,7 @@ public final class UsageTracker: ObservableObject {
     private let projectsDir: URL
     private let codexSessionsDir: URL?
     private var refreshTask: Task<Void, Never>?
+    private var refreshInProgress = false
 
     public init(
         projectsDir: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/projects"),
@@ -392,6 +393,11 @@ public final class UsageTracker: ObservableObject {
     /// Rescan all recent JSONL files and update the snapshot.
     /// Preserves real rate-limit data captured from hook events.
     public func refresh() async {
+        // Startup and panel initialization can both request a refresh. Reuse
+        // the in-flight publication rather than parsing the cold window twice.
+        guard !refreshInProgress else { return }
+        refreshInProgress = true
+        defer { refreshInProgress = false }
         let dir = projectsDir
         let codexDir = codexSessionsDir
         let cal = Calendar.current
@@ -406,6 +412,30 @@ public final class UsageTracker: ObservableObject {
             guard let codexDir else { return nil }
             return Self.scanLatestCodexState(rootDir: codexDir)
         }.value
+
+        if let codexState {
+            onCodexQuotaReadings?(codexState.accountReadings)
+        }
+
+        // Publish quota promptly; the initial full-window daily scan can be
+        // much slower than the bounded latest-state tail above.
+        // Apply when there are per-window scopes OR a block flag. The two are
+        // derived from the same token_count reading so scopes is non-empty
+        // whenever limitReached is true today, but the explicit `|| limitReached`
+        // keeps a credits-only reading (no per-window data) surfacing the block
+        // even if `tailCodexReadings` ever stops emitting an empty scope for it.
+        if let codexState, !codexState.scopes.isEmpty || codexState.limitReached {
+            applyCodexScopes(
+                codexState.scopes,
+                limitReached: codexState.limitReached,
+                limitResetsAt: codexState.limitResetsAt,
+                observedAt: codexState.observedAt
+            )
+        } else {
+            // No recent rollout means Codex is idle, not that the last quota
+            // reading is invalid. Retain each window until its own reset.
+            expireCodexWindows(now: Date())
+        }
 
         // #84 daily token scan (Codex), with the per-file parse cache.
         let codexCacheSnapshot = codexDailyCache
@@ -459,28 +489,6 @@ public final class UsageTracker: ObservableObject {
         merged.fiveHourETA = claudeEstimator.estimate(
             now: Date(), currentPct: merged.fiveHourUsedPct, resetsAt: merged.fiveHourResetsAt)
         self.snapshot = merged
-
-        if let codexState {
-            onCodexQuotaReadings?(codexState.accountReadings)
-        }
-
-        // Apply when there are per-window scopes OR a block flag. The two are
-        // derived from the same token_count reading so scopes is non-empty
-        // whenever limitReached is true today, but the explicit `|| limitReached`
-        // keeps a credits-only reading (no per-window data) surfacing the block
-        // even if `tailCodexReadings` ever stops emitting an empty scope for it.
-        if let codexState, !codexState.scopes.isEmpty || codexState.limitReached {
-            applyCodexScopes(
-                codexState.scopes,
-                limitReached: codexState.limitReached,
-                limitResetsAt: codexState.limitResetsAt,
-                observedAt: codexState.observedAt
-            )
-        } else {
-            // No recent rollout means Codex is idle, not that the last quota
-            // reading is invalid. Retain each window until its own reset.
-            expireCodexWindows(now: Date())
-        }
     }
 
     /// #182 — a 5h-window reset can never sit further out than its own window

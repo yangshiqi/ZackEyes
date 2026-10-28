@@ -14,14 +14,40 @@ enum CodexUsageHistory {
         let date: Date
     }
 
-    static func metadata(in text: String) -> [String: Any]? {
-        for line in text.split(separator: "\n", maxSplits: 32).prefix(32) {
-            guard line.utf8.count <= 1_048_576,
-                  let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
-                  object["type"] as? String == "session_meta" else { continue }
-            return object["payload"] as? [String: Any]
+    /// Byte boundaries are located by libc rather than Swift Collection.split:
+    /// debug builds must not walk multi-GB windows one grapheme/byte at a time.
+    /// The callback returns false when the requested header has been found.
+    static func forEachLine(in text: String, maxBytes: Int = .max, maxLines: Int = .max,
+                            _ body: (Data) -> Bool) {
+        var contiguous = text
+        contiguous.withUTF8 { bytes in
+            guard let base = bytes.baseAddress else { return }
+            let count = min(bytes.count, maxBytes)
+            var offset = 0, lines = 0
+            while offset < count, lines < maxLines {
+                let start = offset
+                let end = memchr(base.advanced(by: start), 10, count - start)
+                    .map { UnsafeRawPointer(base).distance(to: UnsafeRawPointer($0)) } ?? count
+                offset = end + 1
+                if end == start { continue }
+                lines += 1
+                let keepGoing = autoreleasepool {
+                    body(Data(bytes: base.advanced(by: start), count: end - start))
+                }
+                if !keepGoing { break }
+            }
         }
-        return nil
+    }
+
+    static func metadata(in text: String) -> [String: Any]? {
+        var metadata: [String: Any]?
+        forEachLine(in: text, maxBytes: 1_048_576, maxLines: 32) { line in
+            guard let object = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                  object["type"] as? String == "session_meta" else { return true }
+            metadata = object["payload"] as? [String: Any]
+            return false
+        }
+        return metadata
     }
     static func hasInheritedHistory(_ metadata: [String: Any]?) -> Bool {
         guard let value = metadata?["history_base"] else { return false }

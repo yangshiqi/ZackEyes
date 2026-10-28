@@ -1,3 +1,4 @@
+import Combine
 import Testing
 import Foundation
 @testable import AppLib
@@ -120,5 +121,45 @@ struct UsageTrackerDailyTests {
         let jun2 = Self.shanghai.startOfDay(for: now)
         #expect(res.daily[jun1]?["claude-opus-4-8"]?.input == 10)   // first msg → 06-01 local
         #expect(res.daily[jun2]?["claude-opus-4-8"]?.input == 20)   // second msg → 06-02 local
+    }
+}
+
+extension UsageTrackerDailyTests {
+    @Test func overlappingRefreshesDoNotRepeatTheColdScan() async throws {
+        let root = try Self.tmpDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let tracker = UsageTracker(projectsDir: root, codexSessionsDir: nil, cacheURL: root.appendingPathComponent("cache.json"))
+        var publications = 0
+        let subscription = tracker.$snapshot.dropFirst().sink { _ in publications += 1 }
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<10 { group.addTask { await tracker.refresh() } }
+        }
+        withExtendedLifetime(subscription) {}
+        #expect((1...2).contains(publications))
+        #expect(tracker.snapshot.dailyUsage.count == 7)
+    }
+}
+
+extension UsageTrackerDailyTests {
+    @Test func quotaPublishesBeforeTheColdDailyScan() async throws {
+        let root = try Self.tmpDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let now = Date()
+        let codex = root.appendingPathComponent("codex")
+        let day = Self.codexDayDir(under: codex, now: now)
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        let stamp = ISO8601DateFormatter().string(from: now)
+        let text = """
+        {"type":"event_msg","timestamp":"\(stamp)","payload":{"type":"token_count","rate_limits":{"primary":{"used_percent":25,"window_minutes":300,"resets_at":\(Int(now.timeIntervalSince1970)+3600)}}}}
+        """
+        try text.write(to: day.appendingPathComponent("rollout-test.jsonl"), atomically: true, encoding: .utf8)
+        let tracker = UsageTracker(projectsDir: root.appendingPathComponent("empty"), codexSessionsDir: codex, cacheURL: root.appendingPathComponent("cache.json"))
+        var snapshots: [UsageTracker.Snapshot] = []
+        let subscription = tracker.$snapshot.dropFirst().sink { snapshots.append($0) }
+        await tracker.refresh()
+        withExtendedLifetime(subscription) {}
+        #expect(snapshots.first?.codexFiveHourUsedPct == 25)
+        #expect(snapshots.first?.dailyUsage.isEmpty == true)
+        #expect(tracker.snapshot.dailyUsage.count == 7)
     }
 }

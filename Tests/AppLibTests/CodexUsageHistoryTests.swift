@@ -192,3 +192,35 @@ extension CodexUsageHistoryTests {
         #expect(try await engine.isDue(now: retried.addingTimeInterval(86_400), calendar: fixture.calendar, startup: true))
     }
 }
+
+extension CodexUsageHistoryTests {
+    @Test func metadataReadIsBoundedBeforeScanningTheRestOfTheRollout() {
+        let oversized = String(repeating: "x", count: 1_048_577) + "\n"
+        let text = oversized + fixture.meta(id: UUID().uuidString)
+        #expect(CodexUsageHistory.metadata(in: text) == nil)
+    }
+
+    @Test func dailyByteParsingPreservesUnicodeAndCRLF() {
+        let text = fixture.meta(id: UUID().uuidString)
+            + "{\"type\":\"response_item\",\"payload\":{\"text\":\"中文 👩🏽‍💻 é\"}}\n"
+            + fixture.event(at: "2026-10-27T01:00:00Z", input: 700, cached: 560, output: 60)
+        let tally = UsageTracker.parseCodexDailyTallies(text: text.replacingOccurrences(of: "\n", with: "\r\n"),
+            calendar: fixture.calendar, cutoff: .distantPast)
+        let day = fixture.calendar.startOfDay(for: fixture.date("2026-10-27T01:00:00Z"))
+        #expect(tally[day]?.values.reduce(0, { $0 + $1.input }) == 700)
+        #expect(tally[day]?.values.reduce(0, { $0 + $1.cacheRead }) == 560)
+        #expect(tally[day]?.values.reduce(0, { $0 + $1.output }) == 60)
+    }
+}
+
+extension CodexUsageHistoryTests {
+    @Test func dailyByteFilterRetainsUnicodeEscapedSchema() {
+        let text = fixture.event(at: "2026-10-27T01:00:00Z", input: 700, cached: 560, output: 60)
+            .replacingOccurrences(of: "token_count", with: #"\u0074oken_count"#)
+            .replacingOccurrences(of: "total_token_usage", with: #"\u0074otal_token_usage"#)
+        let tally = UsageTracker.parseCodexDailyTallies(text: text, calendar: fixture.calendar, cutoff: .distantPast)
+        let day = fixture.calendar.startOfDay(for: fixture.date("2026-10-27T01:00:00Z"))
+        #expect(tally[day]?.values.reduce(0, { $0 + $1.input }) == 700)
+        #expect(tally[day]?.values.reduce(0, { $0 + $1.output }) == 60)
+    }
+}
