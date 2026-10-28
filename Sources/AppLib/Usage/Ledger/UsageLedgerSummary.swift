@@ -132,24 +132,48 @@ struct UsageLedgerSummary: Codable, Sendable {
         for counters in groups.values {
             let sorted = counters.sorted { left, right in
                 if left.date != right.date { return left.date < right.date }
-                return left.input + left.output < right.input + right.output
+                if left.input + left.output != right.input + right.output { return left.input + left.output < right.input + right.output }
+                if (left.baseline == true) != (right.baseline == true) { return right.baseline == true }
+                return left.id < right.id
             }
             var previous = (input: 0, output: 0, read: 0, write: 0)
+            var pending: UsageLedgerRecord?
             for counter in sorted {
+                if counter.baseline == true {
+                    previous = (counter.input, counter.output, counter.cacheRead, counter.cacheWrite)
+                    pending = nil
+                    continue
+                }
+                if let gap = pending {
+                    let deltas = [counter.input - gap.input, counter.output - gap.output,
+                                  counter.cacheRead - gap.cacheRead, counter.cacheWrite - gap.cacheWrite]
+                    if deltas.allSatisfy({ (0...1_000_000_000).contains($0) }) {
+                        previous = (gap.input, gap.output, gap.cacheRead, gap.cacheWrite)
+                    }
+                    pending = nil
+                }
                 if counter.input < previous.input || counter.output < previous.output { previous = (0, 0, 0, 0) }
                 let input = max(0, counter.input - previous.input)
                 let output = max(0, counter.output - previous.output)
                 let read = max(0, counter.cacheRead - previous.read)
                 let write = max(0, counter.cacheWrite - previous.write)
-                previous = (counter.input, counter.output, counter.cacheRead, counter.cacheWrite)
-                if input + output + read + write == 0 { continue }
+                if input + output + read + write == 0 {
+                    previous = (counter.input, counter.output, counter.cacheRead, counter.cacheWrite)
+                    continue
+                }
                 var delta = counter
                 delta.kind = .tokens
+                delta.baseline = nil
                 delta.input = max(0, input - read - write)
                 delta.output = output
                 delta.cacheRead = read
                 delta.cacheWrite = write
-                result.append(delta)
+                if delta.isValid {
+                    previous = (counter.input, counter.output, counter.cacheRead, counter.cacheWrite)
+                    result.append(delta)
+                } else {
+                    pending = counter
+                }
             }
         }
         return result

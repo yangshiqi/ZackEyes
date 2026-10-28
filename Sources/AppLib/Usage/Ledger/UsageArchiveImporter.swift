@@ -10,7 +10,10 @@ actor UsageArchiveImporter {
         var parsedBytes = 0
         var rejected = 0
     }
+    static let counterVersion = 2
     private struct Cursor: Codable {
+        var counterVersion: Int? = nil
+        var historyIncomplete: Bool? = nil
         var device: Int32
         var inode: UInt64
         var modified: Double
@@ -83,14 +86,29 @@ actor UsageArchiveImporter {
     }
     private let database: UsageArchiveDatabase
     private let throttle: Bool
-    init(database: UsageArchiveDatabase, throttle: Bool = true) {
+    private let codexRoot: URL?
+    private var historyFiles: [String: URL]?
+    private var indexedRoot: URL?
+
+    func beginRun() { historyFiles = nil; indexedRoot = nil }
+
+    private func resolveHistory(_ reference: CodexUsageHistory.Reference, near file: URL) -> CodexUsageHistory.Baseline? {
+        let root = codexRoot ?? file.deletingLastPathComponent()
+        if historyFiles == nil || indexedRoot != root {
+            historyFiles = CodexUsageHistory.fileIndex(root: root)
+            indexedRoot = root
+        }
+        return CodexUsageHistory.resolve(reference, files: historyFiles ?? [:])
+    }
+    init(database: UsageArchiveDatabase, throttle: Bool = true, codexRoot: URL? = nil) {
         self.database = database
         self.throttle = throttle
+        self.codexRoot = codexRoot
     }
 
     func importFile(
         _ url: URL, agent: AgentKind, cutoff: Date?, legacy: Bool = false,
-        onProgress: @Sendable (Int) async -> Void = { _ in }
+        upgradeOnly: Bool = false, onProgress: @Sendable (Int) async -> Void = { _ in }
     ) async throws -> Result {
         let source = UsageLedgerRecord.identity((legacy ? "legacy:" : "") + url.standardizedFileURL.path)
         let fd = Darwin.open(url.path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
@@ -106,6 +124,24 @@ actor UsageArchiveImporter {
         var result = Result()
         var cursor = try await database.checkpoint(source: source).map {
             try JSONDecoder().decode(Cursor.self, from: $0)
+        }
+        if upgradeOnly, cursor == nil || (cursor?.counterVersion == Self.counterVersion && cursor?.historyIncomplete != true) { return result }
+        let previousFullCoverage = cursor?.fullCoverage ?? false
+        if agent == .codex, !legacy, let saved = cursor, saved.counterVersion != Self.counterVersion {
+            let meta = CodexUsageHistory.metadata(inFile: url)
+            if saved.rejected > 0 || CodexUsageHistory.hasInheritedHistory(meta) {
+                cursor = nil
+            } else {
+                cursor?.counterVersion = Self.counterVersion
+                try await database.apply(records: [], source: source, checkpoint: JSONEncoder().encode(cursor!))
+            }
+        }
+        var recoveredBaseline: CodexUsageHistory.Baseline?
+        if agent == .codex, !legacy, cursor?.historyIncomplete == true,
+           let reference = CodexUsageHistory.reference(CodexUsageHistory.metadata(inFile: url)),
+           let resolved = resolveHistory(reference, near: url) {
+            recoveredBaseline = resolved
+            cursor = nil
         }
         let compatible =
             cursor.map {
@@ -137,7 +173,8 @@ actor UsageArchiveImporter {
             let length = Int(min(size, 4096))
             cursor = Cursor(
                 device: info.st_dev, inode: info.st_ino, modified: modified, size: size,
-                prefixLength: length, prefix: try digest(at: 0, count: length), fullCoverage: cutoff == nil)
+                prefixLength: length, prefix: try digest(at: 0, count: length), fullCoverage: cutoff == nil || previousFullCoverage)
+            cursor!.counterVersion = Self.counterVersion
             if !legacy {
                 let seedReader = try Reader(handle: handle, size: size, offset: 0)
                 var objects: [[String: Any]] = []
@@ -149,7 +186,15 @@ actor UsageArchiveImporter {
                     if seedReader.position >= 2_097_152 { break }
                 }
                 result.bytesRead += Int(seedReader.position)
-                cursor!.state = UsageLedgerParser.seed(objects: objects, agent: agent, sourceID: source)
+                var inherited = recoveredBaseline
+                if agent == .codex,
+                   let meta = objects.first(where: { $0["type"] as? String == "session_meta" })?["payload"] as? [String: Any],
+                   let reference = CodexUsageHistory.reference(meta) {
+                    if inherited == nil { inherited = resolveHistory(reference, near: url) }
+                }
+                let meta = objects.first(where: { $0["type"] as? String == "session_meta" })?["payload"] as? [String: Any]
+                cursor!.historyIncomplete = agent == .codex && CodexUsageHistory.hasInheritedHistory(meta) && inherited == nil
+                cursor!.state = UsageLedgerParser.seed(objects: objects, agent: agent, sourceID: source, inherited: inherited)
             }
         }
         guard var saved = cursor else { throw UsageArchiveDatabase.Failure.invalidRecord }

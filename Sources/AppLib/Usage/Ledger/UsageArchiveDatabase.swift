@@ -157,6 +157,11 @@ actor UsageArchiveDatabase {
         try openDatabase()
         return try query("SELECT body FROM sources WHERE id=?", [.text(source)]).first?.first
     }
+    func hasIncompleteCodexHistory() throws -> Bool {
+        try openDatabase()
+        return try !query("SELECT 1 FROM sources WHERE CASE WHEN json_valid(body) THEN json_extract(body,'$.historyIncomplete') ELSE 0 END = 1 LIMIT 1").isEmpty
+    }
+
     func metadata(_ key: String) throws -> Data? {
         try openDatabase()
         return try query("SELECT body FROM metadata WHERE key=?", [.text(key)]).first?.first

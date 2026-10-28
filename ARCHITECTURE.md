@@ -50,7 +50,9 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 
 `UsageLedgerParser` 从 Claude/Codex transcript 提取计数、项目/模型/工具名称及时间区间，不保留 prompt、回复、工具参数、完整路径或原始 session/message id；标识在进入持久化 DTO 前做 SHA256。Claude 完整 usage 按消息身份及源时间去重，旧副本/部分 usage 不覆盖新统计；Codex 持久化累计观测，跨文件合并同一 session 后再差分，避免部分副本的不同前驱产生重复 token。重置计数开启新累计段。
 
-`UsageArchiveImporter` 分块读取 transcript；inode/device/mtime/size 指纹、前缀/提交边界哈希及持久化 parser state 支持断点续读，未变化文件重启后读取 0 字节正文。每批最多读取 256 KiB，单行上限 1 MiB，未完成尾行留在原偏移，超长行有界丢弃；初始身份元数据发现最多 32 行/约 2 MiB。pending tool 只保存哈希键且最多 256 个，超限保留近期调用并警告估算不完整。自动模式只保存目标日期观测、已有非空历史归档的修正和此前最后一个 Codex 累计基线；手动补历史会重绕曾跳过旧日期的来源。源日志从不修改。
+`CodexUsageHistory` 在既有扫描中解析分页 `session_meta.history_base`：用合法 UUID 的文件索引定位父页，在 `end_byte_offset` 固定边界前读取计数，空中间页沿引用向上查找；只读普通非链接文件，深度/循环检查及 8 MiB 读取预算防止无界遍历。索引每轮归档导入只建一次。实时 Today 将解析出的历史计数作为初始基线，归档保存散列身份和非计费基线标记，绝不把继承累计值当作新消耗；父页缺失时只计可确认增量并提示不完整，依赖恢复后重试未变化的子页。累计计数单独允许到 1T，单次可计费增量仍限定 1B；异常大跳变先隔离，后续读数确认绝对基线后才能恢复差分，回落不伪造计数重置。
+
+`UsageArchiveImporter` 分块读取 transcript；inode/device/mtime/size 指纹、前缀/提交边界哈希及持久化 parser state 支持断点续读，未变化文件重启后读取 0 字节正文。每批最多读取 256 KiB，单行上限 1 MiB，未完成尾行留在原偏移，超长行有界丢弃；初始身份元数据发现最多 32 行/约 2 MiB。pending tool 只保存哈希键且最多 256 个，超限保留近期调用并警告估算不完整。自动模式只保存目标日期观测、已有非空历史归档的修正和此前最后一个 Codex 累计基线；手动补历史会重绕曾跳过旧日期的来源。源日志从不修改。Codex 检查点带计数解析版本；首次升级只回绕曾拒绝计数或分页的已追踪来源，正常旧来源直接升级检查点。已归档历史通过观测失效重算补回；未解析父页的已追踪旧来源也能在后续维护中重试（最多每天一次全历史依赖重试），但不会自动导入未追踪的更早历史。基线标记、待确认跳变仅含数值/时间及散列身份，不保存原始引用或路径。
 
 `UsageArchiveDatabase` actor 使用系统 SQLite3，私有 `~/.zackeyes/usage/archive-v1.sqlite`（目录 0700、主文件与 sidecar 0600），WAL/FULL、8 MiB 页面缓存。计数观测与来源 cursor/parser state 在同一事务提交；日期/session/区间索引支持按日查询，包括跨日工作/等待区间及同 timestamp 的全部 Codex 前驱。修订同时使旧/新日期及后继累计观测的日期失效，适用于所有时区归档。未知 schema、链接或公开权限文件拒绝写入。旧 `history-v1.jsonl` 保留不动，只有 Settings 显式导入时才分块迁移；旧 Collector/Store 保留作兼容测试，生产 service 不实例化其全历史缓存。
 

@@ -1088,6 +1088,8 @@ public final class UsageTracker: ObservableObject {
         var mtime: Date
         var size: UInt64
         var tallies: [Date: [String: ModelTokenTally]]
+        var unresolvedHistory = false
+        var historyReference: CodexUsageHistory.Reference? = nil
     }
 
     /// Full-window Codex daily-token scan with a per-file parse cache. Walks all
@@ -1105,6 +1107,7 @@ public final class UsageTracker: ObservableObject {
             ?? now.addingTimeInterval(-7 * 86400)
         let fm = FileManager.default
         var newCache: [String: FileTally] = [:]
+        var historyFiles: [String: URL]?
         var merged: [Date: [String: ModelTokenTally]] = [:]
 
         for dayDir in SessionScanner.allDateDirs(under: rootDir) {
@@ -1126,15 +1129,34 @@ public final class UsageTracker: ObservableObject {
                 // created with /var/... (FileManager.temporaryDirectory) and
                 // those returned by contentsOfDirectory (/private/var/...) match.
                 let key = file.resolvingSymlinksInPath().path
+                let hit = cache[key].flatMap { $0.mtime == mtime && $0.size == UInt64(size) ? $0 : nil }
+                var restoredBaseline: CodexUsageHistory.Baseline?
+                if let hit, hit.unresolvedHistory, let reference = hit.historyReference {
+                    if historyFiles == nil { historyFiles = CodexUsageHistory.fileIndex(root: rootDir) }
+                    restoredBaseline = CodexUsageHistory.resolve(reference, files: historyFiles ?? [:])
+                }
                 let tallies: [Date: [String: ModelTokenTally]]
-                if let hit = cache[key], hit.mtime == mtime, hit.size == UInt64(size) {
-                    tallies = hit.tallies               // cache hit — no re-parse
+                var unresolvedHistory = hit?.unresolvedHistory ?? false
+                var historyReference = hit?.historyReference
+                if let hit, restoredBaseline == nil {
+                    tallies = hit.tallies
                 } else if let text = try? String(contentsOf: file, encoding: .utf8) {
-                    tallies = parseCodexDailyTallies(text: text, calendar: calendar, cutoff: dailyCutoff)
+                    let meta = CodexUsageHistory.metadata(in: text)
+                    historyReference = CodexUsageHistory.reference(meta)
+                    var baseline = restoredBaseline
+                    if baseline == nil, let reference = historyReference {
+                        if historyFiles == nil { historyFiles = CodexUsageHistory.fileIndex(root: rootDir) }
+                        baseline = CodexUsageHistory.resolve(reference, files: historyFiles ?? [:])
+                    }
+                    unresolvedHistory = CodexUsageHistory.hasInheritedHistory(meta) && baseline == nil
+                    tallies = parseCodexDailyTallies(text: text, calendar: calendar, cutoff: dailyCutoff, initialBaseline: baseline?.usage)
                 } else {
                     tallies = [:]
                 }
-                newCache[key] = FileTally(mtime: mtime, size: UInt64(size), tallies: tallies)
+                var saved = FileTally(mtime: mtime, size: UInt64(size), tallies: tallies)
+                saved.unresolvedHistory = unresolvedHistory
+                saved.historyReference = historyReference
+                newCache[key] = saved
                 mergeTallies(&merged, tallies)
             }
         }

@@ -18,6 +18,7 @@ struct UsageLedgerRecord: Codable, Equatable, Sendable {
     var cacheRead = 0
     var cacheWrite = 0
     var tool: String? = nil
+    var baseline: Bool? = nil
     var end: Date? = nil
 
     var tokens: Int { input + output + cacheWrite }
@@ -26,7 +27,8 @@ struct UsageLedgerRecord: Codable, Equatable, Sendable {
             && [project, model, tool ?? ""].allSatisfy {
                 $0.utf8.count <= 512 && !$0.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
             }
-            && [input, output, cacheRead, cacheWrite].allSatisfy { (0...1_000_000_000).contains($0) }
+            && [input, output, cacheRead, cacheWrite].allSatisfy { (0...(kind == .counter ? CodexUsageTotals.maximumCumulativeTokens : 1_000_000_000)).contains($0) }
+            && (baseline != true || kind == .counter)
             && date.timeIntervalSince1970.isFinite
             && (end.map { $0.timeIntervalSince1970.isFinite && $0 >= date } ?? true)
             && ((kind == .work || kind == .wait) == (end != nil))
@@ -39,6 +41,13 @@ struct UsageLedgerRecord: Codable, Equatable, Sendable {
         let amount = input + output + cacheRead + cacheWrite
         let oldAmount = old.input + old.output + old.cacheRead + old.cacheWrite
         if amount != oldAmount { return amount > oldAmount }
+        if baseline != old.baseline {
+            // Explicitly observed usage wins; a newly discovered unknown
+            // inherited baseline may correct an older unclassified counter.
+            if baseline == false { return true }
+            if old.baseline == false { return false }
+            return baseline == true
+        }
         if end != old.end { return (end ?? date) > (old.end ?? old.date) }
         return [project, model, tool ?? ""].joined(separator: "|")
             > [old.project, old.model, old.tool ?? ""].joined(separator: "|")

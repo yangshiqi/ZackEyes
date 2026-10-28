@@ -36,9 +36,16 @@ enum UsageLedgerParser {
         var previousTotals: [String: Int] = [:]
         var rowIndex = 0
         var truncatedTools = false
+        var inheritedBaseline: UsageLedgerRecord? = nil
+        var needsInheritedBaseline: Bool? = nil
+        struct PendingCounter: Codable, Sendable {
+            var date: Date
+            var values: [String: Int]
+        }
+        var pendingCounter: PendingCounter? = nil
     }
 
-    static func seed(objects: [[String: Any]], agent: AgentKind, sourceID: String) -> State {
+    static func seed(objects: [[String: Any]], agent: AgentKind, sourceID: String, inherited: CodexUsageHistory.Baseline? = nil) -> State {
         let meta = objects.first { $0["type"] as? String == "session_meta" }?["payload"] as? [String: Any]
         let rawSession =
             (meta?["id"] as? String) ?? objects.compactMap { ($0["sessionId"] ?? $0["session_id"]) as? String }.first
@@ -48,7 +55,24 @@ enum UsageLedgerParser {
         let cwd = (meta?["cwd"] as? String) ?? objects.compactMap { $0["cwd"] as? String }.first
         let project = UsageLedgerRecord.label(cwd.flatMap { JournalCollector.projectName(fromCwd: $0) })
         let model = UsageLedgerRecord.label(meta?["model"] as? String)
-        return State(agent: agent, sourceID: sourceID, session: session, project: project, model: model)
+        var state = State(agent: agent, sourceID: sourceID, session: session, project: project, model: model)
+        if agent == .codex, CodexUsageHistory.hasInheritedHistory(meta) {
+            state.needsInheritedBaseline = inherited == nil
+            if let inherited {
+                let u = inherited.usage
+                state.previousTotals = ["input_tokens": u.input, "cached_input_tokens": u.cached,
+                    "output_tokens": u.output, "cache_write_input_tokens": u.writes]
+            }
+            if let inherited, inherited.date != .distantPast {
+                let u = inherited.usage
+                var record = UsageLedgerRecord(id: UsageLedgerRecord.identity("\(session):baseline:\(inherited.date.timeIntervalSince1970):\(u.input):\(u.cached):\(u.output):\(u.writes)"),
+                    session: session, agent: agent, project: project, model: model, date: inherited.date, kind: .counter,
+                    input: u.input, output: u.output, cacheRead: u.cached, cacheWrite: u.writes)
+                record.baseline = true
+                state.inheritedBaseline = record
+            }
+        }
+        return state
     }
 
     static func consume(objects: [[String: Any]], state: inout State, onIssue: (() -> Void)? = nil)
@@ -60,6 +84,10 @@ enum UsageLedgerParser {
         let project = state.project
         var model = state.model
         var out: [String: UsageLedgerRecord] = [:]
+        if let inherited = state.inheritedBaseline {
+            out[inherited.id] = inherited
+            state.inheritedBaseline = nil
+        }
         let iso = ISO8601DateFormatter()
         iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let plainISO = ISO8601DateFormatter()
@@ -82,10 +110,11 @@ enum UsageLedgerParser {
             input: Int = 0, output: Int = 0, read: Int = 0, write: Int = 0, tool: String? = nil
         ) {
             let id = UsageLedgerRecord.identity("\(agent.rawValue):\(key)")
-            let record = UsageLedgerRecord(
+            var record = UsageLedgerRecord(
                 id: id, session: session, agent: agent, project: project, model: model,
                 date: at, kind: kind, input: input, output: output, cacheRead: read,
                 cacheWrite: write, tool: tool, end: end)
+            if kind == .counter { record.baseline = false }
             if out[id].map({ record.supersedes($0) }) ?? true { out[id] = record }
         }
         func interval(_ start: Date, _ finish: Date, wait: Bool = false) {
@@ -219,7 +248,7 @@ enum UsageLedgerParser {
                     var valid = true
                     for key in keys {
                         if let raw = totals[key] {
-                            if let value = count(raw) { current[key] = value } else { valid = false }
+                            if let value = count(raw, maximum: CodexUsageTotals.maximumCumulativeTokens) { current[key] = value } else { valid = false }
                         } else {
                             current[key] = previousTotals[key] ?? 0
                         }
@@ -227,6 +256,41 @@ enum UsageLedgerParser {
                     guard valid else {
                         onIssue?()
                         continue
+                    }
+                    var gap: State.PendingCounter?
+                    if let pending = state.pendingCounter {
+                        if keys.allSatisfy({ key in
+                            let delta = current[key, default: 0] - pending.values[key, default: 0]
+                            return (0...1_000_000_000).contains(delta)
+                        }) {
+                            previousTotals = pending.values
+                            gap = pending
+                        }
+                        state.pendingCounter = nil
+                    }
+                    let firstCounter = previousTotals.isEmpty
+                    if current["input_tokens", default: 0] < previousTotals["input_tokens", default: 0]
+                        || current["output_tokens", default: 0] < previousTotals["output_tokens", default: 0] {
+                        for key in keys where totals[key] == nil { current[key] = 0 }
+                    }
+                    let reset = current["input_tokens", default: 0] < previousTotals["input_tokens", default: 0]
+                        || current["output_tokens", default: 0] < previousTotals["output_tokens", default: 0]
+                    let oversized = keys.contains { key in
+                        max(0, current[key, default: 0] - (reset ? 0 : previousTotals[key, default: 0])) > 1_000_000_000
+                    }
+                    let initialBaseline = state.needsInheritedBaseline == true || (firstCounter && oversized)
+                    if oversized && !initialBaseline {
+                        state.pendingCounter = .init(date: at, values: current)
+                        onIssue?()
+                        continue
+                    }
+                    if let gap {
+                        let identity = keys.map { String(gap.values[$0, default: 0]) }.joined(separator: ":")
+                        let key = "\(session):gap-baseline:\(gap.date.timeIntervalSince1970):\(identity)"
+                        emit(.counter, key: key, at: gap.date,
+                             input: gap.values["input_tokens", default: 0], output: gap.values["output_tokens", default: 0],
+                             read: gap.values["cached_input_tokens", default: 0], write: gap.values["cache_write_input_tokens", default: 0])
+                        out[UsageLedgerRecord.identity("\(agent.rawValue):\(key)")]?.baseline = true
                     }
                     previousTotals = current
                     // Persist cumulative evidence, not predecessor-dependent deltas:
@@ -237,6 +301,13 @@ enum UsageLedgerParser {
                         input: current["input_tokens", default: 0], output: current["output_tokens", default: 0],
                         read: current["cached_input_tokens", default: 0],
                         write: current["cache_write_input_tokens", default: 0])
+                    if initialBaseline {
+                        // Establish a non-billable baseline when ancestors are unavailable.
+                        let key = UsageLedgerRecord.identity("\(agent.rawValue):\(session):counter:\(at.timeIntervalSince1970):\(identity)")
+                        out[key]?.baseline = true
+                        state.needsInheritedBaseline = false
+                        onIssue?()
+                    }
                 } else if kind == "task_started" {
                     closeQuestions(at: at)
                     activity(at, startsTurn: true)
@@ -269,11 +340,11 @@ enum UsageLedgerParser {
         return out.values.filter(\.isValid).sorted { $0.date == $1.date ? $0.id < $1.id : $0.date < $1.date }
     }
 
-    private static func count(_ raw: Any?) -> Int? {
+    private static func count(_ raw: Any?, maximum: Int = 1_000_000_000) -> Int? {
         guard let raw else { return 0 }
         guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
         let value = number.doubleValue
-        guard value.isFinite, value >= 0, value <= 1_000_000_000, value.rounded(.towardZero) == value else {
+        guard value.isFinite, value >= 0, value <= Double(maximum), value.rounded(.towardZero) == value else {
             return nil
         }
         return Int(value)
