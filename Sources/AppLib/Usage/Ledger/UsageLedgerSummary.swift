@@ -6,12 +6,14 @@ struct UsageLedgerSummary: Codable, Sendable {
         var date: Date
         var agent: AgentKind
         var tokens = 0
+        var cacheRead: Int? = nil
         var activeSeconds = 0.0
         var id: String { "\(date.timeIntervalSince1970):\(agent.rawValue)" }
     }
     struct Rank: Identifiable, Codable, Sendable {
         var name: String
         var value: Int
+        var cacheRead: Int? = nil
         var id: String { name }
     }
     struct Hour: Identifiable, Codable, Sendable {
@@ -31,6 +33,7 @@ struct UsageLedgerSummary: Codable, Sendable {
     var hasHistory = false
     var cacheInput = 0
     var cacheReused = 0
+    var cacheBreakdownVersion: Int? = nil
 
     static func make(
         records: [UsageLedgerRecord], days count: Int, now: Date, calendar: Calendar, rankLimit: Int = 10,
@@ -42,7 +45,10 @@ struct UsageLedgerSummary: Codable, Sendable {
         let dates = (0..<count).reversed().compactMap { calendar.date(byAdding: .day, value: -$0, to: today) }
         guard let cutoff = start ?? dates.first else { return Self() }
         var report = Self()
-        report.days = dates.flatMap { day in [AgentKind.claude, .codex].map { Day(date: day, agent: $0) } }
+        report.cacheBreakdownVersion = 1
+        report.days = dates.flatMap { day in
+            [AgentKind.claude, .codex].map { Day(date: day, agent: $0) }
+        }
         report.heatmap = dates.flatMap { day in (0..<24).map { Hour(day: day, hour: $0) } }
         let indices = Dictionary(uniqueKeysWithValues: report.days.enumerated().map { ($0.element.id, $0.offset) })
         let hourIndices = Dictionary(
@@ -55,6 +61,8 @@ struct UsageLedgerSummary: Codable, Sendable {
         var projects: [String: Int] = [:]
         var models: [String: Int] = [:]
         var tools: [String: Int] = [:]
+        var projectReads: [String: Int] = [:]
+        var modelReads: [String: Int] = [:]
         var input = 0
         var cached = 0
         var writes = 0
@@ -79,9 +87,14 @@ struct UsageLedgerSummary: Codable, Sendable {
                 cached += record.cacheRead
                 writes += record.cacheWrite
                 projects[record.project, default: 0] += record.tokens
+                projectReads[record.project, default: 0] += record.cacheRead
+                modelReads[record.model, default: 0] += record.cacheRead
                 models[record.model, default: 0] += record.tokens
                 let key = Day(date: calendar.startOfDay(for: record.date), agent: record.agent).id
-                if let index = indices[key] { report.days[index].tokens += record.tokens }
+                if let index = indices[key] {
+                    report.days[index].tokens += record.tokens
+                    report.days[index].cacheRead = (report.days[index].cacheRead ?? 0) + record.cacheRead
+                }
             } else if record.kind == .tool, let tool = record.tool {
                 tools[tool, default: 0] += 1
             }
@@ -108,18 +121,21 @@ struct UsageLedgerSummary: Codable, Sendable {
         }
         report.cacheInput = input + cached + writes
         report.cacheReused = cached
-        if input + cached + writes > 0 { report.cacheHitRate = Double(cached) / Double(input + cached + writes) }
-        func ranked(_ counts: [String: Int]) -> [Rank] {
+        if input + cached + writes > 0 {
+            report.cacheHitRate = Double(cached) / Double(input + cached + writes)
+        }
+        func ranked(_ counts: [String: Int], reads: [String: Int] = [:]) -> [Rank] {
             let values: [Rank] = counts.compactMap { name, value in
-                value > 0 ? Rank(name: name, value: value) : nil
+                value + (reads[name] ?? 0) > 0
+                    ? Rank(name: name, value: value, cacheRead: reads[name]) : nil
             }
             let sorted = values.sorted { left, right in
                 left.value == right.value ? left.name < right.name : left.value > right.value
             }
             return Array(sorted.prefix(rankLimit))
         }
-        report.projects = ranked(projects)
-        report.models = ranked(models)
+        report.projects = ranked(projects, reads: projectReads)
+        report.models = ranked(models, reads: modelReads)
         report.tools = ranked(tools)
         return report
     }

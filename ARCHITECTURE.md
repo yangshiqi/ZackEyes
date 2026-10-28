@@ -58,7 +58,7 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 
 `UsageArchiveEngine` 单任务、后台优先级并在批次间让出/节流。应用运行时本地 03:00 后结算前一天，启动时补算；首个已提交 chunk 及后续至少间隔 30s 发布部分日统计，完整任务成功后才推进完成标记。初始自动范围是最近三个完整日，此后补齐漏掉日期并修正最近三日及已失效旧归档。60s 调度只检查完成元数据，不因打开 Settings、切换周期或已完成日的再次启动而扫描日志。时区/Calendar 隔离归档，切换时从磁盘计数重建匹配日期，不混合旧时区桶。手动导入旧账本/更早 transcript 可暂停、重启后续传；取消只保留已提交批次，可选导入失败不阻塞正常日结。
 
-`UsageLedgerSummary` 保留区间合并、问题等待扣除、缺边界时的短活动间隙估算（最多 5 min，超过 30 min 不推断）及并发 agent-hours；按完整本地日处理午夜/DST。导入保留所有可用磁盘计数，但新建日汇总限定于可见的最近 90 日，避免异常早期时间戳触发无界补档。每日归档保留完整排行和缓存分子/分母，7/30/90 日合并后才截取前十及计算加权命中率。`UsageLedgerService`/Settings 只读取小归档；统计截至昨天，今天明确未结算，现有 live Today/quota 不变。刷新发布使用独立序号和生命周期 generation 隔离过期回调。数据不经 Bridge、quota cache、journal、通知或模型网络；demo/SSH 会话不是采集来源。
+`UsageLedgerSummary` 保留区间合并、问题等待扣除、缺边界时的短活动间隙估算（最多 5 min，超过 30 min 不推断）及并发 agent-hours；按完整本地日处理午夜/DST。导入保留所有可用磁盘计数，但新建日汇总限定于可见的最近 90 日，避免异常早期时间戳触发无界补档。每日归档保留完整排行和缓存分子/分母，7/30/90 日合并后才截取前十及计算加权命中率。`UsageLedgerService`/Settings 通常只读取小归档；Usage 页的 `Include cached reads` 开关默认开启，选择通过 UserDefaults 持久化，统一控制总量、agent 分项、每日图表和项目/模型排行，命中率与活动时长不变。日归档保留每日/项目/模型的缓存读取分项；旧归档首次按含缓存口径查询时，从 SQLite 已持久化观测一次性补齐并保存，不重扫 transcript。统计截至昨天，今天明确未结算，现有 live Today/quota 不变。刷新发布使用独立序号和生命周期 generation 隔离过期回调。数据不经 Bridge、quota cache、journal、通知或模型网络；demo/SSH 会话不是采集来源。
 
 ### Demo 会话展示（#262）
 

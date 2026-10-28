@@ -86,3 +86,41 @@ extension UsageLedgerServiceTests {
         #expect(service.errorMessage == nil && service.settledThrough != nil)
     }
 }
+
+extension UsageLedgerServiceTests {
+    @Test func cachedReadPreferenceDefaultsOnAndPersistsAcrossRestart() async throws {
+        let root = try UsageLedgerStorageTests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suite = "ZackEyes-cache-test-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let db = UsageArchiveDatabase(url: root.appendingPathComponent("archive.sqlite"))
+        let calendar = UsageLedgerTests.utc
+        let day = calendar.startOfDay(for: UsageLedgerTests.start)
+        var record = UsageLedgerStorageTests().record(100, at: day.addingTimeInterval(100))
+        record.cacheRead = 900
+        try await db.apply(records: [record])
+        try await db.archive(day: day, calendar: calendar)
+        let engine = UsageArchiveEngine(
+            database: db, claudeRoot: root, codexRoot: root,
+            legacyURL: root.appendingPathComponent("missing"), throttle: false)
+        func service() -> UsageLedgerService {
+            UsageLedgerService(
+                database: db, engine: engine,
+                now: { day.addingTimeInterval(86400) }, calendar: { calendar }, defaults: defaults)
+        }
+        let first = service()
+        #expect(first.includeCacheReads)
+        await first.refresh()
+        #expect(first.summary.totalTokens == 1000)
+        await first.setIncludeCacheReads(false)
+        #expect(first.summary.totalTokens == 100)
+        let restarted = service()
+        #expect(!restarted.includeCacheReads)
+        await restarted.refresh()
+        #expect(restarted.summary.totalTokens == 100)
+        await restarted.setIncludeCacheReads(true)
+        #expect(restarted.summary.totalTokens == 1000)
+        #expect(service().includeCacheReads)
+    }
+}
