@@ -46,6 +46,62 @@ struct CodexQuotaRecoveryScanTests {
         }
     }
 
+    @Test(arguments: [true, false])
+    func tailKeepsOriginalDeadlineThroughRevisions(revisedLater: Bool) throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let day = root.appendingPathComponent("2026/10/28")
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        let now = Date().addingTimeInterval(-1)
+        let iso = ISO8601DateFormatter()
+        let values = [(80, -180.0, revisedLater ? -60.0 : 3600.0),
+                      (81, -120.0, revisedLater ? 7200.0 : -60.0), (1, 0.0, 10800.0)]
+        let lines = values.map { used, offset, resetOffset in
+            """
+            {"timestamp":"\(iso.string(from: now.addingTimeInterval(offset)))","type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"window_minutes":300,"used_percent":\(used),"resets_at":\(Int(now.addingTimeInterval(resetOffset).timeIntervalSince1970))}}}}
+            """
+        }.joined(separator: "\n")
+        try lines.write(to: day.appendingPathComponent("rollout-test.jsonl"), atomically: true, encoding: .utf8)
+        let state = try #require(UsageTracker.scanLatestCodexState(rootDir: root))
+        #expect((state.accountReadings.first?.recoveredAt != nil) == !revisedLater)
+    }
+
+    @Test func restartedTrackerDoesNotTrustRecoveryInTruncatedHistory() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let day = root.appendingPathComponent("2026/10/28")
+        try FileManager.default.createDirectory(at: day, withIntermediateDirectories: true)
+        let now = Date().addingTimeInterval(-1)
+        let iso = ISO8601DateFormatter()
+        func event(_ used: Int, _ offset: Double, _ resetOffset: Double) -> String {
+            """
+            {"timestamp":"\(iso.string(from: now.addingTimeInterval(offset)))","type":"event_msg","payload":{"type":"token_count","rate_limits":{"primary":{"window_minutes":300,"used_percent":\(used),"resets_at":\(Int(now.addingTimeInterval(resetOffset).timeIntervalSince1970))}}}}
+            """ + "\n"
+        }
+        // The tail loses the original deadline, retaining only a revised high
+        // reading followed by the ordinary reset after the original deadline.
+        let contents = event(80, -180, -60) + String(repeating: "x", count: 1_048_576) + "\n"
+            + event(81, -120, 7200) + event(1, 0, 10800)
+        try contents.write(to: day.appendingPathComponent("rollout-test.jsonl"), atomically: true, encoding: .utf8)
+        let state = try #require(UsageTracker.scanLatestCodexState(rootDir: root))
+        let suite = UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let tracker = CodexResetTracker(config: ConfigStore(directory: root.appendingPathComponent("config").path),
+            defaults: defaults, now: { now }, fetch: {
+                Data("""
+                {"schema_version":1,"generated_at":"\(iso.string(from: now))","scheduled":null,"events":[{"kind":"regular","url":"https://x.com/example/status/123","announced_at":"\(iso.string(from: now.addingTimeInterval(-240)))"}]}
+                """.utf8)
+            })
+        await tracker.refresh(activeCodex: true)
+        tracker.recordQuotaReadings(state.accountReadings)
+        #expect(tracker.announcement != nil)
+        // Re-polling the same truncated tail must not turn its previously
+        // rejected historical inference into trusted in-memory evidence.
+        tracker.recordQuotaReadings(state.accountReadings)
+        #expect(tracker.announcement != nil)
+    }
+
     @Test func refreshPublishesAccountEvidenceFromExistingLocalScan() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

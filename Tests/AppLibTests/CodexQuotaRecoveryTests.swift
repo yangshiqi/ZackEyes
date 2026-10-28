@@ -103,6 +103,57 @@ struct CodexQuotaRecoveryTests {
         #expect(tracker.announcement != nil)
     }
 
+    @Test(arguments: [true, false], [true, false])
+    func originalDeadlineSurvivesScheduleRevision(revisedLater: Bool, sevenDay: Bool) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let suite = UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var clock = now.addingTimeInterval(-180)
+        let iso = ISO8601DateFormatter()
+        let tracker = CodexResetTracker(config: ConfigStore(directory: directory.path), defaults: defaults,
+            now: { clock }, fetch: {
+                Data("""
+                {"schema_version":1,"generated_at":"\(iso.string(from: clock))","scheduled":null,"events":[{"kind":"regular","url":"https://x.com/example/status/123","announced_at":"\(iso.string(from: now.addingTimeInterval(-240)))"}]}
+                """.utf8)
+            })
+        await tracker.refresh(activeCodex: true)
+        let original = now.addingTimeInterval(revisedLater ? -60 : 3600)
+        tracker.recordQuotaReadings([reading(80, at: clock, reset: original, sevenDay: sevenDay)])
+        clock = now.addingTimeInterval(-120)
+        let revised = now.addingTimeInterval(revisedLater ? 7200 : -60)
+        tracker.recordQuotaReadings([reading(81, at: clock, reset: revised, sevenDay: sevenDay)])
+        clock = now
+        tracker.recordQuotaReadings([reading(1, at: clock, reset: now.addingTimeInterval(10800), sevenDay: sevenDay)])
+        #expect((tracker.announcement != nil) == revisedLater)
+    }
+
+    @Test func rawTailRecoveryCannotOverrideKnownOriginalDeadline() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let suite = UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var clock = now.addingTimeInterval(-180)
+        let iso = ISO8601DateFormatter()
+        let tracker = CodexResetTracker(config: ConfigStore(directory: directory.path), defaults: defaults,
+            now: { clock }, fetch: {
+                Data("""
+                {"schema_version":1,"generated_at":"\(iso.string(from: clock))","scheduled":null,"events":[{"kind":"regular","url":"https://x.com/example/status/123","announced_at":"\(iso.string(from: now.addingTimeInterval(-240)))"}]}
+                """.utf8)
+            })
+        await tracker.refresh(activeCodex: true)
+        tracker.recordQuotaReadings([reading(80, at: clock, reset: now.addingTimeInterval(-60))])
+        clock = now
+        // A shortened tail lost the original deadline and inferred an early reset
+        // against its later date. Known local history must take precedence.
+        var shortenedTail = reading(1, at: now, reset: now.addingTimeInterval(7200))
+        shortenedTail.recoveredAt = now
+        tracker.recordQuotaReadings([shortenedTail])
+        #expect(tracker.announcement != nil)
+    }
+
     @Test func baselineSurvivesIdleUntilItsPlannedReset() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

@@ -68,21 +68,31 @@ public final class CodexResetTracker: ObservableObject {
         for reading in readings {
             guard reading.observedAt <= current,
                   current.timeIntervalSince(reading.observedAt) <= CodexQuotaRecovery.freshness else { continue }
-            if let detected = reading.recoveredAt, detected <= reading.observedAt,
-               current.timeIntervalSince(detected) <= 24 * 3600 {
+            let previous = quotaReadings[reading.sourceID]
+            // A bounded tail may have lost the original deadline. Its inferred
+            // recovery cannot override the more complete in-memory plan.
+            let agreesWithKnownPlan = previous.map {
+                $0.plannedFiveHourReset == reading.plannedFiveHourReset
+                    && $0.plannedSevenDayReset == reading.plannedSevenDayReset
+            } ?? true
+            if agreesWithKnownPlan,
+               let detected = reading.recoveredAt, detected <= reading.observedAt,
+               current.timeIntervalSince(detected) <= 24 * 3600,
+               // Re-polling an already rejected truncated tail is not new proof.
+               reading.hasCompleteHistory || previous.map({ $0.observedAt < detected }) == true {
                 recovery = max(recovery ?? .distantPast, detected)
             }
-            if let previous = quotaReadings[reading.sourceID] {
+            if let previous {
                 guard reading.observedAt > previous.observedAt else { continue }
                 if CodexQuotaRecovery.occurred(from: previous, to: reading) {
                     recovery = max(recovery ?? .distantPast, reading.observedAt)
                 }
             }
-            quotaReadings[reading.sourceID] = reading
+            quotaReadings[reading.sourceID] = reading.retainingOriginalPlan(from: previous)
         }
         quotaReadings = Dictionary(uniqueKeysWithValues: quotaReadings.values
-            .filter { ($0.quota.fiveHourResetsAt.map { $0 > current } ?? false)
-                || ($0.quota.sevenDayResetsAt.map { $0 > current } ?? false) }
+            .filter { ($0.plannedFiveHourReset.map { $0 > current } ?? false)
+                || ($0.plannedSevenDayReset.map { $0 > current } ?? false) }
             .sorted { $0.observedAt > $1.observedAt }.prefix(128).map { ($0.sourceID, $0) })
         if let recovery {
             if recovery != savedRecovery { defaults.set(recovery, forKey: Self.localRecoveryKey) }
