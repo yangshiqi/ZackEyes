@@ -81,7 +81,8 @@ public final class CodexResetTracker: ObservableObject {
             quotaReadings[reading.sourceID] = reading
         }
         quotaReadings = Dictionary(uniqueKeysWithValues: quotaReadings.values
-            .filter { current.timeIntervalSince($0.observedAt) <= CodexQuotaRecovery.freshness }
+            .filter { ($0.quota.fiveHourResetsAt.map { $0 > current } ?? false)
+                || ($0.quota.sevenDayResetsAt.map { $0 > current } ?? false) }
             .sorted { $0.observedAt > $1.observedAt }.prefix(128).map { ($0.sourceID, $0) })
         if let recovery {
             if recovery != savedRecovery { defaults.set(recovery, forKey: Self.localRecoveryKey) }
