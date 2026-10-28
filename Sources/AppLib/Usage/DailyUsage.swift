@@ -152,28 +152,32 @@ extension UsageTracker {
         var sawTotals = initialBaseline != nil
         var pendingJump: CodexUsageTotals?
 
-        for line in text.split(separator: "\n") {
-            let d = Data(line.utf8)
-            guard let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
+        // Only these schema rows can alter billing state. Unicode-escaped JSON
+        // keys/values fall back to decoding, preserving the permissive parser.
+        let relevant = ["\"total_token_usage\"", "\"turn_context\"", "\"thread_settings_applied\"", "\"session_configured\"", #"\u"#]
+            .map { Data($0.utf8) }
+        CodexUsageHistory.forEachLine(in: text) { d in
+            guard relevant.contains(where: { d.range(of: $0) != nil }) else { return true }
+            guard let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return true }
             let type = obj["type"] as? String
             let payload = obj["payload"] as? [String: Any]
 
             if type == "turn_context", let m = payload?["model"] as? String {
                 currentModel = m
                 if payload?.keys.contains("service_tier") == true { serviceTier = payload?["service_tier"] as? String }
-                continue
+                return true
             }
             if type == "event_msg", let kind = payload?["type"] as? String,
                kind == "thread_settings_applied" || kind == "session_configured" {
                 let settings = (payload?["thread_settings"] as? [String: Any]) ?? payload ?? [:]
                 if let model = settings["model"] as? String { currentModel = model }
                 serviceTier = settings["service_tier"] as? String
-                continue
+                return true
             }
             guard type == "event_msg",
                   (payload?["type"] as? String) == "token_count",
                   let info = payload?["info"] as? [String: Any],
-                  let totals = info["total_token_usage"] as? [String: Any] else { continue }
+                  let totals = info["total_token_usage"] as? [String: Any] else { return true }
 
             // Absent component → treat as unchanged (delta 0 for that component).
             // Codex may write token counts as Int OR Double in the rollout JSONL,
@@ -216,12 +220,12 @@ extension UsageTracker {
             if firstInherited || (!sawTotals && oversized) {
                 prevInput = curInput; prevCached = curCached; prevOutput = curOutput; prevWrites = curWrites; sawTotals = true
                 markPartial()
-                continue
+                return true
             }
             guard !oversized else {
                 pendingJump = .init(input: curInput, cached: curCached, writes: curWrites, output: curOutput)
                 markPartial()
-                continue
+                return true
             }
             prevInput = curInput; prevCached = curCached; prevOutput = curOutput; prevWrites = curWrites; sawTotals = true
 
@@ -230,7 +234,7 @@ extension UsageTracker {
             // discards a turn whose only growth is cached tokens.
             guard let tsString = obj["timestamp"] as? String,
                   let ts = iso.date(from: tsString) ?? isoNoFrac.date(from: tsString),
-                  ts >= cutoff, (dInput + dOutput) > 0 else { continue }
+                  ts >= cutoff, (dInput + dOutput) > 0 else { return true }
 
             let day = calendar.startOfDay(for: ts)
             var tally = out[day]?[currentModel] ?? ModelTokenTally()
@@ -245,6 +249,7 @@ extension UsageTracker {
             }
             tally.codexBilling = (tally.codexBilling ?? CodexBillingUnits()) + .estimate(usage, model: currentModel, tier: serviceTier, request: request)
             out[day, default: [:]][currentModel] = tally
+            return true
         }
         return out
     }

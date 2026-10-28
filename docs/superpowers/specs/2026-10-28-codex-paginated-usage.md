@@ -17,3 +17,7 @@ Fix both existing local pipelines. Keep source logs/config read-only, preserve p
 ## Verification and local repair
 
 Write failing fixtures first: cumulative crossing1B, paginated inherited totals, empty intermediary page and pinned boundary, missing/cyclic/linked lineage, across-day counters/reset, archive baseline dedup, checkpoint upgrade and subsequent zero-byte unchanged import. Run related and full serialized Swift tests/build/app/signature checks. Use actual local files only in a temporary audit harness with numeric-only output, reproduce corrected October27 counts/cost. Before touching real archives, stop the owned client and create a consistent SQLite backup. Exercise repair on backup clone first, validate totals and idempotence, then repair live database and launch a local integration build including the reset-reminder fix. No external merge/release is part of this task.
+
+## Startup follow-up
+
+Local client validation exposed two overlapping cold scans (periodic start plus panel refresh) and no quota/daily publication until they finish. Coalesce concurrent refresh requests; publish the latest quota before the daily scan, then merge daily data into the current snapshot so concurrent hook changes survive. Replace generic Unicode/byte collection splitting with bounded header parsing and native LF boundary search over contiguous UTF-8. Preserve model, pricing, date and counter results, including Unicode/CRLF logs. Validate cold-scan timing and the same numeric golden against real logs before relaunch.
