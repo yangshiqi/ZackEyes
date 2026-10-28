@@ -37,8 +37,8 @@ struct CodexQuotaRecoveryTests {
         #expect(!CodexQuotaRecovery.occurred(from: before, to: reading(2, at: before.observedAt)))
         let expired = reading(75, at: now.addingTimeInterval(-120), reset: now.addingTimeInterval(-10))
         #expect(!CodexQuotaRecovery.occurred(from: expired, to: reading(2, at: now)))
-        let stale = reading(75, at: now.addingTimeInterval(-1800))
-        #expect(!CodexQuotaRecovery.occurred(from: stale, to: reading(2, at: now)))
+        let earlier = reading(75, at: now.addingTimeInterval(-1800))
+        #expect(CodexQuotaRecovery.occurred(from: earlier, to: reading(2, at: now)))
     }
 
     @Test func localRecoveryHidesNoticeAcrossPollsAndRestartButNotNewAnnouncements() async throws {
@@ -101,6 +101,28 @@ struct CodexQuotaRecoveryTests {
                                              at: after.addingTimeInterval(-60), reset: reset)])
         tracker.recordQuotaReadings([reading(1, at: after)])
         #expect(tracker.announcement != nil)
+    }
+
+    @Test func baselineSurvivesIdleUntilItsPlannedReset() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let config = ConfigStore(directory: directory.path)
+        let suite = UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var clock = now
+        let iso = ISO8601DateFormatter()
+        let tracker = CodexResetTracker(config: config, defaults: defaults, now: { clock }, fetch: {
+            Data("""
+            {"schema_version":1,"generated_at":"\(iso.string(from: clock))","scheduled":null,"events":[{"kind":"regular","url":"https://x.com/example/status/123","announced_at":"\(iso.string(from: now.addingTimeInterval(-120)))"}]}
+            """.utf8)
+        })
+        await tracker.refresh(activeCodex: true)
+        tracker.recordQuotaReadings([reading(80, at: now)])
+        clock = now.addingTimeInterval(1800)
+        tracker.recordQuotaReadings([])
+        tracker.recordQuotaReadings([reading(2, at: clock)])
+        #expect(tracker.announcement == nil)
     }
 
     @Test func recoveryCanRetireAFutureScheduledNoticeEarly() async throws {

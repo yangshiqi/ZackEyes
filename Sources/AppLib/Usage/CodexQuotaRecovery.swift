@@ -15,7 +15,7 @@ enum CodexQuotaRecovery {
     static func occurred(from previous: CodexQuotaReading, to current: CodexQuotaReading) -> Bool {
         let elapsed = current.observedAt.timeIntervalSince(previous.observedAt)
         guard previous.sourceID == current.sourceID,
-              elapsed > 0, elapsed <= freshness,
+              elapsed > 0,
               !current.quota.limitReached else { return false }
         return restored(previous.quota.fiveHourUsedPct, previous.quota.fiveHourResetsAt,
                         current.quota.fiveHourUsedPct, current.quota.fiveHourResetsAt,
