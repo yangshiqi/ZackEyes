@@ -969,12 +969,15 @@ public final class UsageTracker: ObservableObject {
                 if let timestamp = obj["timestamp"] as? String,
                    let date = fractionalISO.date(from: timestamp) ?? iso.date(from: timestamp) {
                     var reading = CodexQuotaReading(sourceID: url.path, observedAt: date, quota: obs)
+                    reading.hasCompleteHistory = offset == 0
                     if let previous = accountReading, date > previous.observedAt {
                         reading.recoveredAt = CodexQuotaRecovery.occurred(from: previous, to: reading)
                             ? date : previous.recoveredAt
                     }
                     // Out-of-order events must not replace a newer baseline.
-                    if accountReading.map({ date > $0.observedAt }) ?? true { accountReading = reading }
+                    if accountReading.map({ date > $0.observedAt }) ?? true {
+                        accountReading = reading.retainingOriginalPlan(from: accountReading)
+                    }
                 } else {
                     accountReading = nil
                 }
