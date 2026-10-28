@@ -353,6 +353,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // the tracker then polls at most every five minutes while Codex runs.
         let resetTracker = CodexResetTracker()
         codexResetTracker = resetTracker
+        usageTracker.onCodexQuotaReadings = { [weak resetTracker] readings in
+            resetTracker?.recordQuotaReadings(readings)
+        }
         resetTracker.onChange = { [weak self] announcement in
             self?.viewModel.codexResetAnnouncement = announcement
         }
