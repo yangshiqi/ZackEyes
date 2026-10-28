@@ -139,6 +139,8 @@ public final class UsageTracker: ObservableObject {
     }
 
     @Published public private(set) var snapshot: Snapshot = .empty
+    /// Raw local account observations for retiring public reset notices.
+    public var onCodexQuotaReadings: (([CodexQuotaReading]) -> Void)?
 
     /// User preference (#84): whether the expanded "Today" consumption row is
     /// shown. Default true; seeded from `ConfigStore` by `AppDelegate`, toggled
@@ -458,6 +460,10 @@ public final class UsageTracker: ObservableObject {
             now: Date(), currentPct: merged.fiveHourUsedPct, resetsAt: merged.fiveHourResetsAt)
         self.snapshot = merged
 
+        if let codexState {
+            onCodexQuotaReadings?(codexState.accountReadings)
+        }
+
         // Apply when there are per-window scopes OR a block flag. The two are
         // derived from the same token_count reading so scopes is non-empty
         // whenever limitReached is true today, but the explicit `|| limitReached`
@@ -766,7 +772,7 @@ public final class UsageTracker: ObservableObject {
     private nonisolated static func firstActiveCodexReadings(
         rootDir: URL,
         recentSeconds: TimeInterval
-    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation, observedAt: Date)? {
+    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation, observedAt: Date, accountReadings: [CodexQuotaReading])? {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-recentSeconds)
         struct Candidate {
@@ -804,8 +810,10 @@ public final class UsageTracker: ObservableObject {
         var mergedScopes: [String: CodexRateLimitObservation] = [:]
         var overallLast: CodexRateLimitObservation?
         var overallObservedAt: Date?
+        var accountReadings: [CodexQuotaReading] = []
         for c in candidates.sorted(by: { $0.mtime > $1.mtime }) {
             guard let readings = tailCodexReadings(in: c.url) else { continue }
+            if let account = readings.accountReading { accountReadings.append(account) }
             if overallLast == nil {
                 overallLast = readings.last
                 overallObservedAt = c.mtime
@@ -815,7 +823,7 @@ public final class UsageTracker: ObservableObject {
             }
         }
         guard let last = overallLast, let observedAt = overallObservedAt else { return nil }
-        return (mergedScopes, last, observedAt)
+        return (mergedScopes, last, observedAt, accountReadings)
     }
 
     /// Combine two readings of the same scope, keeping the higher non-expired
@@ -878,6 +886,7 @@ public final class UsageTracker: ObservableObject {
         public var limitReached: Bool
         public var limitResetsAt: Date?
         public var observedAt: Date
+        public var accountReadings: [CodexQuotaReading] = []
     }
 
     nonisolated static func scanLatestCodexState(
@@ -908,7 +917,8 @@ public final class UsageTracker: ObservableObject {
             scopes: readings.scopes,
             limitReached: last.limitReached,
             limitResetsAt: blockReset,
-            observedAt: readings.observedAt
+            observedAt: readings.observedAt,
+            accountReadings: readings.accountReadings
         )
     }
 
@@ -917,7 +927,7 @@ public final class UsageTracker: ObservableObject {
     /// when the tail has no `token_count` event.
     private nonisolated static func tailCodexReadings(
         in url: URL
-    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation)? {
+    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation, accountReading: CodexQuotaReading?)? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         let fileSize: UInt64
@@ -942,6 +952,10 @@ public final class UsageTracker: ObservableObject {
 
         var scopes: [String: CodexRateLimitObservation] = [:]
         var last: CodexRateLimitObservation? = nil
+        var accountReading: CodexQuotaReading?
+        let fractionalISO = ISO8601DateFormatter()
+        fractionalISO.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let iso = ISO8601DateFormatter()
         for line in text.split(separator: "\n") {
             guard let lineData = line.data(using: .utf8) else { continue }
             guard let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
@@ -951,11 +965,25 @@ public final class UsageTracker: ObservableObject {
             guard let rl = payload["rate_limits"] as? [String: Any] else { continue }
             let name = codexScopeKey(from: rl)
             let obs = decodeCodexObservation(from: rl)
+            if name.isEmpty {
+                if let timestamp = obj["timestamp"] as? String,
+                   let date = fractionalISO.date(from: timestamp) ?? iso.date(from: timestamp) {
+                    var reading = CodexQuotaReading(sourceID: url.path, observedAt: date, quota: obs)
+                    if let previous = accountReading, date > previous.observedAt {
+                        reading.recoveredAt = CodexQuotaRecovery.occurred(from: previous, to: reading)
+                            ? date : previous.recoveredAt
+                    }
+                    // Out-of-order events must not replace a newer baseline.
+                    if accountReading.map({ date > $0.observedAt }) ?? true { accountReading = reading }
+                } else {
+                    accountReading = nil
+                }
+            }
             scopes[name] = obs
             last = obs
         }
         guard let last else { return nil }
-        return (scopes, last)
+        return (scopes, last, accountReading)
     }
 
     /// Codex 0.137 can emit an account-level `limit_id: "codex"` reading and

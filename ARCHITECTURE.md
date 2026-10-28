@@ -154,6 +154,8 @@ Claude Code 周期性触发 statusLine command（每隔几秒）
 
 `CodexResetTracker` 独立于 `UsageTracker`：仅当本地 Codex 会话为 working/waiting 且设置允许时，最多每 5 分钟通过 `URLSession` 请求公开的 [CodexReset v1 JSON](https://codexreset.ai/developers/)；请求不携带会话、账户或认证信息。`CodexResetFeed` 只接受 schema v1、近期数据和链接到原始公开帖子的信息，分别处理 `scheduled` 与 `events`。有精确 `scheduled_for` 才展示本地时刻与倒计时；只有日期时不推断钟点。公告、公开报告的完成、重置卡与账户本身的 5h/7d `resets_at` 严格分离，不能据此宣称个人额度到账。
 
+`UsageTracker` 在既有本地 rollout 扫描中额外提供账号级 `token_count.rate_limits` 原始读数及事件时间，供 `CodexResetTracker` 判断本机是否已提前恢复；不使用缓存读数、模型专属 scope 或跨会话合并后的显示值。同一 rollout 的相邻读数须在 15 分钟内，某一 5h/7d 轴的剩余额度恢复至至少 95% 且增加至少 10 个百分点，原定 `resets_at` 尚余 60 秒以上、新 `resets_at` 不早于旧值，且新读数未报告限额，才作为提前恢复信号。单次尾读中已观察到的恢复也会保留到最新读数，避免两次轮询之间发生恢复后被后续用量覆盖。只持久化最近一次恢复的时间；自动重置公告发布时间不晚于该时刻时收起并抑制重复通知，后发公告及 banked reset 不受影响。缺少可靠的恢复前后读数时沿用公告源的既有逻辑；不把剩余 100% 本身当成已发生重置。
+
 最新公告由 `NotchViewModel` 发布，在共享的 `NotchExpandedView` 中显示，因此真刘海、模拟岛和菜单栏 fallback 使用同一卡片；Demo 不显示。系统通知另有独立开关（默认开），按原始 URL + 阶段去重并持久化最近 100 条；点击打开原帖。公告源不可用时保留短期新鲜的公告，过期后清除；关闭公告开关立刻清除且停止联网。
 
 ### Simulated Notch 状态机
