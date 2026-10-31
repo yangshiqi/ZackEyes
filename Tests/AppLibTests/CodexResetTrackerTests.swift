@@ -123,6 +123,119 @@ struct CodexResetTrackerTests {
         #expect(calls == 1)
     }
 
+    @Test func recentNoticeReturnsImmediatelyWhenCodexBecomesActiveAgain() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let config = ConfigStore(directory: directory.path)
+        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-10-31T14:47:00Z"))
+        let data = Data("""
+        {"schema_version":1,"generated_at":"2026-10-31T12:16:43Z","scheduled":null,"events":[{"kind":"regular","scope":"all","url":"https://x.com/thsottiaux/status/2116405414921384099","announced_at":"2026-10-31T05:42:26Z","delivered_at":null,"seeded":false}]}
+        """.utf8)
+        var calls = 0
+        let tracker = CodexResetTracker(config: config, defaults: defaults, now: { now }, fetch: {
+            calls += 1
+            return data
+        })
+        await tracker.refresh(activeCodex: true)
+        #expect(tracker.announcement != nil)
+        await tracker.refresh(activeCodex: false)
+        #expect(tracker.announcement == nil)
+        await tracker.refresh(activeCodex: true)
+        #expect(calls == 1)
+        #expect(tracker.announcement?.sourceURL.absoluteString == "https://x.com/thsottiaux/status/2116405414921384099")
+    }
+
+    @Test(arguments: [false, true])
+    func noticeIsRetainedWhenActivityChangesDuringFetch(activeBeforeResponse: Bool) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-10-31T14:47:00Z"))
+        let data = Data("""
+        {"schema_version":1,"generated_at":"2026-10-31T12:16:43Z","scheduled":null,"events":[{"kind":"regular","url":"https://x.com/example/status/123","announced_at":"2026-10-31T05:42:26Z"}]}
+        """.utf8)
+        var pending: CheckedContinuation<Data, Error>?
+        var calls = 0
+        let tracker = CodexResetTracker(config: ConfigStore(directory: directory.path), defaults: defaults,
+            now: { now }, fetch: {
+                calls += 1
+                return try await withCheckedThrowingContinuation { pending = $0 }
+            })
+        let request = Task { await tracker.refresh(activeCodex: true) }
+        for _ in 0..<100 {
+            if pending != nil { break }
+            await Task.yield()
+        }
+        let response = try #require(pending)
+        await tracker.refresh(activeCodex: false)
+        if activeBeforeResponse { await tracker.refresh(activeCodex: true) }
+        response.resume(returning: data)
+        await request.value
+        #expect((tracker.announcement != nil) == activeBeforeResponse)
+        await tracker.refresh(activeCodex: true)
+        #expect(calls == 1)
+        #expect(tracker.announcement?.sourceURL.absoluteString == "https://x.com/example/status/123")
+    }
+
+    @Test(arguments: ["disabled", "stopped"])
+    func pendingResponseDoesNotPublishOrNotifyAfterDeactivation(reason: String) async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let config = ConfigStore(directory: directory.path)
+        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+        let now = try #require(ISO8601DateFormatter().date(from: "2026-10-31T14:47:00Z"))
+        let data = Data("""
+        {"schema_version":1,"generated_at":"2026-10-31T14:46:00Z","scheduled":null,"events":[{"kind":"regular","url":"https://x.com/example/status/123","announced_at":"2026-10-31T14:46:00Z"}]}
+        """.utf8)
+        var pending: CheckedContinuation<Data, Error>?
+        var notifications = 0
+        let tracker = CodexResetTracker(config: config, defaults: defaults, now: { now }, fetch: {
+            try await withCheckedThrowingContinuation { pending = $0 }
+        })
+        tracker.onNotify = { _ in notifications += 1 }
+        let request = Task { await tracker.refresh(activeCodex: true) }
+        for _ in 0..<100 {
+            if pending != nil { break }
+            await Task.yield()
+        }
+        let response = try #require(pending)
+        if reason == "disabled" {
+            config.saveCodexResetAnnouncements(false)
+            await tracker.refresh(activeCodex: true)
+        } else {
+            tracker.stop()
+        }
+        response.resume(returning: data)
+        await request.value
+        #expect(tracker.announcement == nil)
+        #expect(notifications == 0)
+    }
+
+    @Test func staleCachedFeedIsNotRestoredAfterActivityReturns() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let defaults = try #require(UserDefaults(suiteName: UUID().uuidString))
+        var clock = try #require(ISO8601DateFormatter().date(from: "2026-10-31T14:47:00Z"))
+        let data = Data("""
+        {"schema_version":1,"generated_at":"2026-10-31T12:16:43Z","scheduled":null,"events":[{"kind":"regular","url":"https://x.com/example/status/123","announced_at":"2026-10-31T05:42:26Z"}]}
+        """.utf8)
+        var calls = 0
+        let tracker = CodexResetTracker(config: ConfigStore(directory: directory.path), defaults: defaults,
+            now: { clock }, fetch: {
+                calls += 1
+                if calls > 1 { throw URLError(.notConnectedToInternet) }
+                return data
+            })
+        await tracker.refresh(activeCodex: true)
+        #expect(tracker.announcement != nil)
+        await tracker.refresh(activeCodex: false)
+        clock.addTimeInterval(4 * 3600)
+        await tracker.refresh(activeCodex: true)
+        #expect(calls == 2)
+        #expect(tracker.announcement == nil)
+    }
+
     @Test func configRoundTripPreservesExistingSettingsAndCorruptFile() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }

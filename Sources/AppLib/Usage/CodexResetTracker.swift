@@ -28,6 +28,7 @@ public final class CodexResetTracker: ObservableObject {
     private var inFlight = false
     private var activeCodex = false
     private var generation = 0
+    private var cachedFeed: Data?
     // V1 also stored notices suppressed on first fetch, so those keys were
     // never evidence that a notification actually appeared.
     private static let notifiedKey = "codexResetNotifiedAnnouncementsV2"
@@ -105,6 +106,7 @@ public final class CodexResetTracker: ObservableObject {
         pollingTask = nil
         generation += 1
         activeCodex = false
+        cachedFeed = nil
         setAnnouncement(nil)
     }
 
@@ -113,14 +115,13 @@ public final class CodexResetTracker: ObservableObject {
     public func refresh(activeCodex: Bool) async {
         self.activeCodex = activeCodex
         guard activeCodex, config.loadCodexResetAnnouncements() else {
-            generation += 1
             setAnnouncement(nil)
             return
         }
         let current = now()
-        if let announcement, current.timeIntervalSince(announcement.providerUpdatedAt) > 6 * 3600 {
-            setAnnouncement(nil)
-        }
+        // Visibility follows activity immediately; the request throttle must
+        // not prevent a still-valid cached announcement from returning.
+        setAnnouncement(cachedFeed.flatMap { CodexResetFeed.latest(from: $0, now: current) })
         guard !inFlight,
               lastAttempt.map({ current.timeIntervalSince($0) >= 5 * 60 }) ?? true else { return }
         inFlight = true
@@ -129,7 +130,11 @@ public final class CodexResetTracker: ObservableObject {
         defer { inFlight = false }
         do {
             let data = try await fetch()
-            guard generation == requestGeneration, self.activeCodex,
+            guard generation == requestGeneration else { return }
+            // Retain a completed request through idle/settings transitions,
+            // without showing or notifying while the feature is inactive.
+            cachedFeed = data
+            guard self.activeCodex,
                   config.loadCodexResetAnnouncements() else { return }
             let notice = visibleAnnouncement(CodexResetFeed.latest(from: data, now: now()))
             setAnnouncement(notice)
