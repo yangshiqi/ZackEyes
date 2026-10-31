@@ -5,6 +5,8 @@ output=${2:?Output directory required}
 tools=$(cd "$(dirname "$0")" && pwd)
 source_dir=${REMOTE_SOURCE_DIR:-$(cd "$tools/.." && pwd)}
 source_sha=$(git -c safe.directory="$source_dir" -C "$source_dir" rev-parse HEAD)
+# The fingerprint covers the exact helper sources and the recipes used here.
+inputs_sha=$(python3 "$tools/remote-helper-inputs.py" "$source_dir" "$source_sha")
 case "$(uname -m)" in x86_64) arch=x86_64;; arm64|aarch64) arch=arm64;; *) exit 1;; esac
 case "$(uname -s)" in
     Darwin)
@@ -42,4 +44,4 @@ else
     fi
 fi
 python3 "$tools/smoke-remote-helper.py" "$binary"
-python3 "$tools/package-remote-helper.py" "$version" "$platform-$arch" "$binary" "$source_sha" "$output"
+python3 "$tools/package-remote-helper.py" "$version" "$platform-$arch" "$binary" "$source_sha" "$output" --compiled-source-sha "$source_sha" --helper-inputs-sha256 "$inputs_sha"

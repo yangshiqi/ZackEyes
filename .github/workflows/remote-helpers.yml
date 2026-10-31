@@ -35,10 +35,18 @@ jobs:
       VERSION: ${{ inputs.version || '0.0.0' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_ref || github.sha }}
           path: helper-source
+      - name: Verify exact workflow and helper source
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ] || [ "$(git -C helper-source rev-parse HEAD)" != "$GITHUB_SHA" ]; then
+            echo 'source_ref must match the workflow ref. Dispatch on the matching branch/tag; the branch may have advanced.' >&2
+            exit 1
+          fi
       - name: Installer regression tests
         run: python3 -m unittest discover -s Tests/Distribution -v
       - name: Build and smoke-test macOS helper
@@ -83,10 +91,18 @@ jobs:
       VERSION: ${{ inputs.version || '0.0.0' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_ref || github.sha }}
           path: helper-source
+      - name: Verify exact workflow and helper source
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$GITHUB_SHA" ] || [ "$(git -C helper-source rev-parse HEAD)" != "$GITHUB_SHA" ]; then
+            echo 'source_ref must match the workflow ref. Dispatch on the matching branch/tag; the branch may have advanced.' >&2
+            exit 1
+          fi
       - uses: actions/download-artifact@v4
         with:
           pattern: remote-*
@@ -96,7 +112,9 @@ jobs:
         run: |
           cp Scripts/install-remote.sh dist-remote/
           (cd dist-remote && sha256sum *.tar.gz install-remote.sh > SHA256SUMS)
-          python3 Scripts/verify-remote-assets.py "$VERSION" "$(git -C helper-source rev-parse HEAD)" dist-remote
+          source_sha=$(git -C helper-source rev-parse HEAD)
+          inputs_sha=$(python3 Scripts/remote-helper-inputs.py helper-source "$source_sha")
+          python3 Scripts/verify-remote-assets.py "$VERSION" "$source_sha" dist-remote --helper-inputs-sha256 "$inputs_sha"
       - uses: actions/upload-artifact@v4
         with:
           name: remote-helpers
