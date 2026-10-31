@@ -200,9 +200,15 @@ args = sys.argv[1:]
 with open(os.environ['FAKE_LOG'], 'a') as log: log.write(json.dumps(args) + '\n')
 marker = pathlib.Path(os.environ['FAKE_MARKER'])
 if args[:2] == ['release', 'view']:
+    if os.environ.get('FAKE_VIEW_ERROR') == '1':
+        sys.stderr.write('release lookup authentication failed\n')
+        sys.exit(1)
     if os.environ.get('FAKE_NO_RELEASE') == '1': sys.exit(1)
     print(json.dumps(dict(tagName='v0.10.2', isDraft=False, isPrerelease=False)))
 elif args[:2] == ['release', 'download'] or args[:2] == ['run', 'download']:
+    if args[0] == 'release' and os.environ.get('FAKE_DOWNLOAD_ERROR') == '1':
+        sys.stderr.buffer.write(b'helper download authentication failed\xff\n')
+        sys.exit(1)
     source = pathlib.Path(os.environ['FAKE_OLD'] if args[0] == 'release' else os.environ['FAKE_NATIVE'])
     destination = pathlib.Path(args[args.index('--dir') + 1])
     destination.mkdir(parents=True, exist_ok=True)
@@ -270,5 +276,36 @@ else: sys.exit(99)
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(output.exists())
         self.assertFalse(any(call[:2] == ['workflow', 'run'] for call in calls))
+
+    def run_reuse_cli(self, env):
+        output = self.root / 'reuse-cli-output'
+        result = subprocess.run([sys.executable, str(self.source / 'Scripts/reuse-remote-assets.py'),
+            '0.10.3', env['FAKE_SHA'], str(output), '--source', str(self.source)],
+            cwd=self.source, env=env, text=True, errors='replace', capture_output=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout,
+            'Published helper reuse unavailable or inputs changed; a fresh native build is required.\n')
+        self.assertFalse(output.exists())
+        return result
+
+    def test_reuse_cli_reports_captured_download_bytes_without_breaking_fallback(self):
+        _, env = self.configure_fetch()
+        env['FAKE_DOWNLOAD_ERROR'] = '1'
+        result = self.run_reuse_cli(env)
+        self.assertIn('Reuse check failed: CalledProcessError: helper download authentication failed', result.stderr)
+        self.assertIn('\ufffd', result.stderr)
+
+    def test_reuse_cli_reports_captured_lookup_text(self):
+        _, env = self.configure_fetch()
+        env['FAKE_VIEW_ERROR'] = '1'
+        result = self.run_reuse_cli(env)
+        self.assertIn('Reuse check failed: CalledProcessError: release lookup authentication failed', result.stderr)
+
+    def test_reuse_cli_reports_plain_validation_error(self):
+        _, env = self.configure_fetch()
+        self.package('linux-arm64', key='b' * 64)
+        self.checksums()
+        result = self.run_reuse_cli(env)
+        self.assertIn('Reuse check failed: ValueError: Wrong helper build inputs:', result.stderr)
 
 if __name__ == '__main__': unittest.main()

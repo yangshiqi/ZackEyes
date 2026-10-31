@@ -14,6 +14,11 @@ RECIPE_PATHS = ('Scripts/build-remote-helper.sh', 'Scripts/package-remote-helper
                 '.github/workflows/remote-helpers.yml')
 
 def fingerprint(source, source_sha, tools=None):
+    """Hash tracked SSH inputs at source_sha plus the actual build recipes.
+
+    Missing required inputs, linked files and unsupported Git entry types
+    fail closed rather than certifying an incomplete dependency fingerprint.
+    """
     if not re.fullmatch(r'[0-9a-f]{40}', source_sha):
         raise ValueError('Expected a full source commit SHA')
     tools = Path(tools) if tools else Path(__file__).resolve().parents[1]

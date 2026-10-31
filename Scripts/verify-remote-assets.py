@@ -10,6 +10,7 @@ import tarfile
 PLATFORMS = ('linux-x86_64', 'linux-arm64', 'macos-x86_64', 'macos-arm64')
 
 def file_hash(path):
+    """Stream a package's SHA256 without loading its entire binary into memory."""
     result = hashlib.sha256()
     with path.open('rb') as source:
         for chunk in iter(lambda: source.read(1024 * 1024), b''):
@@ -17,6 +18,11 @@ def file_hash(path):
     return result.hexdigest()
 
 def verify(directory, version, source_sha, helper_inputs_sha256=None):
+    """Validate the complete bundle's names, hashes, provenance and architectures.
+
+    Legacy metadata is accepted only when no expected fingerprint is supplied.
+    Invalid or incomplete bundles raise before any helper is eligible for reuse.
+    """
     if not re.fullmatch(r'\d+\.\d+\.\d+', version) or not re.fullmatch(r'[0-9a-f]{40}', source_sha):
         raise ValueError('Expected X.Y.Z and full source SHA')
     if helper_inputs_sha256 is not None and not re.fullmatch(r'[0-9a-f]{64}', helper_inputs_sha256):
