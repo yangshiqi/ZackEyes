@@ -121,3 +121,43 @@ struct CodexResetFeedTests {
         """.utf8)
     }
 }
+
+extension CodexResetFeedTests {
+    @Test func originalPostSurvivesWithoutResetTime() throws {
+        let original = String(repeating: "Original wording — not a guessed reset time. ", count: 12)
+        let json = try JSONSerialization.data(withJSONObject: [
+            "schema_version": 1, "generated_at": "2026-10-23T05:55:00Z",
+            "events": [["kind": "regular", "url": "https://x.com/thsottiaux/status/123",
+                        "announced_at": "2026-10-23T05:00:00Z", "summary": original]]
+        ])
+        let notice = try #require(CodexResetFeed.latest(from: json, now: now))
+        #expect(notice.originalText == original.trimmingCharacters(in: .whitespacesAndNewlines))
+        #expect(CodexResetNoticeView(announcement: notice).header(at: now) == "Extra Codex reset - Reset time not announced")
+    }
+
+    @Test func scheduledHeaderAndOriginalUseTheSameSource() throws {
+        let notice = try #require(CodexResetFeed.latest(from: fixture(
+            scheduled: """
+            {"certainty":"announced","day":"2026-10-23","scheduled_for":"2026-10-23T07:00:00Z","url":"https://x.com/thsottiaux/status/123","announced_at":"2026-10-23T05:00:00Z"}
+            """, events: """
+            [{"kind":"regular","url":"https://x.com/thsottiaux/status/123","announced_at":"2026-10-23T05:00:00Z","summary":"Reset announcement original."},
+             {"kind":"regular","url":"https://x.com/thsottiaux/status/456","announced_at":"2026-10-23T04:00:00Z","summary":"Unrelated announcement."}]
+            """), now: now))
+        #expect(notice.originalText == "Reset announcement original.")
+        let header = CodexResetNoticeView(announcement: notice).header(at: now)
+        #expect(header.hasPrefix("Extra Codex reset - Expected "))
+        #expect(header.contains("UTC"))
+        #expect(header.contains("in 1h"))
+    }
+
+    @Test func missingOrUnavailableOriginalIsNotInvented() throws {
+        for event in [
+            #"{"kind":"regular","url":"https://x.com/thsottiaux/status/123","announced_at":"2026-10-23T05:00:00Z"}"#,
+            #"{"kind":"regular","url":"https://x.com/thsottiaux/status/123","announced_at":"2026-10-23T05:00:00Z","summary":"   "}"#,
+            #"{"kind":"regular","url":"https://x.com/thsottiaux/status/123","announced_at":"2026-10-23T05:00:00Z","summary":"Placeholder","summary_unavailable":true}"#
+        ] {
+            let notice = try #require(CodexResetFeed.latest(from: fixture(events: "[\(event)]"), now: now))
+            #expect(notice.originalText == nil)
+        }
+    }
+}

@@ -16,6 +16,7 @@ public struct CodexResetAnnouncement: Equatable, Sendable {
     public let reportedDeliveredAt: Date?
     public let scope: String
     public let providerUpdatedAt: Date
+    public var originalText: String? = nil
 
     public var notificationKey: String { sourceURL.absoluteString + ":" + phase.rawValue }
 
@@ -56,6 +57,8 @@ public enum CodexResetFeed {
         let when_text: String?
         let url: URL
         let announced_at: Date
+        let summary: String?
+        let summary_unavailable: Bool?
     }
 
     private struct Event: Decodable {
@@ -65,6 +68,8 @@ public enum CodexResetFeed {
         let announced_at: Date?
         let delivered_at: Date?
         let seeded: Bool?
+        let summary: String?
+        let summary_unavailable: Bool?
     }
 
     public static func latest(from data: Data, now: Date = Date()) -> CodexResetAnnouncement? {
@@ -95,7 +100,11 @@ public enum CodexResetFeed {
                     return value.isEmpty ? nil : String(value.prefix(160))
                 },
                 reportedDeliveredAt: nil,
-                scope: "See original announcement", providerUpdatedAt: payload.generated_at
+                scope: "See original announcement", providerUpdatedAt: payload.generated_at,
+                originalText: originalText(scheduled.summary, unavailable: scheduled.summary_unavailable)
+                    ?? payload.events.first(where: { $0.url == url }).flatMap {
+                        originalText($0.summary, unavailable: $0.summary_unavailable)
+                    }
             )
         }
 
@@ -120,7 +129,8 @@ public enum CodexResetFeed {
                 announcedAt: announcedAt, expectedAt: nil, expectedDay: nil,
                 expectedWindowText: nil,
                 reportedDeliveredAt: event.delivered_at,
-                scope: scopeLabel(event.scope), providerUpdatedAt: payload.generated_at
+                scope: scopeLabel(event.scope), providerUpdatedAt: payload.generated_at,
+                originalText: originalText(event.summary, unavailable: event.summary_unavailable)
             )
             return (notice, latestAt)
         }.max(by: { $0.1 < $1.1 })
@@ -129,6 +139,12 @@ public enum CodexResetFeed {
             return latestEvent.1 > scheduledNotice.announcedAt ? latestEvent.0 : scheduledNotice
         }
         return latestEvent?.0
+    }
+
+    private static func originalText(_ raw: String?, unavailable: Bool?) -> String? {
+        guard unavailable != true, let text = raw?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !text.isEmpty else { return nil }
+        return text
     }
 
     private static func validDay(_ raw: String?) -> String? {
