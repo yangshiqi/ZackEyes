@@ -9,9 +9,24 @@ import tarfile
 
 PLATFORMS = ('linux-x86_64', 'linux-arm64', 'macos-x86_64', 'macos-arm64')
 
-def verify(directory, version, source_sha):
+def file_hash(path):
+    """Stream a package's SHA256 without loading its entire binary into memory."""
+    result = hashlib.sha256()
+    with path.open('rb') as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b''):
+            result.update(chunk)
+    return result.hexdigest()
+
+def verify(directory, version, source_sha, helper_inputs_sha256=None):
+    """Validate the complete bundle's names, hashes, provenance and architectures.
+
+    Legacy metadata is accepted only when no expected fingerprint is supplied.
+    Invalid or incomplete bundles raise before any helper is eligible for reuse.
+    """
     if not re.fullmatch(r'\d+\.\d+\.\d+', version) or not re.fullmatch(r'[0-9a-f]{40}', source_sha):
         raise ValueError('Expected X.Y.Z and full source SHA')
+    if helper_inputs_sha256 is not None and not re.fullmatch(r'[0-9a-f]{64}', helper_inputs_sha256):
+        raise ValueError('Invalid expected helper fingerprint')
     names = [f'zackeyes-remote-{version}-{platform}.tar.gz' for platform in PLATFORMS]
     names += ['install-remote.sh']
     entries = {}
@@ -23,15 +38,28 @@ def verify(directory, version, source_sha):
     if set(entries) != set(names):
         raise ValueError('Missing platform or unexpected checksum entry')
     for name in names:
-        if hashlib.sha256((directory / name).read_bytes()).hexdigest() != entries[name]:
+        if file_hash(directory / name) != entries[name]:
             raise ValueError(f'Checksum mismatch: {name}')
     for platform, name in zip(PLATFORMS, names):
         with tarfile.open(directory / name) as archive:
             members = archive.getmembers()
             if sorted(m.name for m in members) != ['build-info.json', 'zackeyes'] or not all(m.isfile() for m in members):
                 raise ValueError(f'Invalid archive members: {name}')
+            if archive.getmember('build-info.json').size > 16384 or archive.getmember('zackeyes').size > 512 * 1024 * 1024:
+                raise ValueError(f'Oversized helper package: {name}')
             info = json.load(archive.extractfile('build-info.json'))
-            if info != {'version': version, 'platform': platform, 'source_sha': source_sha}:
+            if not isinstance(info, dict):
+                raise ValueError(f'Invalid package metadata: {name}')
+            expected = {'version': version, 'platform': platform, 'source_sha': source_sha}
+            provenance = {'compiled_source_sha', 'helper_inputs_sha256'}
+            if provenance.intersection(info):
+                if not provenance.issubset(info) or not re.fullmatch(r'[0-9a-f]{40}', str(info['compiled_source_sha'])) \
+                        or not re.fullmatch(r'[0-9a-f]{64}', str(info['helper_inputs_sha256'])):
+                    raise ValueError(f'Invalid compiled provenance: {name}')
+                expected.update({key: info[key] for key in provenance})
+            if helper_inputs_sha256 is not None and info.get('helper_inputs_sha256') != helper_inputs_sha256:
+                raise ValueError(f'Wrong helper build inputs: {name}')
+            if info != expected:
                 raise ValueError(f'Wrong source/version/platform: {name}')
             binary = archive.extractfile('zackeyes').read(64)
             if platform.startswith('linux'):
@@ -49,6 +77,7 @@ if __name__ == '__main__':
     parser.add_argument('version')
     parser.add_argument('source_sha')
     parser.add_argument('directory', type=Path)
+    parser.add_argument('--helper-inputs-sha256')
     args = parser.parse_args()
-    verify(args.directory, args.version, args.source_sha)
+    verify(args.directory, args.version, args.source_sha, args.helper_inputs_sha256)
     print('PASS all four helper packages: version, source SHA, architecture and SHA256')

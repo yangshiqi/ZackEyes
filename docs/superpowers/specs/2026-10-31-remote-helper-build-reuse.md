@@ -1,0 +1,11 @@
+# Reuse unchanged SSH helper binaries during releases
+
+The current release gate dispatches four native builds on every app release. Preserve native builds and checks when helper inputs change, but reuse durable, published helper binaries when they have already been built from identical inputs.
+
+Before dispatch, inspect the latest non-prerelease distribution release. Download its complete four-platform set, installer and checksums into an isolated temporary directory. Verify the existing bundle before reading binaries. Compare an input fingerprint covering the requested helper source trees, Package manifest/lockfile, remote core tests and the actual build/package/smoke/workflow recipes. The installer is copied from the new release source independently. Native fallback pins workflow execution, recipes and helper checkout to the exact same source commit, and its Git fingerprint reads narrowly trust the requested checkout for the Linux container ownership boundary. Legacy bundles without a fingerprint safely take the normal native-build path once.
+
+If all inputs match, repackage unchanged binaries for the new app version, retaining the original compiled commit in `compiled_source_sha`, recording the new release commit in `source_sha`, and retaining the verified `helper_inputs_sha256`. Regenerate checksums and verify the final complete set before atomically publishing the local output directory. Never relabel an old binary as freshly compiled. Keep the existing version-specific installer URLs and package filenames.
+
+`REMOTE_HELPERS_FORCE_REBUILD=1` bypasses reuse. Missing, incompatible or invalid published assets fall back to a fresh native build; neither partial downloads nor failed repackaging produce a valid output directory. Default release runs never execute or publish anything from an unverified reused bundle. Do not run a real release while implementing this change.
+
+Regression coverage must exercise UI-only changes reusing bytes, changes to every helper/build input invalidating reuse, old/corrupt/incomplete bundles falling back, force rebuild, repeated reuse retaining original provenance, version/source/architecture/checksum validation and exact workflow-dispatch fallback via a fake `gh` executable. Existing installer behavior remains unchanged.
