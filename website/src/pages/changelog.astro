@@ -8,7 +8,7 @@ const description = 'ZackEyes release notes, current version, DMG download, and 
 const releases = [
   {
     version: 'ZackEyes 0.10.3',
-    date: 'Published October 31, 2026',
+    date: 'Reissued October 31, 2026',
     summary: 'More accurate usage totals, clearer Codex reset notices and reusable SSH helper releases.',
     highlights: [
       {
@@ -29,6 +29,7 @@ const releases = [
       {
         label: 'Fixed',
         items: [
+          'Restore Extra Codex reset notices when Codex becomes active again, including activity changes while a request is pending. The earlier v0.10.3 download was withdrawn and replaced; existing v0.10.3 installs need a fresh download and replacement.',
           'Prevent inherited Codex pagination history and inconsistent cumulative counters from inflating daily token consumption; repair affected tracked archives and reduce overlapping startup scans.',
           'Dismiss older extra-reset announcements after fresh local account readings confirm early quota recovery before the originally observed reset deadline.'
         ]
