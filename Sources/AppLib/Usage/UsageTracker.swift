@@ -139,6 +139,8 @@ public final class UsageTracker: ObservableObject {
     }
 
     @Published public private(set) var snapshot: Snapshot = .empty
+    /// Raw local account observations for retiring public reset notices.
+    public var onCodexQuotaReadings: (([CodexQuotaReading]) -> Void)?
 
     /// User preference (#84): whether the expanded "Today" consumption row is
     /// shown. Default true; seeded from `ConfigStore` by `AppDelegate`, toggled
@@ -279,6 +281,7 @@ public final class UsageTracker: ObservableObject {
     private let projectsDir: URL
     private let codexSessionsDir: URL?
     private var refreshTask: Task<Void, Never>?
+    private var refreshInProgress = false
 
     public init(
         projectsDir: URL = URL(fileURLWithPath: NSHomeDirectory() + "/.claude/projects"),
@@ -390,6 +393,11 @@ public final class UsageTracker: ObservableObject {
     /// Rescan all recent JSONL files and update the snapshot.
     /// Preserves real rate-limit data captured from hook events.
     public func refresh() async {
+        // Startup and panel initialization can both request a refresh. Reuse
+        // the in-flight publication rather than parsing the cold window twice.
+        guard !refreshInProgress else { return }
+        refreshInProgress = true
+        defer { refreshInProgress = false }
         let dir = projectsDir
         let codexDir = codexSessionsDir
         let cal = Calendar.current
@@ -404,6 +412,30 @@ public final class UsageTracker: ObservableObject {
             guard let codexDir else { return nil }
             return Self.scanLatestCodexState(rootDir: codexDir)
         }.value
+
+        if let codexState {
+            onCodexQuotaReadings?(codexState.accountReadings)
+        }
+
+        // Publish quota promptly; the initial full-window daily scan can be
+        // much slower than the bounded latest-state tail above.
+        // Apply when there are per-window scopes OR a block flag. The two are
+        // derived from the same token_count reading so scopes is non-empty
+        // whenever limitReached is true today, but the explicit `|| limitReached`
+        // keeps a credits-only reading (no per-window data) surfacing the block
+        // even if `tailCodexReadings` ever stops emitting an empty scope for it.
+        if let codexState, !codexState.scopes.isEmpty || codexState.limitReached {
+            applyCodexScopes(
+                codexState.scopes,
+                limitReached: codexState.limitReached,
+                limitResetsAt: codexState.limitResetsAt,
+                observedAt: codexState.observedAt
+            )
+        } else {
+            // No recent rollout means Codex is idle, not that the last quota
+            // reading is invalid. Retain each window until its own reset.
+            expireCodexWindows(now: Date())
+        }
 
         // #84 daily token scan (Codex), with the per-file parse cache.
         let codexCacheSnapshot = codexDailyCache
@@ -457,24 +489,6 @@ public final class UsageTracker: ObservableObject {
         merged.fiveHourETA = claudeEstimator.estimate(
             now: Date(), currentPct: merged.fiveHourUsedPct, resetsAt: merged.fiveHourResetsAt)
         self.snapshot = merged
-
-        // Apply when there are per-window scopes OR a block flag. The two are
-        // derived from the same token_count reading so scopes is non-empty
-        // whenever limitReached is true today, but the explicit `|| limitReached`
-        // keeps a credits-only reading (no per-window data) surfacing the block
-        // even if `tailCodexReadings` ever stops emitting an empty scope for it.
-        if let codexState, !codexState.scopes.isEmpty || codexState.limitReached {
-            applyCodexScopes(
-                codexState.scopes,
-                limitReached: codexState.limitReached,
-                limitResetsAt: codexState.limitResetsAt,
-                observedAt: codexState.observedAt
-            )
-        } else {
-            // No recent rollout means Codex is idle, not that the last quota
-            // reading is invalid. Retain each window until its own reset.
-            expireCodexWindows(now: Date())
-        }
     }
 
     /// #182 — a 5h-window reset can never sit further out than its own window
@@ -766,7 +780,7 @@ public final class UsageTracker: ObservableObject {
     private nonisolated static func firstActiveCodexReadings(
         rootDir: URL,
         recentSeconds: TimeInterval
-    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation, observedAt: Date)? {
+    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation, observedAt: Date, accountReadings: [CodexQuotaReading])? {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-recentSeconds)
         struct Candidate {
@@ -804,8 +818,10 @@ public final class UsageTracker: ObservableObject {
         var mergedScopes: [String: CodexRateLimitObservation] = [:]
         var overallLast: CodexRateLimitObservation?
         var overallObservedAt: Date?
+        var accountReadings: [CodexQuotaReading] = []
         for c in candidates.sorted(by: { $0.mtime > $1.mtime }) {
             guard let readings = tailCodexReadings(in: c.url) else { continue }
+            if let account = readings.accountReading { accountReadings.append(account) }
             if overallLast == nil {
                 overallLast = readings.last
                 overallObservedAt = c.mtime
@@ -815,7 +831,7 @@ public final class UsageTracker: ObservableObject {
             }
         }
         guard let last = overallLast, let observedAt = overallObservedAt else { return nil }
-        return (mergedScopes, last, observedAt)
+        return (mergedScopes, last, observedAt, accountReadings)
     }
 
     /// Combine two readings of the same scope, keeping the higher non-expired
@@ -878,6 +894,7 @@ public final class UsageTracker: ObservableObject {
         public var limitReached: Bool
         public var limitResetsAt: Date?
         public var observedAt: Date
+        public var accountReadings: [CodexQuotaReading] = []
     }
 
     nonisolated static func scanLatestCodexState(
@@ -908,7 +925,8 @@ public final class UsageTracker: ObservableObject {
             scopes: readings.scopes,
             limitReached: last.limitReached,
             limitResetsAt: blockReset,
-            observedAt: readings.observedAt
+            observedAt: readings.observedAt,
+            accountReadings: readings.accountReadings
         )
     }
 
@@ -917,7 +935,7 @@ public final class UsageTracker: ObservableObject {
     /// when the tail has no `token_count` event.
     private nonisolated static func tailCodexReadings(
         in url: URL
-    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation)? {
+    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation, accountReading: CodexQuotaReading?)? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         let fileSize: UInt64
@@ -942,6 +960,10 @@ public final class UsageTracker: ObservableObject {
 
         var scopes: [String: CodexRateLimitObservation] = [:]
         var last: CodexRateLimitObservation? = nil
+        var accountReading: CodexQuotaReading?
+        let fractionalISO = ISO8601DateFormatter()
+        fractionalISO.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let iso = ISO8601DateFormatter()
         for line in text.split(separator: "\n") {
             guard let lineData = line.data(using: .utf8) else { continue }
             guard let obj = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { continue }
@@ -951,11 +973,28 @@ public final class UsageTracker: ObservableObject {
             guard let rl = payload["rate_limits"] as? [String: Any] else { continue }
             let name = codexScopeKey(from: rl)
             let obs = decodeCodexObservation(from: rl)
+            if name.isEmpty {
+                if let timestamp = obj["timestamp"] as? String,
+                   let date = fractionalISO.date(from: timestamp) ?? iso.date(from: timestamp) {
+                    var reading = CodexQuotaReading(sourceID: url.path, observedAt: date, quota: obs)
+                    reading.hasCompleteHistory = offset == 0
+                    if let previous = accountReading, date > previous.observedAt {
+                        reading.recoveredAt = CodexQuotaRecovery.occurred(from: previous, to: reading)
+                            ? date : previous.recoveredAt
+                    }
+                    // Out-of-order events must not replace a newer baseline.
+                    if accountReading.map({ date > $0.observedAt }) ?? true {
+                        accountReading = reading.retainingOriginalPlan(from: accountReading)
+                    }
+                } else {
+                    accountReading = nil
+                }
+            }
             scopes[name] = obs
             last = obs
         }
         guard let last else { return nil }
-        return (scopes, last)
+        return (scopes, last, accountReading)
     }
 
     /// Codex 0.137 can emit an account-level `limit_id: "codex"` reading and
@@ -1088,6 +1127,8 @@ public final class UsageTracker: ObservableObject {
         var mtime: Date
         var size: UInt64
         var tallies: [Date: [String: ModelTokenTally]]
+        var unresolvedHistory = false
+        var historyReference: CodexUsageHistory.Reference? = nil
     }
 
     /// Full-window Codex daily-token scan with a per-file parse cache. Walks all
@@ -1105,6 +1146,7 @@ public final class UsageTracker: ObservableObject {
             ?? now.addingTimeInterval(-7 * 86400)
         let fm = FileManager.default
         var newCache: [String: FileTally] = [:]
+        var historyFiles: [String: URL]?
         var merged: [Date: [String: ModelTokenTally]] = [:]
 
         for dayDir in SessionScanner.allDateDirs(under: rootDir) {
@@ -1126,15 +1168,34 @@ public final class UsageTracker: ObservableObject {
                 // created with /var/... (FileManager.temporaryDirectory) and
                 // those returned by contentsOfDirectory (/private/var/...) match.
                 let key = file.resolvingSymlinksInPath().path
+                let hit = cache[key].flatMap { $0.mtime == mtime && $0.size == UInt64(size) ? $0 : nil }
+                var restoredBaseline: CodexUsageHistory.Baseline?
+                if let hit, hit.unresolvedHistory, let reference = hit.historyReference {
+                    if historyFiles == nil { historyFiles = CodexUsageHistory.fileIndex(root: rootDir) }
+                    restoredBaseline = CodexUsageHistory.resolve(reference, files: historyFiles ?? [:])
+                }
                 let tallies: [Date: [String: ModelTokenTally]]
-                if let hit = cache[key], hit.mtime == mtime, hit.size == UInt64(size) {
-                    tallies = hit.tallies               // cache hit — no re-parse
+                var unresolvedHistory = hit?.unresolvedHistory ?? false
+                var historyReference = hit?.historyReference
+                if let hit, restoredBaseline == nil {
+                    tallies = hit.tallies
                 } else if let text = try? String(contentsOf: file, encoding: .utf8) {
-                    tallies = parseCodexDailyTallies(text: text, calendar: calendar, cutoff: dailyCutoff)
+                    let meta = CodexUsageHistory.metadata(in: text)
+                    historyReference = CodexUsageHistory.reference(meta)
+                    var baseline = restoredBaseline
+                    if baseline == nil, let reference = historyReference {
+                        if historyFiles == nil { historyFiles = CodexUsageHistory.fileIndex(root: rootDir) }
+                        baseline = CodexUsageHistory.resolve(reference, files: historyFiles ?? [:])
+                    }
+                    unresolvedHistory = CodexUsageHistory.hasInheritedHistory(meta) && baseline == nil
+                    tallies = parseCodexDailyTallies(text: text, calendar: calendar, cutoff: dailyCutoff, initialBaseline: baseline?.usage)
                 } else {
                     tallies = [:]
                 }
-                newCache[key] = FileTally(mtime: mtime, size: UInt64(size), tallies: tallies)
+                var saved = FileTally(mtime: mtime, size: UInt64(size), tallies: tallies)
+                saved.unresolvedHistory = unresolvedHistory
+                saved.historyReference = historyReference
+                newCache[key] = saved
                 mergeTallies(&merged, tallies)
             }
         }

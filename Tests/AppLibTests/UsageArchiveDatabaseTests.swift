@@ -188,3 +188,129 @@ extension UsageArchiveDatabaseTests {
         #expect(try await db.summary(days: 7, now: end, calendar: UsageLedgerTests.utc).totalTokens == 10)
     }
 }
+
+extension UsageArchiveDatabaseTests {
+    @Test func cachedReadDisplayChangesTotalsDaysAndRankOrderAfterReopen() async throws {
+        let root = try UsageLedgerStorageTests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("archive.sqlite")
+        let db = UsageArchiveDatabase(url: url)
+        let calendar = UsageLedgerTests.utc
+        let day = calendar.startOfDay(for: UsageLedgerTests.start)
+        var records: [UsageLedgerRecord] = []
+        for i in 0..<12 {
+            var record = UsageLedgerStorageTests().record(100 + i, at: day.addingTimeInterval(100))
+            record.id = "cached-\(i)"
+            record.project = "project-\(i)"
+            record.model = "model-\(i)"
+            record.cacheRead = i == 0 ? 10000 : 0
+            records.append(record)
+        }
+        try await db.apply(records: records)
+        try await db.archive(day: day, calendar: calendar)
+        let restored = UsageArchiveDatabase(url: url)
+        let now = day.addingTimeInterval(86400)
+        let excluded = try await restored.summary(days: 7, now: now, calendar: calendar)
+        let included = try await restored.summary(
+            days: 7, now: now, calendar: calendar, includeCacheReads: true)
+        #expect(included.totalTokens == excluded.totalTokens + 10000)
+        #expect(included.days.reduce(0) { $0 + $1.tokens } == included.totalTokens)
+        #expect(included.projects.first?.name == "project-0")
+        #expect(included.projects.first?.value == 10100)
+        #expect(included.models.first?.name == "model-0")
+        #expect(excluded.projects.first?.name == "project-11")
+        #expect(included.cacheHitRate == excluded.cacheHitRate)
+        #expect(included.activeSeconds == excluded.activeSeconds)
+        #expect(await restored.observationReads == 0)
+    }
+}
+
+extension UsageArchiveDatabaseTests {
+    @Test func cachedReadsAcrossDaysAndCodexCountersAreNotDoubleCounted() async throws {
+        let root = try UsageLedgerStorageTests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let db = UsageArchiveDatabase(url: root.appendingPathComponent("archive.sqlite"))
+        let calendar = UsageLedgerTests.utc
+        let day = calendar.startOfDay(for: UsageLedgerTests.start)
+        var first = UsageLedgerStorageTests().record(100, at: day.addingTimeInterval(100))
+        first.id = "first"
+        first.agent = .codex
+        first.kind = .counter
+        first.cacheRead = 80
+        first.output = 10
+        var second = first
+        second.id = "second"
+        second.date = first.date.addingTimeInterval(86400)
+        second.input = 300
+        second.cacheRead = 250
+        second.output = 30
+        var cachedOnly = UsageLedgerStorageTests().record(0, at: first.date)
+        cachedOnly.id = "cache-only"
+        cachedOnly.project = "Cache only"
+        cachedOnly.cacheRead = 1000
+        try await db.apply(records: [first, second, cachedOnly])
+        try await db.archive(day: day, calendar: calendar)
+        try await db.archive(day: day.addingTimeInterval(86400), calendar: calendar)
+        let now = day.addingTimeInterval(2 * 86400)
+        let included = try await db.summary(
+            days: 7, now: now, calendar: calendar, includeCacheReads: true)
+        let excluded = try await db.summary(days: 7, now: now, calendar: calendar)
+        #expect(included.totalTokens == 1330)
+        #expect(excluded.totalTokens == 80)
+        #expect(included.days.filter { $0.agent == .codex }.reduce(0) { $0 + $1.tokens } == 330)
+        #expect(included.projects.first?.name == "Cache only")
+        #expect(!excluded.projects.contains { $0.name == "Cache only" })
+        #expect(included.cacheHitRate == excluded.cacheHitRate)
+    }
+
+    @Test func legacyArchivesBackfillCacheBreakdownOnceFromSavedObservations() async throws {
+        let root = try UsageLedgerStorageTests().folder()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let url = root.appendingPathComponent("archive.sqlite")
+        let db = UsageArchiveDatabase(url: url)
+        let calendar = UsageLedgerTests.utc
+        let day = calendar.startOfDay(for: UsageLedgerTests.start)
+        var record = UsageLedgerStorageTests().record(100, at: day.addingTimeInterval(100))
+        record.cacheRead = 900
+        try await db.apply(records: [record])
+        try await db.archive(day: day, calendar: calendar)
+        // Simulate the previous app's JSON shape without per-rank/per-day cache metadata.
+        var legacy = UsageLedgerSummary.make(
+            records: [record], days: 1,
+            now: day.addingTimeInterval(86399), calendar: calendar)
+        legacy.cacheBreakdownVersion = nil
+        for i in legacy.days.indices { legacy.days[i].cacheRead = nil }
+        for i in legacy.projects.indices { legacy.projects[i].cacheRead = nil }
+        for i in legacy.models.indices { legacy.models[i].cacheRead = nil }
+        let bytes = try JSONEncoder().encode(legacy)
+        var connectionPointer: OpaquePointer?
+        #expect(sqlite3_open(url.path, &connectionPointer) == SQLITE_OK)
+        let connection = try #require(connectionPointer)
+        defer { sqlite3_close(connection) }
+        var statementPointer: OpaquePointer?
+        #expect(
+            sqlite3_prepare_v2(connection, "UPDATE archives SET body=?", -1, &statementPointer, nil)
+                == SQLITE_OK)
+        let statement = try #require(statementPointer)
+        defer { sqlite3_finalize(statement) }
+        bytes.withUnsafeBytes { buffer in
+            #expect(
+                sqlite3_bind_blob(statement, 1, buffer.baseAddress, Int32(bytes.count), nil) == SQLITE_OK)
+            #expect(sqlite3_step(statement) == SQLITE_DONE)
+        }
+        let restored = UsageArchiveDatabase(url: url)
+        let now = day.addingTimeInterval(86400)
+        let report = try await restored.summary(
+            days: 7, now: now, calendar: calendar, includeCacheReads: true)
+        #expect(report.totalTokens == 1000)
+        #expect(report.projects.first?.value == 1000)
+        #expect(report.days.reduce(0) { $0 + $1.tokens } == 1000)
+        let reads = await restored.observationReads
+        #expect(reads > 0)
+        let reopened = UsageArchiveDatabase(url: url)
+        #expect(
+            try await reopened.summary(days: 7, now: now, calendar: calendar, includeCacheReads: true)
+                .totalTokens == 1000)
+        #expect(await reopened.observationReads == 0)
+    }
+}

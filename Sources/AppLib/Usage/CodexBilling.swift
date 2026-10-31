@@ -1,17 +1,27 @@
+import CoreFoundation
 import Foundation
 
 /// Codex reports inclusive input: cached reads and writes are subsets.
 public struct CodexUsageTotals: Sendable, Equatable {
+    static let maximumCumulativeTokens = 1_000_000_000_000
+
+    static func decodeCounter(_ raw: Any?) -> Int? {
+        guard let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() else { return nil }
+        let value = number.doubleValue
+        guard value.isFinite, value >= 0, value <= Double(maximumCumulativeTokens),
+              value.rounded(.towardZero) == value else { return nil }
+        return Int(value)
+    }
     public var input: Int
     public var cached: Int
     public var writes: Int
     public var output: Int
 
     public init(input: Int, cached: Int = 0, writes: Int = 0, output: Int) {
-        self.input = max(0, min(input, 1_000_000_000))
+        self.input = max(0, min(input, Self.maximumCumulativeTokens))
         self.cached = max(0, min(cached, self.input))
         self.writes = max(0, min(writes, self.input - self.cached))
-        self.output = max(0, min(output, 1_000_000_000))
+        self.output = max(0, min(output, Self.maximumCumulativeTokens))
     }
 
     func delta(from previous: Self?) -> Self {

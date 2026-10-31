@@ -364,7 +364,8 @@ public final class SimulatedNotchController {
             hoverArea = panelFrame.insetBy(dx: -16, dy: -16)
         }
 
-        if hoverArea.contains(location) {
+        if hoverArea.contains(location)
+            || (mode == .full && CodexResetOriginalTextPopover.containsReader(at: location, attachedTo: panel)) {
             collapseWorkItem?.cancel()
             if mode != .full {
                 scheduleHoverExpansion(from: location, in: hoverArea)
@@ -382,7 +383,9 @@ public final class SimulatedNotchController {
             collapseWorkItem?.cancel()
             let work = DispatchWorkItem { [weak self] in
                 Task { @MainActor in
-                    guard let self = self else { return }
+                    guard let self = self,
+                          !CodexResetOriginalTextPopover.containsReader(at: NSEvent.mouseLocation, attachedTo: self.panel)
+                    else { return }
                     if self.mode != .compact {
                         self.setMode(.compact)
                     }
@@ -482,7 +485,9 @@ public final class SimulatedNotchController {
         ) { [weak self] event in
             guard let self = self else { return event }
             // Allow clicks inside the notch panel itself
-            if let panelWin = self.panel, event.window === panelWin {
+            if let panelWin = self.panel,
+               event.window === panelWin
+                || CodexResetOriginalTextPopover.isReaderWindow(event.window, attachedTo: panelWin) {
                 return event
             }
             Task { @MainActor [weak self] in

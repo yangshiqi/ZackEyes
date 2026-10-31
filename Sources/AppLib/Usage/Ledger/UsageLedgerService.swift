@@ -4,6 +4,9 @@ import Foundation
 public final class UsageLedgerService: ObservableObject {
     @Published private(set) var summary = UsageLedgerSummary()
     @Published private(set) var days = 30
+    @Published private(set) var includeCacheReads: Bool
+    private let defaults: UserDefaults
+    private static let cacheReadsKey = "usageIncludeCacheReads"
     @Published private(set) var isLoading = false
     @Published private(set) var isPaused = false
     @Published private(set) var errorMessage: String?
@@ -32,8 +35,12 @@ public final class UsageLedgerService: ObservableObject {
     }
     init(
         database: UsageArchiveDatabase, engine: UsageArchiveEngine,
-        now: @escaping @Sendable () -> Date = { Date() }, calendar: @escaping @Sendable () -> Calendar = { .current }
+        now: @escaping @Sendable () -> Date = { Date() },
+        calendar: @escaping @Sendable () -> Calendar = { .current },
+        defaults: UserDefaults = .standard
     ) {
+        self.defaults = defaults
+        self.includeCacheReads = defaults.object(forKey: Self.cacheReadsKey) as? Bool ?? true
         self.database = database
         self.engine = engine
         self.now = now
@@ -78,22 +85,34 @@ public final class UsageLedgerService: ObservableObject {
         days = value
         await refresh()
     }
-    /// UI refreshes read only daily blobs, including while an import is running.
+    func setIncludeCacheReads(_ value: Bool) async {
+        includeCacheReads = value
+        defaults.set(value, forKey: Self.cacheReadsKey)
+        await refresh()
+    }
+    /// UI refreshes read daily blobs; legacy cache breakdowns are backfilled once from saved observations.
     func refresh() async {
         refreshGeneration += 1
         let refreshToken = refreshGeneration
         let token = generation
         do {
             var selected = days
+            var cachedReads = includeCacheReads
             var zone = calendar()
-            var report = try await database.summary(days: selected, now: now(), calendar: zone)
-            while selected != days || UsageArchiveDatabase.zone(zone) != UsageArchiveDatabase.zone(calendar()) {
+            var report = try await database.summary(
+                days: selected, now: now(), calendar: zone, includeCacheReads: cachedReads)
+            while selected != days || cachedReads != includeCacheReads
+                || UsageArchiveDatabase.zone(zone) != UsageArchiveDatabase.zone(calendar())
+            {
                 selected = days
+                cachedReads = includeCacheReads
                 zone = calendar()
-                report = try await database.summary(days: selected, now: now(), calendar: zone)
+                report = try await database.summary(
+                    days: selected, now: now(), calendar: zone, includeCacheReads: cachedReads)
             }
             let last = try await engine.lastSettlement(calendar: zone)
-            guard token == generation, refreshToken == refreshGeneration, !Task.isCancelled, selected == days,
+            guard token == generation, refreshToken == refreshGeneration, !Task.isCancelled,
+                selected == days, cachedReads == includeCacheReads,
                 UsageArchiveDatabase.zone(zone) == UsageArchiveDatabase.zone(calendar())
             else { return }
             summary = report

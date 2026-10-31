@@ -322,7 +322,8 @@ public final class NotchWindowController {
             // adjacent rows doesn't drop us out). Sticky when a pending
             // permission is waiting.
             let host = hostFrame(on: screen).insetBy(dx: -20, dy: -12)
-            if host.contains(mouse) {
+            if host.contains(mouse)
+                || CodexResetOriginalTextPopover.containsReader(at: mouse, attachedTo: panel) {
                 cancelCollapseWorkItem()
             } else if stickyOpen {
                 cancelCollapseWorkItem()
@@ -397,7 +398,10 @@ public final class NotchWindowController {
         cancelCollapseWorkItem()
         let workItem = DispatchWorkItem { [weak self] in
             Task { @MainActor [weak self] in
-                self?.updatePanelState(.compact)
+                guard let self,
+                      !CodexResetOriginalTextPopover.containsReader(at: NSEvent.mouseLocation, attachedTo: self.panel)
+                else { return }
+                self.updatePanelState(.compact)
             }
         }
         collapseWorkItem = workItem
@@ -432,7 +436,9 @@ public final class NotchWindowController {
             guard let self = self else { return event }
             // Clicks inside our own panel are session-card taps, Allow/Deny
             // buttons, the gear, etc. — let them through untouched.
-            if let panelWin = self.panel, event.window === panelWin {
+            if let panelWin = self.panel,
+               event.window === panelWin
+                || CodexResetOriginalTextPopover.isReaderWindow(event.window, attachedTo: panelWin) {
                 return event
             }
             Task { @MainActor [weak self] in

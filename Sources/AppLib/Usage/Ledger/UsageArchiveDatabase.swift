@@ -157,6 +157,11 @@ actor UsageArchiveDatabase {
         try openDatabase()
         return try query("SELECT body FROM sources WHERE id=?", [.text(source)]).first?.first
     }
+    func hasIncompleteCodexHistory() throws -> Bool {
+        try openDatabase()
+        return try !query("SELECT 1 FROM sources WHERE CASE WHEN json_valid(body) THEN json_extract(body,'$.historyIncomplete') ELSE 0 END = 1 LIMIT 1").isEmpty
+    }
+
     func metadata(_ key: String) throws -> Data? {
         try openDatabase()
         return try query("SELECT body FROM metadata WHERE key=?", [.text(key)]).first?.first
@@ -283,34 +288,60 @@ actor UsageArchiveDatabase {
             String(data: $0, encoding: .utf8)
         }.flatMap(Double.init).map { Date(timeIntervalSince1970: $0) }
     }
-    func summary(days: Int, now: Date, calendar: Calendar) throws -> UsageLedgerSummary {
+    func summary(days: Int, now: Date, calendar: Calendar, includeCacheReads: Bool = false) throws
+        -> UsageLedgerSummary
+    {
         try openDatabase()
         let end = calendar.startOfDay(for: now)
         let count = max(1, min(90, days))
         let start = calendar.date(byAdding: .day, value: -count, to: end)!
         let rows = try query(
-            "SELECT body FROM archives WHERE zone=? AND start>=? AND start<? ORDER BY start",
-            [.text(Self.zone(calendar)), .number(start.timeIntervalSince1970), .number(end.timeIntervalSince1970)])
+            "SELECT start,body FROM archives WHERE zone=? AND start>=? AND start<? ORDER BY start",
+            [
+                .text(Self.zone(calendar)), .number(start.timeIntervalSince1970),
+                .number(end.timeIntervalSince1970),
+            ])
         var result = UsageLedgerSummary.make(
             records: [], days: count, now: end.addingTimeInterval(-0.000001), calendar: calendar)
         var ranks = Array(repeating: [String: Int](), count: 3)
         let indices = Dictionary(uniqueKeysWithValues: result.days.enumerated().map { ($0.element.id, $0.offset) })
         let hours = Dictionary(uniqueKeysWithValues: result.heatmap.enumerated().map { ($0.element.id, $0.offset) })
         for row in rows {
-            let report = try JSONDecoder().decode(UsageLedgerSummary.self, from: row[0])
-            result.totalTokens += report.totalTokens
+            var report = try JSONDecoder().decode(UsageLedgerSummary.self, from: row[1])
+            // One-time backfill from persisted counters, never from source transcripts.
+            // Keep legacy blobs readable; subsequent refreshes only read small archives.
+            if includeCacheReads && report.cacheBreakdownVersion == nil,
+                let start = String(data: row[0], encoding: .utf8).flatMap(Double.init)
+            {
+                let day = Date(timeIntervalSince1970: start)
+                try archive(day: day, calendar: calendar)
+                let saved = try query(
+                    "SELECT body FROM archives WHERE zone=? AND start=?",
+                    [.text(Self.zone(calendar)), .number(start)])
+                guard let body = saved.first?.first else { throw Failure.database }
+                report = try JSONDecoder().decode(UsageLedgerSummary.self, from: body)
+            }
+            result.totalTokens += report.totalTokens + (includeCacheReads ? report.cacheReused : 0)
             result.activeSeconds += report.activeSeconds
             result.cacheInput += report.cacheInput
             result.cacheReused += report.cacheReused
             result.hasHistory = result.hasHistory || report.hasHistory
-            for day in report.days { if let i = indices[day.id] { result.days[i] = day } }
+            for var day in report.days {
+                if includeCacheReads { day.tokens += day.cacheRead ?? 0 }
+                if let i = indices[day.id] { result.days[i] = day }
+            }
             for hour in report.heatmap { if let i = hours[hour.id] { result.heatmap[i] = hour } }
             for (i, items) in [report.projects, report.models, report.tools].enumerated() {
-                for item in items { ranks[i][item.name, default: 0] += item.value }
+                for item in items {
+                    ranks[i][item.name, default: 0] +=
+                        item.value + (includeCacheReads && i < 2 ? item.cacheRead ?? 0 : 0)
+                }
             }
         }
         let sorted: [[UsageLedgerSummary.Rank]] = ranks.map { counts in
-            let items = counts.map { UsageLedgerSummary.Rank(name: $0.key, value: $0.value) }
+            let items = counts.filter { $0.value > 0 }.map {
+                UsageLedgerSummary.Rank(name: $0.key, value: $0.value)
+            }
             let ordered = items.sorted { left, right in
                 left.value == right.value ? left.name < right.name : left.value > right.value
             }

@@ -55,6 +55,51 @@ public final class CodexResetTracker: ObservableObject {
         }
     }
 
+    private static let localRecoveryKey = "codexResetLocalRecoveryAtV1"
+    private var quotaReadings: [String: CodexQuotaReading] = [:]
+
+    /// Called only with account-level observations from the local rollout scan.
+    /// Never infer recovery from missing data, cached display state or scope swaps.
+    public func recordQuotaReadings(_ readings: [CodexQuotaReading]) {
+        let current = now()
+        let savedRecovery = defaults.object(forKey: Self.localRecoveryKey) as? Date
+        var recovery = savedRecovery
+        if let saved = recovery, saved > current { recovery = nil }
+        for reading in readings {
+            guard reading.observedAt <= current,
+                  current.timeIntervalSince(reading.observedAt) <= CodexQuotaRecovery.freshness else { continue }
+            let previous = quotaReadings[reading.sourceID]
+            // A bounded tail may have lost the original deadline. Its inferred
+            // recovery cannot override the more complete in-memory plan.
+            let agreesWithKnownPlan = previous.map {
+                $0.plannedFiveHourReset == reading.plannedFiveHourReset
+                    && $0.plannedSevenDayReset == reading.plannedSevenDayReset
+            } ?? true
+            if agreesWithKnownPlan,
+               let detected = reading.recoveredAt, detected <= reading.observedAt,
+               current.timeIntervalSince(detected) <= 24 * 3600,
+               // Re-polling an already rejected truncated tail is not new proof.
+               reading.hasCompleteHistory || previous.map({ $0.observedAt < detected }) == true {
+                recovery = max(recovery ?? .distantPast, detected)
+            }
+            if let previous {
+                guard reading.observedAt > previous.observedAt else { continue }
+                if CodexQuotaRecovery.occurred(from: previous, to: reading) {
+                    recovery = max(recovery ?? .distantPast, reading.observedAt)
+                }
+            }
+            quotaReadings[reading.sourceID] = reading.retainingOriginalPlan(from: previous)
+        }
+        quotaReadings = Dictionary(uniqueKeysWithValues: quotaReadings.values
+            .filter { ($0.plannedFiveHourReset.map { $0 > current } ?? false)
+                || ($0.plannedSevenDayReset.map { $0 > current } ?? false) }
+            .sorted { $0.observedAt > $1.observedAt }.prefix(128).map { ($0.sourceID, $0) })
+        if let recovery {
+            if recovery != savedRecovery { defaults.set(recovery, forKey: Self.localRecoveryKey) }
+            setAnnouncement(announcement)
+        }
+    }
+
     public func stop() {
         pollingTask?.cancel()
         pollingTask = nil
@@ -86,7 +131,7 @@ public final class CodexResetTracker: ObservableObject {
             let data = try await fetch()
             guard generation == requestGeneration, self.activeCodex,
                   config.loadCodexResetAnnouncements() else { return }
-            let notice = CodexResetFeed.latest(from: data, now: now())
+            let notice = visibleAnnouncement(CodexResetFeed.latest(from: data, now: now()))
             setAnnouncement(notice)
             guard let notice else { return }
             let key = notice.notificationKey(at: now())
@@ -108,7 +153,15 @@ public final class CodexResetTracker: ObservableObject {
         }
     }
 
+    private func visibleAnnouncement(_ notice: CodexResetAnnouncement?) -> CodexResetAnnouncement? {
+        guard let notice, notice.kind == .automatic,
+              let recovery = defaults.object(forKey: Self.localRecoveryKey) as? Date,
+              recovery <= now(), notice.announcedAt <= recovery else { return notice }
+        return nil
+    }
+
     private func setAnnouncement(_ notice: CodexResetAnnouncement?) {
+        let notice = visibleAnnouncement(notice)
         guard announcement != notice else { return }
         announcement = notice
         onChange?(notice)

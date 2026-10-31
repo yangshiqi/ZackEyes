@@ -8,6 +8,7 @@ public struct ModelTokenTally: Sendable, Equatable {
     public var cacheCreate: Int
     public var claudeBilling: ClaudeBillingUnits? = nil
     public var codexBilling: CodexBillingUnits? = nil
+    var isPartial = false
     public init(input: Int = 0, output: Int = 0, cacheRead: Int = 0, cacheCreate: Int = 0) {
         self.input = input; self.output = output
         self.cacheRead = cacheRead; self.cacheCreate = cacheCreate
@@ -62,6 +63,7 @@ extension UsageTracker {
                     cur.claudeBilling = (cur.claudeBilling ?? .legacy(cur, model: model))
                         + (t.claudeBilling ?? .legacy(t, model: model))
                 }
+                cur.isPartial = cur.isPartial || t.isPartial
                 cur.input += t.input; cur.output += t.output
                 cur.cacheRead += t.cacheRead; cur.cacheCreate += t.cacheCreate
                 dst[day, default: [:]][model] = cur
@@ -90,6 +92,7 @@ extension UsageTracker {
             if let models = claude[day] {
                 var cost = 0.0, priced = false
                 for (model, t) in models {
+                    u.anyUnpriced = u.anyUnpriced || t.isPartial
                     // Distinct tokens processed: uncached input + newly-cached input + output.
                     // cache_read (the same context re-read every turn) is excluded so the count
                     // isn't inflated by reuse; cost below still bills all four at their rates.
@@ -108,6 +111,7 @@ extension UsageTracker {
             if let models = codex[day] {
                 var cost = 0.0, priced = false
                 for (model, t) in models {
+                    u.anyUnpriced = u.anyUnpriced || t.isPartial
                     // Codex's input_tokens INCLUDES cached_input (stored in cacheRead),
                     // which is cache reuse — the analogue of Claude's cache_read. Exclude
                     // it so the count is distinct tokens, same convention as Claude above.
@@ -134,62 +138,95 @@ extension UsageTracker {
     /// component diffs (robust by construction — does not trust `last_token_usage`).
     /// Model is the most recent `turn_context.payload.model` seen in the file.
     nonisolated static func parseCodexDailyTallies(
-        text: String, calendar: Calendar, cutoff: Date
+        text: String, calendar: Calendar, cutoff: Date, initialBaseline: CodexUsageTotals? = nil
     ) -> [Date: [String: ModelTokenTally]] {
         let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let isoNoFrac = ISO8601DateFormatter()
         var out: [Date: [String: ModelTokenTally]] = [:]
         var currentModel = "unknown"
-        var prevInput = 0, prevCached = 0, prevOutput = 0, prevWrites = 0
+        var prevInput = initialBaseline?.input ?? 0, prevCached = initialBaseline?.cached ?? 0
+        var prevOutput = initialBaseline?.output ?? 0, prevWrites = initialBaseline?.writes ?? 0
+        let inheritedWithoutBaseline = initialBaseline == nil
+            && CodexUsageHistory.hasInheritedHistory(CodexUsageHistory.metadata(in: text))
         var serviceTier: String?
-        var sawTotals = false
+        var sawTotals = initialBaseline != nil
+        var pendingJump: CodexUsageTotals?
 
-        for line in text.split(separator: "\n") {
-            let d = Data(line.utf8)
-            guard let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { continue }
+        // Only these schema rows can alter billing state. Unicode-escaped JSON
+        // keys/values fall back to decoding, preserving the permissive parser.
+        let relevant = ["\"total_token_usage\"", "\"turn_context\"", "\"thread_settings_applied\"", "\"session_configured\"", #"\u"#]
+            .map { Data($0.utf8) }
+        CodexUsageHistory.forEachLine(in: text) { d in
+            guard relevant.contains(where: { d.range(of: $0) != nil }) else { return true }
+            guard let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] else { return true }
             let type = obj["type"] as? String
             let payload = obj["payload"] as? [String: Any]
 
             if type == "turn_context", let m = payload?["model"] as? String {
                 currentModel = m
                 if payload?.keys.contains("service_tier") == true { serviceTier = payload?["service_tier"] as? String }
-                continue
+                return true
             }
             if type == "event_msg", let kind = payload?["type"] as? String,
                kind == "thread_settings_applied" || kind == "session_configured" {
                 let settings = (payload?["thread_settings"] as? [String: Any]) ?? payload ?? [:]
                 if let model = settings["model"] as? String { currentModel = model }
                 serviceTier = settings["service_tier"] as? String
-                continue
+                return true
             }
             guard type == "event_msg",
                   (payload?["type"] as? String) == "token_count",
                   let info = payload?["info"] as? [String: Any],
-                  let totals = info["total_token_usage"] as? [String: Any] else { continue }
+                  let totals = info["total_token_usage"] as? [String: Any] else { return true }
 
             // Absent component → treat as unchanged (delta 0 for that component).
             // Codex may write token counts as Int OR Double in the rollout JSONL,
             // so `as? Int` alone silently misses float-encoded values (Gemini #138).
             // Parse robustly, then clamp so deltas/tally sums can't overflow (T-8).
             func tok(_ raw: Any?, _ prev: Int) -> Int {
-                if let i = raw as? Int { return UsageTracker.clampTokens(i) }
-                if let d = raw as? Double, d.isFinite, d >= 0 {
-                    return UsageTracker.clampTokens(Int(min(d.rounded(), 1_000_000_000)))
-                }
-                return prev
+                CodexUsageTotals.decodeCounter(raw) ?? prev
             }
-            let curInput = tok(totals["input_tokens"], prevInput)
-            let curCached = tok(totals["cached_input_tokens"], prevCached)
-            let curOutput = tok(totals["output_tokens"], prevOutput)
-            let curWrites = tok(totals["cache_write_input_tokens"], prevWrites)
-            // Schema assumption (locked by fixtures): a rollout's total_token_usage
-            // starts from 0 at turn 1, and `codex --resume` appends to the ORIGINAL
-            // file (never a continuation carrying prior totals), so the first totals
-            // row is that turn's own usage; later rows diff against the running total.
-            let dInput = sawTotals ? max(0, curInput - prevInput) : curInput
-            let dCached = sawTotals ? max(0, curCached - prevCached) : curCached
-            let dOutput = sawTotals ? max(0, curOutput - prevOutput) : curOutput
-            let dWrites = sawTotals ? max(0, curWrites - prevWrites) : curWrites
+            var curInput = tok(totals["input_tokens"], prevInput)
+            var curCached = tok(totals["cached_input_tokens"], prevCached)
+            var curOutput = tok(totals["output_tokens"], prevOutput)
+            var curWrites = tok(totals["cache_write_input_tokens"], prevWrites)
+            func markPartial() {
+                if let raw = obj["timestamp"] as? String, let at = iso.date(from: raw) ?? isoNoFrac.date(from: raw), at >= cutoff {
+                    out[calendar.startOfDay(for: at), default: [:]][currentModel, default: ModelTokenTally()].isPartial = true
+                }
+            }
+            if let pending = pendingJump {
+                let changes = [curInput - pending.input, curCached - pending.cached,
+                               curOutput - pending.output, curWrites - pending.writes]
+                if changes.allSatisfy({ (0...1_000_000_000).contains($0) }) {
+                    // The unknown gap is not billable, but subsequent confirmed
+                    // increments can resume from this absolute baseline.
+                    prevInput = pending.input; prevCached = pending.cached
+                    prevOutput = pending.output; prevWrites = pending.writes
+                }
+                pendingJump = nil
+            }
+            let firstInherited = !sawTotals && inheritedWithoutBaseline
+            if sawTotals, curInput < prevInput || curOutput < prevOutput {
+                if totals["input_tokens"] == nil { curInput = 0 }
+                if totals["cached_input_tokens"] == nil { curCached = 0 }
+                if totals["output_tokens"] == nil { curOutput = 0 }
+                if totals["cache_write_input_tokens"] == nil { curWrites = 0 }
+                prevInput = 0; prevCached = 0; prevOutput = 0; prevWrites = 0
+            }
+            let dInput = max(0, curInput - prevInput), dCached = max(0, curCached - prevCached)
+            let dOutput = max(0, curOutput - prevOutput), dWrites = max(0, curWrites - prevWrites)
+            let oversized = [dInput, dCached, dOutput, dWrites].contains { $0 > 1_000_000_000 }
+            if firstInherited || (!sawTotals && oversized) {
+                prevInput = curInput; prevCached = curCached; prevOutput = curOutput; prevWrites = curWrites; sawTotals = true
+                markPartial()
+                return true
+            }
+            guard !oversized else {
+                pendingJump = .init(input: curInput, cached: curCached, writes: curWrites, output: curOutput)
+                markPartial()
+                return true
+            }
             prevInput = curInput; prevCached = curCached; prevOutput = curOutput; prevWrites = curWrites; sawTotals = true
 
             // Drop no-op rows. cached_input_tokens is a subset of input_tokens, so
@@ -197,7 +234,7 @@ extension UsageTracker {
             // discards a turn whose only growth is cached tokens.
             guard let tsString = obj["timestamp"] as? String,
                   let ts = iso.date(from: tsString) ?? isoNoFrac.date(from: tsString),
-                  ts >= cutoff, (dInput + dOutput) > 0 else { continue }
+                  ts >= cutoff, (dInput + dOutput) > 0 else { return true }
 
             let day = calendar.startOfDay(for: ts)
             var tally = out[day]?[currentModel] ?? ModelTokenTally()
@@ -212,6 +249,7 @@ extension UsageTracker {
             }
             tally.codexBilling = (tally.codexBilling ?? CodexBillingUnits()) + .estimate(usage, model: currentModel, tier: serviceTier, request: request)
             out[day, default: [:]][currentModel] = tally
+            return true
         }
         return out
     }
