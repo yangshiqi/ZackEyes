@@ -7,6 +7,35 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.10.3',
+    date: 'Published October 31, 2026',
+    summary: 'More accurate usage totals, clearer Codex reset notices and reusable SSH helper releases.',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Include cached reads in Usage totals by default, with a saved switch controlling totals, daily charts and project/model rankings.',
+          'Show the selected day\'s combined token total in chart hover details.'
+        ]
+      },
+      {
+        label: 'Changed',
+        items: [
+          'Keep reset timing beside the Extra Codex reset title, show two lines of the original announcement and reveal its full text on hover.',
+          'Reuse verified, unchanged SSH helper binaries across releases while retaining their original compilation provenance. Legacy packages receive a fresh build once; changed inputs or REMOTE_HELPERS_FORCE_REBUILD=1 trigger native builds.',
+          'Update website dependencies and the Node 24 toolchain.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'Prevent inherited Codex pagination history and inconsistent cumulative counters from inflating daily token consumption; repair affected tracked archives and reduce overlapping startup scans.',
+          'Dismiss older extra-reset announcements after fresh local account readings confirm early quota recovery before the originally observed reset deadline.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.10.2',
     date: 'Published October 23, 2026',
     highlights: [
