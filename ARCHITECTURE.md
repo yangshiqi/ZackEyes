@@ -46,6 +46,10 @@ Codex CLI    ──┘     --event X --agent {claude|codex}     │
 
 ## 核心数据流
 
+### Codex 套餐耗尽后的额外额度
+
+`UsageTracker` 从所选最新 rollout 的最新账号级 `rate_limits` 读取 `credits.has_credits / unlimited / balance`，以 Decimal 保存原始额度数值，不折算美元或推断赠送/购买来源。仅账号级窗口耗尽、余额可用且没有明确服务端限流时切换为额外额度模式；模型级限制不被余额覆盖。余额与套餐重置时间来自同一条账号级观测；后续模型级读数不抹掉该账号状态，也不从其他 rollout 借用余额。实际限流状态仍服从最后一条读数。余额新鲜度采用 token_count 自身时间戳（15 分钟），不使用文件 mtime 续期；最新读数缺失时清除，余额不写入用量缓存。物理/模拟刘海及菜单栏在现有 Codex 位置切换余额与使用状态，不新增行或卡片，恢复套餐/余额耗尽/数据过期后回到原有额度展示。
+
 ### 本地用量账本（#263）
 
 `UsageLedgerParser` 从 Claude/Codex transcript 提取计数、项目/模型/工具名称及时间区间，不保留 prompt、回复、工具参数、完整路径或原始 session/message id；标识在进入持久化 DTO 前做 SHA256。Claude 完整 usage 按消息身份及源时间去重，旧副本/部分 usage 不覆盖新统计；Codex 持久化累计观测，跨文件合并同一 session 后再差分，避免部分副本的不同前驱产生重复 token。重置计数开启新累计段。

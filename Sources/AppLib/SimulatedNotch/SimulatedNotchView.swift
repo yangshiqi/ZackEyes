@@ -60,22 +60,30 @@ struct SimulatedNotchView: View {
     // MARK: - Compact content (shown when not hovered)
 
     @ViewBuilder
+    /// Prefer a fresh credit balance over quota percentages and cap ETA while credits are in use.
     private var compactContent: some View {
         let snap = usageTracker.snapshot
         let agent = snap.displayAgent(preferred: modeStore.compactAgent)
         let fivePct = snap.fiveHourUsedPct(for: agent)
         let sevenPct = snap.sevenDayUsedPct(for: agent)
         let eta = (agent == .codex) ? snap.codexFiveHourETA : snap.fiveHourETA
-        // #86 — imminent cap (≤30 min) takes the 5h slot; 7d stays put.
-        if let urgent = eta?.pillUrgentLabel {
-            urgentETAChip(urgent)
+        if agent == .codex, let credits = snap.creditsInUse() {
+            Text("Cr " + credits.compactBalanceLabel)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(AppColors.activity.color)
+            Text("credits").font(.system(size: 10)).foregroundStyle(.white.opacity(0.65))
         } else {
-            percentageChip(label: "5h", usedPct: fivePct, lastUpdated: snap.quotaLastUpdated(for: agent))
+            // #86 — imminent cap (≤30 min) takes the 5h slot; 7d stays put.
+            if let urgent = eta?.pillUrgentLabel {
+                urgentETAChip(urgent)
+            } else {
+                percentageChip(label: "5h", usedPct: fivePct, lastUpdated: snap.quotaLastUpdated(for: agent))
+            }
+            Text("·")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.3))
+            percentageChip(label: "7d", usedPct: sevenPct, lastUpdated: snap.quotaLastUpdated(for: agent))
         }
-        Text("·")
-            .font(.system(size: 12))
-            .foregroundColor(.white.opacity(0.3))
-        percentageChip(label: "7d", usedPct: sevenPct, lastUpdated: snap.quotaLastUpdated(for: agent))
     }
 
     @ViewBuilder

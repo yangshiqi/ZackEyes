@@ -34,6 +34,14 @@ struct UsageTrackerCodexTests {
                       comps.year!, comps.month!, comps.day!, hour)
     }
 
+    @Test func exhaustedAccountCanUseExtraCredits() {
+        let reading = UsageTracker.decodeCodexObservation(from: [
+            "primary": ["used_percent": 100.0, "window_minutes": 10080],
+            "credits": ["has_credits": true, "unlimited": false, "balance": "12345.6789012345"]
+        ])
+        #expect(!reading.limitReached)
+    }
+
     // MARK: - Decoder
 
     @Test func decodeCodexObservation_canonicalShape() {
