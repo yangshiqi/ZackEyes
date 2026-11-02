@@ -27,6 +27,12 @@ public final class UsageTracker: ObservableObject {
         public var codexSevenDayUsedPct: Double?
         public var codexSevenDayResetsAt: Date?
 
+        /// Live account credits; intentionally excluded from the persisted quota cache.
+        public var codexCredits: CodexCredits? = nil
+        public var codexCreditsInUse: Bool = false
+        public var codexCreditsUpdatedAt: Date? = nil
+        public var codexCreditsPlanResetAt: Date? = nil
+
         /// Codex is temporarily unavailable (limit reached / out of credits /
         /// window at 100%). Drives the "limit reached" treatment in the usage
         /// header — the bars alone can't, since a credit-gated block leaves the
@@ -388,6 +394,9 @@ public final class UsageTracker: ObservableObject {
         /// limit temporarily lifted) from a windowless credits-only block
         /// reading (retain last-known pairs, #166 semantics).
         public var hasWindowData: Bool = false
+        public var credits: CodexCredits? = nil
+        public var isUsingCredits: Bool = false
+        public var creditsObservedAt: Date? = nil
     }
 
     /// Rescan all recent JSONL files and update the snapshot.
@@ -429,7 +438,8 @@ public final class UsageTracker: ObservableObject {
                 codexState.scopes,
                 limitReached: codexState.limitReached,
                 limitResetsAt: codexState.limitResetsAt,
-                observedAt: codexState.observedAt
+                observedAt: codexState.observedAt,
+                latestObservation: codexState.latestObservation
             )
         } else {
             // No recent rollout means Codex is idle, not that the last quota
@@ -516,6 +526,13 @@ public final class UsageTracker: ObservableObject {
     private func expireCodexWindows(now: Date) {
         var s = snapshot
         var changed = false
+        if s.codexCreditsInUse, s.creditsInUse(at: now) == nil {
+            s.codexCredits = nil
+            s.codexCreditsInUse = false
+            s.codexCreditsUpdatedAt = nil
+            s.codexCreditsPlanResetAt = nil
+            changed = true
+        }
         // Absolute staleness backstop (#166 A/C): drop ALL codex data (windows +
         // badge) once the last reading is older than the longest window, then stop —
         // otherwise a reset-less reading would linger indefinitely (only marked
@@ -610,6 +627,10 @@ public final class UsageTracker: ObservableObject {
         }
         s.codexFiveHourETA = codexEstimator.estimate(
             now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
+        s.codexCredits = obs.credits
+        s.codexCreditsInUse = obs.isUsingCredits
+        s.codexCreditsUpdatedAt = obs.creditsObservedAt ?? now
+        s.codexCreditsPlanResetAt = obs.creditPlanResetAt
         s.codexLimitReached = obs.limitReached
         if obs.limitReached {
             if let live = Self.bindingReset(
@@ -645,7 +666,8 @@ public final class UsageTracker: ObservableObject {
         _ scanned: [String: CodexRateLimitObservation],
         limitReached: Bool = false,
         limitResetsAt: Date? = nil,
-        observedAt: Date
+        observedAt: Date,
+        latestObservation: CodexRateLimitObservation? = nil
     ) {
         let now = Date()
         for (k, v) in scanned { codexScopeReadings[k] = v }
@@ -705,6 +727,10 @@ public final class UsageTracker: ObservableObject {
         }
         s.codexFiveHourETA = codexEstimator.estimate(
             now: now, currentPct: s.codexFiveHourUsedPct, resetsAt: s.codexFiveHourResetsAt)
+        s.codexCredits = latestObservation?.credits
+        s.codexCreditsInUse = latestObservation?.isUsingCredits ?? false
+        s.codexCreditsUpdatedAt = latestObservation?.creditsObservedAt
+        s.codexCreditsPlanResetAt = latestObservation?.creditPlanResetAt
         s.codexLimitReached = limitReached
         if limitReached {
             if let live = limitResetsAt {
@@ -895,6 +921,7 @@ public final class UsageTracker: ObservableObject {
         public var limitResetsAt: Date?
         public var observedAt: Date
         public var accountReadings: [CodexQuotaReading] = []
+        public var latestObservation: CodexRateLimitObservation? = nil
     }
 
     nonisolated static func scanLatestCodexState(
@@ -926,7 +953,8 @@ public final class UsageTracker: ObservableObject {
             limitReached: last.limitReached,
             limitResetsAt: blockReset,
             observedAt: readings.observedAt,
-            accountReadings: readings.accountReadings
+            accountReadings: readings.accountReadings,
+            latestObservation: last
         )
     }
 
@@ -972,7 +1000,10 @@ public final class UsageTracker: ObservableObject {
             guard payload["type"] as? String == "token_count" else { continue }
             guard let rl = payload["rate_limits"] as? [String: Any] else { continue }
             let name = codexScopeKey(from: rl)
-            let obs = decodeCodexObservation(from: rl)
+            var obs = decodeCodexObservation(from: rl)
+            if let timestamp = obj["timestamp"] as? String {
+                obs.creditsObservedAt = fractionalISO.date(from: timestamp) ?? iso.date(from: timestamp)
+            }
             if name.isEmpty {
                 if let timestamp = obj["timestamp"] as? String,
                    let date = fractionalISO.date(from: timestamp) ?? iso.date(from: timestamp) {
@@ -1051,7 +1082,11 @@ public final class UsageTracker: ObservableObject {
                 obs.sevenDayResetsAt = w.resets
             }
         }
+        obs.credits = CodexCredits.decode(rl["credits"] as? [String: Any])
         obs.limitReached = codexLimitReached(from: rl, obs: obs)
+        obs.isUsingCredits = !obs.limitReached && codexScopeKey(from: rl).isEmpty
+            && obs.credits?.isAvailable == true
+            && ((obs.fiveHourUsedPct ?? 0) >= 100 || (obs.sevenDayUsedPct ?? 0) >= 100)
         return obs
     }
 
@@ -1096,6 +1131,12 @@ public final class UsageTracker: ObservableObject {
     ) -> Bool {
         if let reached = rl["rate_limit_reached_type"] as? String, !reached.isEmpty {
             return true
+        }
+        // Positive account credits permit fallback after the plan window is
+        // exhausted. A model-specific cap or explicit server denial still blocks.
+        if codexScopeKey(from: rl).isEmpty,
+           CodexCredits.decode(rl["credits"] as? [String: Any])?.isAvailable == true {
+            return false
         }
         // #189 — the credits heuristic only applies to the real block shape,
         // where codex nulls BOTH windows (the #172 retention work exists

@@ -125,9 +125,10 @@ struct SimulatedNotchFullView: View {
             // shared footnote must reflect the STALEST data on screen (the oldest of
             // the two per-agent timestamps), not just Claude's. Single-agent uses its
             // own timestamp.
+            let codexFreshness = snap.creditsInUse() == nil ? snap.codexLastUpdated : snap.codexCreditsUpdatedAt
             let freshness: Date? = bothActive
-                ? [snap.lastUpdated, snap.codexLastUpdated].compactMap { $0 }.min()
-                : (codexOnly ? snap.codexLastUpdated : snap.lastUpdated)
+                ? [snap.lastUpdated, codexFreshness].compactMap { $0 }.min()
+                : (codexOnly ? codexFreshness : snap.lastUpdated)
             if snap.hasRealData, let lastUpdated = freshness {
                 UsageFreshnessLabel(lastUpdated: lastUpdated)
                     .frame(maxWidth: .infinity, alignment: .trailing)
@@ -181,71 +182,77 @@ struct SimulatedNotchFullView: View {
                            windowDuration: TimeInterval,
                            eta: CapETA? = nil,
                            limitReached: Bool = false, limitResetsAt: Date? = nil) -> some View {
-        let cell = UsageCellState.make(usedPct: usedPct, limitReached: limitReached)
-        let used = usedPct ?? 0
-        let presentation = ProgressPresentation(
-            usedFraction: used / 100,
-            mode: usageTracker.progressMode,
-            leftDirection: usageTracker.leftProgressDirection
-        )
-        let color = cell.isExhausted ? Color.usageLimitRed : barColor(for: used)
-        let hasData = usedPct != nil || limitReached
-        let accent = AgentBadge.accentColor(for: agent)
-        // Exhausted: prefer the BLOCK's reset (the binding window codex is
-        // actually limited on) over this cell's own window reset — a 5h headline
-        // blocked by the 7d window should count down to the 7d reset, not 5h
-        // (CodeRabbit PR review). Falls back to the cell reset when no block
-        // reset is known.
-        let resetDisplay = (cell.isExhausted ? (limitResetsAt ?? resetsAt) : resetsAt)?.usageResetDisplay
-
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: 4) {
-                Text(agent == .claude ? "C" : "X")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(accent)
-                if cell.isExhausted {
-                    QuotaReadingText(text: "limit", lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(Color.usageLimitRed)
-                } else if hasData {
-                    QuotaReadingText(text: presentation.explicitLabel, lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(color)
-                } else {
-                    Text("—")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.35))
-                }
-                // #86/#108 — the ETA badge sits next to the percentage so the
-                // trailing slot stays free for the reset countdown. Both matter at
-                // once: ETA = when you run dry, reset = when budget comes back, and
-                // ETA < reset is exactly the case to show side by side. Mirrors the
-                // full-width usageBar layout. CapETABadge self-guards a nil eta
-                // (renders nothing), so no outer `if` is needed — matches usageBar.
-                // Suppress when exhausted: "runs dry" is meaningless once blocked.
-                if !cell.isExhausted { CapETABadge(eta: eta, compact: true) }
-                Spacer(minLength: 0)
-                if let reset = resetDisplay {
-                    Text(reset)
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.4))
-                }
-            }
-            UsageProgressTrack(
-                fillFraction: cell.isExhausted ? 1 : presentation.fraction,
-                fillAnchor: cell.isExhausted ? .leading : presentation.anchor,
-                hasData: hasData,
-                usageColor: color,
-                timeMode: usageTracker.timeProgressMode,
-                progressMode: usageTracker.progressMode,
-                leftProgressDirection: usageTracker.leftProgressDirection,
-                timeOverlayOpacity: usageTracker.timeOverlayOpacity,
-                resetsAt: resetsAt,
-                windowDuration: windowDuration,
-                height: 5
+        if agent == .codex, let credits = usageTracker.snapshot.creditsInUse() {
+            CodexCreditsUsageCell(credits: credits,
+                showsBalance: windowDuration == TimeWindowProgress.fiveHours, compact: true,
+                resetsAt: usageTracker.snapshot.codexCreditsPlanResetAt)
+        } else {
+            let cell = UsageCellState.make(usedPct: usedPct, limitReached: limitReached)
+            let used = usedPct ?? 0
+            let presentation = ProgressPresentation(
+                usedFraction: used / 100,
+                mode: usageTracker.progressMode,
+                leftDirection: usageTracker.leftProgressDirection
             )
+            let color = cell.isExhausted ? Color.usageLimitRed : barColor(for: used)
+            let hasData = usedPct != nil || limitReached
+            let accent = AgentBadge.accentColor(for: agent)
+            // Exhausted: prefer the BLOCK's reset (the binding window codex is
+            // actually limited on) over this cell's own window reset — a 5h headline
+            // blocked by the 7d window should count down to the 7d reset, not 5h
+            // (CodeRabbit PR review). Falls back to the cell reset when no block
+            // reset is known.
+            let resetDisplay = (cell.isExhausted ? (limitResetsAt ?? resetsAt) : resetsAt)?.usageResetDisplay
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 4) {
+                    Text(agent == .claude ? "C" : "X")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(accent)
+                    if cell.isExhausted {
+                        QuotaReadingText(text: "limit", lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(Color.usageLimitRed)
+                    } else if hasData {
+                        QuotaReadingText(text: presentation.explicitLabel, lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(color)
+                    } else {
+                        Text("—")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.35))
+                    }
+                    // #86/#108 — the ETA badge sits next to the percentage so the
+                    // trailing slot stays free for the reset countdown. Both matter at
+                    // once: ETA = when you run dry, reset = when budget comes back, and
+                    // ETA < reset is exactly the case to show side by side. Mirrors the
+                    // full-width usageBar layout. CapETABadge self-guards a nil eta
+                    // (renders nothing), so no outer `if` is needed — matches usageBar.
+                    // Suppress when exhausted: "runs dry" is meaningless once blocked.
+                    if !cell.isExhausted { CapETABadge(eta: eta, compact: true) }
+                    Spacer(minLength: 0)
+                    if let reset = resetDisplay {
+                        Text(reset)
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                }
+                UsageProgressTrack(
+                    fillFraction: cell.isExhausted ? 1 : presentation.fraction,
+                    fillAnchor: cell.isExhausted ? .leading : presentation.anchor,
+                    hasData: hasData,
+                    usageColor: color,
+                    timeMode: usageTracker.timeProgressMode,
+                    progressMode: usageTracker.progressMode,
+                    leftProgressDirection: usageTracker.leftProgressDirection,
+                    timeOverlayOpacity: usageTracker.timeOverlayOpacity,
+                    resetsAt: resetsAt,
+                    windowDuration: windowDuration,
+                    height: 5
+                )
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Opens the application command menu shared with the menu-bar icon.
@@ -289,74 +296,87 @@ struct SimulatedNotchFullView: View {
         limitResetsAt: Date? = nil,
         @ViewBuilder trailing: () -> Trailing = { EmptyView() }
     ) -> some View {
-        let cell = UsageCellState.make(usedPct: usedPct, limitReached: limitReached)
-        let used = usedPct ?? 0
-        let presentation = ProgressPresentation(
-            usedFraction: used / 100,
-            mode: usageTracker.progressMode,
-            leftDirection: usageTracker.leftProgressDirection
-        )
-        let color = cell.isExhausted ? Color.usageLimitRed : barColor(for: used)
-        let hasData = usedPct != nil || limitReached
-        let accent = AgentBadge.accentColor(for: agent)
-        let resetDisplay = (cell.isExhausted ? (limitResetsAt ?? resetsAt) : resetsAt)?.usageResetDisplay
-
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text(label)
+        if agent == .codex, let credits = usageTracker.snapshot.creditsInUse() {
+            HStack(alignment: .top, spacing: 6) {
+                Text(windowDuration == TimeWindowProgress.fiveHours ? "Cr" : "")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.7))
+                    .foregroundStyle(.white.opacity(0.7))
                     .frame(width: 22, alignment: .leading)
-
-                // Agent tag — small label so the user knows which agent's
-                // quota this bar represents when only one is active.
-                Text(agent == .claude ? "Claude" : "Codex")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(accent)
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 1)
-                    .background(accent.opacity(0.15))
-                    .clipShape(Capsule())
-
-                if cell.isExhausted {
-                    QuotaReadingText(text: "limit reached", lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Color.usageLimitRed)
-                } else if hasData {
-                    QuotaReadingText(text: presentation.explicitLabel, lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(color)
-                } else {
-                    Text("no data")
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.4))
-                }
-
-                if !cell.isExhausted { CapETABadge(eta: eta) }   // #86 — cap ETA badge (5h only)
-
-                Spacer(minLength: 0)
-
-                if let reset = resetDisplay {
-                    Text("resets in \(reset)")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.45))
-                }
-
+                CodexCreditsUsageCell(credits: credits,
+                    showsBalance: windowDuration == TimeWindowProgress.fiveHours,
+                    resetsAt: usageTracker.snapshot.codexCreditsPlanResetAt)
                 trailing()
             }
-
-            UsageProgressTrack(
-                fillFraction: cell.isExhausted ? 1 : presentation.fraction,
-                fillAnchor: cell.isExhausted ? .leading : presentation.anchor,
-                hasData: hasData,
-                usageColor: color,
-                timeMode: usageTracker.timeProgressMode,
-                progressMode: usageTracker.progressMode,
-                leftProgressDirection: usageTracker.leftProgressDirection,
-                timeOverlayOpacity: usageTracker.timeOverlayOpacity,
-                resetsAt: resetsAt,
-                windowDuration: windowDuration
+        } else {
+            let cell = UsageCellState.make(usedPct: usedPct, limitReached: limitReached)
+            let used = usedPct ?? 0
+            let presentation = ProgressPresentation(
+                usedFraction: used / 100,
+                mode: usageTracker.progressMode,
+                leftDirection: usageTracker.leftProgressDirection
             )
+            let color = cell.isExhausted ? Color.usageLimitRed : barColor(for: used)
+            let hasData = usedPct != nil || limitReached
+            let accent = AgentBadge.accentColor(for: agent)
+            let resetDisplay = (cell.isExhausted ? (limitResetsAt ?? resetsAt) : resetsAt)?.usageResetDisplay
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(label)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.7))
+                        .frame(width: 22, alignment: .leading)
+
+                    // Agent tag — small label so the user knows which agent's
+                    // quota this bar represents when only one is active.
+                    Text(agent == .claude ? "Claude" : "Codex")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(accent)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(accent.opacity(0.15))
+                        .clipShape(Capsule())
+
+                    if cell.isExhausted {
+                        QuotaReadingText(text: "limit reached", lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Color.usageLimitRed)
+                    } else if hasData {
+                        QuotaReadingText(text: presentation.explicitLabel, lastUpdated: usageTracker.snapshot.quotaLastUpdated(for: agent))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(color)
+                    } else {
+                        Text("no data")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+
+                    if !cell.isExhausted { CapETABadge(eta: eta) }   // #86 — cap ETA badge (5h only)
+
+                    Spacer(minLength: 0)
+
+                    if let reset = resetDisplay {
+                        Text("resets in \(reset)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.45))
+                    }
+
+                    trailing()
+                }
+
+                UsageProgressTrack(
+                    fillFraction: cell.isExhausted ? 1 : presentation.fraction,
+                    fillAnchor: cell.isExhausted ? .leading : presentation.anchor,
+                    hasData: hasData,
+                    usageColor: color,
+                    timeMode: usageTracker.timeProgressMode,
+                    progressMode: usageTracker.progressMode,
+                    leftProgressDirection: usageTracker.leftProgressDirection,
+                    timeOverlayOpacity: usageTracker.timeOverlayOpacity,
+                    resetsAt: resetsAt,
+                    windowDuration: windowDuration
+                )
+            }
         }
     }
 

@@ -28,15 +28,24 @@ struct UsageBarsView<Trailing: View>: View {
         let sevenPct = snap.sevenDayUsedPct(for: agent)
         let sevenReset = agent == .codex ? snap.codexSevenDayResetsAt : snap.sevenDayResetsAt
         VStack(spacing: 8) {
-            usageBar(label: "5h", usedPct: fivePct,
-                     lastUpdated: snap.quotaLastUpdated(for: agent),
-                     resetsAt: fiveReset, windowDuration: TimeWindowProgress.fiveHours,
-                     eta: fiveETA) {
-                trailing
-            }
-            usageBar(label: "7d", usedPct: sevenPct, lastUpdated: snap.quotaLastUpdated(for: agent), resetsAt: sevenReset,
-                     windowDuration: TimeWindowProgress.sevenDays) {
-                EmptyView()
+            if agent == .codex, let credits = snap.creditsInUse() {
+                HStack(alignment: .top) {
+                    CodexCreditsUsageCell(credits: credits)
+                    trailing
+                }
+                CodexCreditsUsageCell(credits: credits, showsBalance: false,
+                    resetsAt: snap.codexCreditsPlanResetAt)
+            } else {
+                usageBar(label: "5h", usedPct: fivePct,
+                         lastUpdated: snap.quotaLastUpdated(for: agent),
+                         resetsAt: fiveReset, windowDuration: TimeWindowProgress.fiveHours,
+                         eta: fiveETA) {
+                    trailing
+                }
+                usageBar(label: "7d", usedPct: sevenPct, lastUpdated: snap.quotaLastUpdated(for: agent), resetsAt: sevenReset,
+                         windowDuration: TimeWindowProgress.sevenDays) {
+                    EmptyView()
+                }
             }
             if usageTracker.showTodayConsumption, snap.hasConsumption {
                 Rectangle()
@@ -46,7 +55,9 @@ struct UsageBarsView<Trailing: View>: View {
                 TodayConsumptionRow(days: snap.dailyUsage)
             }
             // #45 — usage freshness footnote (stale numbers shouldn't read as live).
-            let freshness = agent == .codex ? snap.codexLastUpdated : snap.lastUpdated
+            let freshness = agent == .codex
+                ? (snap.creditsInUse() == nil ? snap.codexLastUpdated : snap.codexCreditsUpdatedAt)
+                : snap.lastUpdated
             if snap.hasRealData, let lastUpdated = freshness {
                 UsageFreshnessLabel(lastUpdated: lastUpdated)
                     .frame(maxWidth: .infinity, alignment: .trailing)

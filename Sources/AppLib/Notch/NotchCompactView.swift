@@ -163,7 +163,11 @@ struct NotchCompactView: View {
         // #86 — when the 5h cap is imminent (≤30 min), the urgent ETA takes the
         // left slot over the normal quota chip: the pill stays quota-only until
         // it matters, then surfaces the countdown.
-        if let urgent = eta?.pillUrgentLabel {
+        if agent == .codex, let credits = snapshot.creditsInUse() {
+            Text("Cr " + credits.compactBalanceLabel)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .foregroundStyle(AppColors.activity.color)
+        } else if let urgent = eta?.pillUrgentLabel {
             urgentETAChip(urgent)
         } else {
             // Always-on 5h chip (issue #64) — the working/waiting state is shown
@@ -193,8 +197,12 @@ struct NotchCompactView: View {
         let agent = snapshot.displayAgent(preferred: usageTracker.compactAgent)
         // Always-on 7d chip (issue #64) — kept visible in every state so the
         // island persistently shows both quota windows.
+        if agent == .codex, snapshot.creditsInUse() != nil {
+            Text("credits").font(.system(size: 10)).foregroundStyle(AppColors.activity.color)
+        } else {
         usageChip(label: "7d", usedPct: snapshot.sevenDayUsedPct(for: agent),
                   lastUpdated: snapshot.quotaLastUpdated(for: agent))
+        }
     }
 
     // MARK: - Usage chip

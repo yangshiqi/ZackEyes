@@ -36,7 +36,7 @@ public enum MenuBarIconColor {
         } else {
             preference = [.claude, .codex]
         }
-        return preference.first { snapshot.fiveHourUsedPct(for: $0) != nil }
+        return preference.first { snapshot.fiveHourUsedPct(for: $0) != nil || ($0 == .codex && snapshot.creditsInUse() != nil) }
     }
 
     /// Color for the menu-bar star. White when no agent has quota data.
@@ -53,6 +53,12 @@ public enum MenuBarIconColor {
         primaryAgent: AgentKind?,
         snapshot: UsageTracker.Snapshot
     ) -> Presentation {
+        if resolveAgent(primaryAgent: primaryAgent, snapshot: snapshot) == .codex,
+           let credits = snapshot.creditsInUse() {
+            return Presentation(symbolName: "plus.circle.fill",
+                accessibilityDescription: "ZackEyes, using extra Codex credits, \(credits.balanceLabel) remaining",
+                tint: AppColors.activity.nsColor)
+        }
         guard let agent = resolveAgent(primaryAgent: primaryAgent, snapshot: snapshot),
               let pct = snapshot.fiveHourUsedPct(for: agent) else {
             return Presentation(
