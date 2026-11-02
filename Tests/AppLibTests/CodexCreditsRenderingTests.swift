@@ -16,7 +16,7 @@ struct CodexCreditsRenderingTests {
             let reset = Date().addingTimeInterval(3600).timeIntervalSince1970
             tracker.updateFromCodexRateLimits([
                 "primary": ["used_percent": 100, "window_minutes": 10080, "resets_at": reset],
-                "credits": ["has_credits": true, "balance": "58459.3490105"]])
+                "credits": ["has_credits": true, "balance": "12345.6789012345"]])
             if dual {
                 tracker.updateFromHook(rateLimits: [
                     "five_hour": AnyCodable(["used_percentage": 42, "resets_at": reset]),

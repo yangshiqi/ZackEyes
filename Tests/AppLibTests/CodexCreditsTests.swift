@@ -7,12 +7,12 @@ struct CodexCreditsTests {
     @Test func decoderPreservesBalanceAndTreatsCreditsAsAnAccountFallback() throws {
         let observation = UsageTracker.decodeCodexObservation(from: [
             "primary": ["used_percent": 100, "window_minutes": 10080],
-            "credits": ["has_credits": true, "unlimited": false, "balance": "58459.3490105000"]
+            "credits": ["has_credits": true, "unlimited": false, "balance": "12345.6789012345"]
         ])
-        #expect(observation.credits?.balance == Decimal(string: "58459.3490105000"))
+        #expect(observation.credits?.balance == Decimal(string: "12345.6789012345"))
         #expect(observation.isUsingCredits)
         #expect(!observation.limitReached)
-        #expect(observation.credits?.balanceLabel == "58,459.35")
+        #expect(observation.credits?.balanceLabel == "12,345.68")
     }
 
     @Test(arguments: ["0", "-1", "", "NaN", "Infinity", "12oops"])
@@ -170,7 +170,7 @@ struct CodexCreditsTests {
                 "payload": ["type": "token_count", "rate_limits": limits]]
             try JSONSerialization.data(withJSONObject: row).write(to: file)
         }
-        try write(credits: ["has_credits": true, "balance": "58459.3490105"])
+        try write(credits: ["has_credits": true, "balance": "12345.6789012345"])
         let tracker = UsageTracker(projectsDir: root.appendingPathComponent("claude"), codexSessionsDir: root, cacheURL: root.appendingPathComponent("cache.json"))
         await tracker.refresh()
         #expect(tracker.snapshot.creditsInUse() != nil)
