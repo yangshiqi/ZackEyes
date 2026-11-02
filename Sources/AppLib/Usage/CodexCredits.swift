@@ -8,8 +8,10 @@ public struct CodexCredits: Equatable, Sendable {
     public let unlimited: Bool
     public let balance: Decimal?
 
+    /// Unlimited credits or a confirmed positive balance can fund extra usage.
     public var isAvailable: Bool { unlimited || (hasCredits && (balance ?? 0) > 0) }
 
+    /// Format raw credit units with two decimal places, never as a dollar amount.
     public var balanceLabel: String {
         if unlimited { return "Unlimited" }
         guard let balance else { return "—" }
@@ -21,6 +23,7 @@ public struct CodexCredits: Equatable, Sendable {
         return format.string(from: NSDecimalNumber(decimal: balance)) ?? "—"
     }
 
+    /// Abbreviate the same balance for narrow notch chips without losing its unit.
     public var compactBalanceLabel: String {
         if unlimited { return "∞" }
         guard let balance else { return "—" }
@@ -33,6 +36,7 @@ public struct CodexCredits: Equatable, Sendable {
         return balanceLabel
     }
 
+    /// Decode strict JSON flags and a bounded decimal; malformed amounts stay unknown.
     static func decode(_ fields: [String: Any]?) -> CodexCredits? {
         guard let fields else { return nil }
         let raw: String?
@@ -47,6 +51,7 @@ public struct CodexCredits: Equatable, Sendable {
                   !value.isNaN else { return nil }
             return value
         }
+        /// JSON numbers such as 0/1 are not evidence of a Boolean availability flag.
         func flag(_ key: String) -> Bool {
             guard let number = fields[key] as? NSNumber,
                   CFGetTypeID(number) == CFBooleanGetTypeID() else { return false }
@@ -75,6 +80,7 @@ public extension UsageTracker.Snapshot {
 }
 
 extension UsageTracker.CodexRateLimitObservation {
+    /// Use this observation's binding deadline, independently of other sessions.
     var creditPlanResetAt: Date? {
         guard isUsingCredits else { return nil }
         return UsageTracker.bindingReset(fiveUsed: fiveHourUsedPct, fiveReset: fiveHourResetsAt,

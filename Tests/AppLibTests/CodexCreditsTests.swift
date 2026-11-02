@@ -138,6 +138,75 @@ struct CodexCreditsTests {
         #expect(tracker.snapshot.creditsInUse(at: now.addingTimeInterval(31)) == nil)
     }
 
+    /// A model tail may update the hard-block flag, but not the account balance or its age.
+    @Test(arguments: ["available", "blocked", "stale", "missing"])
+    func trailingModelReadingPreservesTheSameRolloutsAccountCredits(scenario: String) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directory = root.appendingPathComponent("2026/11/02")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let now = Date()
+        let accountTime = now.addingTimeInterval(scenario == "stale" ? -901 : -5)
+        let reset = now.addingTimeInterval(3600)
+        var account: [String: Any] = ["limit_id": "codex",
+            "primary": ["used_percent": 100, "window_minutes": 10080, "resets_at": reset.timeIntervalSince1970],
+            "credits": ["has_credits": true, "balance": "120"]]
+        if scenario == "missing" { account["credits"] = nil }
+        var model: [String: Any] = ["limit_id": "premium",
+            "primary": ["used_percent": 0, "window_minutes": 300, "resets_at": now.addingTimeInterval(1800).timeIntervalSince1970],
+            "credits": ["has_credits": true, "balance": "100"]]
+        if scenario == "blocked" { model["rate_limit_reached_type"] = "model_limit" }
+        let rows: [[String: Any]] = [(accountTime, account), (now, model)].map { timestamp, limits in
+            ["type": "event_msg", "timestamp": ISO8601DateFormatter().string(from: timestamp),
+             "payload": ["type": "token_count", "rate_limits": limits]]
+        }
+        let data = try rows.map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }.joined(separator: "\n")
+        try data.write(to: directory.appendingPathComponent("rollout-scopes.jsonl"), atomically: true, encoding: .utf8)
+        let state = try #require(UsageTracker.scanLatestCodexState(rootDir: root))
+        #expect(state.latestObservation?.isUsingCredits == (scenario != "missing"))
+        #expect(state.limitReached == (scenario == "blocked"))
+        let tracker = UsageTracker(projectsDir: root.appendingPathComponent("claude"), codexSessionsDir: root,
+                                   cacheURL: root.appendingPathComponent("cache.json"))
+        await tracker.refresh()
+        if scenario == "missing" {
+            #expect(tracker.snapshot.codexCredits == nil)
+            #expect(tracker.snapshot.codexCreditsPlanResetAt == nil)
+        } else {
+            #expect(tracker.snapshot.codexCredits?.balance == 120)
+            #expect(abs(try #require(tracker.snapshot.codexCreditsPlanResetAt).timeIntervalSince(reset)) < 1)
+        }
+        #expect(abs(try #require(tracker.snapshot.codexCreditsUpdatedAt).timeIntervalSince(accountTime)) < 1)
+        #expect((tracker.snapshot.creditsInUse() != nil) == (scenario == "available"))
+    }
+
+    /// A model-only newest rollout must not borrow credit eligibility from another login/session.
+    @Test func modelOnlyNewestRolloutDoesNotBorrowAnotherRolloutsCredits() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let directory = root.appendingPathComponent("2026/11/02")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let now = Date()
+        for (name, id, used, minutes, balance, timestamp) in [
+            ("older-account", "codex", 100, 10080, "999", now.addingTimeInterval(-60)),
+            ("newest-model", "premium", 0, 300, "100", now)
+        ] {
+            let row: [String: Any] = ["type": "event_msg", "timestamp": ISO8601DateFormatter().string(from: timestamp),
+                "payload": ["type": "token_count", "rate_limits": ["limit_id": id,
+                    "primary": ["used_percent": used, "window_minutes": minutes, "resets_at": now.addingTimeInterval(3600).timeIntervalSince1970],
+                    "credits": ["has_credits": true, "balance": balance]]]]
+            let file = directory.appendingPathComponent("rollout-\(name).jsonl")
+            try JSONSerialization.data(withJSONObject: row).write(to: file)
+            try FileManager.default.setAttributes([.modificationDate: timestamp], ofItemAtPath: file.path)
+        }
+        let state = try #require(UsageTracker.scanLatestCodexState(rootDir: root))
+        #expect(state.latestObservation?.isUsingCredits == false)
+        let tracker = UsageTracker(projectsDir: root.appendingPathComponent("claude"), codexSessionsDir: root,
+                                   cacheURL: root.appendingPathComponent("cache.json"))
+        await tracker.refresh()
+        #expect(tracker.snapshot.creditsInUse() == nil)
+        #expect(tracker.snapshot.codexCreditsPlanResetAt == nil)
+    }
+
     @Test func unrelatedLogWritesDoNotRefreshAnOldCreditObservation() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: root) }

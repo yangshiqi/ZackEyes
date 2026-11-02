@@ -8,6 +8,7 @@ struct CodexCreditsUsageCell: View {
     var compact = false
     var resetsAt: Date? = nil
 
+    /// Reuse the quota-cell footprint for the credit balance or usage/reset status.
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: compact ? 4 : 6) {
@@ -32,6 +33,7 @@ struct CodexCreditsUsageCell: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// Distinguish a known plan-reset countdown from an exhausted plan with no deadline.
     private var resetLabel: String {
         if let reset = resetsAt?.usageResetDisplay { return "Plan resets in \(reset)" }
         return "Plan allowance exhausted"

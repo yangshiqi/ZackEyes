@@ -19,6 +19,7 @@ struct UsageBarsView<Trailing: View>: View {
         self.trailing = trailing()
     }
 
+    /// Show the selected agent's existing quota rows or the two credit summaries in their place.
     var body: some View {
         let snap = usageTracker.snapshot
         let agent = snap.displayAgent(preferred: usageTracker.compactAgent)

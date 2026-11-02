@@ -523,6 +523,7 @@ public final class UsageTracker: ObservableObject {
         return now.timeIntervalSince(last) > cap
     }
 
+    /// Age out credit eligibility and expired windows without treating idle as recovery.
     private func expireCodexWindows(now: Date) {
         var s = snapshot
         var changed = false
@@ -604,6 +605,8 @@ public final class UsageTracker: ObservableObject {
         return (preferSeven ? sevenReset : fiveReset) ?? fiveReset ?? sevenReset
     }
 
+    /// Apply a directly received reading, retaining missing window/reset pairs.
+    /// Credit fields remain tied to this reading rather than the retained quota.
     private func applyCodexObservation(_ obs: CodexRateLimitObservation) {
         var s = snapshot
         let now = Date()
@@ -794,7 +797,9 @@ public final class UsageTracker: ObservableObject {
     /// Walk the date-partitioned codex sessions tree and merge the tail
     /// readings of EVERY rollout active within `recentSeconds`, newest-first.
     /// Returns the latest reading per named scope (across all active rollouts)
-    /// plus the overall-newest rollout's last reading. Returns `nil` if no
+    /// plus the overall-newest rollout's last reading and its latest account
+    /// reading. Credit selection never borrows from a different rollout.
+    /// Returns `nil` if no
     /// rollout was written within the window. Bounded — only the tail of each
     /// candidate file is read.
     ///
@@ -806,7 +811,7 @@ public final class UsageTracker: ObservableObject {
     private nonisolated static func firstActiveCodexReadings(
         rootDir: URL,
         recentSeconds: TimeInterval
-    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation, observedAt: Date, accountReadings: [CodexQuotaReading])? {
+    ) -> (scopes: [String: CodexRateLimitObservation], last: CodexRateLimitObservation, observedAt: Date, accountReadings: [CodexQuotaReading], latestAccountReading: CodexQuotaReading?)? {
         let fm = FileManager.default
         let cutoff = Date().addingTimeInterval(-recentSeconds)
         struct Candidate {
@@ -844,6 +849,7 @@ public final class UsageTracker: ObservableObject {
         var mergedScopes: [String: CodexRateLimitObservation] = [:]
         var overallLast: CodexRateLimitObservation?
         var overallObservedAt: Date?
+        var latestAccountReading: CodexQuotaReading?
         var accountReadings: [CodexQuotaReading] = []
         for c in candidates.sorted(by: { $0.mtime > $1.mtime }) {
             guard let readings = tailCodexReadings(in: c.url) else { continue }
@@ -851,13 +857,16 @@ public final class UsageTracker: ObservableObject {
             if overallLast == nil {
                 overallLast = readings.last
                 overallObservedAt = c.mtime
+                // Credit eligibility belongs to the account in this rollout.
+                // Other rollouts may represent a different logged-in account.
+                latestAccountReading = readings.accountReading
             }
             for (name, obs) in readings.scopes {
                 mergedScopes[name] = mergeCodexObservations(mergedScopes[name], obs, now: now)
             }
         }
         guard let last = overallLast, let observedAt = overallObservedAt else { return nil }
-        return (mergedScopes, last, observedAt, accountReadings)
+        return (mergedScopes, last, observedAt, accountReadings, latestAccountReading)
     }
 
     /// Combine two readings of the same scope, keeping the higher non-expired
@@ -921,9 +930,12 @@ public final class UsageTracker: ObservableObject {
         public var limitResetsAt: Date?
         public var observedAt: Date
         public var accountReadings: [CodexQuotaReading] = []
+        /// Latest account reading from the chosen rollout, or its final reading if absent.
         public var latestObservation: CodexRateLimitObservation? = nil
     }
 
+    /// Combine merged quota windows with the latest hard-block state and the
+    /// chosen rollout's account credit reading; model tails do not erase credits.
     nonisolated static func scanLatestCodexState(
         rootDir: URL,
         recentSeconds: TimeInterval = codexActiveWindowSeconds
@@ -954,7 +966,7 @@ public final class UsageTracker: ObservableObject {
             limitResetsAt: blockReset,
             observedAt: readings.observedAt,
             accountReadings: readings.accountReadings,
-            latestObservation: last
+            latestObservation: readings.latestAccountReading?.quota ?? last
         )
     }
 
@@ -1124,6 +1136,8 @@ public final class UsageTracker: ObservableObject {
     ///      a parsed `balance` of 0. (On credit-gated plans the window
     ///      `used_percent` stays ~0, so this is the only signal that fires.)
     ///   3. Either window is at 100% used.
+    /// Available account credits permit window fallback; explicit denials and
+    /// model-specific caps still take priority over the balance.
     /// Conservative on credits: a nil/blank `balance` is treated as "unknown,
     /// not blocked" so a non-credit plan never false-flags.
     nonisolated static func codexLimitReached(

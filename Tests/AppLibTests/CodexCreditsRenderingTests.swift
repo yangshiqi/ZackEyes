@@ -6,6 +6,7 @@ import Shared
 
 @MainActor
 struct CodexCreditsRenderingTests {
+    /// Exercise the same two header rows with synthetic balances at narrow and wide widths.
     @Test(arguments: [380.0, 520.0])
     func creditsReplaceTheExistingHeaderForSingleAndDualAgentLayouts(width: Double) throws {
         for dual in [false, true] {

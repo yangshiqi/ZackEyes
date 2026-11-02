@@ -156,6 +156,7 @@ struct NotchCompactView: View {
     // MARK: - Left content (visible, left of notch)
 
     @ViewBuilder
+    /// Show the live credit balance, otherwise preserve the normal quota/ETA priority.
     private var leftContent: some View {
         let snapshot = usageTracker.snapshot
         let agent = snapshot.displayAgent(preferred: usageTracker.compactAgent)
@@ -192,6 +193,7 @@ struct NotchCompactView: View {
     // MARK: - Right content (visible, right of notch)
 
     @ViewBuilder
+    /// Identify the credit unit when active, otherwise retain the seven-day quota chip.
     private var rightContent: some View {
         let snapshot = usageTracker.snapshot
         let agent = snapshot.displayAgent(preferred: usageTracker.compactAgent)

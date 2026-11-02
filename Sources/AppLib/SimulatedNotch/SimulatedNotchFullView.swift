@@ -52,6 +52,7 @@ struct SimulatedNotchFullView: View {
 
     // MARK: - Usage header
 
+    /// Keep two existing rows, substituting eligible Codex credits and using the oldest visible freshness.
     private var usageHeader: some View {
         let snap = usageTracker.snapshot
         let codexOnly = snap.hasCodexData && !snap.hasClaudeData
@@ -285,6 +286,7 @@ struct SimulatedNotchFullView: View {
 
 
     @ViewBuilder
+    /// Render one agent row; eligible Codex credits replace its quota content in place.
     private func usageBar<Trailing: View>(
         label: String,
         windowDuration: TimeInterval,

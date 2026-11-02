@@ -60,6 +60,7 @@ struct SimulatedNotchView: View {
     // MARK: - Compact content (shown when not hovered)
 
     @ViewBuilder
+    /// Prefer a fresh credit balance over quota percentages and cap ETA while credits are in use.
     private var compactContent: some View {
         let snap = usageTracker.snapshot
         let agent = snap.displayAgent(preferred: modeStore.compactAgent)
