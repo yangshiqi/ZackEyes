@@ -123,6 +123,7 @@ dmg: app-release
 #     screenshots, compatibility, quota/cost wording). Only the changelog is
 #     auto-bumped (Scripts/bump-website-release.sh); the rest is NOT, so it
 #     silently goes stale unless reviewed each release.
+#   - Complete the mandatory post-release cleanup checklist in AGENTS.md.
 #
 # Usage:  make release VERSION=0.3.0     (X.Y.Z, no 'v' prefix)
 # Optional: NOTES="changelog text"       (defaults to "Release vVERSION")
