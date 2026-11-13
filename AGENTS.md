@@ -140,3 +140,8 @@ diff ~/.claude/settings.json ~/.claude/settings.json.backup.*  # 确认只改了
   - 扫 `index.astro` / `docs.astro` / `answers.astro` 有无「coming soon」式过时措辞或旧 UI 文案（如改名的按钮）
 - [ ] `cd website && pnpm run build && pnpm test`（site-contract 必绿）
 - [ ] 更新 memory：版本已发 + 本次范围决策
+- [ ] **发布后清理（每次必做，包括手动执行等价发布流程）**：确认两仓发布文件、源码 tag、线上网站及路线图收尾完成，记录版本、哈希和验证结论后，再清理本地文件；作为发布任务的一部分直接执行，无需用户另行提醒。
+  - 先检查 worktree 的未提交改动及临时目录的进程占用；删除已完成任务的干净 worktree，执行 `git worktree prune` 清除失效记录。保留仍有独立工作或被运行中客户端使用的目录。
+  - 删除已确认属于本项目且不再需要的临时发布包、helper 下载与重打包目录、测试截图/日志/脚本、临时工具链及浏览器 profile；先停止本次启动的浏览器、预览服务等进程。按核对过的目录清理，不批量删除共享临时目录。
+  - 清理无进程占用的可重建缓存：`.build/`、`website/node_modules/`、`website/dist/`、`website/.astro/`。保留源码、本地分支与提交、项目 memory、`.entire/`、用户配置和共享全局缓存；需要保留的 worktree 本地设置先备份到仓库外。
+  - 用 `git worktree list`、`git status` 和路径/进程检查核对结果；在 memory 和最终回复中记录清理范围及保留项。未满足清理条件的目录记录原因后保留。
