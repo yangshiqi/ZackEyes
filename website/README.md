@@ -28,8 +28,9 @@ The homepage currently uses no React island and no generated client JavaScript b
 
 ## Runtime Requirements
 
-- Use Node.js 24 LTS; `.node-version` pins the local baseline to 24.22.1. `package.json` selects Node 24 for Vercel builds. Astro 7.4.2 requires at least Node 22.23.4.
+- Use Node.js 24 LTS; `.node-version` pins the local baseline to 24.22.3, including the November 2026 security fixes. `package.json` selects Node 24 for Vercel builds; Vercel manages the deployed patch version. Astro is maintained on the 7.4 patch line.
 - pnpm 10.34.8 is the pinned package manager, declared in `package.json`.
+- The pnpm override upgrades vulnerable Vite 8.3.0–8.3.6 dependencies to 8.3.8 or a compatible newer release, covering [GHSA-p4f5-76q4-ffq7](https://github.com/vitejs/vite/security/advisories/GHSA-p4f5-76q4-ffq7). Keep it until all dependency paths require a patched version.
 - The production target must support static file hosting.
 - The canonical production origin is `https://zackeyes.vercel.app` — the live Vercel deployment. The originally planned custom apex domain was never registered (see issue #192). If a custom domain is purchased later, update `astro.config.mjs`, `public/robots.txt`, the LLM text endpoints, and the origin pinned in `tests/site-contract.test.mjs`.
 - Latest public release: `https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.10.3/ZackEyes-0.10.3.dmg`.
