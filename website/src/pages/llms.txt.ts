@@ -26,6 +26,7 @@ ZackEyes is a macOS notch command center for developers who run Claude Code, Cod
 - Shows per-session LISTEN ports, git branch, and uncommitted file count on the session card; ports are read from kernel syscalls rather than lsof, so no subprocess is spawned.
 - Shows what a dispatched Claude subagent is working on, and marks context compaction while it runs and shortly after it finishes.
 - Tracks daily token spend and USD cost across Claude and Codex in a Today row with a 7-day sparkline; model pricing is bundled and computed locally, so no API key or cloud upload is needed.
+- Since v0.10.4, fresh local account readings show extra Codex credits in the existing quota cells after included limits are exhausted. Balances use Codex units, expire after 15 minutes, and do not override explicit server limits. See https://zackeyes.vercel.app/docs#codex-extra-credits .
 - ${codexResetReleased ? `Since v${codexResetVersion}, shows public Codex extra reset announcements while a local Codex session is active, with local expected and announcement times when known. Notices show two lines of original text, with full text on hover. Fresh local account evidence of early quota recovery can retire older notices when the original reset plan was observed. These notices are separate from account quota readings.` : `A preview of Codex extra reset notices is documented at https://zackeyes.vercel.app/docs#codex-extra-reset; the current download does not include it.`}
 - Uses native hooks and Unix socket bridge events so terminal workflows keep working when the app is closed.
 

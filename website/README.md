@@ -33,9 +33,9 @@ The homepage currently uses no React island and no generated client JavaScript b
 - The pnpm override upgrades vulnerable Vite 8.3.0–8.3.6 dependencies to 8.3.8 or a compatible newer release, covering [GHSA-p4f5-76q4-ffq7](https://github.com/vitejs/vite/security/advisories/GHSA-p4f5-76q4-ffq7). Keep it until all dependency paths require a patched version.
 - The production target must support static file hosting.
 - The canonical production origin is `https://zackeyes.vercel.app` — the live Vercel deployment. The originally planned custom apex domain was never registered (see issue #192). If a custom domain is purchased later, update `astro.config.mjs`, `public/robots.txt`, the LLM text endpoints, and the origin pinned in `tests/site-contract.test.mjs`.
-- Latest public release: `https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.10.3/ZackEyes-0.10.3.dmg`.
-- DMG size: 6.8 MB.
-- SHA256: `8c0013e1d2ae9ffcbae28d4a9350f26879b326899fc7d3765a0459cd8eb5858a`.
+- Latest public release: `https://github.com/yangshiqi/ZackEyes-release/releases/download/v0.10.4/ZackEyes-0.10.4.dmg`.
+- DMG size: 6.9 MB.
+- SHA256: `db1edbeff38d41d34654756f9f6b22ebbf8fa329427838f4a859114fe8adfe5e`.
 - Issues and feature requests: `https://github.com/yangshiqi/ZackEyes-release/issues`.
 - Release metadata is centralised in [`src/lib/release.mjs`](src/lib/release.mjs); update that file on each release and every page + test will pick up the new values.
 - `make release` in the ccisland repo triggers the [`bump-version`](.github/workflows/bump-version.yml) workflow here via `gh workflow run`, which rewrites `src/lib/release.mjs` with the new DMG metadata and opens a PR. The PR is intentionally not auto-merged so a changelog entry can be added by hand on the same branch.

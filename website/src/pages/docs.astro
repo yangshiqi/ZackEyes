@@ -122,6 +122,18 @@ const docsStructuredData = [
         </div>
       </section>
 
+      <section class="policy-band" aria-labelledby="codex-extra-credits">
+        <div class="policy-shell">
+          <h2 class="section-title" id="codex-extra-credits">Codex extra credits.</h2>
+          <p class="section-copy">Available since v0.10.4. When an included Codex account limit is exhausted and a fresh local reading reports available extra credits, the existing Codex quota cells switch to the balance and “Using extra credits”, with the plan reset countdown when known. The compact view and menu-bar icon also reflect this state; no extra quota row is added.</p>
+          <p class="section-copy">Credits are shown in the units reported by Codex, without converting them to dollars or guessing whether they were gifted or purchased. ZackEyes checks local session logs about every 30 seconds; changes appear after Codex writes a new reading. Credit readings expire after 15 minutes and explicit server-side limits still take priority.</p>
+          <figure class="feature-screenshot">
+            <a href="/screenshots/codex-credits.png" aria-label="View sample Codex extra credits at full size"><img src="/screenshots/codex-credits.png" alt="Sample Codex quota cells showing an extra credit balance and Using extra credits after the included plan limit is exhausted." width="1040" height="300" loading="lazy" decoding="async" /></a>
+            <figcaption>Sample interface · synthetic credit balance, not an account reading.</figcaption>
+          </figure>
+        </div>
+      </section>
+
       <section class="policy-band" aria-labelledby="codex-extra-reset">
         <div class="policy-shell">
           <h2 class="section-title" id="codex-extra-reset">Public Codex extra resets.</h2>

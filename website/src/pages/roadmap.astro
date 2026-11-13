@@ -8,6 +8,7 @@ import { appVersion, issuesUrl } from '../lib/release.mjs';
 const codexResetReleased = isCodexResetReleased(appVersion);
 const description = `ZackEyes roadmap: released SSH observation, daily usage archives, notch answers${codexResetReleased ? ', and Codex extra reset notices' : ''}, plus future journal and agent plans.`;
 const releasedItems = [
+  { title: 'Codex extra credits', horizon: 'Released · v0.10.4', copy: 'Fresh local account readings switch the existing Codex quota cells to the available extra balance after included limits are exhausted. Credits remain in Codex units; explicit server limits take priority.' },
   { title: 'Answer from the notch', horizon: `Released · v${featureVersion}`, copy: 'Opt-in answers for supported Claude questions, with a timeout and terminal fallback. Disabled by default.' },
   { title: 'SSH remote observation', horizon: `Released · v${featureVersion}`, copy: 'Read-only Claude/Codex session metadata from up to eight SSH hosts, with host status and reconnect. Remote requests stay in the remote terminal.' },
   { title: 'Demo fleet', horizon: `Released · v${featureVersion}`, copy: 'Explore synthetic Claude/Codex sessions without sending sample actions to real agents. Real session attention returns the panel to live sessions.' },
