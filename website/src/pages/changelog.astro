@@ -7,6 +7,32 @@ import { releaseName, downloadUrl, releasesUrl } from '../lib/release.mjs';
 const description = 'ZackEyes release notes, current version, DMG download, and public update history for the macOS AI coding agent command center.';
 const releases = [
   {
+    version: 'ZackEyes 0.10.4',
+    date: 'Published November 13, 2026',
+    highlights: [
+      {
+        label: 'Added',
+        items: [
+          'Show available extra Codex credits in the existing quota cells when included plan limits are exhausted, with compact and menu-bar status support.',
+          'Document extra credit behavior with a sample screenshot.'
+        ]
+      },
+      {
+        label: 'Changed',
+        items: [
+          'Update the website toolchain to Node.js 24.22.3 and Astro 7.4.11.'
+        ]
+      },
+      {
+        label: 'Fixed',
+        items: [
+          'Upgrade all website Vite dependency paths to 8.3.8 to address the development-server security advisory GHSA-p4f5-76q4-ffq7.',
+          'Preserve account credit readings when later model-specific quota observations arrive; explicit server limits still take priority.'
+        ]
+      }
+    ]
+  },
+  {
     version: 'ZackEyes 0.10.3',
     date: 'Reissued October 31, 2026',
     summary: 'More accurate usage totals, clearer Codex reset notices and reusable SSH helper releases.',
